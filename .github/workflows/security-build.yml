@@ -1,0 +1,57 @@
+name: Security and build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check production dependencies
+        run: pnpm audit --prod --audit-level low
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build browser application
+        run: pnpm build
+
+      - name: Build standalone Windows executable
+        shell: pwsh
+        run: ./scripts/build-portable.ps1
+
+      - name: Upload unsigned validation build
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-validation-build
+          path: |
+            release/InformationSystemUserTracker.exe
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7
+

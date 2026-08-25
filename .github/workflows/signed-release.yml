@@ -1,0 +1,84 @@
+name: Signed public release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  sign-and-release:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    environment: release
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Security and quality checks
+        run: |
+          pnpm audit --prod --audit-level low
+          pnpm lint
+          pnpm build
+
+      - name: Build standalone executable
+        shell: pwsh
+        run: ./scripts/build-portable.ps1
+
+      - name: Sign in to Microsoft Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign and timestamp executable
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\release\InformationSystemUserTracker.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: Information System User Tracker
+          description-url: ${{ github.server_url }}/${{ github.repository }}
+
+      - name: Verify signature and refresh checksum
+        shell: pwsh
+        run: |
+          $file = "release\InformationSystemUserTracker.exe"
+          $signature = Get-AuthenticodeSignature -FilePath $file
+          if ($signature.Status -ne 'Valid') { throw "Authenticode signature verification failed: $($signature.Status)" }
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "release\SHA256SUMS.txt" -Encoding ascii -Value "$hash  InformationSystemUserTracker.exe"
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "release\InformationSystemUserTracker.exe" `
+            "release\SHA256SUMS.txt" `
+            --verify-tag `
+            --generate-notes `
+            --title "Information System User Tracker ${{ github.ref_name }}"
+
