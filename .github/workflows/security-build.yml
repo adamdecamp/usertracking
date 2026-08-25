@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.14.0
 
@@ -46,7 +46,7 @@ jobs:
         run: ./scripts/build-portable.ps1
 
       - name: Upload unsigned validation build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: unsigned-validation-build
           path: |
