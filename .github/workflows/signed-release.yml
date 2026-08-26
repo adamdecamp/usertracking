@@ -17,6 +17,10 @@ jobs:
       - name: Check out tagged source
         uses: actions/checkout@v5
 
+      - name: Verify release-clean source
+        shell: pwsh
+        run: ./scripts/Test-ReleaseClean.ps1 -SourceOnly
+
       - name: Install pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -69,6 +73,10 @@ jobs:
           if ($signature.Status -ne 'Valid') { throw "Authenticode signature verification failed: $($signature.Status)" }
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
           Set-Content -LiteralPath "release\SHA256SUMS.txt" -Encoding ascii -Value "$hash  InformationSystemUserTracker.exe"
+
+      - name: Verify release-clean signed package
+        shell: pwsh
+        run: ./scripts/Test-ReleaseClean.ps1
 
       - name: Publish GitHub Release
         shell: pwsh

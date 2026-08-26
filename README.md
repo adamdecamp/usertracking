@@ -12,6 +12,7 @@ Use the executable attached to the latest GitHub Release. Public releases are bl
 - Records the active Windows account in consequential audit entries.
 - Does not transmit tracker data or evidence to an external service.
 - Uses the browser's user-approved directory access for shared storage.
+- Starts every release with no systems or users and does not retain operational records in browser storage.
 - Validates shared manifests, filenames, request paths, and CSV output.
 - Generates daily audit logs and backups in the mapped directory.
 
@@ -26,9 +27,10 @@ pnpm install --frozen-lockfile
 pnpm lint
 pnpm build
 .\scripts\build-portable.ps1
+.\scripts\Test-ReleaseClean.ps1
 ```
 
-The standalone executable and checksum are written to `release/`.
+The standalone executable and checksum are written to `release/`. Both GitHub build workflows stop before publishing if starter records, tracked runtime data, extra package files, or a checksum mismatch are detected.
 
 ## Public release setup
 

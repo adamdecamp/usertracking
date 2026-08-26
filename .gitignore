@@ -48,4 +48,12 @@ next-env.d.ts
 /InformationSystemUserTracker*.exe
 /InformationSystemUserTracker-Portable*/
 /InformationSystemUserTracker-Portable*.zip
+/Email-Information-System-User-Tracker.txt
+
+# local runtime data must never enter source control or release packages
+information-system-user-tracker.json
+tracker-active-session.json
+User Evidence/
+Audit Logs/
+backup/
 

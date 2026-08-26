@@ -18,6 +18,10 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v5
 
+      - name: Verify release-clean source
+        shell: pwsh
+        run: ./scripts/Test-ReleaseClean.ps1 -SourceOnly
+
       - name: Install pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -44,6 +48,10 @@ jobs:
       - name: Build standalone Windows executable
         shell: pwsh
         run: ./scripts/build-portable.ps1
+
+      - name: Verify release-clean package
+        shell: pwsh
+        run: ./scripts/Test-ReleaseClean.ps1
 
       - name: Upload unsigned validation build
         uses: actions/upload-artifact@v6
