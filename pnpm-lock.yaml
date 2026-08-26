@@ -36,9 +36,6 @@ importers:
       '@cloudflare/workers-types':
         specifier: 4.20260515.1
         version: 4.20260515.1
-      '@openai/sites-vite-plugin':
-        specifier: ^0.1.0 || ^0.2.0
-        version: 0.2.0(vite@8.0.16(@types/node@22.19.19)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0))
       '@types/node':
         specifier: 22.19.19
         version: 22.19.19
@@ -692,12 +689,6 @@ packages:
   '@nolyfill/is-core-module@1.0.39':
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
-
-  '@openai/sites-vite-plugin@0.2.0':
-    resolution: {integrity: sha512-4ThLMW9eaf2gd+SqBwHmqBONKBAbQ2BuOFev7mHq7Y2W5mm/rfVJOSjcgQIsY2PqdXxXNZ4Yd0+s0DlSUYehag==}
-    engines: {node: '>=22.13.0'}
-    peerDependencies:
-      vite: ^8.0.0
 
   '@oxc-project/types@0.133.0':
     resolution: {integrity: sha512-KzkdCd6Uxqnf6l3HOw1xfatAlUURA0g14cvBYFyJ5SaNOQbOUvBr9PKArcPcrNIeRsBdgcUzOGrhKveVpvOIGA==}
@@ -3309,10 +3300,6 @@ snapshots:
       fastq: 1.20.1
 
   '@nolyfill/is-core-module@1.0.39': {}
-
-  '@openai/sites-vite-plugin@0.2.0(vite@8.0.16(@types/node@22.19.19)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0))':
-    dependencies:
-      vite: 8.0.16(@types/node@22.19.19)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)
 
   '@oxc-project/types@0.133.0': {}
 
