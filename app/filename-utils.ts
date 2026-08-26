@@ -25,5 +25,24 @@ export function identityFromFilename(filename:string){
  const last=clean(match[1]),first=clean(match[2]);
  return last&&first?{last,first}:undefined;
 }
+export type NewUserSaarFilenameValidation=
+ |{valid:true;identity:{last:string;first:string};organization:string;role:'General'|'Privileged';privilegedTypes:string[]}
+ |{valid:false;reason:string};
+export function validateNewUserSaarFilename(filename:string):NewUserSaarFilenameValidation{
+ if(!filenameMatchesKind(filename,'SAAR'))return{valid:false,reason:'The filename is not recognized as a SAAR.'};
+ const identity=identityFromFilename(filename);
+ if(!identity)return{valid:false,reason:'The SAAR filename must begin with Last Name followed by First Name.'};
+ if(identity.last.toUpperCase()==='LAST'&&identity.first.toUpperCase()==='FIRST')return{valid:false,reason:'The SAAR filename still contains the Last_First template placeholders.'};
+ const organization=organizationFrom(filename);
+ if(!organization)return{valid:false,reason:'The SAAR filename is missing its parenthesized organization.'};
+ if(['ORG','ORGANIZATION'].includes(organization.toUpperCase()))return{valid:false,reason:'The SAAR filename still contains the organization template placeholder.'};
+ if(!parseDate(filename))return{valid:false,reason:'The SAAR filename is missing a valid DDMMMYYYY date.'};
+ const tokens=fileTokens(filename),hasGeneral=tokens.has('GEN'),hasPrivileged=tokens.has('PRIV');
+ if(hasGeneral===hasPrivileged)return{valid:false,reason:'The SAAR filename must identify exactly one role: GEN or PRIV.'};
+ if(hasGeneral)return{valid:true,identity,organization,role:'General',privilegedTypes:[]};
+ const list=fileTokenList(filename),privIndex=list.indexOf('PRIV'),saarIndex=list.indexOf('SAAR'),privilegedType=privIndex>=0&&saarIndex>privIndex+1?clean(list[privIndex+1],200):'';
+ if(!privilegedType||privilegedType==='TYPE')return{valid:false,reason:'A PRIV SAAR filename must contain the actual privileged account type between PRIV and SAAR.'};
+ return{valid:true,identity,organization,role:'Privileged',privilegedTypes:[privilegedType]};
+}
 export const identityKey=(last:string,first:string)=>`${clean(last).toUpperCase()}\u0000${clean(first).toUpperCase()}`;
 export function filenameIdentityMatches(filename:string,user:{last:string;first:string}){const identity=identityFromFilename(filename);return !!identity&&identityKey(identity.last,identity.first)===identityKey(user.last,user.first)}

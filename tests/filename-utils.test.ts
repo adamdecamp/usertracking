@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,organizationFrom,parseDate} from '../app/filename-utils.ts';
+import {filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,organizationFrom,parseDate,validateNewUserSaarFilename} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -41,4 +41,26 @@ test('tolerates commas, missing underscores, and additional spaces',()=>{
 
 test('still rejects a reversed First-Last identity for the expected user',()=>{
  assert.equal(filenameIdentityMatches('Jacob Brown (LM) DoD Cyber Cert 26AUG2026.pdf',{last:'Brown',first:'Jacob'}),false);
+});
+
+test('admits only complete GEN or PRIV SAAR filenames for automatic new-user discovery',()=>{
+ assert.deepEqual(validateNewUserSaarFilename('Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf'),{
+  valid:true,identity:{last:'Brown',first:'Jacob'},organization:'LM',role:'General',privilegedTypes:[],
+ });
+ assert.deepEqual(validateNewUserSaarFilename('Brown, Jacob (LM) PRIV admin SAAR 26AUG2026.pdf'),{
+  valid:true,identity:{last:'Brown',first:'Jacob'},organization:'LM',role:'Privileged',privilegedTypes:['ADMIN'],
+ });
+});
+
+test('rejects template and incomplete SAAR filenames before automatic new-user discovery',()=>{
+ const invalid=[
+  'Last_First_(Org)_GEN_SAAR_26AUG2026.pdf',
+  'Brown_Jacob_GEN_SAAR_26AUG2026.pdf',
+  'Brown_Jacob_(LM)_SAAR_26AUG2026.pdf',
+  'Brown_Jacob_(LM)_GEN_PRIV_SAAR_26AUG2026.pdf',
+  'Brown_Jacob_(LM)_PRIV_TYPE_SAAR_26AUG2026.pdf',
+  'Brown_Jacob_(LM)_PRIV_SAAR_26AUG2026.pdf',
+  'Brown_Jacob_(LM)_GEN_SAAR_31FEB2026.pdf',
+ ];
+ for(const filename of invalid)assert.equal(validateNewUserSaarFilename(filename).valid,false,filename);
 });
