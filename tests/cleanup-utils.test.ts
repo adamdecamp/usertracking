@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {distinctByPath,selectLoosePdfCleanupCandidates,selectSupersededEvidence} from '../app/cleanup-utils.ts';
+import {distinctByPath,retainUnfinishedCleanup,selectLoosePdfCleanupCandidates,selectSupersededEvidence} from '../app/cleanup-utils.ts';
 
 type Item={path:string;date:string;current:boolean};
 const select=(items:Item[])=>selectSupersededEvidence(items,item=>new Date(item.date),item=>item.current,item=>item.path);
@@ -42,4 +42,9 @@ test('offers loose PDF compression only for an existing matching directory user'
  ];
  const result=selectLoosePdfCleanupCandidates(items,[{identity:'Brown/Jacob'}],(item,user)=>item.identity===user.identity,['Incoming/Brown_Jacob_Old.pdf']);
  assert.deepEqual(result.map(item=>item.filename),['Brown_Jacob_DoD.pdf']);
+});
+
+test('retains deferred and failed cleanup actions after successful actions are removed',()=>{
+ const items=[{id:'archive-1'},{id:'zip-1'},{id:'rework-1'}];
+ assert.deepEqual(retainUnfinishedCleanup(items,['zip-1']).map(item=>item.id),['archive-1','rework-1']);
 });

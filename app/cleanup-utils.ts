@@ -13,3 +13,8 @@ export function selectLoosePdfCleanupCandidates<T extends{filename:string;path:s
  const excluded=new Set(excludedPaths.map(path=>path.replaceAll('\\','/').toUpperCase()));
  return distinctByPath(items.filter(item=>item.filename.toLowerCase().endsWith('.pdf')&&!excluded.has(item.path.replaceAll('\\','/').toUpperCase())&&existingUsers.some(user=>matchesUser(item,user))));
 }
+
+export function retainUnfinishedCleanup<T extends{id:string}>(items:T[],completedIds:Iterable<string>){
+ const completed=new Set(completedIds);
+ return items.filter(item=>!completed.has(item.id));
+}
