@@ -11,11 +11,17 @@ Use the executable attached to the latest GitHub Release. Public releases are bl
 - Binds only to the local loopback interface.
 - Records the active Windows account in consequential audit entries.
 - Does not transmit tracker data or evidence to an external service.
-- Uses the browser's user-approved directory access for shared storage.
+- Uses a native Windows folder selector; the local launcher owns atomic manifest, backup, evidence, audit, and lease writes instead of relying on browser lifecycle events.
+- Holds an exclusive Windows file lock while a system folder is active, preventing a second launcher from acquiring write access on lock-capable SMB/Windows shares.
 - Starts every release with no systems or users and does not retain operational records in browser storage.
 - Validates shared manifests, filenames, request paths, and CSV output.
-- Treats a DoD Cyber certificate as valid only when its filename contains a standalone `DoD` token, so a privileged `_cyber` SAAR suffix cannot match it.
-- Generates daily audit logs and backups in the mapped directory.
+- Accepts only readable PDF evidence or a ZIP containing exactly one readable PDF, with archive path, size, entry-count, encryption, and expansion-ratio safeguards.
+- Sync only identifies duplicate, superseded, and loose PDF evidence. The operator-controlled Clean Up workflow can move selected old files into `Archive Review` or compress selected loose PDFs in place; a source PDF is deleted only after its ZIP is created and validated.
+- Generates daily tamper-evident audit logs with ISO 8601 UTC timestamps, a continuous sequence, and a SHA-256 hash chain. Storage verification fails if an entry is changed, removed, reordered, or inserted.
+- Generates filtered Compliance Snapshot PDF reports, stores a checksum-protected copy in each selected system's `Reports` folder, and records the report identifier and SHA-256 in the audit chain.
+- Keeps the newest 30 full-fidelity JSON snapshots with matching SHA-256 files and provides verified in-app restoration without deleting evidence files.
+- Shows Last saved, Last backup, and Last Sync health for each mapped system, with an on-demand backup verification control.
+- Refreshes the daily backup before automatically shutting down after 60 minutes of inactivity or when the portable app's browser window closes.
 
 This is an administrative evidence and tracking tool. It may support an organization's NIST SP 800-53 assessment activities, but it does not implement technical access controls on a tracked information system and does not independently establish compliance.
 
@@ -52,4 +58,3 @@ Variables:
 After identity validation and role assignment are complete, pushing a version tag such as `v1.0.0` builds, scans, signs, verifies, checksums, and publishes the release.
 
 Protect the `release` environment with required reviewers, restrict who can create `v*` tags, and enable private vulnerability reporting before the first public release.
-

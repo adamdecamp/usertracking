@@ -36,10 +36,17 @@ next-env.d.ts
 /dist/
 /.wrangler/
 /outputs/
+/output/
 /work/
+/tmp/
+/_docx_qa/
+/tsconfig.tsbuildinfo
+/RN SAAR Instructions AUG2026 - Updated.docx
+/scripts/update_saar_instructions_docx.py
 
 # portable build output
 /release/
+/release-update/
 /portable-launcher/wwwroot/
 /portable-launcher/embedded/
 /portable-launcher/*.exe
@@ -50,10 +57,14 @@ next-env.d.ts
 /InformationSystemUserTracker-Portable*.zip
 /Email-Information-System-User-Tracker.txt
 
+# generated synthetic fixtures (the distributable ZIP is intentionally tracked)
+/test-evidence-package/
+
 # local runtime data must never enter source control or release packages
 information-system-user-tracker.json
 tracker-active-session.json
 User Evidence/
 Audit Logs/
 backup/
-
+Reports/
+Archive Review/

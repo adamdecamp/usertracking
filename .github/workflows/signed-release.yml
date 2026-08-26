@@ -39,7 +39,12 @@ jobs:
         run: |
           pnpm audit --prod --audit-level low
           pnpm lint
+          pnpm test
           pnpm build
+
+      - name: Test Windows launcher storage
+        shell: pwsh
+        run: ./scripts/Test-PortableStorage.ps1
 
       - name: Build standalone executable
         shell: pwsh
@@ -89,4 +94,3 @@ jobs:
             --verify-tag `
             --generate-notes `
             --title "Information System User Tracker ${{ github.ref_name }}"
-

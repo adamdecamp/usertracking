@@ -59,10 +59,9 @@ Compress-Asset $styleFiles[0].FullName $styleGzip
 $compiler = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if (-not (Test-Path -LiteralPath $compiler)) { throw "The Windows C# compiler was not found." }
 $executable = Join-Path $outputRoot "InformationSystemUserTracker.exe"
-& $compiler /nologo /target:winexe "/out:$executable" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/resource:$webRoot\index.html,Tracker.Index" "/resource:$scriptGzip,Tracker.ScriptGzip" "/resource:$styleGzip,Tracker.StyleGzip" (Join-Path $portableRoot "Program.cs")
+& $compiler /nologo /target:winexe "/out:$executable" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll "/resource:$webRoot\index.html,Tracker.Index" "/resource:$scriptGzip,Tracker.ScriptGzip" "/resource:$styleGzip,Tracker.StyleGzip" (Join-Path $portableRoot "Program.cs") (Join-Path $portableRoot "PortableStorage.cs")
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $executable)) { throw "Standalone launcher compilation failed." }
 
 $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $executable).Hash.ToLowerInvariant()
 Set-Content -LiteralPath (Join-Path $outputRoot "SHA256SUMS.txt") -Encoding ascii -Value "$hash  InformationSystemUserTracker.exe"
 Write-Host "Built $executable ($((Get-Item -LiteralPath $executable).Length) bytes)"
-

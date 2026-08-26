@@ -20,9 +20,10 @@ if ($pageSource -match 'localStorage\.setItem\([^\r\n]*(systems|users|isut-data)
 
 $runtimeFileNames = @(
     "information-system-user-tracker.json",
-    "tracker-active-session.json"
+    "tracker-active-session.json",
+    "tracker-exclusive-session.lock"
 )
-$runtimeDirectoryNames = @("User Evidence", "Audit Logs", "backup")
+$runtimeDirectoryNames = @("User Evidence", "Audit Logs", "backup", "Reports", "Archive Review")
 $trackedFiles = @(& git -C $projectRoot ls-files)
 if ($LASTEXITCODE -ne 0) { throw "Unable to inspect tracked files." }
 
@@ -76,4 +77,3 @@ if ($checksumLine -ne "$actualHash  InformationSystemUserTracker.exe") {
 }
 
 Write-Host "Release-clean package check passed. No systems, users, evidence, manifests, audit logs, or backups are packaged."
-

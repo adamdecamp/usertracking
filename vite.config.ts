@@ -59,4 +59,3 @@ export default defineConfig(async () => {
     ],
   };
 });
-

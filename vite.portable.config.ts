@@ -7,4 +7,3 @@ export default defineConfig({
   plugins:[react()],
   build:{outDir:resolve(__dirname,'portable-launcher','wwwroot'),emptyOutDir:true,sourcemap:false,target:'es2020'},
 });
-

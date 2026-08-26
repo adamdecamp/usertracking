@@ -5,8 +5,10 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -24,6 +26,19 @@ internal sealed class TrackerContext : ApplicationContext
     private readonly CancellationTokenSource stop = new CancellationTokenSource();
     private readonly SemaphoreSlim connections = new SemaphoreSlim(16, 16);
     private readonly NotifyIcon tray;
+    private readonly Control dispatcher;
+    private readonly PortableStorage storage;
+    private readonly System.Windows.Forms.Timer lifecycleTimer;
+    private readonly object lifecycleGate = new object();
+    private DateTime lastActivityUtc = DateTime.UtcNow;
+    private DateTime lastPresenceUtc = DateTime.UtcNow;
+    private DateTime? shutdownRequestedUtc;
+    private string shutdownReason;
+    private bool backupClean = true;
+    private bool shutdownReady;
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr windowHandle);
 
     public TrackerContext()
     {
@@ -34,14 +49,20 @@ internal sealed class TrackerContext : ApplicationContext
         scriptPath = FindAssetPath(markup, "src=\"");
         stylePath = FindAssetPath(markup, "href=\"");
         user = WindowsIdentity.GetCurrent().Name;
+        storage = new PortableStorage(user);
+        dispatcher = new Control();
+        IntPtr dispatcherHandle = dispatcher.Handle;
         listener = new TcpListener(IPAddress.Loopback, Port);
         listener.Start();
         tray = new NotifyIcon { Icon = SystemIcons.Shield, Text = "Information System User Tracker", Visible = true };
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open Tracker", null, delegate { OpenTracker(); });
-        menu.Items.Add("Exit", null, delegate { ExitThread(); });
+        menu.Items.Add("Exit", null, delegate { RequestShutdown("operator-exit"); });
         tray.ContextMenuStrip = menu;
         tray.DoubleClick += delegate { OpenTracker(); };
+        lifecycleTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+        lifecycleTimer.Tick += delegate { EvaluateLifecycle(); };
+        lifecycleTimer.Start();
         Task.Run((Func<Task>)ListenLoop);
         OpenTracker();
     }
@@ -74,22 +95,70 @@ internal sealed class TrackerContext : ApplicationContext
     {
         using (client)
         using (var stream = client.GetStream())
-        using (var reader = new StreamReader(stream, Encoding.ASCII, false, 4096, true))
         {
             client.ReceiveTimeout = 5000; client.SendTimeout = 5000;
-            string request = await reader.ReadLineAsync();
-            if (String.IsNullOrEmpty(request)) return;
-            if (request.Length > 8192) { await Respond(stream, 400, "text/plain", Encoding.UTF8.GetBytes("Bad Request"), false, "no-store"); return; }
-            string[] parts = request.Split(' ');
-            if (parts.Length < 2 || (parts[0] != "GET" && parts[0] != "HEAD")) { await Respond(stream, 405, "text/plain", Encoding.UTF8.GetBytes("Method Not Allowed"), false, "no-store"); return; }
-            string host = null;
-            for (int i = 0; i < 100; i++) { string line = await reader.ReadLineAsync(); if (String.IsNullOrEmpty(line)) break; if (line.Length > 8192) return; if (line.StartsWith("Host:", StringComparison.OrdinalIgnoreCase)) host = line.Substring(5).Trim(); }
+            string headerBlock = await ReadHeaderBlock(stream);
+            if (String.IsNullOrEmpty(headerBlock)) return;
+            string[] lines = headerBlock.Split(new[] { "\r\n" }, StringSplitOptions.None), parts = lines[0].Split(' ');
+            if (parts.Length < 2 || (parts[0] != "GET" && parts[0] != "HEAD" && parts[0] != "POST")) { await Respond(stream, 405, "text/plain", Encoding.UTF8.GetBytes("Method Not Allowed"), false, "no-store"); return; }
+            string host = null, origin = null; long contentLength = 0;
+            for (int i = 1; i < lines.Length; i++) { string line = lines[i]; if (line.StartsWith("Host:", StringComparison.OrdinalIgnoreCase)) host = line.Substring(5).Trim(); if (line.StartsWith("Origin:", StringComparison.OrdinalIgnoreCase)) origin = line.Substring(7).Trim(); if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)) Int64.TryParse(line.Substring(15).Trim(), out contentLength); }
             if (!String.Equals(host, "localhost:" + Port, StringComparison.OrdinalIgnoreCase) && !String.Equals(host, "127.0.0.1:" + Port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), parts[0] == "HEAD", "no-store"); return; }
-            string path = null;
-            try { path = Uri.UnescapeDataString(parts[1].Split('?')[0]); }
+            if (parts[0] == "POST" && !String.Equals(origin, "http://localhost:" + Port, StringComparison.OrdinalIgnoreCase) && !String.Equals(origin, "http://127.0.0.1:" + Port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), false, "no-store"); return; }
+            if (contentLength < 0 || contentLength > 110L * 1024 * 1024) { await Respond(stream, 413, "text/plain", Encoding.UTF8.GetBytes("Request body is too large."), false, "no-store"); return; }
+            byte[] requestBody = contentLength > 0 ? await ReadBody(stream, contentLength) : new byte[0];
+            string target = parts[1], path = null;
+            try { path = Uri.UnescapeDataString(target.Split('?')[0]); }
             catch (UriFormatException) { }
             if (path == null) { await Respond(stream, 400, "text/plain", Encoding.UTF8.GetBytes("Bad Request"), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/session-user") { string json = "{\"user\":\"" + Json(user) + "\"}"; await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json), parts[0] == "HEAD", "no-store"); return; }
+            if (path == "/api/activity" && parts[0] == "POST") { RecordActivity(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
+            if (path == "/api/presence" && parts[0] == "POST") { RecordPresence(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
+            if (path == "/api/backup-dirty" && parts[0] == "POST") { SetBackupClean(false); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
+            if (path == "/api/backup-complete" && parts[0] == "POST") { SetBackupClean(true); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
+            if (path == "/api/backup-failed" && parts[0] == "POST") { SetBackupClean(false); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
+            if (path == "/api/browser-closing" && parts[0] == "POST") { RequestShutdown("browser-closed"); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
+            if (path == "/api/shutdown-ready" && parts[0] == "POST") { MarkShutdownReady(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
+            if (path == "/api/control" && (parts[0] == "GET" || parts[0] == "HEAD")) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(ControlJson()), parts[0] == "HEAD", "no-store"); return; }
+            if (path.StartsWith("/api/storage/", StringComparison.Ordinal))
+            {
+                try
+                {
+                    string tail = path.Substring("/api/storage/".Length); int separator = tail.IndexOf('/');
+                    if (separator <= 0) throw new InvalidDataException("The storage request is invalid.");
+                    string systemId = tail.Substring(0, separator), action = tail.Substring(separator + 1), response;
+                    if (action == "select" && parts[0] == "POST")
+                    {
+                        string selected = await ChooseFolder();
+                        if (selected == null) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"cancelled\":true}"), false, "no-store"); return; }
+                        storage.Map(systemId, selected); string manifest = storage.ReadManifest(systemId);
+                        response = "{\"cancelled\":false,\"folderName\":\"" + Json(storage.FolderName(systemId)) + "\",\"manifest\":" + (manifest ?? "null") + "}";
+                    }
+                    else if (action == "manifest" && parts[0] == "GET") response = storage.ReadManifest(systemId) ?? "null";
+                    else if (action == "manifest" && parts[0] == "POST") response = storage.SaveManifest(systemId, Encoding.UTF8.GetString(requestBody));
+                    else if (action == "csv" && parts[0] == "POST") response = "{\"saved\":\"" + Json(storage.SaveCsv(systemId, requestBody)) + "\"}";
+                    else if (action == "backups" && parts[0] == "GET") response = storage.ListBackups(systemId, QueryValue(target, "logical"));
+                    else if (action == "restore" && parts[0] == "POST") response = storage.Restore(systemId, QueryValue(target, "logical"), QueryValue(target, "file"));
+                    else if (action == "verify" && parts[0] == "GET") response = storage.VerifyLatest(systemId, QueryValue(target, "logical"));
+                    else if (action == "scan" && parts[0] == "GET") response = storage.Scan(systemId);
+                    else if (action == "file" && parts[0] == "GET") { byte[] fileBytes = storage.ReadRelativeFile(systemId, QueryValue(target, "path")); await Respond(stream, 200, "application/octet-stream", fileBytes, false, "no-store"); return; }
+                    else if (action == "archive" && parts[0] == "POST") response = storage.ArchiveEvidence(systemId, QueryValue(target, "path"));
+                    else if (action == "compress" && parts[0] == "POST") response = storage.CompressEvidence(systemId, QueryValue(target, "path"));
+                    else if (action == "evidence" && parts[0] == "POST") response = "{\"filename\":\"" + Json(storage.StoreEvidence(systemId, QueryValue(target, "organization"), QueryValue(target, "last"), QueryValue(target, "first"), QueryValue(target, "filename"), requestBody)) + "\"}";
+                    else if (action == "report" && parts[0] == "POST") response = storage.StoreReport(systemId, QueryValue(target, "filename"), requestBody);
+                    else if (action == "audit" && parts[0] == "POST") { storage.AppendAudit(systemId, Encoding.UTF8.GetString(requestBody)); response = "{\"ok\":true}"; }
+                    else if (action == "audit-verify" && parts[0] == "GET") response = storage.VerifyAuditLogs(systemId);
+                    else if (action == "lease-acquire" && parts[0] == "POST") response = "{\"acquired\":" + (storage.AcquireLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
+                    else if (action == "lease-renew" && parts[0] == "POST") response = "{\"renewed\":" + (storage.RenewLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
+                    else if (action == "lease-release" && parts[0] == "POST") { storage.ReleaseLease(systemId, QueryValue(target, "session")); response = "{\"released\":true}"; }
+                    else { await Respond(stream, 404, "text/plain", Encoding.UTF8.GetBytes("Not Found"), false, "no-store"); return; }
+                    await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(response), false, "no-store"); return;
+                }
+                catch (Exception ex)
+                {
+                    Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(ex.Message)), false, "no-store").GetAwaiter().GetResult(); return;
+                }
+            }
             if (path == scriptPath) { await Respond(stream, 200, "text/javascript; charset=utf-8", scriptGzip, parts[0] == "HEAD", "public, max-age=31536000, immutable", "gzip"); return; }
             if (path == stylePath) { await Respond(stream, 200, "text/css; charset=utf-8", styleGzip, parts[0] == "HEAD", "public, max-age=31536000, immutable", "gzip"); return; }
             if (path == "/" || path == "/index.html" || !Path.HasExtension(path)) { await Respond(stream, 200, "text/html; charset=utf-8", indexHtml, parts[0] == "HEAD", "no-cache"); return; }
@@ -97,9 +166,157 @@ internal sealed class TrackerContext : ApplicationContext
         }
     }
 
+    private Task<string> ChooseFolder()
+    {
+        var result = new TaskCompletionSource<string>();
+        dispatcher.BeginInvoke(new Action(delegate
+        {
+            try
+            {
+                using (var owner = new Form
+                {
+                    FormBorderStyle = FormBorderStyle.None,
+                    Location = new Point(-32000, -32000),
+                    Opacity = 0,
+                    ShowInTaskbar = false,
+                    Size = new Size(1, 1),
+                    StartPosition = FormStartPosition.Manual,
+                    TopMost = true
+                })
+                using (var dialog = new FolderBrowserDialog { Description = "Select the Shared Folder for This Information System", ShowNewFolderButton = true })
+                {
+                    owner.Show();
+                    owner.Activate();
+                    owner.BringToFront();
+                    SetForegroundWindow(owner.Handle);
+                    DialogResult selected = dialog.ShowDialog(owner);
+                    result.SetResult(selected == DialogResult.OK ? dialog.SelectedPath : null);
+                }
+            }
+            catch (Exception ex) { result.SetException(ex); }
+        }));
+        return result.Task;
+    }
+
+    private static async Task<string> ReadHeaderBlock(NetworkStream stream)
+    {
+        var bytes = new List<byte>(); int matched = 0;
+        while (bytes.Count < 65536)
+        {
+            byte[] one = new byte[1]; int read = await stream.ReadAsync(one, 0, 1); if (read == 0) break;
+            bytes.Add(one[0]);
+            matched = (matched == 0 && one[0] == 13) || (matched == 2 && one[0] == 13) ? matched + 1 : (matched == 1 || matched == 3) && one[0] == 10 ? matched + 1 : one[0] == 13 ? 1 : 0;
+            if (matched == 4) return Encoding.ASCII.GetString(bytes.ToArray(), 0, bytes.Count - 4);
+        }
+        throw new InvalidDataException("The HTTP request headers are invalid or too large.");
+    }
+
+    private static async Task<byte[]> ReadBody(NetworkStream stream, long length)
+    {
+        byte[] body = new byte[(int)length]; int offset = 0;
+        while (offset < body.Length) { int read = await stream.ReadAsync(body, offset, body.Length - offset); if (read == 0) throw new EndOfStreamException("The request body ended unexpectedly."); offset += read; }
+        return body;
+    }
+
+    private static string QueryValue(string target, string name)
+    {
+        int question = target.IndexOf('?'); if (question < 0) throw new InvalidDataException("A required request value is missing.");
+        foreach (string pair in target.Substring(question + 1).Split('&')) { int equals = pair.IndexOf('='); if (equals >= 0 && Uri.UnescapeDataString(pair.Substring(0, equals)) == name) return Uri.UnescapeDataString(pair.Substring(equals + 1)); }
+        throw new InvalidDataException("A required request value is missing.");
+    }
+
+    private static string CleanError(string value) { if (String.IsNullOrWhiteSpace(value)) return "The storage request failed."; return value.Replace("\r", " ").Replace("\n", " ").Replace("\0", " ").Trim(); }
+
+    private void RecordActivity()
+    {
+        lock (lifecycleGate)
+        {
+            lastActivityUtc = DateTime.UtcNow;
+            lastPresenceUtc = DateTime.UtcNow;
+            // A new page load cancels a close signal caused by reload or in-app navigation.
+            // Once the 60-minute idle shutdown starts, it is allowed to finish cleanly.
+            if (shutdownReason == "browser-closed")
+            {
+                shutdownRequestedUtc = null;
+                shutdownReason = null;
+                shutdownReady = false;
+            }
+        }
+    }
+
+    private void RecordPresence() { lock (lifecycleGate) { lastPresenceUtc = DateTime.UtcNow; } }
+
+    private void SetBackupClean(bool clean) { lock (lifecycleGate) { backupClean = clean; } }
+
+    private void RequestShutdown(string reason)
+    {
+        lock (lifecycleGate)
+        {
+            if (!shutdownRequestedUtc.HasValue) shutdownRequestedUtc = DateTime.UtcNow;
+            shutdownReason = reason;
+            shutdownReady = false;
+        }
+        TryFinalizeBackups();
+    }
+
+    private void TryFinalizeBackups()
+    {
+        bool clean; lock (lifecycleGate) clean = backupClean;
+        if (!clean) return;
+        try { storage.FinalizeMappedBackups(); }
+        catch { lock (lifecycleGate) backupClean = false; }
+    }
+
+    private void MarkShutdownReady()
+    {
+        lock (lifecycleGate)
+        {
+            shutdownReady = true;
+        }
+    }
+
+    private string ControlJson()
+    {
+        lock (lifecycleGate)
+        {
+            return "{\"shutdownRequested\":" + (shutdownRequestedUtc.HasValue ? "true" : "false") + ",\"reason\":\"" + Json(shutdownReason ?? "") + "\",\"backupClean\":" + (backupClean ? "true" : "false") + "}";
+        }
+    }
+
+    private void EvaluateLifecycle()
+    {
+        storage.ExpireLeases(TimeSpan.FromMinutes(3));
+        bool shouldExit = false, finalize = false;
+        lock (lifecycleGate)
+        {
+            DateTime now = DateTime.UtcNow;
+            if (!shutdownRequestedUtc.HasValue && now - lastPresenceUtc >= TimeSpan.FromSeconds(90))
+            {
+                shutdownRequestedUtc = now;
+                shutdownReason = "browser-closed";
+                shutdownReady = false;
+                finalize = true;
+            }
+            else if (!shutdownRequestedUtc.HasValue && now - lastActivityUtc >= TimeSpan.FromMinutes(60))
+            {
+                shutdownRequestedUtc = now;
+                shutdownReason = "idle";
+                shutdownReady = false;
+                finalize = true;
+            }
+            if (shutdownRequestedUtc.HasValue && backupClean)
+            {
+                TimeSpan waiting = now - shutdownRequestedUtc.Value;
+                shouldExit = shutdownReady || (shutdownReason == "browser-closed" && waiting >= TimeSpan.FromSeconds(10)) || ((shutdownReason == "idle" || shutdownReason == "operator-exit") && waiting >= TimeSpan.FromSeconds(30));
+            }
+        }
+        if (finalize) TryFinalizeBackups();
+        if (shouldExit) ExitThread();
+    }
+
     private static async Task Respond(NetworkStream stream, int status, string type, byte[] body, bool head, string cache, string contentEncoding = null)
     {
-        string reason = status == 200 ? "OK" : status == 400 ? "Bad Request" : status == 403 ? "Forbidden" : status == 404 ? "Not Found" : "Method Not Allowed";
+        string reason = status == 200 ? "OK" : status == 400 ? "Bad Request" : status == 403 ? "Forbidden" : status == 404 ? "Not Found" : status == 413 ? "Payload Too Large" : "Method Not Allowed";
         string encodingHeader = String.IsNullOrEmpty(contentEncoding) ? "" : "Content-Encoding: " + contentEncoding + "\r\n";
         string headers = "HTTP/1.1 " + status + " " + reason + "\r\nContent-Type: " + type + "\r\nContent-Length: " + body.Length + "\r\n" + encodingHeader + "Cache-Control: " + cache + "\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nX-DNS-Prefetch-Control: off\r\nReferrer-Policy: no-referrer\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Resource-Policy: same-origin\r\nPermissions-Policy: camera=(), microphone=(), geolocation=(), browsing-topics=()\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\r\nConnection: close\r\n\r\n";
         byte[] headerBytes = Encoding.ASCII.GetBytes(headers); await stream.WriteAsync(headerBytes, 0, headerBytes.Length); if (!head) await stream.WriteAsync(body, 0, body.Length);
@@ -108,7 +325,7 @@ internal sealed class TrackerContext : ApplicationContext
     private static string Json(string value) { return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", ""); }
     private static byte[] LoadResource(string name) { using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)) { if (stream == null) throw new InvalidDataException("Embedded application resource is missing: " + name); using (var memory = new MemoryStream()) { stream.CopyTo(memory); return memory.ToArray(); } } }
     private static string FindAssetPath(string markup, string attribute) { int start = markup.IndexOf(attribute + "/assets/", StringComparison.Ordinal); if (start < 0) throw new InvalidDataException("Embedded application asset reference is missing."); start += attribute.Length; int end = markup.IndexOf('"', start); if (end < 0) throw new InvalidDataException("Embedded application asset reference is invalid."); return markup.Substring(start, end - start); }
-    protected override void ExitThreadCore() { stop.Cancel(); listener.Stop(); tray.Visible = false; tray.Dispose(); base.ExitThreadCore(); }
+    protected override void ExitThreadCore() { lifecycleTimer.Stop(); lifecycleTimer.Dispose(); TryFinalizeBackups(); storage.Dispose(); stop.Cancel(); listener.Stop(); tray.Visible = false; tray.Dispose(); dispatcher.Dispose(); base.ExitThreadCore(); }
 }
 
 internal static class Program
@@ -122,4 +339,3 @@ internal static class Program
         catch (Exception ex) { MessageBox.Show(ex.Message, "Unable to Start Tracker", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 }
-

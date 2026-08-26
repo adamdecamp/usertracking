@@ -42,6 +42,13 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Test backup integrity and restoration utilities
+        run: pnpm test
+
+      - name: Test Windows launcher storage
+        shell: pwsh
+        run: ./scripts/Test-PortableStorage.ps1
+
       - name: Build browser application
         run: pnpm build
 
@@ -62,4 +69,3 @@ jobs:
             release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 7
-
