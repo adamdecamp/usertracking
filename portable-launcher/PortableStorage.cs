@@ -17,11 +17,14 @@ internal sealed class PortableStorage : IDisposable
     private const int AuditVersion = 1;
     private static readonly string AuditGenesisHash = new string('0', 64);
     private readonly Dictionary<string, string> roots = new Dictionary<string, string>(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> cachedRoots = new Dictionary<string, string>(StringComparer.Ordinal);
     private readonly Dictionary<string, object> rootLocks = new Dictionary<string, object>(StringComparer.Ordinal);
     private readonly Dictionary<string, HeldLease> heldLeases = new Dictionary<string, HeldLease>(StringComparer.Ordinal);
     private readonly object mapGate = new object();
     private readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 100 * 1024 * 1024, RecursionLimit = 256 };
     private readonly string actor;
+    private readonly string mappingCachePath;
+    private string lastSystemId;
 
     private sealed class HeldLease
     {
@@ -42,7 +45,12 @@ internal sealed class PortableStorage : IDisposable
         public readonly List<Dictionary<string, object>> Recent = new List<Dictionary<string, object>>();
     }
 
-    public PortableStorage(string currentActor) { actor = CleanLine(currentActor, 500); }
+    public PortableStorage(string currentActor, string cachePath = null)
+    {
+        actor = CleanLine(currentActor, 500);
+        mappingCachePath = String.IsNullOrWhiteSpace(cachePath) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InformationSystemUserTracker", "folder-mappings.json") : Path.GetFullPath(cachePath);
+        LoadMappingCache();
+    }
 
     public void Map(string systemId, string path)
     {
@@ -63,9 +71,45 @@ internal sealed class PortableStorage : IDisposable
                 string current;
                 if (roots.TryGetValue(systemId, out current) && !String.Equals(current, full, StringComparison.OrdinalIgnoreCase) && heldLeases.TryGetValue(systemId, out held)) heldLeases.Remove(systemId);
                 roots[systemId] = full;
+                cachedRoots[systemId] = full;
+                lastSystemId = systemId;
             }
             if (held != null) DisposeLease(held, true);
         }
+        SaveMappingCache();
+    }
+
+    public string CachedMappings()
+    {
+        KeyValuePair<string, string>[] mappings;
+        string selected;
+        lock (mapGate) { mappings = cachedRoots.ToArray(); selected = lastSystemId; }
+        var available = new List<Dictionary<string, object>>();
+        foreach (KeyValuePair<string, string> mapping in mappings)
+        {
+            try
+            {
+                if (!Directory.Exists(mapping.Value)) continue;
+                string manifestPath = Path.Combine(mapping.Value, "information-system-user-tracker.json");
+                if (!File.Exists(manifestPath)) continue;
+                string manifest = ReadText(manifestPath, ManifestLimit);
+                Dictionary<string, object> database = ValidateDatabase(manifest);
+                object[] systems = ObjectArray(database["systems"]);
+                if (systems.Length != 1) continue;
+                string logicalSystemId = Convert.ToString(ObjectDictionary(systems[0])["id"], CultureInfo.InvariantCulture);
+                ValidateSystemId(logicalSystemId);
+                lock (mapGate)
+                {
+                    roots[mapping.Key] = mapping.Value;
+                    if (!rootLocks.ContainsKey(mapping.Key)) rootLocks[mapping.Key] = new object();
+                }
+                available.Add(new Dictionary<string, object> { { "storageId", mapping.Key }, { "systemId", logicalSystemId }, { "folderName", new DirectoryInfo(mapping.Value).Name }, { "manifest", database } });
+            }
+            catch { }
+        }
+        Dictionary<string, object> selectedMapping = available.FirstOrDefault(item => String.Equals(Convert.ToString(item["storageId"]), selected, StringComparison.Ordinal));
+        selected = selectedMapping != null ? Convert.ToString(selectedMapping["systemId"]) : available.Count > 0 ? Convert.ToString(available[0]["systemId"]) : "";
+        return json.Serialize(new Dictionary<string, object> { { "lastSystemId", selected ?? "" }, { "mappings", available } });
     }
 
     public string FolderName(string systemId) { return new DirectoryInfo(Root(systemId)).Name; }
@@ -477,7 +521,9 @@ internal sealed class PortableStorage : IDisposable
             if (held != null)
             {
                 if (!String.Equals(held.SessionId, sessionId, StringComparison.Ordinal)) return false;
-                return RefreshLease(systemId, held, false);
+                bool refreshed = RefreshLease(systemId, held, false);
+                if (refreshed) RememberLastSystem(systemId);
+                return refreshed;
             }
             string path = Path.Combine(Root(systemId), "tracker-exclusive-session.lock");
             FileStream stream;
@@ -489,6 +535,7 @@ internal sealed class PortableStorage : IDisposable
             {
                 WriteLeaseMetadata(held, false);
                 lock (mapGate) heldLeases[systemId] = held;
+                RememberLastSystem(systemId);
                 return true;
             }
             catch { DisposeLease(held, false); return false; }
@@ -651,6 +698,49 @@ internal sealed class PortableStorage : IDisposable
         ValidateSystemId(systemId);
         lock (mapGate) { string root; if (roots.TryGetValue(systemId, out root)) return root; }
         throw new InvalidOperationException("Map the selected information system folder first.");
+    }
+
+    private void RememberLastSystem(string systemId)
+    {
+        lock (mapGate) lastSystemId = systemId;
+        SaveMappingCache();
+    }
+
+    private void LoadMappingCache()
+    {
+        try
+        {
+            if (!File.Exists(mappingCachePath) || new FileInfo(mappingCachePath).Length > 1024 * 1024) return;
+            Dictionary<string, object> value = ObjectDictionary(json.DeserializeObject(File.ReadAllText(mappingCachePath, Encoding.UTF8)));
+            if (Convert.ToInt32(value["version"], CultureInfo.InvariantCulture) != 1) return;
+            object[] mappings = ObjectArray(value["mappings"]);
+            if (mappings.Length > 1000) return;
+            foreach (object item in mappings)
+            {
+                Dictionary<string, object> mapping = ObjectDictionary(item);
+                string systemId = Convert.ToString(mapping["systemId"], CultureInfo.InvariantCulture), path = Convert.ToString(mapping["path"], CultureInfo.InvariantCulture);
+                ValidateSystemId(systemId);
+                if (String.IsNullOrWhiteSpace(path) || path.Length > 32767 || !Path.IsPathRooted(path)) continue;
+                cachedRoots[systemId] = Path.GetFullPath(path);
+            }
+            string selected = value.ContainsKey("lastSystemId") ? Convert.ToString(value["lastSystemId"], CultureInfo.InvariantCulture) : "";
+            if (!String.IsNullOrWhiteSpace(selected) && cachedRoots.ContainsKey(selected)) lastSystemId = selected;
+        }
+        catch { cachedRoots.Clear(); lastSystemId = null; }
+    }
+
+    private void SaveMappingCache()
+    {
+        try
+        {
+            KeyValuePair<string, string>[] mappings;
+            string selected;
+            lock (mapGate) { mappings = cachedRoots.ToArray(); selected = lastSystemId; }
+            var items = mappings.Select(mapping => (object)new Dictionary<string, object> { { "systemId", mapping.Key }, { "path", mapping.Value } }).ToArray();
+            var value = new Dictionary<string, object> { { "version", 1 }, { "lastSystemId", selected ?? "" }, { "mappings", items } };
+            AtomicWrite(mappingCachePath, Encoding.UTF8.GetBytes(json.Serialize(value)));
+        }
+        catch { }
     }
 
     private object RootLock(string systemId) { lock (mapGate) { Root(systemId); return rootLocks[systemId]; } }

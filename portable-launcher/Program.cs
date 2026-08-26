@@ -112,12 +112,14 @@ internal sealed class TrackerContext : ApplicationContext
             catch (UriFormatException) { }
             if (path == null) { await Respond(stream, 400, "text/plain", Encoding.UTF8.GetBytes("Bad Request"), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/session-user") { string json = "{\"user\":\"" + Json(user) + "\"}"; await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json), parts[0] == "HEAD", "no-store"); return; }
+            if (path == "/api/mappings" && (parts[0] == "GET" || parts[0] == "HEAD")) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(storage.CachedMappings()), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/activity" && parts[0] == "POST") { RecordActivity(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/presence" && parts[0] == "POST") { RecordPresence(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/backup-dirty" && parts[0] == "POST") { SetBackupClean(false); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/backup-complete" && parts[0] == "POST") { SetBackupClean(true); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/backup-failed" && parts[0] == "POST") { SetBackupClean(false); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/browser-closing" && parts[0] == "POST") { RequestShutdown("browser-closed"); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
+            if (path == "/api/logoff" && parts[0] == "POST") { RequestShutdown("operator-logoff"); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/shutdown-ready" && parts[0] == "POST") { MarkShutdownReady(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/control" && (parts[0] == "GET" || parts[0] == "HEAD")) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(ControlJson()), parts[0] == "HEAD", "no-store"); return; }
             if (path.StartsWith("/api/storage/", StringComparison.Ordinal))
@@ -252,20 +254,20 @@ internal sealed class TrackerContext : ApplicationContext
 
     private void RequestShutdown(string reason)
     {
+        bool finalizeNow;
         lock (lifecycleGate)
         {
             if (!shutdownRequestedUtc.HasValue) shutdownRequestedUtc = DateTime.UtcNow;
             shutdownReason = reason;
             shutdownReady = false;
+            finalizeNow = backupClean;
         }
-        TryFinalizeBackups();
+        if (finalizeNow) TryFinalizeBackups();
     }
 
     private void TryFinalizeBackups()
     {
-        bool clean; lock (lifecycleGate) clean = backupClean;
-        if (!clean) return;
-        try { storage.FinalizeMappedBackups(); }
+        try { storage.FinalizeMappedBackups(); lock (lifecycleGate) backupClean = true; }
         catch { lock (lifecycleGate) backupClean = false; }
     }
 
@@ -306,10 +308,11 @@ internal sealed class TrackerContext : ApplicationContext
                 shutdownReady = false;
                 finalize = true;
             }
-            if (shutdownRequestedUtc.HasValue && backupClean)
+            if (shutdownRequestedUtc.HasValue)
             {
                 TimeSpan waiting = now - shutdownRequestedUtc.Value;
-                shouldExit = shutdownReady || (shutdownReason == "browser-closed" && waiting >= TimeSpan.FromSeconds(10)) || ((shutdownReason == "idle" || shutdownReason == "operator-exit") && waiting >= TimeSpan.FromSeconds(30));
+                if (!backupClean && waiting >= TimeSpan.FromSeconds(8)) finalize = true;
+                shouldExit = backupClean && (shutdownReady || ((shutdownReason == "browser-closed" || shutdownReason == "operator-exit" || shutdownReason == "operator-logoff") && waiting >= TimeSpan.FromSeconds(12)) || (shutdownReason == "idle" && waiting >= TimeSpan.FromSeconds(30)));
             }
         }
         if (finalize) TryFinalizeBackups();

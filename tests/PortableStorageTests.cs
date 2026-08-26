@@ -39,12 +39,19 @@ internal static class PortableStorageTests
         if (args.Length != 1) throw new ArgumentException("A test directory is required.");
         string root = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(root);
-        var storage = new PortableStorage("DOMAIN\\operator");
+        string mappingCache = Path.Combine(root, "local-folder-mappings.json");
+        var storage = new PortableStorage("DOMAIN\\operator", mappingCache);
         storage.Map("mapping-key", root);
-        var competingStorage = new PortableStorage("DOMAIN\\second-operator");
+        var competingStorage = new PortableStorage("DOMAIN\\second-operator", mappingCache);
         competingStorage.Map("mapping-key", root);
 
         storage.SaveManifest("mapping-key", Database("first@example.mil"));
+        string cachedFile = File.ReadAllText(mappingCache, Encoding.UTF8);
+        Assert(cachedFile.Contains("mapping-key") && cachedFile.Contains(root.Replace("\\", "\\\\")) && !cachedFile.Contains("first@example.mil"), "The local cache should contain only mapping metadata, not operational user records.");
+        var restoredStorage = new PortableStorage("DOMAIN\\operator", mappingCache);
+        string restoredMappings = restoredStorage.CachedMappings();
+        Assert(restoredMappings.Contains("\"storageId\":\"mapping-key\"") && restoredMappings.Contains("\"systemId\":\"system-1\"") && restoredMappings.Contains("first@example.mil"), "A new launcher should reload the current manifest through its cached folder mapping.");
+        restoredStorage.Dispose();
         storage.SaveCsv("mapping-key", Encoding.UTF8.GetBytes("header\nvalue"));
         string firstList = storage.ListBackups("mapping-key", "system-1");
         object[] firstItems = (object[])Json.DeserializeObject(firstList);
