@@ -86,6 +86,22 @@ internal static class PortableStorageTests
         using (var compressedArchive = new ZipArchive(compressedStream, ZipArchiveMode.Read))
             Assert(compressedArchive.Entries.Count == 1 && compressedArchive.Entries[0].FullName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase), "Cleanup compression should create a ZIP containing exactly one PDF.");
         Assert(storage.Scan("mapping-key").Contains("Shaw_Vivian_GEN_User_Agreement_24AUG2026.pdf.zip"), "The compressed evidence should remain available to later Sync scans.");
+        string longCompressionDirectory = Path.Combine(root, "Long Path Compression");
+        Directory.CreateDirectory(longCompressionDirectory);
+        string longCompressionPrefix = "Shaw_Vivian_GEN_User_Agreement_", longCompressionSuffix = "_24AUG2026.pdf";
+        int longCompressionFill = Math.Max(1, 235 - longCompressionDirectory.Length - 1 - longCompressionPrefix.Length - longCompressionSuffix.Length);
+        string longCompressionName = longCompressionPrefix + new string('X', longCompressionFill) + longCompressionSuffix, longCompressionPath = Path.Combine(longCompressionDirectory, longCompressionName), longCompressionRelative = Path.Combine("Long Path Compression", longCompressionName);
+        Assert(longCompressionPath.Length >= 230 && longCompressionPath.Length < 248, "The long-path compression regression fixture should approach the legacy Windows limit without exceeding the source-file limit.");
+        File.WriteAllBytes(longCompressionPath, PdfBytes());
+        var longCompressionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.CompressEvidence("mapping-key", longCompressionRelative));
+        string longCompressedRelative = Convert.ToString(longCompressionResponse["compressed"]), longCompressedPath = Path.Combine(root, longCompressedRelative.Replace('/', Path.DirectorySeparatorChar));
+        Assert(!File.Exists(longCompressionPath) && File.Exists(longCompressedPath), "Compression should use a short temporary name instead of exceeding the Windows path limit.");
+
+        string longEvidenceDirectory = Path.Combine(root, "User Evidence", "GOV", "Shaw_Vivian"), longEvidencePrefix = "Shaw_Vivian_GEN_User_Agreement_", longEvidenceSuffix = "_24AUG2026.pdf.zip";
+        int longEvidenceFill = Math.Max(1, 235 - longEvidenceDirectory.Length - 1 - longEvidencePrefix.Length - longEvidenceSuffix.Length);
+        string longEvidenceName = longEvidencePrefix + new string('Y', longEvidenceFill) + longEvidenceSuffix, longEvidencePdfName = longEvidenceName.Substring(0, longEvidenceName.Length - 4);
+        string storedLongEvidence = storage.StoreEvidence("mapping-key", "GOV", "Shaw", "Vivian", longEvidenceName, EvidenceZip(longEvidencePdfName, PdfBytes())), storedLongEvidencePath = Path.Combine(longEvidenceDirectory, storedLongEvidence);
+        Assert(storedLongEvidencePath.Length >= 230 && File.Exists(storedLongEvidencePath), "Atomic evidence storage should use short temporary and rollback names near the Windows path limit.");
         File.WriteAllText(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.txt"), "not evidence");
         File.WriteAllBytes(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf"), Encoding.ASCII.GetBytes("not a pdf"));
         scan = storage.Scan("mapping-key");

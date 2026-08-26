@@ -160,7 +160,8 @@ internal sealed class TrackerContext : ApplicationContext
                 }
                 catch (Exception ex)
                 {
-                    Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(ex.Message)), false, "no-store").GetAwaiter().GetResult(); return;
+                    string message = ex is PathTooLongException ? "The mapped folder path plus the evidence filename exceeds the Windows path limit. This build uses long-path support and short temporary names; if the error continues, map the share to a drive letter or shorten the folders above the evidence file." : ex.Message;
+                    Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(message)), false, "no-store").GetAwaiter().GetResult(); return;
                 }
             }
             if (path == scriptPath) { await Respond(stream, 200, "text/javascript; charset=utf-8", scriptGzip, parts[0] == "HEAD", "public, max-age=31536000, immutable", "gzip"); return; }

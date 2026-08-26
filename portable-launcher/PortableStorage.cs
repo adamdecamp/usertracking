@@ -26,6 +26,12 @@ internal sealed class PortableStorage : IDisposable
     private readonly string mappingCachePath;
     private string lastSystemId;
 
+    static PortableStorage()
+    {
+        AppContext.SetSwitch("Switch.System.IO.UseLegacyPathHandling", false);
+        AppContext.SetSwitch("Switch.System.IO.BlockLongPaths", false);
+    }
+
     private sealed class HeldLease
     {
         public string SessionId;
@@ -55,7 +61,7 @@ internal sealed class PortableStorage : IDisposable
     public void Map(string systemId, string path)
     {
         ValidateSystemId(systemId);
-        string full = Path.GetFullPath(path);
+        string full = NormalizeRootPath(path);
         if (!Directory.Exists(full)) throw new DirectoryNotFoundException("The selected system folder is unavailable.");
         object gate;
         lock (mapGate)
@@ -336,7 +342,7 @@ internal sealed class PortableStorage : IDisposable
             string validationError;
             if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected PDF is invalid." : validationError);
             if (File.Exists(destination)) throw new IOException("A ZIP with the same filename already exists. Review the duplicate before compressing this PDF.");
-            string temporary = destination + ".tmp-" + Guid.NewGuid().ToString("N");
+            string temporary = Path.Combine(Path.GetDirectoryName(destination), ".isut-" + Guid.NewGuid().ToString("N") + ".tmp");
             try
             {
                 using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
@@ -767,6 +773,12 @@ internal sealed class PortableStorage : IDisposable
         return full.Substring(prefix.Length);
     }
 
+    private static string NormalizeRootPath(string path)
+    {
+        if (String.IsNullOrWhiteSpace(path) || path.StartsWith(@"\\?\", StringComparison.Ordinal) || path.StartsWith(@"\\.\", StringComparison.Ordinal)) throw new InvalidDataException("The selected system folder path is invalid.");
+        return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
     private static string SafePart(string value, int max)
     {
         string clean = CleanLine(value, max);
@@ -879,8 +891,9 @@ internal sealed class PortableStorage : IDisposable
     private static string Sha256Bytes(byte[] value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(value)).Replace("-", "").ToLowerInvariant(); } }
     private static void AtomicWrite(string path, byte[] bytes)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path));
-        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp", previous = path + ".previous";
+        string directory = Path.GetDirectoryName(path);
+        Directory.CreateDirectory(directory);
+        string operationId = Guid.NewGuid().ToString("N"), temporary = Path.Combine(directory, ".isut-" + operationId + ".tmp"), previous = Path.Combine(directory, ".isut-" + operationId + ".previous");
         try
         {
             File.WriteAllBytes(temporary, bytes);
