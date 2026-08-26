@@ -143,11 +143,13 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "scan" && parts[0] == "GET") response = storage.Scan(systemId);
                     else if (action == "file" && parts[0] == "GET") { byte[] fileBytes = storage.ReadRelativeFile(systemId, QueryValue(target, "path")); await Respond(stream, 200, "application/octet-stream", fileBytes, false, "no-store"); return; }
                     else if (action == "archive" && parts[0] == "POST") response = storage.ArchiveEvidence(systemId, QueryValue(target, "path"));
+                    else if (action == "rework" && parts[0] == "POST") response = storage.MoveEvidenceToRework(systemId, QueryValue(target, "path"));
                     else if (action == "compress" && parts[0] == "POST") response = storage.CompressEvidence(systemId, QueryValue(target, "path"));
                     else if (action == "evidence" && parts[0] == "POST") response = "{\"filename\":\"" + Json(storage.StoreEvidence(systemId, QueryValue(target, "organization"), QueryValue(target, "last"), QueryValue(target, "first"), QueryValue(target, "filename"), requestBody)) + "\"}";
                     else if (action == "report" && parts[0] == "POST") response = storage.StoreReport(systemId, QueryValue(target, "filename"), requestBody);
                     else if (action == "audit" && parts[0] == "POST") { storage.AppendAudit(systemId, Encoding.UTF8.GetString(requestBody)); response = "{\"ok\":true}"; }
                     else if (action == "audit-verify" && parts[0] == "GET") response = storage.VerifyAuditLogs(systemId);
+                    else if (action == "audit-view" && parts[0] == "GET") response = storage.ReadAuditLogs(systemId);
                     else if (action == "lease-acquire" && parts[0] == "POST") response = "{\"acquired\":" + (storage.AcquireLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
                     else if (action == "lease-renew" && parts[0] == "POST") response = "{\"renewed\":" + (storage.RenewLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
                     else if (action == "lease-release" && parts[0] == "POST") { storage.ReleaseLease(systemId, QueryValue(target, "session")); response = "{\"released\":true}"; }

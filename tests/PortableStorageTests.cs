@@ -87,6 +87,12 @@ internal static class PortableStorageTests
         Dictionary<string, object> fakePdfItem = scannedItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf");
         Assert(!Convert.ToBoolean(textItem["accepted"]) && Convert.ToString(textItem["error"]).Contains("Only PDF evidence"), "Directory scan should reject non-PDF evidence.");
         Assert(!Convert.ToBoolean(fakePdfItem["accepted"]), "Directory scan should reject a renamed non-PDF file.");
+        string correctionRelative = "Shaw_Vivian_GEN_SAAR_24AUG2026.pdf", correctionPath = Path.Combine(root, correctionRelative);
+        File.WriteAllBytes(correctionPath, Encoding.ASCII.GetBytes("correction required"));
+        var reworkResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.MoveEvidenceToRework("mapping-key", correctionRelative));
+        string reworkedRelative = Convert.ToString(reworkResponse["reworked"]), reworkedPath = Path.Combine(root, reworkedRelative.Replace('/', Path.DirectorySeparatorChar));
+        Assert(!File.Exists(correctionPath) && File.Exists(reworkedPath) && reworkedRelative.StartsWith("Rework/", StringComparison.OrdinalIgnoreCase), "Correction PDFs should move into the root Rework folder even when their PDF bytes are invalid.");
+        Assert(!storage.Scan("mapping-key").Contains("Shaw_Vivian_GEN_SAAR_24AUG2026.pdf"), "Rework files should be excluded from later Sync scans.");
         bool rejectedInvalidCompression = false;
         try { storage.CompressEvidence("mapping-key", "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf"); } catch (InvalidDataException) { rejectedInvalidCompression = true; }
         Assert(rejectedInvalidCompression && File.Exists(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf")) && !File.Exists(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf.zip")), "Failed ZIP validation should preserve the original loose PDF and remove any incomplete ZIP.");
@@ -110,6 +116,8 @@ internal static class PortableStorageTests
         Assert(Convert.ToString(secondAudit["previousHash"]) == Convert.ToString(firstAudit["entryHash"]), "Each audit entry should reference the previous entry hash.");
         string auditVerification = storage.VerifyAuditLogs("mapping-key");
         Assert(auditVerification.Contains("\"healthy\":true") && auditVerification.Contains("\"entries\":2"), "The intact audit hash chain should verify.");
+        string auditView = storage.ReadAuditLogs("mapping-key");
+        Assert(auditView.Contains("\"recent\"") && auditView.IndexOf("SECOND ACTION", StringComparison.Ordinal) < auditView.IndexOf("TEST ACTION", StringComparison.Ordinal), "The read-only audit view should return verified entries newest first.");
 
         Assert(storage.AcquireLease("mapping-key", "session-1"), "The first lease should be acquired.");
         Assert(!storage.AcquireLease("mapping-key", "session-2"), "A concurrent lease should be rejected.");

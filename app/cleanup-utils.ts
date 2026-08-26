@@ -8,3 +8,8 @@ export function distinctByPath<T extends{path:string}>(items:T[]){
  const seen=new Set<string>();
  return items.filter(item=>{const key=item.path.replaceAll('\\','/').toUpperCase();if(seen.has(key))return false;seen.add(key);return true});
 }
+
+export function selectLoosePdfCleanupCandidates<T extends{filename:string;path:string},U>(items:T[],existingUsers:U[],matchesUser:(item:T,user:U)=>boolean,excludedPaths:string[]=[]){
+ const excluded=new Set(excludedPaths.map(path=>path.replaceAll('\\','/').toUpperCase()));
+ return distinctByPath(items.filter(item=>item.filename.toLowerCase().endsWith('.pdf')&&!excluded.has(item.path.replaceAll('\\','/').toUpperCase())&&existingUsers.some(user=>matchesUser(item,user))));
+}

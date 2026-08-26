@@ -39,6 +39,7 @@ internal sealed class PortableStorage : IDisposable
         public string FirstTimestamp;
         public string LastTimestamp;
         public DateTimeOffset? LastInstant;
+        public readonly List<Dictionary<string, object>> Recent = new List<Dictionary<string, object>>();
     }
 
     public PortableStorage(string currentActor) { actor = CleanLine(currentActor, 500); }
@@ -213,7 +214,7 @@ internal sealed class PortableStorage : IDisposable
             foreach (string directory in Directory.EnumerateDirectories(current.Item1))
             {
                 string name = Path.GetFileName(directory);
-                if (current.Item2 == 0 && (String.Equals(name, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Reports", StringComparison.OrdinalIgnoreCase))) continue;
+                if (current.Item2 == 0 && (String.Equals(name, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Reports", StringComparison.OrdinalIgnoreCase))) continue;
                 if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) continue;
                 pending.Push(Tuple.Create(directory, current.Item2 + 1));
             }
@@ -236,7 +237,7 @@ internal sealed class PortableStorage : IDisposable
         {
             string root = Root(systemId), source = SafeRelativePath(root, relative), normalized = Relative(root, source);
             string topLevel = normalized.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
-            if (String.Equals(topLevel, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "backup", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only active evidence files can be moved to Archive Review.");
+            if (String.Equals(topLevel, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Reports", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only active evidence files can be moved to Archive Review.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string validationError;
             if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
@@ -250,13 +251,32 @@ internal sealed class PortableStorage : IDisposable
         }
     }
 
+    public string MoveEvidenceToRework(string systemId, string relative)
+    {
+        lock (RootLock(systemId))
+        {
+            string root = Root(systemId), source = SafeRelativePath(root, relative), normalized = Relative(root, source);
+            string topLevel = normalized.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
+            if (String.Equals(topLevel, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Reports", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only active correction PDFs can be moved to Rework.");
+            if (!source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only a PDF requiring correction can be moved to Rework.");
+            if (!File.Exists(source)) throw new FileNotFoundException("The selected correction PDF no longer exists.");
+            string directory = Path.Combine(root, "Rework"), filename = SafePart(Path.GetFileName(source), 180);
+            Directory.CreateDirectory(directory);
+            string extension = Path.GetExtension(filename), stem = Path.GetFileNameWithoutExtension(filename), destination = Path.Combine(directory, filename);
+            for (int index = 1; File.Exists(destination); index++) destination = Path.Combine(directory, stem + "_" + index.ToString(CultureInfo.InvariantCulture) + extension);
+            File.Move(source, destination);
+            string reworked = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
+            return json.Serialize(new Dictionary<string, object> { { "reworked", reworked } });
+        }
+    }
+
     public string CompressEvidence(string systemId, string relative)
     {
         lock (RootLock(systemId))
         {
             string root = Root(systemId), source = SafeRelativePath(root, relative), normalized = Relative(root, source);
             string topLevel = normalized.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
-            if (String.Equals(topLevel, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Reports", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only active evidence files can be compressed.");
+            if (String.Equals(topLevel, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Reports", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only active evidence files can be compressed.");
             if (!source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only a loose PDF can be compressed.");
             string destination = source + ".zip";
             if (!File.Exists(source))
@@ -341,6 +361,17 @@ internal sealed class PortableStorage : IDisposable
         }
     }
 
+    public string ReadAuditLogs(string systemId)
+    {
+        lock (RootLock(systemId))
+        {
+            string directory = Path.Combine(Root(systemId), "Audit Logs");
+            AuditState state = VerifyAuditChain(directory);
+            state.Recent.Reverse();
+            return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "entries", state.Entries }, { "files", state.Files }, { "legacyFiles", state.LegacyFiles }, { "firstTimestamp", state.FirstTimestamp }, { "lastTimestamp", state.LastTimestamp }, { "headHash", state.HeadHash }, { "recent", state.Recent } });
+        }
+    }
+
     public void AppendAudit(string systemId, string action)
     {
         lock (RootLock(systemId))
@@ -412,6 +443,8 @@ internal sealed class PortableStorage : IDisposable
                     state.FirstTimestamp = state.FirstTimestamp ?? timestamp;
                     state.LastTimestamp = timestamp;
                     state.LastInstant = instant;
+                    state.Recent.Add(new Dictionary<string, object> { { "version", version }, { "sequence", sequence }, { "timestampUtc", timestamp }, { "actor", entryActor }, { "action", entryAction }, { "previousHash", previousHash }, { "entryHash", entryHash } });
+                    if (state.Recent.Count > 500) state.Recent.RemoveAt(0);
                     fileEntries++;
                 }
             }

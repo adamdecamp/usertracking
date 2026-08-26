@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {distinctByPath,selectSupersededEvidence} from '../app/cleanup-utils.ts';
+import {distinctByPath,selectLoosePdfCleanupCandidates,selectSupersededEvidence} from '../app/cleanup-utils.ts';
 
 type Item={path:string;date:string;current:boolean};
 const select=(items:Item[])=>selectSupersededEvidence(items,item=>new Date(item.date),item=>item.current,item=>item.path);
@@ -31,4 +31,15 @@ test('deduplicates cleanup actions by case-insensitive Windows path',()=>{
   {path:'User Evidence/GOV/Shaw/other.pdf',kind:'other'},
  ]);
  assert.deepEqual(result.map(item=>item.kind),['first','other']);
+});
+
+test('offers loose PDF compression only for an existing matching directory user',()=>{
+ const items=[
+  {path:'User Evidence/LM/Brown/Brown_Jacob_DoD.pdf',filename:'Brown_Jacob_DoD.pdf',identity:'Brown/Jacob'},
+  {path:'Incoming/Unknown_User_DoD.pdf',filename:'Unknown_User_DoD.pdf',identity:'Unknown/User'},
+  {path:'Incoming/Brown_Jacob_Old.pdf',filename:'Brown_Jacob_Old.pdf',identity:'Brown/Jacob'},
+  {path:'Incoming/Brown_Jacob.zip',filename:'Brown_Jacob.zip',identity:'Brown/Jacob'},
+ ];
+ const result=selectLoosePdfCleanupCandidates(items,[{identity:'Brown/Jacob'}],(item,user)=>item.identity===user.identity,['Incoming/Brown_Jacob_Old.pdf']);
+ assert.deepEqual(result.map(item=>item.filename),['Brown_Jacob_DoD.pdf']);
 });
