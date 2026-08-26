@@ -14,6 +14,7 @@ Use the executable attached to the latest GitHub Release. Public releases are bl
 - Uses the browser's user-approved directory access for shared storage.
 - Starts every release with no systems or users and does not retain operational records in browser storage.
 - Validates shared manifests, filenames, request paths, and CSV output.
+- Treats a DoD Cyber certificate as valid only when its filename contains a standalone `DoD` token, so a privileged `_cyber` SAAR suffix cannot match it.
 - Generates daily audit logs and backups in the mapped directory.
 
 This is an administrative evidence and tracking tool. It may support an organization's NIST SP 800-53 assessment activities, but it does not implement technical access controls on a tracked information system and does not independently establish compliance.
