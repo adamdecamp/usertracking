@@ -11,7 +11,7 @@
     "build": "vinext build",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "test": "node --experimental-strip-types --test tests/backup-utils.test.ts tests/evidence-validation.test.ts tests/audit-utils.test.ts tests/compliance-report.test.ts tests/cleanup-utils.test.ts"
+    "test": "node --experimental-strip-types --test tests/backup-utils.test.ts tests/evidence-validation.test.ts tests/audit-utils.test.ts tests/compliance-report.test.ts tests/cleanup-utils.test.ts tests/notification-utils.test.ts"
   },
   "dependencies": {
     "fflate": "0.8.2",
