@@ -26,3 +26,12 @@ test('rejects broken sequence, hash, day, and clock order',async()=>{
  await assert.rejects(()=>verifyAuditText(`${JSON.stringify({...first,previousHash:'f'.repeat(64)})}\n`,undefined,'2026-08-26'),/hash chain/);
  await assert.rejects(()=>verifyAuditText(`${JSON.stringify(first)}\n`,undefined,'2026-08-27'),/daily file/);
 });
+
+test('advances an equal-resolution browser timestamp without breaking the chain',async()=>{
+ const first=await buildAuditEntry({entries:0,headHash:auditGenesisHash},'DOMAIN\\operator','FIRST','2026-08-26T12:00:00.000Z');
+ const state=await verifyAuditText(`${JSON.stringify(first)}\n`,undefined,'2026-08-26');
+ const second=await buildAuditEntry(state,'DOMAIN\\operator','SECOND','2026-08-26T12:00:00.000Z');
+ assert.equal(second.timestampUtc,'2026-08-26T12:00:00.001Z');
+ const verified=await verifyAuditText(`${JSON.stringify(second)}\n`,state,'2026-08-26');
+ assert.equal(verified.entries,2);
+});

@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Web.Script.Serialization;
 
 internal static class PortableStorageTests
@@ -129,8 +130,13 @@ internal static class PortableStorageTests
         storage.AppendAudit("mapping-key", "TEST ACTION");
         storage.AppendAudit("mapping-key", "SECOND ACTION");
         string auditDirectory = Path.Combine(root, "Audit Logs"), auditPath = Directory.EnumerateFiles(auditDirectory, "audit-*.jsonl").Single();
+        var auditBlocker = new FileStream(auditPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        var releaseAuditBlocker = new Thread(new ThreadStart(delegate { Thread.Sleep(100); auditBlocker.Dispose(); }));
+        releaseAuditBlocker.Start();
+        storage.AppendAudit("mapping-key", "ACTION AFTER TRANSIENT FILE LOCK");
+        releaseAuditBlocker.Join();
         string[] auditLines = File.ReadAllLines(auditPath, Encoding.UTF8);
-        Assert(auditLines.Length == 2, "Audit logging should append two JSON Lines entries to the daily file.");
+        Assert(auditLines.Length == 3, "Audit logging should append after a brief shared-folder file lock clears.");
         var firstAudit = (Dictionary<string, object>)Json.DeserializeObject(auditLines[0]);
         var secondAudit = (Dictionary<string, object>)Json.DeserializeObject(auditLines[1]);
         DateTimeOffset auditInstant;
@@ -138,7 +144,7 @@ internal static class PortableStorageTests
         Assert(Convert.ToInt64(firstAudit["sequence"]) == 1 && Convert.ToInt64(secondAudit["sequence"]) == 2, "Audit entries should use a continuous sequence.");
         Assert(Convert.ToString(secondAudit["previousHash"]) == Convert.ToString(firstAudit["entryHash"]), "Each audit entry should reference the previous entry hash.");
         string auditVerification = storage.VerifyAuditLogs("mapping-key");
-        Assert(auditVerification.Contains("\"healthy\":true") && auditVerification.Contains("\"entries\":2"), "The intact audit hash chain should verify.");
+        Assert(auditVerification.Contains("\"healthy\":true") && auditVerification.Contains("\"entries\":3"), "The intact audit hash chain should verify.");
         string auditView = storage.ReadAuditLogs("mapping-key");
         Assert(auditView.Contains("\"recent\"") && auditView.IndexOf("SECOND ACTION", StringComparison.Ordinal) < auditView.IndexOf("TEST ACTION", StringComparison.Ordinal), "The read-only audit view should return verified entries newest first.");
 

@@ -29,9 +29,11 @@ export async function auditEntryHash(entry:Pick<AuditEntry,'version'|'sequence'|
 }
 
 export async function buildAuditEntry(state:AuditChainState,actor:string,action:string,timestampUtc=new Date().toISOString()):Promise<AuditEntry>{
- const previousHash=state.headHash.toLowerCase(),sequence=state.entries+1,base={version:auditVersion as 1,sequence,timestampUtc,actor:clean(actor),action:clean(action),previousHash};
+ const previousHash=state.headHash.toLowerCase(),sequence=state.entries+1,lastTime=state.lastTimestamp?Date.parse(state.lastTimestamp):undefined,requestedTime=Date.parse(timestampUtc);
  if(!isHash(previousHash)||!timestampUtc.endsWith('Z')||!Number.isFinite(Date.parse(timestampUtc)))throw new Error('The audit entry timestamp or previous hash is invalid.');
- if(state.lastTimestamp&&Date.parse(timestampUtc)<=Date.parse(state.lastTimestamp))throw new Error('The system clock is not later than the most recent audit entry.');
+ if(lastTime!==undefined&&requestedTime<lastTime)throw new Error('The system clock is earlier than the most recent audit entry.');
+ if(lastTime!==undefined&&requestedTime===lastTime)timestampUtc=new Date(lastTime+1).toISOString();
+ const base={version:auditVersion as 1,sequence,timestampUtc,actor:clean(actor),action:clean(action),previousHash};
  return{...base,entryHash:await auditEntryHash(base)};
 }
 

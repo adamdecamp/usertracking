@@ -27,6 +27,7 @@ test('calculates counts, breakdowns, and aging',()=>{
 });
 
 test('generates a readable multi-section PDF',async()=>{
- const bytes=await createComplianceSnapshotPdf(input),document=await PDFDocument.load(bytes);
+ const progress:{phase:string;processed:number;total:number}[]=[],bytes=await createComplianceSnapshotPdf(input,(phase,processed,total)=>progress.push({phase,processed,total})),document=await PDFDocument.load(bytes);
  assert.ok(bytes.length>3000);assert.ok(document.getPageCount()>=2);assert.equal(document.getTitle(),'Compliance Snapshot RPT-TEST-001');
+ assert.equal(progress[0].processed,0);assert.equal(progress.at(-1)?.processed,8);assert.equal(progress.at(-1)?.phase,'PDF Ready');
 });

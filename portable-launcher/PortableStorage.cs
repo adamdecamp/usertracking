@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using System.Web.Script.Serialization;
 
 internal sealed class PortableStorage : IDisposable
@@ -424,23 +425,36 @@ internal sealed class PortableStorage : IDisposable
 
     public void AppendAudit(string systemId, string action)
     {
-        lock (RootLock(systemId))
+        for (int attempt = 0; ; attempt++)
         {
-            string directory = Path.Combine(Root(systemId), "Audit Logs");
-            Directory.CreateDirectory(directory);
-            AuditState state = VerifyAuditChain(directory);
-            DateTimeOffset now = DateTimeOffset.UtcNow;
-            if (state.LastInstant.HasValue && now <= state.LastInstant.Value) throw new InvalidDataException("The system clock is not later than the most recent audit entry.");
-            string timestamp = now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture), cleanAction = CleanLine(action, 500);
-            long sequence = checked(state.Entries + 1);
-            string entryHash = AuditEntryHash(AuditVersion, sequence, timestamp, actor, cleanAction, state.HeadHash);
-            var entry = new Dictionary<string, object> { { "version", AuditVersion }, { "sequence", sequence }, { "timestampUtc", timestamp }, { "actor", actor }, { "action", cleanAction }, { "previousHash", state.HeadHash }, { "entryHash", entryHash } };
-            string path = Path.Combine(directory, "audit-" + now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".jsonl"), line = json.Serialize(entry) + "\n";
-            byte[] bytes = Encoding.UTF8.GetBytes(line);
-            using (var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, 4096, FileOptions.WriteThrough))
+            try
             {
-                stream.Write(bytes, 0, bytes.Length);
-                stream.Flush(true);
+                lock (RootLock(systemId))
+                {
+                    string directory = Path.Combine(Root(systemId), "Audit Logs");
+                    Directory.CreateDirectory(directory);
+                    AuditState state = VerifyAuditChain(directory);
+                    DateTimeOffset now = DateTimeOffset.UtcNow;
+                    if (state.LastInstant.HasValue && now < state.LastInstant.Value) throw new InvalidDataException("The system clock is earlier than the most recent audit entry.");
+                    if (state.LastInstant.HasValue && now == state.LastInstant.Value) now = state.LastInstant.Value.AddTicks(1);
+                    string timestamp = now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture), cleanAction = CleanLine(action, 500);
+                    long sequence = checked(state.Entries + 1);
+                    string entryHash = AuditEntryHash(AuditVersion, sequence, timestamp, actor, cleanAction, state.HeadHash);
+                    var entry = new Dictionary<string, object> { { "version", AuditVersion }, { "sequence", sequence }, { "timestampUtc", timestamp }, { "actor", actor }, { "action", cleanAction }, { "previousHash", state.HeadHash }, { "entryHash", entryHash } };
+                    string path = Path.Combine(directory, "audit-" + now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".jsonl"), line = json.Serialize(entry) + "\n";
+                    byte[] bytes = Encoding.UTF8.GetBytes(line);
+                    using (var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, 4096, FileOptions.WriteThrough))
+                    {
+                        stream.Write(bytes, 0, bytes.Length);
+                        stream.Flush(true);
+                    }
+                }
+                return;
+            }
+            catch (IOException)
+            {
+                if (attempt >= 2) throw;
+                Thread.Sleep(75 * (attempt + 1));
             }
         }
     }

@@ -96,7 +96,7 @@ internal sealed class TrackerContext : ApplicationContext
         using (client)
         using (var stream = client.GetStream())
         {
-            client.ReceiveTimeout = 5000; client.SendTimeout = 5000;
+            client.ReceiveTimeout = 30000; client.SendTimeout = 30000;
             string headerBlock = await ReadHeaderBlock(stream);
             if (String.IsNullOrEmpty(headerBlock)) return;
             string[] lines = headerBlock.Split(new[] { "\r\n" }, StringSplitOptions.None), parts = lines[0].Split(' ');
@@ -124,6 +124,7 @@ internal sealed class TrackerContext : ApplicationContext
             if (path == "/api/control" && (parts[0] == "GET" || parts[0] == "HEAD")) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(ControlJson()), parts[0] == "HEAD", "no-store"); return; }
             if (path.StartsWith("/api/storage/", StringComparison.Ordinal))
             {
+                RecordActivity();
                 try
                 {
                     string tail = path.Substring("/api/storage/".Length); int separator = tail.IndexOf('/');

@@ -17,6 +17,7 @@ export type ComplianceReportInput={
  requirements:ReportRequirement[];
 };
 export type BreakdownRow={label:string;users:number;current:number;missing:number;overdue:number};
+export type ComplianceReportProgress=(phase:string,processed:number,total:number)=>void;
 
 const ascii=(value:string)=>String(value).replace(/[^\x20-\x7e]/g,'?');
 
@@ -45,8 +46,10 @@ export function summarizeCompliance(input:ComplianceReportInput){
  };
 }
 
-export async function createComplianceSnapshotPdf(input:ComplianceReportInput){
- const summary=summarizeCompliance(input),document=await PDFDocument.create(),regular=await document.embedFont(StandardFonts.Helvetica),bold=await document.embedFont(StandardFonts.HelveticaBold),navy=rgb(0.07,0.16,0.28),green=rgb(0.04,0.45,0.34),amber=rgb(0.78,0.45,0.05),red=rgb(0.72,0.16,0.18),gray=rgb(0.36,0.41,0.48),light=rgb(0.94,0.96,0.97),margin=42,width=PageSizes.Letter[0],height=PageSizes.Letter[1];
+export async function createComplianceSnapshotPdf(input:ComplianceReportInput,onProgress?:ComplianceReportProgress){
+ const progressTotal=8,yieldToBrowser=()=>new Promise<void>(resolve=>setTimeout(resolve,0));onProgress?.('Calculating Report Scope',0,progressTotal);await yieldToBrowser();
+ const summary=summarizeCompliance(input);onProgress?.('Building Executive Summary',1,progressTotal);await yieldToBrowser();
+ const document=await PDFDocument.create(),regular=await document.embedFont(StandardFonts.Helvetica),bold=await document.embedFont(StandardFonts.HelveticaBold),navy=rgb(0.07,0.16,0.28),green=rgb(0.04,0.45,0.34),amber=rgb(0.78,0.45,0.05),red=rgb(0.72,0.16,0.18),gray=rgb(0.36,0.41,0.48),light=rgb(0.94,0.96,0.97),margin=42,width=PageSizes.Letter[0],height=PageSizes.Letter[1];
  let page:PDFPage,y:number;
  const pages:PDFPage[]=[];
  const newPage=()=>{page=document.addPage(PageSizes.Letter);pages.push(page);y=height-margin;page.drawText('INFORMATION SYSTEM USER TRACKER',{x:margin,y,size:8,font:bold,color:green});y-=24};
@@ -83,15 +86,15 @@ export async function createComplianceSnapshotPdf(input:ComplianceReportInput){
  text(`Privileged User Types Represented (${summary.privilegedTypes.length}): ${summary.privilegedTypes.join(', ')||'None'}`,8,{color:gray,gap:4});
  ensure(158);section('Overdue Aging');
  cards(Object.entries(summary.aging).map(([label,value])=>({label:label.replace('days','Days'),value:String(value),color:value?amber:navy})));
- table('Breakdown by Organization',summary.byOrganization);
- table('Breakdown by Information System',summary.bySystem);
- table('Breakdown by Role',summary.byRole);
- table('Breakdown by Privileged User Type',summary.byPrivilegedType);
- table('Breakdown by Artifact',summary.byArtifact);
+ onProgress?.('Building Organization Breakdown',2,progressTotal);await yieldToBrowser();table('Breakdown by Organization',summary.byOrganization);
+ onProgress?.('Building Information System Breakdown',3,progressTotal);await yieldToBrowser();table('Breakdown by Information System',summary.bySystem);
+ onProgress?.('Building Role Breakdown',4,progressTotal);await yieldToBrowser();table('Breakdown by Role',summary.byRole);
+ onProgress?.('Building Privileged Type Breakdown',5,progressTotal);await yieldToBrowser();table('Breakdown by Privileged User Type',summary.byPrivilegedType);
+ onProgress?.('Building Artifact Breakdown',6,progressTotal);await yieldToBrowser();table('Breakdown by Artifact',summary.byArtifact);
  section('Methodology and Limitations');
  text(`Statuses were calculated as of ${input.reportingDate} using rule set ${input.ruleSetVersion}. SAAR records can be Current or Missing and do not expire. Other required artifacts become Overdue one year after the valid DDMMMYYYY filename date.`);
  text('This report is an administrative evidence snapshot. It supports audit and inspection evidence gathering but does not independently establish that technical or organizational controls are effective.',9,{gap:5});
  for(let index=0;index<pages.length;index++){const footer=`Report ${input.reportId} | Page ${index+1} of ${pages.length}`;pages[index].drawLine({start:{x:margin,y:36},end:{x:width-margin,y:36},thickness:0.5,color:rgb(0.82,0.85,0.87)});pages[index].drawText(ascii(footer),{x:margin,y:23,size:7,font:regular,color:gray})}
  document.setTitle(`Compliance Snapshot ${input.reportId}`);document.setAuthor(ascii(input.operator));document.setSubject('Administrative user access and training evidence snapshot');document.setCreator(`Information System User Tracker ${input.applicationVersion}`);document.setCreationDate(new Date(input.generatedAtUtc));
- return document.save({useObjectStreams:true});
+ onProgress?.('Finalizing PDF',7,progressTotal);await yieldToBrowser();const bytes=await document.save({useObjectStreams:true});onProgress?.('PDF Ready',8,progressTotal);return bytes;
 }
