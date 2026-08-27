@@ -13,9 +13,13 @@ internal sealed class PortableStorage : IDisposable
 {
     private const int SnapshotLimit = 30;
     private const long ManifestLimit = 50L * 1024 * 1024;
+    private const long SyncIndexLimit = 50L * 1024 * 1024;
     private const long EvidenceLimit = 110L * 1024 * 1024;
     private const long AuditFileLimit = 100L * 1024 * 1024;
     private const int AuditVersion = 1;
+    private const int SyncIndexVersion = 1;
+    private const string SyncIndexFilename = "tracker-sync-index.json";
+    private const string SyncIndexChecksumFilename = "tracker-sync-index.json.sha256";
     private static readonly string AuditGenesisHash = new string('0', 64);
     private readonly Dictionary<string, string> roots = new Dictionary<string, string>(StringComparer.Ordinal);
     private readonly Dictionary<string, string> cachedRoots = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -243,34 +247,95 @@ internal sealed class PortableStorage : IDisposable
         }
     }
 
-    public string Scan(string systemId)
+    public string Scan(string systemId) { return Scan(systemId, "legacy", false); }
+
+    public string Scan(string systemId, string ruleSetVersion, bool fullRescan)
     {
-        string root = Root(systemId);
-        var result = new List<Dictionary<string, object>>();
-        var pending = new Stack<Tuple<string, int>>();
-        pending.Push(Tuple.Create(root, 0));
-        while (pending.Count > 0)
+        string cleanRuleSet = CleanLine(ruleSetVersion, 100);
+        if (String.IsNullOrWhiteSpace(cleanRuleSet)) throw new InvalidDataException("The Sync rule-set version is missing.");
+        lock (RootLock(systemId))
         {
-            Tuple<string, int> current = pending.Pop();
-            if (current.Item2 > 25) throw new InvalidDataException("Folder nesting limit exceeded.");
-            foreach (string file in Directory.EnumerateFiles(current.Item1))
+            string root = Root(systemId);
+            Dictionary<string, Dictionary<string, object>> previous = fullRescan ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : LoadSyncIndex(root, cleanRuleSet);
+            var result = new List<Dictionary<string, object>>();
+            var next = new List<Dictionary<string, object>>();
+            var pending = new Stack<Tuple<string, int>>();
+            pending.Push(Tuple.Create(root, 0));
+            while (pending.Count > 0)
             {
-                if (result.Count >= 100000) throw new InvalidDataException("File scan limit exceeded.");
-                string relative = Relative(root, file);
-                if (current.Item2 == 0 && (String.Equals(Path.GetFileName(file), "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(Path.GetFileName(file), "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(Path.GetFileName(file), "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase))) continue;
-                string validationError;
-                bool accepted = TryValidateEvidenceFile(file, out validationError);
-                result.Add(new Dictionary<string, object> { { "name", CleanLine(Path.GetFileName(file), 500) }, { "path", relative.Replace(Path.DirectorySeparatorChar, '/') }, { "accepted", accepted }, { "error", validationError } });
+                Tuple<string, int> current = pending.Pop();
+                if (current.Item2 > 25) throw new InvalidDataException("Folder nesting limit exceeded.");
+                foreach (string file in Directory.EnumerateFiles(current.Item1))
+                {
+                    if (result.Count >= 100000) throw new InvalidDataException("File scan limit exceeded.");
+                    string filename = Path.GetFileName(file), relative = Relative(root, file).Replace(Path.DirectorySeparatorChar, '/');
+                    if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase))) continue;
+                    var info = new FileInfo(file);
+                    long size = info.Length, lastModifiedUnixMs = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds();
+                    Dictionary<string, object> cached;
+                    bool unchanged = previous.TryGetValue(relative, out cached) && String.Equals(Convert.ToString(cached["name"], CultureInfo.InvariantCulture), filename, StringComparison.OrdinalIgnoreCase) && Convert.ToInt64(cached["size"], CultureInfo.InvariantCulture) == size && Convert.ToInt64(cached["lastModifiedUnixMs"], CultureInfo.InvariantCulture) == lastModifiedUnixMs;
+                    string validationError = unchanged ? Convert.ToString(cached["error"], CultureInfo.InvariantCulture) : "";
+                    bool cacheable = true, accepted = unchanged ? Convert.ToBoolean(cached["accepted"], CultureInfo.InvariantCulture) : TryValidateEvidenceFile(file, out validationError, out cacheable);
+                    if (!unchanged)
+                    {
+                        info.Refresh();
+                        if (!info.Exists || info.Length != size || new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds() != lastModifiedUnixMs) { accepted = false; validationError = "The evidence file changed during Sync. Run Sync again."; cacheable = false; }
+                    }
+                    string cleanName = CleanLine(filename, 500), cleanError = CleanLine(validationError, 300);
+                    var item = new Dictionary<string, object> { { "name", cleanName }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", lastModifiedUnixMs }, { "accepted", accepted }, { "error", cleanError }, { "unchanged", unchanged } };
+                    result.Add(item);
+                    if (cacheable) next.Add(new Dictionary<string, object> { { "name", cleanName }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", lastModifiedUnixMs }, { "accepted", accepted }, { "error", cleanError } });
+                }
+                foreach (string directory in Directory.EnumerateDirectories(current.Item1))
+                {
+                    string name = Path.GetFileName(directory);
+                    if (current.Item2 == 0 && (String.Equals(name, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Reports", StringComparison.OrdinalIgnoreCase))) continue;
+                    if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) continue;
+                    pending.Push(Tuple.Create(directory, current.Item2 + 1));
+                }
             }
-            foreach (string directory in Directory.EnumerateDirectories(current.Item1))
+            SaveSyncIndex(root, cleanRuleSet, next);
+            return json.Serialize(result);
+        }
+    }
+
+    private Dictionary<string, Dictionary<string, object>> LoadSyncIndex(string root, string ruleSetVersion)
+    {
+        var result = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            string indexPath = Path.Combine(root, SyncIndexFilename), checksumPath = Path.Combine(root, SyncIndexChecksumFilename);
+            if (!File.Exists(indexPath) || !File.Exists(checksumPath)) return result;
+            string text = ReadText(indexPath, SyncIndexLimit), checksum = ReadText(checksumPath, 1024).Trim();
+            string[] checksumParts = checksum.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            if (checksumParts.Length != 2 || !String.Equals(checksumParts[1], SyncIndexFilename, StringComparison.Ordinal) || !IsSha256(checksumParts[0]) || !String.Equals(checksumParts[0], Sha256(text), StringComparison.OrdinalIgnoreCase)) return result;
+            Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(text));
+            if (!envelope.ContainsKey("version") || Convert.ToInt32(envelope["version"], CultureInfo.InvariantCulture) != SyncIndexVersion || !envelope.ContainsKey("ruleSetVersion") || !String.Equals(Convert.ToString(envelope["ruleSetVersion"], CultureInfo.InvariantCulture), ruleSetVersion, StringComparison.Ordinal) || !envelope.ContainsKey("files")) return result;
+            object[] files = ObjectArray(envelope["files"]);if (files.Length > 100000) return result;
+            foreach (object value in files)
             {
-                string name = Path.GetFileName(directory);
-                if (current.Item2 == 0 && (String.Equals(name, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Reports", StringComparison.OrdinalIgnoreCase))) continue;
-                if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) continue;
-                pending.Push(Tuple.Create(directory, current.Item2 + 1));
+                Dictionary<string, object> item = ObjectDictionary(value);
+                if (!item.ContainsKey("path") || !item.ContainsKey("name") || !item.ContainsKey("size") || !item.ContainsKey("lastModifiedUnixMs") || !item.ContainsKey("accepted") || !item.ContainsKey("error")) return new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
+                string relative = Convert.ToString(item["path"], CultureInfo.InvariantCulture), name = Convert.ToString(item["name"], CultureInfo.InvariantCulture), error = Convert.ToString(item["error"], CultureInfo.InvariantCulture);
+                long size = Convert.ToInt64(item["size"], CultureInfo.InvariantCulture), modified = Convert.ToInt64(item["lastModifiedUnixMs"], CultureInfo.InvariantCulture);
+                if (String.IsNullOrWhiteSpace(relative) || relative.Length > 32767 || relative.IndexOf('\0') >= 0 || String.IsNullOrWhiteSpace(name) || name.Length > 500 || size < 0 || modified < 0 || error.Length > 300) return new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
+                item["accepted"] = Convert.ToBoolean(item["accepted"], CultureInfo.InvariantCulture);result[relative] = item;
             }
         }
-        return json.Serialize(result);
+        catch { return new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase); }
+        return result;
+    }
+
+    private void SaveSyncIndex(string root, string ruleSetVersion, List<Dictionary<string, object>> files)
+    {
+        try
+        {
+            var envelope = new Dictionary<string, object> { { "version", SyncIndexVersion }, { "ruleSetVersion", ruleSetVersion }, { "generatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "files", files.ToArray() } };
+            string text = json.Serialize(envelope);byte[] bytes = Encoding.UTF8.GetBytes(text);if (bytes.LongLength > SyncIndexLimit) return;
+            string indexPath = Path.Combine(root, SyncIndexFilename), checksumPath = Path.Combine(root, SyncIndexChecksumFilename);
+            AtomicWrite(indexPath, bytes);AtomicWrite(checksumPath, Encoding.ASCII.GetBytes(Sha256(text) + "  " + SyncIndexFilename + Environment.NewLine));
+        }
+        catch { TryDelete(Path.Combine(root, SyncIndexFilename));TryDelete(Path.Combine(root, SyncIndexChecksumFilename)); }
     }
 
     public byte[] ReadRelativeFile(string systemId, string relative)
@@ -803,7 +868,14 @@ internal sealed class PortableStorage : IDisposable
 
     private static bool TryValidateEvidenceFile(string path, out string error)
     {
+        bool cacheable;
+        return TryValidateEvidenceFile(path, out error, out cacheable);
+    }
+
+    private static bool TryValidateEvidenceFile(string path, out string error, out bool cacheable)
+    {
         error = "";
+        cacheable = true;
         try
         {
             var info = new FileInfo(path);
@@ -822,7 +894,10 @@ internal sealed class PortableStorage : IDisposable
             error = "Only PDF evidence or a ZIP containing one PDF is accepted.";
             return false;
         }
-        catch (Exception ex) { error = CleanLine(ex.Message, 300); return false; }
+        catch (InvalidDataException ex) { error = CleanLine(ex.Message, 300); return false; }
+        catch (IOException ex) { cacheable = false;error = CleanLine(ex.Message, 300);return false; }
+        catch (UnauthorizedAccessException ex) { cacheable = false;error = CleanLine(ex.Message, 300);return false; }
+        catch (Exception ex) { cacheable = false;error = CleanLine(ex.Message, 300);return false; }
     }
 
     private static void ValidateEvidenceZip(Stream stream, string label)

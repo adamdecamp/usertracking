@@ -50,7 +50,7 @@ if (-not (Test-Path -LiteralPath $releaseRoot -PathType Container)) {
     throw "Release directory does not exist: $releaseRoot"
 }
 
-$allowedFiles = @("InformationSystemUserTracker.exe", "SHA256SUMS.txt")
+$allowedFiles = @("InformationSystemUserTracker.exe", "Information-System-User-Tracker-Executive-Summary.pdf", "SHA256SUMS.txt")
 $releaseFiles = @(Get-ChildItem -LiteralPath $releaseRoot -Recurse -File)
 $releaseDirectories = @(Get-ChildItem -LiteralPath $releaseRoot -Recurse -Directory)
 if ($releaseDirectories.Count -ne 0) {
@@ -70,10 +70,15 @@ foreach ($requiredFile in $allowedFiles) {
     }
 }
 
-$checksumLine = (Get-Content -LiteralPath (Join-Path $releaseRoot "SHA256SUMS.txt") -Raw).Trim()
-$actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $releaseRoot "InformationSystemUserTracker.exe")).Hash.ToLowerInvariant()
-if ($checksumLine -ne "$actualHash  InformationSystemUserTracker.exe") {
-    throw "Release blocked: executable checksum does not match."
+$checksumLines = @(Get-Content -LiteralPath (Join-Path $releaseRoot "SHA256SUMS.txt") | Where-Object { $_.Trim() })
+$expectedChecksums = @{}
+foreach ($filename in @("InformationSystemUserTracker.exe", "Information-System-User-Tracker-Executive-Summary.pdf")) {
+    $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $releaseRoot $filename)).Hash.ToLowerInvariant()
+    $expectedChecksums[$filename] = "$actualHash  $filename"
+}
+if ($checksumLines.Count -ne $expectedChecksums.Count) { throw "Release blocked: checksum file has an unexpected number of entries." }
+foreach ($line in $expectedChecksums.Values) {
+    if ($checksumLines -notcontains $line) { throw "Release blocked: checksum mismatch for $($line.Split('  ')[1])." }
 }
 
-Write-Host "Release-clean package check passed. No systems, users, evidence, manifests, audit logs, or backups are packaged."
+Write-Host "Release-clean package check passed. The executable, executive summary, and checksums contain no systems, users, evidence, manifests, audit logs, or backups."

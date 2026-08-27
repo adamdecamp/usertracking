@@ -74,10 +74,12 @@ jobs:
         shell: pwsh
         run: |
           $file = "release\InformationSystemUserTracker.exe"
+          $summary = "release\Information-System-User-Tracker-Executive-Summary.pdf"
           $signature = Get-AuthenticodeSignature -FilePath $file
           if ($signature.Status -ne 'Valid') { throw "Authenticode signature verification failed: $($signature.Status)" }
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
-          Set-Content -LiteralPath "release\SHA256SUMS.txt" -Encoding ascii -Value "$hash  InformationSystemUserTracker.exe"
+          $summaryHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $summary).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "release\SHA256SUMS.txt" -Encoding ascii -Value @("$hash  InformationSystemUserTracker.exe", "$summaryHash  Information-System-User-Tracker-Executive-Summary.pdf")
 
       - name: Verify release-clean signed package
         shell: pwsh
@@ -90,6 +92,7 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" `
             "release\InformationSystemUserTracker.exe" `
+            "release\Information-System-User-Tracker-Executive-Summary.pdf" `
             "release\SHA256SUMS.txt" `
             --verify-tag `
             --generate-notes `

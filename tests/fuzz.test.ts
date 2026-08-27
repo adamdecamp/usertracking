@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {verifyAuditText} from '../app/audit-utils.ts';
 import {inspectEvidenceBytes} from '../app/evidence-validation.ts';
 import {artifactKinds,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,organizationFrom,parseDate,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {readSyncIndex} from '../app/sync-utils.ts';
 
 let seed=0x53a91f27;
 function random(){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return(seed>>>0)/0x100000000}
@@ -42,4 +43,8 @@ test('fuzzes malformed PDF and ZIP bytes with controlled validation errors',()=>
 
 test('fuzzes corrupted audit text with controlled integrity errors',async()=>{
  for(let index=0;index<750;index++)try{await verifyAuditText(randomText(5000))}catch(error){assert.ok(error instanceof Error)}
+});
+
+test('fuzzes malformed Sync indexes without parser failures',()=>{
+ for(let index=0;index<1500;index++)assert.doesNotThrow(()=>readSyncIndex(index%3===0?randomText(3000):{version:pick([0,1,2]),ruleSetVersion:randomText(40),generatedAtUtc:randomText(60),files:[{path:randomText(),name:randomText(),size:Math.floor((random()-.25)*100000),lastModifiedUnixMs:Math.floor((random()-.25)*2e12),accepted:pick([true,false,'yes']),error:randomText(400)}]},'rules-1'));
 });

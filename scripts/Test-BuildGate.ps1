@@ -16,6 +16,7 @@ $regressionTests = @(
     "tests/evidence-validation.test.ts",
     "tests/audit-utils.test.ts",
     "tests/compliance-report.test.ts",
+    "tests/executive-summary.test.ts",
     "tests/cleanup-utils.test.ts",
     "tests/notification-utils.test.ts",
     "tests/sync-utils.test.ts",

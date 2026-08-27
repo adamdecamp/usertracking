@@ -4,7 +4,7 @@ A lightweight Windows administrative tool for tracking information-system users,
 
 ## Download
 
-Use the executable attached to the latest GitHub Release. Public releases are blocked unless the Windows executable has a valid Microsoft-backed Authenticode signature. Verify the signature from **Properties → Digital Signatures** and compare the SHA-256 value with `SHA256SUMS.txt` before running it.
+Use the executable attached to the latest GitHub Release. Every release also includes a one-page executive capability summary. Public releases are blocked unless the Windows executable has a valid Microsoft-backed Authenticode signature. Verify the signature from **Properties → Digital Signatures** and compare the executable and PDF SHA-256 values with `SHA256SUMS.txt` before use.
 
 ## Security model
 
@@ -16,6 +16,7 @@ Use the executable attached to the latest GitHub Release. Public releases are bl
 - Starts every release with no systems or users and does not retain operational records in browser storage.
 - Validates shared manifests, filenames, request paths, and CSV output.
 - Accepts only readable PDF evidence or a ZIP containing exactly one readable PDF, with archive path, size, entry-count, encryption, and expansion-ratio safeguards.
+- Uses a checksum-protected Sync index in each mapped system folder to skip reopening unchanged evidence. New, changed, moved, or deleted files are still detected, rule-set changes invalidate the index, and Full Rescan bypasses it.
 - Sync only identifies duplicate, superseded, and loose PDF evidence. The operator-controlled Clean Up workflow can move selected old files into `Archive Review` or compress selected loose PDFs in place; a source PDF is deleted only after its ZIP is created and validated.
 - Generates daily tamper-evident audit logs with ISO 8601 UTC timestamps, a continuous sequence, and a SHA-256 hash chain. Storage verification fails if an entry is changed, removed, reordered, or inserted.
 - Generates filtered Compliance Snapshot PDF reports, stores a checksum-protected copy in each selected system's `Reports` folder, and records the report identifier and SHA-256 in the audit chain.

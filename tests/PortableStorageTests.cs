@@ -68,8 +68,37 @@ internal static class PortableStorageTests
 
         string evidence = storage.StoreEvidence("mapping-key", "GOV", "Shaw", "Vivian", "Shaw_Vivian_SAAR_24AUG2026.pdf.zip", EvidenceZip("Shaw_Vivian_SAAR_24AUG2026.pdf", PdfBytes()));
         Assert(evidence.EndsWith(".zip", StringComparison.OrdinalIgnoreCase), "Evidence should retain a ZIP filename.");
-        string scan = storage.Scan("mapping-key");
-        Assert(scan.Contains("Shaw_Vivian_SAAR_24AUG2026.pdf.zip") && scan.Contains("\"accepted\":true"), "Directory scan should accept launcher-stored PDF evidence.");
+        string scan = storage.Scan("mapping-key", "rules-1", false);
+        Assert(scan.Contains("Shaw_Vivian_SAAR_24AUG2026.pdf.zip") && scan.Contains("\"accepted\":true") && scan.Contains("\"unchanged\":false"), "The first directory scan should validate launcher-stored PDF evidence.");
+        Assert(File.Exists(Path.Combine(root, "tracker-sync-index.json")) && File.Exists(Path.Combine(root, "tracker-sync-index.json.sha256")), "A successful scan should store a checksum-protected shared Sync index.");
+        object[] cachedScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", false));
+        Dictionary<string, object> cachedEvidenceItem = cachedScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
+        Assert(Convert.ToBoolean(cachedEvidenceItem["unchanged"]), "A later scan should skip unchanged evidence content validation.");
+        string evidencePath = Path.Combine(root, "User Evidence", "GOV", "Shaw_Vivian", evidence);File.SetLastWriteTimeUtc(evidencePath, File.GetLastWriteTimeUtc(evidencePath).AddSeconds(2));
+        object[] changedScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", false));
+        Dictionary<string, object> changedEvidenceItem = changedScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
+        Assert(!Convert.ToBoolean(changedEvidenceItem["unchanged"]), "A changed modification timestamp should force evidence revalidation.");
+        var crossComputerStorage = new PortableStorage("DOMAIN\\other-computer", mappingCache);crossComputerStorage.Map("mapping-key", root);
+        object[] crossComputerItems = (object[])Json.DeserializeObject(crossComputerStorage.Scan("mapping-key", "rules-1", false));
+        Dictionary<string, object> crossComputerEvidence = crossComputerItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
+        Assert(Convert.ToBoolean(crossComputerEvidence["unchanged"]), "The shared Sync index should accelerate a different Windows launcher using the same mapped folder.");crossComputerStorage.Dispose();
+        using (var evidenceBlocker = new FileStream(evidencePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            Dictionary<string, object> cachedWhileLocked = ((object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", false))).Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
+            Assert(Convert.ToBoolean(cachedWhileLocked["accepted"]) && Convert.ToBoolean(cachedWhileLocked["unchanged"]), "An unchanged cached file should not be reopened during incremental Sync.");
+            Dictionary<string, object> forcedWhileLocked = ((object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", true))).Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
+            Assert(!Convert.ToBoolean(forcedWhileLocked["accepted"]) && !Convert.ToBoolean(forcedWhileLocked["unchanged"]), "Full Rescan should reopen evidence and report a transient exclusive file lock.");
+        }
+        Dictionary<string, object> recoveredAfterLock = ((object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", false))).Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
+        Assert(Convert.ToBoolean(recoveredAfterLock["accepted"]) && !Convert.ToBoolean(recoveredAfterLock["unchanged"]), "A transient read failure must not be cached after the file becomes available.");
+        object[] fullScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", true));
+        Assert(!Convert.ToBoolean(fullScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip")["unchanged"]), "Full Rescan should ignore the shared Sync index.");
+        object[] changedRuleItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-2", false));
+        Assert(!Convert.ToBoolean(changedRuleItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip")["unchanged"]), "A rule-set change should invalidate the shared Sync index.");
+        File.WriteAllText(Path.Combine(root, "tracker-sync-index.json.sha256"), new string('0', 64) + "  tracker-sync-index.json\n", Encoding.ASCII);
+        object[] damagedIndexItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-2", false));
+        Assert(!Convert.ToBoolean(damagedIndexItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip")["unchanged"]), "A damaged Sync-index checksum should fall back to full validation.");
+        Assert(!cachedScanItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]).StartsWith("tracker-sync-index.json", StringComparison.OrdinalIgnoreCase)), "Sync index files must be excluded from evidence results.");
         string olderEvidence = storage.StoreEvidence("mapping-key", "GOV", "Shaw", "Vivian", "Shaw_Vivian_SAAR_24AUG2025.pdf.zip", EvidenceZip("Shaw_Vivian_SAAR_24AUG2025.pdf", PdfBytes()));
         string olderRelative = Path.Combine("User Evidence", "GOV", "Shaw_Vivian", olderEvidence), archiveResult = storage.ArchiveEvidence("mapping-key", olderRelative);
         var archiveResponse = (Dictionary<string, object>)Json.DeserializeObject(archiveResult);
