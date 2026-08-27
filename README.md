@@ -31,13 +31,12 @@ Requirements: Node.js 22.13 or later, pnpm 10.14, and Windows for the standalone
 
 ```powershell
 pnpm install --frozen-lockfile
-pnpm lint
 pnpm build
 .\scripts\build-portable.ps1
 .\scripts\Test-ReleaseClean.ps1
 ```
 
-The standalone executable and checksum are written to `release/`. Both GitHub build workflows stop before publishing if starter records, tracked runtime data, extra package files, or a checksum mismatch are detected.
+Every browser and portable build first runs TypeScript and lint checks, the complete regression suite, deterministic filename/PDF/ZIP/audit fuzz tests, and the Windows launcher storage integration suite. A failed check stops the build. The standalone executable and checksum are written to `release/`. Both GitHub build workflows stop before publishing if starter records, tracked runtime data, extra package files, or a checksum mismatch are detected.
 
 ## Public release setup
 

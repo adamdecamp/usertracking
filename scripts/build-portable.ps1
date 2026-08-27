@@ -34,6 +34,8 @@ function Compress-Asset([string]$Source, [string]$Destination) {
 
 $embeddedRoot = Assert-ProjectChild $embeddedRoot
 $outputRoot = Assert-ProjectChild $outputRoot
+& (Join-Path $PSScriptRoot "Test-BuildGate.ps1")
+if ($LASTEXITCODE -ne 0) { throw "Regression and fuzz build gate failed." }
 if (Test-Path -LiteralPath $embeddedRoot) { Remove-Item -LiteralPath $embeddedRoot -Recurse -Force }
 if (Test-Path -LiteralPath $outputRoot) { Remove-Item -LiteralPath $outputRoot -Recurse -Force }
 New-Item -ItemType Directory -Path $embeddedRoot, $outputRoot | Out-Null
