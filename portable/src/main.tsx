@@ -14,7 +14,9 @@ function installPortableLifecycle(){
   document.addEventListener('pointerdown',activity,{passive:true});
   document.addEventListener('keydown',activity);
   document.addEventListener('touchstart',activity,{passive:true});
-  window.addEventListener('pagehide',()=>{navigator.sendBeacon('/api/browser-closing')});
+  const closing=()=>{navigator.sendBeacon('/api/browser-closing')};
+  window.addEventListener('beforeunload',closing);
+  window.addEventListener('pagehide',closing);
   void post('/api/activity',true);
   void post('/api/presence');
   setInterval(()=>void post('/api/presence'),5000);
