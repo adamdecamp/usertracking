@@ -44,6 +44,12 @@ test('offers loose PDF compression only for an existing matching directory user'
  assert.deepEqual(result.map(item=>item.filename),['Brown_Jacob_DoD.pdf']);
 });
 
+test('reuses first-scan evidence for cleanup immediately after a verified user is ingested',()=>{
+ const scanned=[{path:'Incoming/Shaw_Vivian_(LM)_DoD_Cyber_Cert_24AUG2026.pdf',filename:'Shaw_Vivian_(LM)_DoD_Cyber_Cert_24AUG2026.pdf',identity:'Shaw/Vivian'}],matches=(item:{identity:string},user:{identity:string})=>item.identity===user.identity;
+ assert.equal(selectLoosePdfCleanupCandidates(scanned,[],matches).length,0);
+ assert.deepEqual(selectLoosePdfCleanupCandidates(scanned,[{identity:'Shaw/Vivian'}],matches).map(item=>item.path),[scanned[0].path]);
+});
+
 test('retains deferred and failed cleanup actions after successful actions are removed',()=>{
  const items=[{id:'archive-1'},{id:'zip-1'},{id:'rework-1'}];
  assert.deepEqual(retainUnfinishedCleanup(items,['zip-1']).map(item=>item.id),['archive-1','rework-1']);
