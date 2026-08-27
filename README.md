@@ -17,6 +17,8 @@ Use the executable attached to the latest GitHub Release. Every release also inc
 - Validates shared manifests, filenames, request paths, and CSV output.
 - Accepts only readable PDF evidence or a ZIP containing exactly one readable PDF, with archive path, size, entry-count, encryption, and expansion-ratio safeguards.
 - Uses a checksum-protected Sync index in each mapped system folder to skip reopening unchanged evidence. New, changed, moved, or deleted files are still detected, rule-set changes invalidate the index, and Full Rescan bypasses it.
+- Uses filenames as the primary identity and organization source, with a fillable-form fallback for standard DD Form 2875 XFA packets and the derived SAAR AcroForm. Scanned or flattened SAAR copies cannot create users automatically.
+- Recognizes common valid filename date formats and atomically normalizes nonstandard dates to `DDMMMYYYY` before matching.
 - Sync only identifies duplicate, superseded, and loose PDF evidence. The operator-controlled Clean Up workflow can move selected old files into `Archive Review` or compress selected loose PDFs in place; a source PDF is deleted only after its ZIP is created and validated.
 - Generates daily tamper-evident audit logs with ISO 8601 UTC timestamps, a continuous sequence, and a SHA-256 hash chain. Storage verification fails if an entry is changed, removed, reordered, or inserted.
 - Generates filtered Compliance Snapshot PDF reports, stores a checksum-protected copy in each selected system's `Reports` folder, and records the report identifier and SHA-256 in the audit chain.

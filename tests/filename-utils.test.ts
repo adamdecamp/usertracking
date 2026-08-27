@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,organizationFrom,parseDate,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,validateNewUserSaarFilename} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -63,4 +63,32 @@ test('rejects template and incomplete SAAR filenames before automatic new-user d
   'Brown_Jacob_(LM)_GEN_SAAR_31FEB2026.pdf',
  ];
  for(const filename of invalid)assert.equal(validateNewUserSaarFilename(filename).valid,false,filename);
+});
+
+test('uses fillable-PDF identity and organization only when filename values are unavailable',()=>{
+ assert.deepEqual(validateNewUserSaarFilename('Last_First_(Org)_GEN_SAAR_26AUG2026.pdf',{identity:{last:'Shaw',first:'Vivian'},organization:'GOV'}),{
+  valid:true,identity:{last:'Shaw',first:'Vivian'},organization:'GOV',role:'General',privilegedTypes:[],
+ });
+ assert.deepEqual(validateNewUserSaarFilename('Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf',{identity:{last:'Wrong',first:'Person'},organization:'Wrong'}),{
+  valid:true,identity:{last:'Brown',first:'Jacob'},organization:'LM',role:'General',privilegedTypes:[],
+ });
+});
+
+test('recognizes common date formats and normalizes them to DDMMMYYYY',()=>{
+ const variants=['20260826','08262026','AUG262026','082626','26-08-2026','2026.8.26','26 AUG 26'];
+ for(const value of variants){
+  const filename=`Brown_Jacob_(LM)_GEN_User_Agreement_${value}.pdf`,result=normalizeFilenameDate(filename);
+  assert.equal(parseDate(filename)?.toISOString(),'2026-08-26T00:00:00.000Z',filename);
+  assert.equal(result?.normalized,'Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf',filename);
+  assert.equal(result?.changed,true,filename);
+ }
+ assert.equal(normalizeFilenameDate('Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf')?.changed,false);
+});
+
+test('rejects impossible dates rather than normalizing them',()=>{
+ for(const value of ['20260230','13322026','31FEB2026','000000','2026-32-13']){
+  const filename=`Brown_Jacob_(LM)_GEN_User_Agreement_${value}.pdf`;
+  assert.equal(parseDate(filename),undefined,filename);
+  assert.equal(normalizeFilenameDate(filename),undefined,filename);
+ }
 });

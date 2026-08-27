@@ -386,6 +386,26 @@ internal sealed class PortableStorage : IDisposable
         }
     }
 
+    public string NormalizeEvidenceFilename(string systemId, string relative, string filename)
+    {
+        lock (RootLock(systemId))
+        {
+            string root = Root(systemId), source = SafeRelativePath(root, relative), normalized = Relative(root, source);
+            string topLevel = normalized.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
+            if (String.Equals(topLevel, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Reports", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only active evidence filenames can be normalized.");
+            if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
+            string safeName = SafePart(filename, 180);
+            if (!String.Equals(safeName, filename, StringComparison.Ordinal) || !String.Equals(Path.GetFileName(filename), filename, StringComparison.Ordinal)) throw new InvalidDataException("The normalized evidence filename is invalid or too long.");
+            string sourceExtension = Path.GetExtension(source), targetExtension = Path.GetExtension(safeName);
+            if ((!sourceExtension.Equals(".pdf", StringComparison.OrdinalIgnoreCase) && !sourceExtension.Equals(".zip", StringComparison.OrdinalIgnoreCase)) || !sourceExtension.Equals(targetExtension, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The normalized filename must preserve the PDF or ZIP extension.");
+            string destination = Path.Combine(Path.GetDirectoryName(source), safeName);
+            if (String.Equals(source, destination, StringComparison.Ordinal)) return json.Serialize(new Dictionary<string, object> { { "renamed", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "alreadyCompleted", true } });
+            if (File.Exists(destination)) throw new IOException("A file with the normalized evidence filename already exists. Review the duplicate before Sync continues.");
+            File.Move(source, destination);
+            return json.Serialize(new Dictionary<string, object> { { "renamed", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') } });
+        }
+    }
+
     public string CompressEvidence(string systemId, string relative)
     {
         lock (RootLock(systemId))

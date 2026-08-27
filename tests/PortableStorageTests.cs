@@ -99,6 +99,13 @@ internal static class PortableStorageTests
         object[] damagedIndexItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-2", false));
         Assert(!Convert.ToBoolean(damagedIndexItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip")["unchanged"]), "A damaged Sync-index checksum should fall back to full validation.");
         Assert(!cachedScanItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]).StartsWith("tracker-sync-index.json", StringComparison.OrdinalIgnoreCase)), "Sync index files must be excluded from evidence results.");
+        string alternateDateEvidence = storage.StoreEvidence("mapping-key", "GOV", "Shaw", "Vivian", "Shaw_Vivian_GEN_User_Agreement_20260826.pdf.zip", EvidenceZip("Shaw_Vivian_GEN_User_Agreement_20260826.pdf", PdfBytes()));
+        string alternateDateRelative = Path.Combine("User Evidence", "GOV", "Shaw_Vivian", alternateDateEvidence), normalizedDateName = "Shaw_Vivian_GEN_User_Agreement_26AUG2026.pdf.zip";
+        var normalizedDateResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.NormalizeEvidenceFilename("mapping-key", alternateDateRelative, normalizedDateName));
+        Assert(!File.Exists(Path.Combine(root, alternateDateRelative)) && File.Exists(Path.Combine(root, "User Evidence", "GOV", "Shaw_Vivian", normalizedDateName)) && Convert.ToString(normalizedDateResponse["renamed"]).EndsWith(normalizedDateName), "Date normalization should atomically rename evidence in its existing folder.");
+        bool rejectedUnsafeRename = false;
+        try { storage.NormalizeEvidenceFilename("mapping-key", Path.Combine("User Evidence", "GOV", "Shaw_Vivian", normalizedDateName), "..\\escape.zip"); } catch (InvalidDataException) { rejectedUnsafeRename = true; }
+        Assert(rejectedUnsafeRename, "Date normalization should reject an unsafe target filename.");
         string olderEvidence = storage.StoreEvidence("mapping-key", "GOV", "Shaw", "Vivian", "Shaw_Vivian_SAAR_24AUG2025.pdf.zip", EvidenceZip("Shaw_Vivian_SAAR_24AUG2025.pdf", PdfBytes()));
         string olderRelative = Path.Combine("User Evidence", "GOV", "Shaw_Vivian", olderEvidence), archiveResult = storage.ArchiveEvidence("mapping-key", olderRelative);
         var archiveResponse = (Dictionary<string, object>)Json.DeserializeObject(archiveResult);
