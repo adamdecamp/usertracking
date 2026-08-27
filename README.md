@@ -24,6 +24,7 @@ Use the executable attached to the latest GitHub Release. Every release also inc
 - Generates filtered Compliance Snapshot PDF reports, stores a checksum-protected copy in each selected system's `Reports` folder, and records the report identifier and SHA-256 in the audit chain.
 - Keeps the newest 30 full-fidelity JSON snapshots with matching SHA-256 files and provides verified in-app restoration without deleting evidence files.
 - Shows Last saved, Last backup, and Last Sync health for each mapped system, with an on-demand backup verification control.
+- Suspends both browser-session and Windows-launcher idle expiration during Sync, then restarts the idle clocks only after Sync completes, fails, or is stopped.
 - Refreshes the daily backup before automatically shutting down after 60 minutes of inactivity or when the portable app's browser window closes.
 
 This is an administrative evidence and tracking tool. It may support an organization's NIST SP 800-53 assessment activities, but it does not implement technical access controls on a tracked information system and does not independently establish compliance.
