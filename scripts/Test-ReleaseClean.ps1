@@ -24,6 +24,7 @@ $runtimeFileNames = @(
     "tracker-exclusive-session.lock"
 )
 $runtimeDirectoryNames = @("User Evidence", "Audit Logs", "backup", "Reports", "Archive Review")
+$testPackageDirectoryNames = @("test-data", "test-evidence-package")
 $trackedFiles = @(& git -C $projectRoot ls-files)
 if ($LASTEXITCODE -ne 0) { throw "Unable to inspect tracked files." }
 
@@ -34,6 +35,9 @@ foreach ($trackedFile in $trackedFiles) {
     $segments = $trackedFile -split '[/\\]'
     if ($segments | Where-Object { $runtimeDirectoryNames -contains $_ }) {
         throw "Release blocked: tracked runtime data directory detected: $trackedFile"
+    }
+    if ($segments | Where-Object { $testPackageDirectoryNames -contains $_ }) {
+        throw "Release blocked: tracked synthetic test package detected: $trackedFile"
     }
 }
 

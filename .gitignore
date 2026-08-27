@@ -57,8 +57,12 @@ next-env.d.ts
 /InformationSystemUserTracker-Portable*.zip
 /Email-Information-System-User-Tracker.txt
 
-# generated synthetic fixtures (the distributable ZIP is intentionally tracked)
+# generated synthetic fixtures and local test packages
 /test-evidence-package/
+/test-data/
+/scripts/New-200UserPdfTestPackage.py
+/scripts/New-500UserRobustTestPackage.py
+/scripts/Validate-500UserRobustTestPackage.ts
 
 # local runtime data must never enter source control or release packages
 information-system-user-tracker.json
