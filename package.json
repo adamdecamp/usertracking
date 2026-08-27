@@ -12,7 +12,7 @@
     "build": "vinext build",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "test:regression": "node --experimental-strip-types --test tests/backup-utils.test.ts tests/evidence-validation.test.ts tests/audit-utils.test.ts tests/compliance-report.test.ts tests/executive-summary.test.ts tests/cleanup-utils.test.ts tests/notification-utils.test.ts tests/sync-utils.test.ts tests/session-utils.test.ts tests/filename-utils.test.ts tests/saar-form-utils.test.ts",
+    "test:regression": "node --experimental-strip-types --test tests/backup-utils.test.ts tests/evidence-validation.test.ts tests/audit-utils.test.ts tests/compliance-report.test.ts tests/executive-summary.test.ts tests/cleanup-utils.test.ts tests/notification-utils.test.ts tests/sync-utils.test.ts tests/session-utils.test.ts tests/filename-utils.test.ts tests/saar-form-utils.test.ts tests/manual-saar-utils.test.ts",
     "test:fuzz": "node --experimental-strip-types --test tests/fuzz.test.ts",
     "test": "pnpm run test:regression && pnpm run test:fuzz",
     "verify:build": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-BuildGate.ps1"
