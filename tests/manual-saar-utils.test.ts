@@ -12,6 +12,11 @@ test('falls back to fillable SAAR fields when filename identity and organization
  assert.deepEqual(result,{last:'Shaw',first:'Vivian',middle:'R',organization:'Boeing',email:'vivian.shaw@example.mil',identitySource:'form',organizationSource:'form',emailSource:'form'});
 });
 
+test('does not treat reserved evidence tokens as a filename identity',()=>{
+ const result=manualSaarPrefill('GEN_USER_(LM)_SAAR_26AUG2026.pdf',{fillable:true,identity:{last:'Brown',first:'Jacob'},organization:'LM',email:'jacob.brown@example.mil'});
+ assert.equal(result.last,'Brown');assert.equal(result.first,'Jacob');assert.equal(result.identitySource,'form');
+});
+
 test('uses the embedded PDF filename for a generically named ZIP and ignores template placeholders',()=>{
  const result=manualSaarPrefill('upload.zip',{fillable:true,email:'jill.smith@example.mil'},'Smith_Jill_(GOV)_PRIV_admin_SAAR_26AUG2026.pdf');
  assert.equal(result.last,'Smith');assert.equal(result.first,'Jill');assert.equal(result.organization,'GOV');assert.equal(result.email,'jill.smith@example.mil');

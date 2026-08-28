@@ -1,13 +1,13 @@
 import {identityFromFilename,organizationFrom} from './filename-utils.ts';
 import type {SaarFormFields} from './saar-form-utils.ts';
 
-const placeholderNames=new Set(['LAST','FIRST']);
+const reservedIdentityTokens=new Set(['LAST','FIRST','ORG','ORGANIZATION','GEN','PRIV','SAAR','DOD','CYBER','CERT','USER','AGREEMENT','TRAINING','MEMO','TYPE']);
 const placeholderOrganizations=new Set(['ORG','ORGANIZATION']);
 const clean=(value?:string,max=200)=>(value??'').replace(/[\r\n\u0000-\u001f\u007f]/g,' ').trim().slice(0,max);
 
 function usableFilenameIdentity(filename:string){
  const identity=identityFromFilename(filename);
- return identity&&!placeholderNames.has(identity.last.toUpperCase())&&!placeholderNames.has(identity.first.toUpperCase())?identity:undefined;
+ return identity&&!reservedIdentityTokens.has(identity.last.toUpperCase())&&!reservedIdentityTokens.has(identity.first.toUpperCase())?identity:undefined;
 }
 
 function usableFilenameOrganization(filename:string){
