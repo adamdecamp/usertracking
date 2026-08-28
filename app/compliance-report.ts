@@ -2,7 +2,7 @@ import {PDFDocument,PageSizes,StandardFonts,rgb,type PDFFont,type PDFPage} from 
 
 export type ComplianceStatus='Current'|'Missing'|'Overdue';
 export type ReportUser={id:string;systemId:string;systemName:string;organization:string;disabled:boolean;roles:string[];privilegedTypes:string[]};
-export type ReportRequirement={userId:string;systemId:string;systemName:string;organization:string;roles:string[];privilegedTypes:string[];artifact:string;status:ComplianceStatus;daysOverdue:number};
+export type ReportRequirement={userId:string;systemId:string;systemName:string;organization:string;roles:string[];privilegedTypes:string[];artifact:string;status:ComplianceStatus;daysOverdue:number;exceptionThrough?:string;exceptionApprover?:string};
 export type ComplianceReportInput={
  reportId:string;
  generatedAtUtc:string;
@@ -28,7 +28,7 @@ function breakdown(requirements:ReportRequirement[],labels:(row:ReportRequiremen
 }
 
 export function summarizeCompliance(input:ComplianceReportInput){
- const total=input.requirements.length,current=input.requirements.filter(row=>row.status==='Current').length,missing=input.requirements.filter(row=>row.status==='Missing').length,overdue=input.requirements.filter(row=>row.status==='Overdue').length;
+ const total=input.requirements.length,current=input.requirements.filter(row=>row.status==='Current').length,missing=input.requirements.filter(row=>row.status==='Missing').length,overdue=input.requirements.filter(row=>row.status==='Overdue').length,exceptions=input.requirements.filter(row=>!!row.exceptionThrough).length;
  const aging={'1-30 days':0,'31-60 days':0,'61-90 days':0,'Over 90 days':0};
  for(const row of input.requirements)if(row.status==='Overdue'){if(row.daysOverdue<=30)aging['1-30 days']++;else if(row.daysOverdue<=60)aging['31-60 days']++;else if(row.daysOverdue<=90)aging['61-90 days']++;else aging['Over 90 days']++}
  return{
@@ -36,7 +36,7 @@ export function summarizeCompliance(input:ComplianceReportInput){
   generalUsers:input.users.filter(user=>user.roles.includes('General')).length,
   privilegedUsers:input.users.filter(user=>user.roles.includes('Privileged')).length,
   privilegedTypes:Array.from(new Set(input.users.flatMap(user=>user.privilegedTypes))).sort(),
-  total,current,missing,overdue,
+  total,current,missing,overdue,exceptions,
   aging,
   byOrganization:breakdown(input.requirements,row=>[row.organization]),
   bySystem:breakdown(input.requirements,row=>[row.systemName]),
@@ -82,6 +82,7 @@ export async function createComplianceSnapshotPdf(input:ComplianceReportInput,on
   {label:'Current Requirements',value:String(summary.current),color:green},
   {label:'Missing Requirements',value:String(summary.missing),color:red},
   {label:'Overdue Requirements',value:String(summary.overdue),color:amber},
+  {label:'Active Exceptions',value:String(summary.exceptions),color:amber},
  ]);
  text(`Privileged User Types Represented (${summary.privilegedTypes.length}): ${summary.privilegedTypes.join(', ')||'None'}`,8,{color:gray,gap:4});
  ensure(158);section('Overdue Aging');
@@ -92,7 +93,7 @@ export async function createComplianceSnapshotPdf(input:ComplianceReportInput,on
  onProgress?.('Building Privileged Type Breakdown',5,progressTotal);await yieldToBrowser();table('Breakdown by Privileged User Type',summary.byPrivilegedType);
  onProgress?.('Building Artifact Breakdown',6,progressTotal);await yieldToBrowser();table('Breakdown by Artifact',summary.byArtifact);
  section('Methodology and Limitations');
- text(`Statuses were calculated as of ${input.reportingDate} using rule set ${input.ruleSetVersion}. SAAR records can be Current or Missing and do not expire. Other required artifacts become Overdue one year after the valid DDMMMYYYY filename date.`);
+ text(`Statuses were calculated as of ${input.reportingDate} using rule set ${input.ruleSetVersion}. SAAR records can be Current or Missing and do not expire. Other required artifacts become Overdue one year after the valid DDMMMYYYY filename date. Active exceptions are counted separately and do not alter the underlying Missing or Overdue status.`);
  text('This report is an administrative evidence snapshot. It supports audit and inspection evidence gathering but does not independently establish that technical or organizational controls are effective.',9,{gap:5});
  for(let index=0;index<pages.length;index++){const footer=`Report ${input.reportId} | Page ${index+1} of ${pages.length}`;pages[index].drawLine({start:{x:margin,y:36},end:{x:width-margin,y:36},thickness:0.5,color:rgb(0.82,0.85,0.87)});pages[index].drawText(ascii(footer),{x:margin,y:23,size:7,font:regular,color:gray})}
  document.setTitle(`Compliance Snapshot ${input.reportId}`);document.setAuthor(ascii(input.operator));document.setSubject('Administrative user access and training evidence snapshot');document.setCreator(`Information System User Tracker ${input.applicationVersion}`);document.setCreationDate(new Date(input.generatedAtUtc));

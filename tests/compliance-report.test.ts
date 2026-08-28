@@ -13,7 +13,7 @@ const input:ComplianceReportInput={
   {userId:'u1',systemId:'s1',systemName:'System Alpha',organization:'GOV',roles:['General'],privilegedTypes:[],artifact:'SAAR',status:'Current',daysOverdue:0},
   {userId:'u1',systemId:'s1',systemName:'System Alpha',organization:'GOV',roles:['General'],privilegedTypes:[],artifact:'DoD Cyber Cert',status:'Missing',daysOverdue:0},
   {userId:'u2',systemId:'s1',systemName:'System Alpha',organization:'GOV',roles:['Privileged'],privilegedTypes:['DTA'],artifact:'SAAR',status:'Current',daysOverdue:0},
-  {userId:'u2',systemId:'s1',systemName:'System Alpha',organization:'GOV',roles:['Privileged'],privilegedTypes:['DTA'],artifact:'8140 Cert Memo',status:'Overdue',daysOverdue:45},
+  {userId:'u2',systemId:'s1',systemName:'System Alpha',organization:'GOV',roles:['Privileged'],privilegedTypes:['DTA'],artifact:'8140 Cert Memo',status:'Overdue',daysOverdue:45,exceptionThrough:'2026-09-30',exceptionApprover:'AO'},
   {userId:'u2',systemId:'s1',systemName:'System Alpha',organization:'GOV',roles:['Privileged'],privilegedTypes:['DTA'],artifact:'DTA Agreement',status:'Overdue',daysOverdue:95},
  ],
 };
@@ -22,6 +22,7 @@ test('calculates counts, breakdowns, and aging',()=>{
  const summary=summarizeCompliance(input);
  assert.equal(summary.users,2);assert.equal(summary.generalUsers,1);assert.equal(summary.privilegedUsers,1);
  assert.equal(summary.current,2);assert.equal(summary.missing,1);assert.equal(summary.overdue,2);
+ assert.equal(summary.exceptions,1);
  assert.equal(summary.aging['31-60 days'],1);assert.equal(summary.aging['Over 90 days'],1);
  assert.equal(summary.byPrivilegedType[0].label,'DTA');
 });

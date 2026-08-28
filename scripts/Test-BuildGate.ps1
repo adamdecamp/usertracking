@@ -23,7 +23,8 @@ $regressionTests = @(
     "tests/session-utils.test.ts",
     "tests/filename-utils.test.ts",
     "tests/saar-form-utils.test.ts",
-    "tests/manual-saar-utils.test.ts"
+    "tests/manual-saar-utils.test.ts",
+    "tests/workflow-utils.test.ts"
 )
 
 Push-Location $projectRoot
