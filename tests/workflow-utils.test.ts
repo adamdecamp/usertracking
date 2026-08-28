@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,notificationRecipientBatches,reconcileEvidence} from '../app/workflow-utils.ts';
+import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,notificationRecipientBatches,reconcileEvidence} from '../app/workflow-utils.ts';
 
 test('returns only an active, unrevoked compliance exception',()=>{
  const exceptions=[{id:'old',artifact:'8140 Cert Memo',reason:'old',approvedBy:'A',createdAt:'2026-01-01T00:00:00Z',createdBy:'B',expiresOn:'2026-01-31'},{id:'active',artifact:'8140 Cert Memo',reason:'temporary',approvedBy:'A',createdAt:'2026-08-01T00:00:00Z',createdBy:'B',expiresOn:'2026-09-30'}];
@@ -11,6 +11,18 @@ test('returns only an active, unrevoked compliance exception',()=>{
 test('deduplicates and splits notification recipients by count and encoded length',()=>{
  assert.deepEqual(notificationRecipientBatches(['A@example.mil','a@example.mil','b@example.mil'],1),[['a@example.mil'],['b@example.mil']]);
  assert.deepEqual(notificationRecipientBatches(['one@example.mil','two@example.mil'],40,20),[['one@example.mil'],['two@example.mil']]);
+});
+
+test('commits exception changes without leaking unrelated draft edits',()=>{
+ const committed={id:'u1',roles:['General'],exceptions:[]},draft={...committed,roles:['Privileged']},exception={id:'e1',artifact:'DoD Cyber Cert',reason:'temporary',approvedBy:'AO',createdAt:'2026-08-28T12:00:00Z',createdBy:'operator',expiresOn:'2026-09-30'};
+ const updated=committedRecordWithExceptions(committed,[exception]);
+ assert.deepEqual(updated.roles,['General']);assert.deepEqual(updated.exceptions,[exception]);assert.deepEqual(draft.roles,['Privileged']);
+});
+
+test('adds provenance only to Sync-touched artifacts',()=>{
+ const users=[{id:'u1',last:'Brown',first:'Jacob',artifacts:[{kind:'SAAR',filename:'Brown_Jacob_(GOV)_GEN_SAAR_26AUG2026.pdf.zip'},{kind:'DoD Cyber Cert',filename:'Brown_Jacob_(GOV)_DoD_Cyber_Cert_26AUG2026.pdf.zip'}]}],hash='a'.repeat(64),storedAt='2026-08-28T12:00:00Z';
+ const updated=applySyncArtifactProvenance(users,new Set(['u1:SAAR']),[{filename:users[0].artifacts[0].filename,path:'User Evidence/GOV/Brown_Jacob/saar.zip',sha256:hash}],storedAt,'operator');
+ assert.deepEqual(updated[0].artifacts[0],{...users[0].artifacts[0],sha256:hash,path:'User Evidence/GOV/Brown_Jacob/saar.zip',storedAt,storedBy:'operator',source:'Sync'});assert.deepEqual(updated[0].artifacts[1],users[0].artifacts[1]);
 });
 
 test('reconciles missing, orphaned, conflicting, duplicate, and rejected evidence',()=>{

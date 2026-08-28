@@ -5,6 +5,8 @@ export type ReconciliationUser={id:string;last:string;first:string;email:string;
 export type ReconciliationEvidence={filename:string;path:string;sha256?:string};
 export type ReconciliationRejection={filename:string;reason:string;path?:string};
 export type ReconciliationIssue={id:string;category:'Missing File'|'Content Changed'|'Orphan Evidence'|'Duplicate Identity'|'Duplicate Email'|'Organization Conflict'|'Rejected Evidence';severity:'High'|'Medium';summary:string;detail:string;path?:string;userId?:string};
+export type SyncProvenanceArtifact={kind:string;filename:string;sha256?:string;path?:string;storedAt?:string;storedBy?:string;source?:string};
+export type SyncProvenanceUser={id:string;last:string;first:string;artifacts:SyncProvenanceArtifact[]};
 
 export function activeComplianceException(exceptions:ComplianceException[]|undefined,artifact:string,asOf=new Date()){
  const endOfDay=(value:string)=>Date.parse(`${value}T23:59:59.999Z`);
@@ -15,6 +17,12 @@ export function notificationRecipientBatches(values:string[],maxRecipients=40,ma
  const unique=Array.from(new Set(values.map(value=>value.trim().toLowerCase()).filter(Boolean))),batches:string[][]=[];let current:string[]=[];
  for(const value of unique){const candidate=[...current,value],length=encodeURIComponent(candidate.join(';')).length;if(current.length&&(candidate.length>maxRecipients||length>maxEncodedCharacters)){batches.push(current);current=[value]}else current=candidate}
  if(current.length)batches.push(current);return batches;
+}
+
+export function committedRecordWithExceptions<T extends{exceptions?:ComplianceException[]}>(record:T,exceptions:ComplianceException[]){return{...record,exceptions}}
+
+export function applySyncArtifactProvenance<T extends SyncProvenanceUser>(users:T[],touchedKeys:Set<string>,evidence:ReconciliationEvidence[],storedAt:string,storedBy:string){
+ return users.map(user=>({...user,artifacts:user.artifacts.map(artifact=>{if(!touchedKeys.has(`${user.id}:${artifact.kind}`))return artifact;const match=evidence.find(item=>item.filename.toUpperCase()===artifact.filename.toUpperCase()&&filenameIdentityMatches(item.filename,user));if(!match?.sha256)throw new Error(`Provenance could not be recorded for ${artifact.filename}.`);return{...artifact,sha256:match.sha256,path:match.path,storedAt,storedBy,source:'Sync'}})})) as T[];
 }
 
 export function reconcileEvidence(users:ReconciliationUser[],evidence:ReconciliationEvidence[],rejected:ReconciliationRejection[]){
