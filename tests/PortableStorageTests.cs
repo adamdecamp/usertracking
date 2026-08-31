@@ -91,8 +91,11 @@ internal static class PortableStorageTests
 
         string evidence = storage.StoreEvidence("mapping-key", "GOV", "Shaw", "Vivian", "Shaw_Vivian_SAAR_24AUG2026.pdf.zip", EvidenceZip("Shaw_Vivian_SAAR_24AUG2026.pdf", PdfBytes()));
         Assert(evidence.EndsWith(".zip", StringComparison.OrdinalIgnoreCase), "Evidence should retain a ZIP filename.");
+        File.WriteAllText(Path.Combine(root, "operator-notes.txt"), "This non-evidence file must not require metadata validation.", Encoding.UTF8);
         string scan = storage.Scan("mapping-key", "rules-1", false);
         Assert(scan.Contains("Shaw_Vivian_SAAR_24AUG2026.pdf.zip") && scan.Contains("\"accepted\":true") && scan.Contains("\"unchanged\":false"), "The first directory scan should validate launcher-stored PDF evidence.");
+        Dictionary<string, object> ignoredNonEvidence = ((object[])Json.DeserializeObject(scan)).Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "operator-notes.txt");
+        Assert(Convert.ToInt64(ignoredNonEvidence["size"]) == 0 && !Convert.ToBoolean(ignoredNonEvidence["accepted"]), "Sync should classify irrelevant extensions without requesting provider metadata for them.");
         Assert(File.Exists(Path.Combine(root, "tracker-sync-index.json")) && File.Exists(Path.Combine(root, "tracker-sync-index.json.sha256")), "A successful scan should store a checksum-protected shared Sync index.");
         object[] cachedScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", false));
         Dictionary<string, object> cachedEvidenceItem = cachedScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
@@ -127,6 +130,9 @@ internal static class PortableStorageTests
         var normalizedDateResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.NormalizeEvidenceFilename("mapping-key", alternateDateRelative, normalizedDateName));
         string normalizedDatePath = Path.Combine(root, "User Evidence", "GOV", "Shaw_Vivian", normalizedDateName);
         Assert(!File.Exists(alternateDatePath) && File.Exists(normalizedDatePath) && alternateDateBytes.SequenceEqual(File.ReadAllBytes(normalizedDatePath)) && Convert.ToString(normalizedDateResponse["renamed"]).EndsWith(normalizedDateName), "Filename normalization should apply the folder organization and standard date without changing any file bytes.");
+        File.WriteAllBytes(alternateDatePath, alternateDateBytes);
+        var collisionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.NormalizeEvidenceFilename("mapping-key", alternateDateRelative, normalizedDateName));
+        Assert(Convert.ToBoolean(collisionResponse["collision"]) && File.Exists(alternateDatePath) && File.Exists(normalizedDatePath), "A normalization collision should preserve both files and return it for duplicate review instead of aborting Sync.");
         bool rejectedUnsafeRename = false;
         try { storage.NormalizeEvidenceFilename("mapping-key", Path.Combine("User Evidence", "GOV", "Shaw_Vivian", normalizedDateName), "..\\escape.zip"); } catch (InvalidDataException) { rejectedUnsafeRename = true; }
         Assert(rejectedUnsafeRename, "Date normalization should reject an unsafe target filename.");

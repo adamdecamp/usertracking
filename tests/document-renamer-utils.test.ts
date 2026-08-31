@@ -31,6 +31,7 @@ test('uses the organization folder while skipping the managed user-evidence iden
  assert.equal(organizationFromFolderPath('GDMS/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf','DEFAULT'),'GDMS');
  assert.equal(organizationFromFolderPath('LM/Brown_Jacob/Brown_Jacob_(GOV)_SAAR_26AUG2026.pdf','DEFAULT'),'LM');
  assert.equal(organizationFromFolderPath('certificate.pdf','DEFAULT'),'DEFAULT');
+ assert.equal(organizationFromFolderPath('Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','NGC'),'NGC');
  assert.equal(folderOrganizationDiffers('GOV/certificate.pdf','LM','DEFAULT'),true);
  assert.equal(folderOrganizationDiffers('GOV/certificate.pdf','gov','DEFAULT'),false);
 });
@@ -38,5 +39,6 @@ test('uses the organization folder while skipping the managed user-evidence iden
 test('normalizes the filename organization to its authoritative parent folder',()=>{
  assert.deepEqual(normalizeFilenameOrganization('Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf','GDMS'),{normalized:'Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf',organization:'GDMS',changed:true});
  assert.deepEqual(normalizeFilenameOrganization('Brown, Jacob DoD Cyber Cert 26AUG2026.pdf','GDMS'),{normalized:'Brown, Jacob_(GDMS)_DoD Cyber Cert 26AUG2026.pdf',organization:'GDMS',changed:true});
+ assert.equal(normalizeFilenameOrganization('Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf',organizationFromFolderPath('Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','NGC'))?.normalized,'Brown_Jacob_(NGC)_SAAR_26AUG2026.pdf');
  assert.equal(normalizeFilenameOrganization('Brown_Jacob_(GDMS)_User_Agreement_26AUG2026.pdf','GDMS')?.changed,false);
 });

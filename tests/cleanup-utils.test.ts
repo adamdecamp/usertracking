@@ -24,6 +24,13 @@ test('does not offer cleanup when the newest evidence is not current',()=>{
  assert.deepEqual(result.superseded,[]);
 });
 
+test('prefers an already normalized filename when duplicate dates are equal',()=>{
+ const items=[{path:'NGC/Brown_Jacob_(TEST)_DoD_Cyber_Cert_26AUG2026.pdf',date:new Date('2026-08-26'),normalized:false},{path:'NGC/Brown_Jacob_(NGC)_DoD_Cyber_Cert_26AUG2026.pdf',date:new Date('2026-08-26'),normalized:true}];
+ const result=selectSupersededEvidence(items,item=>item.date,()=>true,item=>item.path,item=>item.normalized);
+ assert.equal(result.current?.path,'NGC/Brown_Jacob_(NGC)_DoD_Cyber_Cert_26AUG2026.pdf');
+ assert.deepEqual(result.superseded.map(item=>item.path),['NGC/Brown_Jacob_(TEST)_DoD_Cyber_Cert_26AUG2026.pdf']);
+});
+
 test('deduplicates cleanup actions by case-insensitive Windows path',()=>{
  const result=distinctByPath([
   {path:'User Evidence/GOV/Shaw/file.pdf',kind:'first'},

@@ -269,32 +269,45 @@ internal sealed class PortableStorage : IDisposable
             {
                 Tuple<string, int> current = pending.Pop();
                 if (current.Item2 > 25) throw new InvalidDataException("Folder nesting limit exceeded.");
-                foreach (string file in Directory.EnumerateFiles(current.Item1))
+                foreach (string file in EnumerateScanFiles(root, current.Item1))
                 {
                     if (result.Count >= 100000) throw new InvalidDataException("File scan limit exceeded.");
                     string filename = Path.GetFileName(file), relative = Relative(root, file).Replace(Path.DirectorySeparatorChar, '/');
                     if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase))) continue;
-                    var info = new FileInfo(file);
-                    long size = info.Length, lastModifiedUnixMs = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds();
+                    bool supportedExtension = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+                    if (!supportedExtension)
+                    {
+                        result.Add(new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", 0L }, { "lastModifiedUnixMs", 0L }, { "accepted", false }, { "error", "Only PDF evidence or a ZIP containing one PDF is accepted." }, { "unchanged", false } });
+                        continue;
+                    }
+                    var info = new FileInfo(file);long size, lastModifiedUnixMs;
+                    try { size = info.Length;lastModifiedUnixMs = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds(); }
+                    catch (Exception error)
+                    {
+                        if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;
+                        result.Add(new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", 0L }, { "lastModifiedUnixMs", 0L }, { "accepted", false }, { "error", "File metadata could not be read: " + CleanLine(error.Message, 240) }, { "unchanged", false } });
+                        continue;
+                    }
                     Dictionary<string, object> cached;
                     bool unchanged = previous.TryGetValue(relative, out cached) && String.Equals(Convert.ToString(cached["name"], CultureInfo.InvariantCulture), filename, StringComparison.OrdinalIgnoreCase) && Convert.ToInt64(cached["size"], CultureInfo.InvariantCulture) == size && Convert.ToInt64(cached["lastModifiedUnixMs"], CultureInfo.InvariantCulture) == lastModifiedUnixMs;
                     string validationError = unchanged ? Convert.ToString(cached["error"], CultureInfo.InvariantCulture) : "";
                     bool cacheable = true, accepted = unchanged ? Convert.ToBoolean(cached["accepted"], CultureInfo.InvariantCulture) : TryValidateEvidenceFile(file, out validationError, out cacheable);
                     if (!unchanged)
                     {
-                        info.Refresh();
-                        if (!info.Exists || info.Length != size || new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds() != lastModifiedUnixMs) { accepted = false; validationError = "The evidence file changed during Sync. Run Sync again."; cacheable = false; }
+                        try { info.Refresh();if (!info.Exists || info.Length != size || new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds() != lastModifiedUnixMs) { accepted = false; validationError = "The evidence file changed during Sync. Run Sync again."; cacheable = false; } }
+                        catch (Exception error) { if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;accepted = false;validationError = "File metadata could not be rechecked after validation: " + CleanLine(error.Message, 220);cacheable = false; }
                     }
                     string cleanName = CleanLine(filename, 500), cleanError = CleanLine(validationError, 300);
                     var item = new Dictionary<string, object> { { "name", cleanName }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", lastModifiedUnixMs }, { "accepted", accepted }, { "error", cleanError }, { "unchanged", unchanged } };
                     result.Add(item);
                     if (cacheable) next.Add(new Dictionary<string, object> { { "name", cleanName }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", lastModifiedUnixMs }, { "accepted", accepted }, { "error", cleanError } });
                 }
-                foreach (string directory in Directory.EnumerateDirectories(current.Item1))
+                foreach (string directory in EnumerateScanDirectories(root, current.Item1))
                 {
                     string name = Path.GetFileName(directory);
                     if (current.Item2 == 0 && (String.Equals(name, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Reports", StringComparison.OrdinalIgnoreCase))) continue;
-                    if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) continue;
+                    try { if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) continue; }
+                    catch (Exception error) { if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;throw ScanFailure(root, directory, "checking folder attributes", error); }
                     pending.Push(Tuple.Create(directory, current.Item2 + 1));
                 }
             }
@@ -404,7 +417,7 @@ internal sealed class PortableStorage : IDisposable
             if ((!sourceExtension.Equals(".pdf", StringComparison.OrdinalIgnoreCase) && !sourceExtension.Equals(".zip", StringComparison.OrdinalIgnoreCase)) || !sourceExtension.Equals(targetExtension, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The normalized filename must preserve the PDF or ZIP extension.");
             string destination = Path.Combine(Path.GetDirectoryName(source), safeName);
             if (String.Equals(source, destination, StringComparison.Ordinal)) return json.Serialize(new Dictionary<string, object> { { "renamed", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "alreadyCompleted", true } });
-            if (File.Exists(destination)) throw new IOException("A file with the normalized evidence filename already exists. Review the duplicate before Sync continues.");
+            if (File.Exists(destination)) return json.Serialize(new Dictionary<string, object> { { "renamed", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "collision", true }, { "existing", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') } });
             string sourceHash = Sha256Bytes(File.ReadAllBytes(source));
             File.Move(source, destination);
             try
@@ -884,6 +897,38 @@ internal sealed class PortableStorage : IDisposable
         string prefix = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, full = Path.GetFullPath(path);
         if (!full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) throw new UnauthorizedAccessException("A scanned file is outside the mapped folder.");
         return full.Substring(prefix.Length);
+    }
+
+    private static string[] EnumerateScanFiles(string root, string directory)
+    {
+        try { return Directory.GetFiles(directory, "*", SearchOption.TopDirectoryOnly); }
+        catch (IOException error)
+        {
+            if ((error.HResult & 0xffff) != 87) throw ScanFailure(root, directory, "enumerating files", error);
+            try { return Directory.GetFiles(directory, "*.*", SearchOption.TopDirectoryOnly); }
+            catch (Exception fallback) { if (!(fallback is IOException) && !(fallback is UnauthorizedAccessException)) throw;throw ScanFailure(root, directory, "enumerating files with both compatible search patterns", fallback); }
+        }
+        catch (UnauthorizedAccessException error) { throw ScanFailure(root, directory, "enumerating files", error); }
+    }
+
+    private static string[] EnumerateScanDirectories(string root, string directory)
+    {
+        try { return Directory.GetDirectories(directory, "*", SearchOption.TopDirectoryOnly); }
+        catch (IOException error)
+        {
+            if ((error.HResult & 0xffff) != 87) throw ScanFailure(root, directory, "enumerating subfolders", error);
+            try { return Directory.GetDirectories(directory, "*.*", SearchOption.TopDirectoryOnly); }
+            catch (Exception fallback) { if (!(fallback is IOException) && !(fallback is UnauthorizedAccessException)) throw;throw ScanFailure(root, directory, "enumerating subfolders with both compatible search patterns", fallback); }
+        }
+        catch (UnauthorizedAccessException error) { throw ScanFailure(root, directory, "enumerating subfolders", error); }
+    }
+
+    private static IOException ScanFailure(string root, string path, string stage, Exception error)
+    {
+        string location;
+        try { location = String.Equals(Path.GetFullPath(root), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase) ? "." : Relative(root, path).Replace(Path.DirectorySeparatorChar, '/'); }
+        catch { location = CleanLine(path, 300); }
+        return new IOException("Scan failed while " + stage + " at " + location + ". " + CleanLine(error.Message, 300), error);
     }
 
     private static string NormalizeRootPath(string path)

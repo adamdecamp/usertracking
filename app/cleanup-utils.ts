@@ -1,5 +1,5 @@
-export function selectSupersededEvidence<T>(items:T[],dateOf:(item:T)=>Date|undefined,isCurrent:(item:T)=>boolean,keyOf:(item:T)=>string){
- const ordered=[...items].filter(item=>!!dateOf(item)).sort((left,right)=>(dateOf(right)?.getTime()??0)-(dateOf(left)?.getTime()??0)||keyOf(left).localeCompare(keyOf(right)));
+export function selectSupersededEvidence<T>(items:T[],dateOf:(item:T)=>Date|undefined,isCurrent:(item:T)=>boolean,keyOf:(item:T)=>string,isPreferred:(item:T)=>boolean=()=>false){
+ const ordered=[...items].filter(item=>!!dateOf(item)).sort((left,right)=>(dateOf(right)?.getTime()??0)-(dateOf(left)?.getTime()??0)||Number(isPreferred(right))-Number(isPreferred(left))||keyOf(left).localeCompare(keyOf(right)));
  if(ordered.length<2||!isCurrent(ordered[0]))return{current:undefined,superseded:[] as T[]};
  return{current:ordered[0],superseded:ordered.slice(1)};
 }
