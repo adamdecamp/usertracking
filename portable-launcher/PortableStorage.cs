@@ -401,7 +401,17 @@ internal sealed class PortableStorage : IDisposable
             string destination = Path.Combine(Path.GetDirectoryName(source), safeName);
             if (String.Equals(source, destination, StringComparison.Ordinal)) return json.Serialize(new Dictionary<string, object> { { "renamed", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "alreadyCompleted", true } });
             if (File.Exists(destination)) throw new IOException("A file with the normalized evidence filename already exists. Review the duplicate before Sync continues.");
+            string sourceHash = Sha256Bytes(File.ReadAllBytes(source));
             File.Move(source, destination);
+            try
+            {
+                if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The renamed PDF failed its content-integrity check.");
+            }
+            catch
+            {
+                if (!File.Exists(source) && File.Exists(destination)) File.Move(destination, source);
+                throw;
+            }
             return json.Serialize(new Dictionary<string, object> { { "renamed", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') } });
         }
     }
