@@ -17,12 +17,10 @@ export function folderOrganizationDiffers(path:string,filenameOrganization:strin
 
 const kindRules:[string,RegExp[]][]=[
  ['DTA Training Cert',[/\bDTA\b.{0,80}\bTRAINING\b/i,/\bDELEGATED TRUSTED AGENT\b.{0,80}\bTRAINING\b/i]],
- ['DTA Agreement',[/\bDTA\b.{0,80}\bAGREEMENT\b/i,/\bDELEGATED TRUSTED AGENT\b.{0,80}\bAGREEMENT\b/i]],
  ['Privileged User Training Cert',[/\bPRIVILEGED USER\b.{0,100}\bTRAINING\b/i,/\bPRIVILEGED ACCESS\b.{0,100}\bTRAINING\b/i]],
- ['GEN and PRIV Agreement',[/\b(?:GENERAL|GEN)\b.{0,80}\b(?:AND|&)\b.{0,40}\bPRIV(?:ILEGED)?\b.{0,100}\bAGREEMENT\b/i,/\bPRIVILEGED USER AGREEMENT\b/i]],
  ['8140 Cert Memo',[/\b8140(?:\.0+)?\b.{0,180}\b(?:MEMO|MEMORANDUM|CERTIFICATION|QUALIFICATION)\b/i,/\b(?:MEMO|MEMORANDUM)\b.{0,180}\b8140(?:\.0+)?\b/i]],
  ['SAAR',[/\bDD\s*FORM\s*2875\b/i,/\bSYSTEM AUTHORIZATION ACCESS REQUEST\b/i,/\bSAAR\b/i]],
- ['GEN User Agreement',[/\b(?:GENERAL|GEN) USER AGREEMENT\b/i,/\bACCEPTABLE USE (?:POLICY|AGREEMENT)\b/i,/\bUSER AGREEMENT\b/i]],
+ ['User Agreement',[/\bAGREEMENTS?\b/i,/\bACCEPTABLE USE POLICY\b/i]],
  ['DoD Cyber Cert',[/\bCOMPTIA\b/i,/\bSECURITY\s*\+/i,/\bCYSA\s*\+/i,/\bCASP\s*\+/i,/\bCISSP\b/i,/\bCERTIFIED ETHICAL HACKER\b/i,/\bCYBER(?:SECURITY)? (?:CERTIFICATE|CERTIFICATION)\b/i]],
 ];
 

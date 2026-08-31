@@ -32,7 +32,7 @@ test('fuzzes accepted separator variations while preserving ordered identity and
   assert.equal(filenameIdentityMatches(cyber,{last:'Brown',first:'Jacob'}),true,cyber);
   assert.equal(filenameMatchesKind(cyber,'DoD Cyber Cert'),true,cyber);
   assert.equal(filenameIdentityMatches(agreement,{last:'Brown',first:'Jacob'}),true,agreement);
-  assert.equal(filenameMatchesKind(agreement,'GEN User Agreement'),true,agreement);
+  assert.equal(filenameMatchesKind(agreement,'User Agreement'),true,agreement);
  }
 });
 

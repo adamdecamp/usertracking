@@ -7,7 +7,7 @@ test('creates the approved missing-artifact message',()=>{
 });
 
 test('creates the approved overdue-artifact message',()=>{
- assert.equal(notificationBody('Overdue','GEN User Agreement'),'Hello,\n\nOur records indicate your GEN User Agreement is overdue.\n\nFailure to provide this requirement may result in loss of access to the system.\n\nPlease provide a copy as soon as possible to maintain your account access.');
+ assert.equal(notificationBody('Overdue','User Agreement'),'Hello,\n\nOur records indicate your User Agreement is overdue.\n\nFailure to provide this requirement may result in loss of access to the system.\n\nPlease provide a copy as soon as possible to maintain your account access.');
 });
 
 test('creates the approved due-within-30-days message',()=>{
@@ -15,9 +15,9 @@ test('creates the approved due-within-30-days message',()=>{
 });
 
 test('replaces an invalid artifact selection when the notification status changes',()=>{
- const kinds=['SAAR','DoD Cyber Cert','GEN User Agreement'];
+ const kinds=['SAAR','DoD Cyber Cert','User Agreement'];
  assert.deepEqual(availableNotificationKinds('Missing',kinds),kinds);
- assert.deepEqual(availableNotificationKinds('Overdue',kinds),['DoD Cyber Cert','GEN User Agreement']);
+ assert.deepEqual(availableNotificationKinds('Overdue',kinds),['DoD Cyber Cert','User Agreement']);
  assert.equal(notificationKindForState('Overdue','SAAR',kinds),'DoD Cyber Cert');
- assert.equal(notificationKindForState('Overdue','GEN User Agreement',kinds),'GEN User Agreement');
+ assert.equal(notificationKindForState('Overdue','User Agreement',kinds),'User Agreement');
 });

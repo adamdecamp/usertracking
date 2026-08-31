@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {canonicalArtifactKind,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,validateNewUserSaarFilename} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -18,14 +18,14 @@ test('recognizes the reported DoD Cyber certificate filename',()=>{
 
 test('recognizes the reported General User Agreement filename',()=>{
  assert.equal(looksLikeEvidenceFilename(general),true);
- assert.equal(filenameMatchesKind(general,'GEN User Agreement'),true);
+ assert.equal(filenameMatchesKind(general,'User Agreement'),true);
  assert.equal(filenameIdentityMatches(general,{last:'Brown',first:'Jacob'}),true);
  assert.equal(filenameMatchesKind(general,'DoD Cyber Cert'),false);
 });
 
 test('recognizes the stored one-PDF ZIP form of both filenames',()=>{
  assert.equal(filenameMatchesKind(`${dod}.zip`,'DoD Cyber Cert'),true);
- assert.equal(filenameMatchesKind(`${general}.zip`,'GEN User Agreement'),true);
+ assert.equal(filenameMatchesKind(`${general}.zip`,'User Agreement'),true);
 });
 
 test('tolerates commas, missing underscores, and additional spaces',()=>{
@@ -35,8 +35,19 @@ test('tolerates commas, missing underscores, and additional spaces',()=>{
  assert.deepEqual(identityFromFilename(spacedDod),{last:'Brown',first:'Jacob'});
  assert.equal(organizationFrom(spacedDod),'LM');
  assert.equal(looksLikeEvidenceFilename(extraSpaceGeneral),true);
- assert.equal(filenameMatchesKind(extraSpaceGeneral,'GEN User Agreement'),true);
+ assert.equal(filenameMatchesKind(extraSpaceGeneral,'User Agreement'),true);
  assert.equal(filenameIdentityMatches(extraSpaceGeneral,{last:'Brown',first:'Jacob'}),true);
+});
+
+test('consolidates legacy agreement filenames into one User Agreement requirement',()=>{
+ for(const filename of [
+  'Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf',
+  'Brown_Jacob_(LM)_GEN_and_PRIV_Agreement_26AUG2026.pdf',
+  'Brown_Jacob_(LM)_DTA_Agreement_26AUG2026.pdf',
+  'Brown_Jacob_(LM)_User_Agreements_26AUG2026.pdf',
+ ])assert.equal(filenameMatchesKind(filename,'User Agreement'),true,filename);
+ for(const kind of ['GEN User Agreement','GEN and PRIV Agreement','DTA Agreement'])assert.equal(canonicalArtifactKind(kind),'User Agreement');
+ assert.equal(filenameMatchesKind('Brown_Jacob_(LM)_PRIV_admin_SAAR_26AUG2026.pdf','User Agreement'),false);
 });
 
 test('still rejects a reversed First-Last identity for the expected user',()=>{

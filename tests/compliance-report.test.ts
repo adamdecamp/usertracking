@@ -14,7 +14,7 @@ const input:ComplianceReportInput={
   {userId:'u1',systemId:'s1',systemName:'System Alpha',organization:'GOV',roles:['General'],privilegedTypes:[],artifact:'DoD Cyber Cert',status:'Missing',daysOverdue:0},
   {userId:'u2',systemId:'s1',systemName:'System Alpha',organization:'GOV',roles:['Privileged'],privilegedTypes:['DTA'],artifact:'SAAR',status:'Current',daysOverdue:0},
   {userId:'u2',systemId:'s1',systemName:'System Alpha',organization:'GOV',roles:['Privileged'],privilegedTypes:['DTA'],artifact:'8140 Cert Memo',status:'Overdue',daysOverdue:45,exceptionThrough:'2026-09-30',exceptionApprover:'AO'},
-  {userId:'u2',systemId:'s1',systemName:'System Alpha',organization:'GOV',roles:['Privileged'],privilegedTypes:['DTA'],artifact:'DTA Agreement',status:'Overdue',daysOverdue:95},
+  {userId:'u2',systemId:'s1',systemName:'System Alpha',organization:'GOV',roles:['Privileged'],privilegedTypes:['DTA'],artifact:'User Agreement',status:'Overdue',daysOverdue:95},
  ],
 };
 

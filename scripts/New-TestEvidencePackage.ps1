@@ -80,18 +80,16 @@ function Get-ArtifactDefinitions([string]$Role, [string]$PrivilegedType) {
   $base = @(
     @{ Name = 'SAAR'; Suffix = $null },
     @{ Name = 'DoD Cyber Cert'; Suffix = 'DoD_Cyber_Cert' },
-    @{ Name = 'GEN User Agreement'; Suffix = 'GEN_User_Agreement' }
+    @{ Name = 'User Agreement'; Suffix = 'User_Agreement' }
   )
   if ($Role -eq 'Privileged') {
     $privileged = $base + @(
-      @{ Name = 'GEN and PRIV Agreement'; Suffix = 'GEN_and_PRIV_Agreement' },
       @{ Name = '8140 Cert Memo'; Suffix = '8140_Cert_Memo' },
       @{ Name = 'Privileged User Training Cert'; Suffix = 'PRIV_Training_Cert' }
     )
     if ($PrivilegedType -eq 'DTA') {
       $privileged += @(
-        @{ Name = 'DTA Training Cert'; Suffix = 'DTA_Training_Cert' },
-        @{ Name = 'DTA Agreement'; Suffix = 'DTA_Agreement' }
+        @{ Name = 'DTA Training Cert'; Suffix = 'DTA_Training_Cert' }
       )
     }
     return $privileged

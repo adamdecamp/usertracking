@@ -239,6 +239,7 @@ internal sealed class TrackerContext : ApplicationContext
         string detail = ex.GetType().Name + ": " + CleanError(ex.Message);
         if (ex is UnauthorizedAccessException) return detail + " Confirm that your Windows account has read, create, modify, delete, and rename permissions on the network share.";
         if (ex is DirectoryNotFoundException || ex is DriveNotFoundException) return detail + " The mapped network location is unavailable. Reconnect the drive or UNC share, then map the system folder again.";
+        if (ex is IOException && (ex.HResult & 0xffff) == 87) return detail + " The selected filesystem rejected a Windows write option. This build automatically retries with a compatible write mode while retaining exclusive locking and SHA-256 verification.";
         if (ex is IOException) return detail + " The network share may be offline, reconnecting, or holding a file lock. Confirm connectivity and permissions, then retry; the app preserves the previous verified file when replacement cannot be completed.";
         return detail;
     }

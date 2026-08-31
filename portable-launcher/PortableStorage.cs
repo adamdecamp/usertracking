@@ -30,6 +30,7 @@ internal sealed class PortableStorage : IDisposable
     private readonly string actor;
     private readonly string mappingCachePath;
     private string lastSystemId;
+    internal static bool ForceBufferedIoForTests { get; set; }
 
     static PortableStorage()
     {
@@ -451,7 +452,7 @@ internal sealed class PortableStorage : IDisposable
                     }
                     output.Position = 0;
                     ValidateEvidenceZip(output, Path.GetFileName(destination));
-                    output.Flush(true);
+                    FlushCompatible(output);
                 }
                 File.Move(temporary, destination);
                 try { File.Delete(source); }
@@ -538,10 +539,10 @@ internal sealed class PortableStorage : IDisposable
                     var entry = new Dictionary<string, object> { { "version", AuditVersion }, { "sequence", sequence }, { "timestampUtc", timestamp }, { "actor", actor }, { "action", cleanAction }, { "previousHash", state.HeadHash }, { "entryHash", entryHash } };
                     string path = Path.Combine(directory, "audit-" + now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".jsonl"), line = json.Serialize(entry) + "\n";
                     byte[] bytes = Encoding.UTF8.GetBytes(line);
-                    using (var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, 4096, FileOptions.WriteThrough))
+                    using (var stream = OpenCompatibleFileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, 4096))
                     {
                         stream.Write(bytes, 0, bytes.Length);
-                        stream.Flush(true);
+                        FlushCompatible(stream);
                     }
                 }
                 return;
@@ -642,7 +643,7 @@ internal sealed class PortableStorage : IDisposable
             }
             string path = Path.Combine(Root(systemId), "tracker-exclusive-session.lock");
             FileStream stream;
-            try { stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 4096, FileOptions.WriteThrough); }
+            try { stream = OpenCompatibleFileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 4096); }
             catch (IOException) { return false; }
             catch (UnauthorizedAccessException) { return false; }
             held = new HeldLease { SessionId = sessionId, Stream = stream };
@@ -797,7 +798,7 @@ internal sealed class PortableStorage : IDisposable
         held.Stream.Position = 0;
         held.Stream.SetLength(0);
         held.Stream.Write(bytes, 0, bytes.Length);
-        held.Stream.Flush(true);
+        FlushCompatible(held.Stream);
         held.LastRenewedUtc = DateTime.UtcNow;
     }
 
@@ -1008,6 +1009,29 @@ internal sealed class PortableStorage : IDisposable
     private static string ReadText(string path, long limit) { var info = new FileInfo(path); if (!info.Exists) throw new FileNotFoundException("The requested file is missing."); if (info.Length > limit) throw new InvalidDataException("The requested file exceeds its size limit."); return File.ReadAllText(path, Encoding.UTF8); }
     private static string Sha256(string value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(value))).Replace("-", "").ToLowerInvariant(); } }
     private static string Sha256Bytes(byte[] value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(value)).Replace("-", "").ToLowerInvariant(); } }
+    private static bool IsInvalidParameter(IOException error) { return (error.HResult & 0xffff) == 87; }
+    private static FileStream OpenCompatibleFileStream(string path, FileMode mode, FileAccess access, FileShare share, int bufferSize)
+    {
+        if (!ForceBufferedIoForTests)
+        {
+            try { return new FileStream(path, mode, access, share, bufferSize, FileOptions.WriteThrough); }
+            catch (IOException error)
+            {
+                if (!IsInvalidParameter(error)) throw;
+                if (mode == FileMode.CreateNew && File.Exists(path)) TryDelete(path);
+            }
+        }
+        return new FileStream(path, mode, access, share, bufferSize, FileOptions.None);
+    }
+    private static void FlushCompatible(FileStream stream)
+    {
+        if (!ForceBufferedIoForTests)
+        {
+            try { stream.Flush(true); return; }
+            catch (IOException error) { if (!IsInvalidParameter(error)) throw; }
+        }
+        stream.Flush();
+    }
     private static void AtomicWrite(string path, byte[] bytes)
     {
         for (int attempt = 0; ; attempt++)
@@ -1017,17 +1041,17 @@ internal sealed class PortableStorage : IDisposable
             string operationId = Guid.NewGuid().ToString("N"), temporary = Path.Combine(directory, ".isut-" + operationId + ".tmp"), previous = Path.Combine(directory, ".isut-" + operationId + ".previous");
             try
             {
-                using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.WriteThrough))
+                using (var stream = OpenCompatibleFileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920))
                 {
                     stream.Write(bytes, 0, bytes.Length);
-                    stream.Flush(true);
+                    FlushCompatible(stream);
                 }
                 if (File.Exists(path))
                 {
                     TryDelete(previous);
                     try { File.Replace(temporary, path, previous, true); }
                     catch (PlatformNotSupportedException) { VerifiedCopyReplace(temporary, path, previous, bytes); }
-                    catch (IOException) { if (attempt < 2) throw; VerifiedCopyReplace(temporary, path, previous, bytes); }
+                    catch (IOException error) { if (!IsInvalidParameter(error) && attempt < 2) throw; VerifiedCopyReplace(temporary, path, previous, bytes); }
                 }
                 else File.Move(temporary, path);
                 if (!String.Equals(Sha256Bytes(File.ReadAllBytes(path)), Sha256Bytes(bytes), StringComparison.OrdinalIgnoreCase)) throw new IOException("The network-share write completed but failed its SHA-256 verification.");

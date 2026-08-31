@@ -40,6 +40,20 @@ internal static class PortableStorageTests
         if (args.Length != 1) throw new ArgumentException("A test directory is required.");
         string root = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(root);
+        string compatibilityRoot = Path.Combine(root, "write-compatibility"), compatibilityCache = Path.Combine(root, "write-compatibility-mappings.json");
+        Directory.CreateDirectory(compatibilityRoot);
+        PortableStorage.ForceBufferedIoForTests = true;
+        using (var compatibilityStorage = new PortableStorage("DOMAIN\\compatibility-operator", compatibilityCache))
+        {
+            compatibilityStorage.Map("compatibility-key", compatibilityRoot);
+            Assert(compatibilityStorage.AcquireLease("compatibility-key", "compatibility-session"), "A filesystem that rejects write-through options should still acquire an exclusive lease using compatible buffered I/O.");
+            compatibilityStorage.SaveManifest("compatibility-key", Database("compatibility@example.mil"));
+            compatibilityStorage.SaveCsv("compatibility-key", Encoding.UTF8.GetBytes("header\nvalue"));
+            compatibilityStorage.AppendAudit("compatibility-key", "COMPATIBILITY WRITE TEST");
+            compatibilityStorage.ReleaseLease("compatibility-key", "compatibility-session");
+        }
+        PortableStorage.ForceBufferedIoForTests = false;
+        Assert(File.Exists(Path.Combine(compatibilityRoot, "information-system-user-tracker.json")) && File.Exists(Path.Combine(compatibilityRoot, "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv")) && Directory.EnumerateFiles(Path.Combine(compatibilityRoot, "Audit Logs"), "audit-*.jsonl").Any(), "Compatible buffered I/O should preserve manifest, backup, and audit writes.");
         string mappingCache = Path.Combine(root, "local-folder-mappings.json");
         var storage = new PortableStorage("DOMAIN\\operator", mappingCache);
         storage.Map("mapping-key", root);

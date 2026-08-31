@@ -1,4 +1,7 @@
-export const artifactKinds=['SAAR','DoD Cyber Cert','GEN User Agreement','GEN and PRIV Agreement','8140 Cert Memo','Privileged User Training Cert','DTA Training Cert','DTA Agreement'];
+export const agreementArtifactKind='User Agreement';
+export const artifactKinds=['SAAR','DoD Cyber Cert',agreementArtifactKind,'8140 Cert Memo','Privileged User Training Cert','DTA Training Cert'];
+const legacyAgreementKinds=new Set(['GEN User Agreement','GEN and PRIV Agreement','DTA Agreement']);
+export const canonicalArtifactKind=(kind:string)=>legacyAgreementKinds.has(kind)?agreementArtifactKind:kind;
 const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const clean=(value:string,max=500)=>value.replace(/[\r\n\u0000-\u001f\u007f]/g,' ').trim().slice(0,max);
 type DateMatch={date:Date;start:number;end:number;normalized:string;defaultFormat:boolean};
@@ -44,8 +47,8 @@ export function normalizeFilenameDate(filename:string){const match=dateMatch(fil
 
 export function organizationFrom(filename:string){const match=filename.match(/\(([^()]{1,100})\)/),organization=match?clean(match[1],100):'';return organization||undefined}
 
-function words(kind:string){if(kind==='SAAR')return['SAAR'];if(kind==='DoD Cyber Cert')return['DOD'];if(kind==='GEN User Agreement')return['GEN','USER'];if(kind==='GEN and PRIV Agreement')return['PRIV','AGREEMENT'];if(kind==='8140 Cert Memo')return['8140'];if(kind==='Privileged User Training Cert')return['PRIV','TRAINING'];if(kind==='DTA Training Cert')return['DTA','TRAINING'];return['DTA','AGREEMENT']}
-export function filenameMatchesKind(filename:string,kind:string){const tokens=fileTokens(filename);return (kind==='SAAR'||!tokens.has('SAAR'))&&words(kind).every(word=>tokens.has(word))}
+function words(kind:string){const canonical=canonicalArtifactKind(kind);if(canonical==='SAAR')return['SAAR'];if(canonical==='DoD Cyber Cert')return['DOD'];if(canonical===agreementArtifactKind)return['AGREEMENT'];if(canonical==='8140 Cert Memo')return['8140'];if(canonical==='Privileged User Training Cert')return['PRIV','TRAINING'];return['DTA','TRAINING']}
+export function filenameMatchesKind(filename:string,kind:string){const canonical=canonicalArtifactKind(kind),tokens=fileTokens(filename),hasRequiredWords=canonical===agreementArtifactKind?(tokens.has('AGREEMENT')||tokens.has('AGREEMENTS')):words(canonical).every(word=>tokens.has(word));return (canonical==='SAAR'||!tokens.has('SAAR'))&&hasRequiredWords}
 export function looksLikeEvidenceFilename(filename:string){return !!parseDate(filename)&&artifactKinds.some(kind=>filenameMatchesKind(filename,kind))}
 
 export function identityFromFilename(filename:string){

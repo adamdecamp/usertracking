@@ -6,8 +6,8 @@ const users=[{first:'Jacob',last:'Brown',organization:'LM',roles:['General'],pri
 
 test('reads a signed general user agreement and builds the ingest filename',()=>{
  const analysis=analyzeDocumentText('GENERAL USER AGREEMENT Name of User: Brown, Jacob Signature Date: 08/26/2026','scan 004.pdf',users);
- assert.equal(analysis.kind,'GEN User Agreement');assert.equal(analysis.date,'2026-08-26');assert.equal(analysis.confidence,'High');
- assert.equal(buildTrackerFilename(analysis),'Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf');
+ assert.equal(analysis.kind,'User Agreement');assert.equal(analysis.date,'2026-08-26');assert.equal(analysis.confidence,'High');
+ assert.equal(buildTrackerFilename(analysis),'Brown_Jacob_(LM)_User_Agreement_26AUG2026.pdf');
 });
 
 test('prefers certification date over expiration date for Security+',()=>{
