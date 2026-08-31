@@ -24,7 +24,7 @@ test('fuzzes filename parsing without uncaught parser failures',()=>{
 });
 
 test('fuzzes accepted separator variations while preserving ordered identity and artifact matching',()=>{
- const nameSeparators=['_','_   ',', ','   '],tokenSeparators=['_',' ','   ','__'];
+ const nameSeparators=['_','_   ',', ','   '],tokenSeparators=['_',' ','   ','__',''];
  for(let index=0;index<1000;index++){
   const nameSeparator=pick(nameSeparators),tokenSeparator=pick(tokenSeparators),leading=pick(['',' ','   ']),extension=pick(['.pdf','.PDF','.pdf.zip']);
   const cyber=`${leading}Brown${nameSeparator}Jacob${tokenSeparator}(LM)${tokenSeparator}DoD${tokenSeparator}Cyber${tokenSeparator}Cert${tokenSeparator}26AUG2026${extension}`;

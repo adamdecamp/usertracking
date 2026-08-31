@@ -1,4 +1,4 @@
-import {filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom} from './filename-utils.ts';
+import {filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom,parseDate} from './filename-utils.ts';
 
 export type ComplianceException={id:string;artifact:string;reason:string;approvedBy:string;createdAt:string;createdBy:string;expiresOn:string;revokedAt?:string;revokedBy?:string};
 export type ReconciliationUser={id:string;last:string;first:string;email:string;organization:string;artifacts:{kind:string;filename:string;sha256?:string}[]};
@@ -7,6 +7,15 @@ export type ReconciliationRejection={filename:string;reason:string;path?:string}
 export type ReconciliationIssue={id:string;category:'Missing File'|'Content Changed'|'Orphan Evidence'|'Duplicate Identity'|'Duplicate Email'|'Organization Conflict'|'Rejected Evidence';severity:'High'|'Medium';summary:string;detail:string;path?:string;userId?:string};
 export type SyncProvenanceArtifact={kind:string;filename:string;sha256?:string;path?:string;storedAt?:string;storedBy?:string;source?:string};
 export type SyncProvenanceUser={id:string;last:string;first:string;artifacts:SyncProvenanceArtifact[]};
+
+export function proposedNewUserArtifacts(filenames:string[],user:{last:string;first:string},kinds:string[],saarSource:string){
+ const identityFiles=filenames.filter(filename=>filenameIdentityMatches(filename,user));
+ return kinds.map(kind=>{
+  if(kind==='SAAR')return filenameIdentityMatches(saarSource,user)&&filenameMatchesKind(saarSource,'SAAR')?{kind,filename:saarSource}:undefined;
+  const filename=identityFiles.filter(item=>filenameMatchesKind(item,kind)&&!!parseDate(item)).sort((left,right)=>(parseDate(right)!.getTime()-parseDate(left)!.getTime())||left.localeCompare(right))[0];
+  return filename?{kind,filename}:undefined;
+ }).filter((artifact):artifact is{kind:string;filename:string}=>!!artifact);
+}
 
 export function activeComplianceException(exceptions:ComplianceException[]|undefined,artifact:string,asOf=new Date()){
  const endOfDay=(value:string)=>Date.parse(`${value}T23:59:59.999Z`);

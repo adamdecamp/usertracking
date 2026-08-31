@@ -47,8 +47,21 @@ export function normalizeFilenameDate(filename:string){const match=dateMatch(fil
 
 export function organizationFrom(filename:string){const match=filename.match(/\(([^()]{1,100})\)/),organization=match?clean(match[1],100):'';return organization||undefined}
 
-function words(kind:string){const canonical=canonicalArtifactKind(kind);if(canonical==='SAAR')return['SAAR'];if(canonical==='DoD Cyber Cert')return['DOD'];if(canonical===agreementArtifactKind)return['AGREEMENT'];if(canonical==='8140 Cert Memo')return['8140'];if(canonical==='Privileged User Training Cert')return['PRIV','TRAINING'];return['DTA','TRAINING']}
-export function filenameMatchesKind(filename:string,kind:string){const canonical=canonicalArtifactKind(kind),tokens=fileTokens(filename),hasRequiredWords=canonical===agreementArtifactKind?(tokens.has('AGREEMENT')||tokens.has('AGREEMENTS')):words(canonical).every(word=>tokens.has(word));return (canonical==='SAAR'||!tokens.has('SAAR'))&&hasRequiredWords}
+function saarMarkers(filename:string){
+ const upper=(filename.split(/[\\/]/).pop()??filename).toUpperCase(),general=/(?:^|[^A-Z0-9])GEN[^A-Z0-9]*SAAR(?:[^A-Z0-9]|$)/.test(upper),privileged=upper.match(/(?:^|[^A-Z0-9])PRIV[^A-Z0-9]*([A-Z0-9]+?)[^A-Z0-9]*SAAR(?:[^A-Z0-9]|$)/);
+ return{general,privilegedType:privileged?.[1]};
+}
+function hasSaarMarker(filename:string){const tokens=fileTokens(filename),markers=saarMarkers(filename);return tokens.has('SAAR')||markers.general||!!markers.privilegedType}
+export function filenameMatchesKind(filename:string,kind:string){
+ const canonical=canonicalArtifactKind(kind),tokens=fileTokens(filename),compact=filename.toUpperCase().replace(/[^A-Z0-9]+/g,''),saar=hasSaarMarker(filename);
+ if(canonical==='SAAR')return saar;
+ if(saar)return false;
+ if(canonical==='DoD Cyber Cert')return tokens.has('DOD')||(compact.includes('DOD')&&compact.includes('CYBER'));
+ if(canonical===agreementArtifactKind)return tokens.has('AGREEMENT')||tokens.has('AGREEMENTS')||compact.includes('AGREEMENT');
+ if(canonical==='8140 Cert Memo')return tokens.has('8140')||compact.includes('8140');
+ if(canonical==='Privileged User Training Cert')return (tokens.has('PRIV')&&tokens.has('TRAINING'))||(compact.includes('PRIV')&&compact.includes('TRAINING'));
+ return (tokens.has('DTA')&&tokens.has('TRAINING'))||(compact.includes('DTA')&&compact.includes('TRAINING'));
+}
 export function looksLikeEvidenceFilename(filename:string){return !!parseDate(filename)&&artifactKinds.some(kind=>filenameMatchesKind(filename,kind))}
 
 export function identityFromFilename(filename:string){
@@ -70,10 +83,10 @@ export function validateNewUserSaarFilename(filename:string,fallback?:{identity?
  if(!organization)return{valid:false,reason:'The SAAR filename is missing its parenthesized organization.'};
  if(['ORG','ORGANIZATION'].includes(organization.toUpperCase()))return{valid:false,reason:'The SAAR filename still contains the organization template placeholder and the form organization could not be read.'};
  if(!parseDate(filename))return{valid:false,reason:'The SAAR filename is missing a valid recognized date.'};
- const tokens=fileTokens(filename),hasGeneral=tokens.has('GEN'),hasPrivileged=tokens.has('PRIV');
+ const markers=saarMarkers(filename),hasGeneral=markers.general,hasPrivileged=!!markers.privilegedType;
  if(hasGeneral===hasPrivileged)return{valid:false,reason:'The SAAR filename must identify exactly one role: GEN or PRIV.'};
  if(hasGeneral)return{valid:true,identity,organization,role:'General',privilegedTypes:[]};
- const list=fileTokenList(filename),privIndex=list.indexOf('PRIV'),saarIndex=list.indexOf('SAAR'),privilegedType=privIndex>=0&&saarIndex>privIndex+1?clean(list[privIndex+1],200):'';
+ const privilegedType=clean(markers.privilegedType??'',200);
  if(!privilegedType||privilegedType==='TYPE')return{valid:false,reason:'A PRIV SAAR filename must contain the actual privileged account type between PRIV and SAAR.'};
  return{valid:true,identity,organization,role:'Privileged',privilegedTypes:[privilegedType]};
 }

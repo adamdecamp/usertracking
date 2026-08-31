@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,notificationRecipientBatches,reconcileEvidence} from '../app/workflow-utils.ts';
+import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence} from '../app/workflow-utils.ts';
 
 test('returns only an active, unrevoked compliance exception',()=>{
  const exceptions=[{id:'old',artifact:'8140 Cert Memo',reason:'old',approvedBy:'A',createdAt:'2026-01-01T00:00:00Z',createdBy:'B',expiresOn:'2026-01-31'},{id:'active',artifact:'8140 Cert Memo',reason:'temporary',approvedBy:'A',createdAt:'2026-08-01T00:00:00Z',createdBy:'B',expiresOn:'2026-09-30'}];
@@ -23,6 +23,20 @@ test('adds provenance only to Sync-touched artifacts',()=>{
  const users=[{id:'u1',last:'Brown',first:'Jacob',artifacts:[{kind:'SAAR',filename:'Brown_Jacob_(GOV)_GEN_SAAR_26AUG2026.pdf.zip'},{kind:'DoD Cyber Cert',filename:'Brown_Jacob_(GOV)_DoD_Cyber_Cert_26AUG2026.pdf.zip'}]}],hash='a'.repeat(64),storedAt='2026-08-28T12:00:00Z';
  const updated=applySyncArtifactProvenance(users,new Set(['u1:SAAR']),[{filename:users[0].artifacts[0].filename,path:'User Evidence/GOV/Brown_Jacob/saar.zip',sha256:hash}],storedAt,'operator');
  assert.deepEqual(updated[0].artifacts[0],{...users[0].artifacts[0],sha256:hash,path:'User Evidence/GOV/Brown_Jacob/saar.zip',storedAt,storedBy:'operator',source:'Sync'});assert.deepEqual(updated[0].artifacts[1],users[0].artifacts[1]);
+});
+
+test('seeds a new user from the SAAR before matching supporting evidence',()=>{
+ const saar='Brown_Jacob_(GDMS)_GENSAAR_26AUG2026.pdf',files=[
+  saar,
+  'Brown_Jacob_(GDMS)_DoDCyberCert_26AUG2026.pdf',
+  'Brown_Jacob_(GDMS)_GENUserAgreement_26AUG2026.pdf',
+  'Someone_Else_(GDMS)_DoDCyberCert_26AUG2026.pdf',
+ ];
+ assert.deepEqual(proposedNewUserArtifacts(files,{last:'Brown',first:'Jacob'},['SAAR','DoD Cyber Cert','User Agreement'],saar),[
+  {kind:'SAAR',filename:saar},
+  {kind:'DoD Cyber Cert',filename:'Brown_Jacob_(GDMS)_DoDCyberCert_26AUG2026.pdf'},
+  {kind:'User Agreement',filename:'Brown_Jacob_(GDMS)_GENUserAgreement_26AUG2026.pdf'},
+ ]);
 });
 
 test('reconciles missing, orphaned, conflicting, duplicate, and rejected evidence',()=>{

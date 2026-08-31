@@ -39,6 +39,17 @@ test('tolerates commas, missing underscores, and additional spaces',()=>{
  assert.equal(filenameIdentityMatches(extraSpaceGeneral,{last:'Brown',first:'Jacob'}),true);
 });
 
+test('tolerates omitted separators inside artifact and SAAR role markers',()=>{
+ const generalSaar='Brown_Jacob_(GDMS)_GENSAAR_26AUG2026.pdf';
+ assert.equal(filenameMatchesKind(generalSaar,'SAAR'),true);
+ assert.deepEqual(validateNewUserSaarFilename(generalSaar),{valid:true,identity:{last:'Brown',first:'Jacob'},organization:'GDMS',role:'General',privilegedTypes:[]});
+ assert.equal(filenameMatchesKind('Brown_Jacob_(GDMS)_DoDCyberCert_26AUG2026.pdf','DoD Cyber Cert'),true);
+ assert.equal(filenameMatchesKind('Brown_Jacob_(GDMS)_GENUserAgreement_26AUG2026.pdf','User Agreement'),true);
+ assert.equal(filenameMatchesKind('Brown_Jacob_(GDMS)_PRIVUserTrainingCert_26AUG2026.pdf','Privileged User Training Cert'),true);
+ assert.equal(filenameMatchesKind('Brown_Jacob_(GDMS)_DTAUserTrainingCert_26AUG2026.pdf','DTA Training Cert'),true);
+ assert.deepEqual(validateNewUserSaarFilename('Brown_Jacob_(GDMS)_PRIVadminSAAR_26AUG2026.pdf'),{valid:true,identity:{last:'Brown',first:'Jacob'},organization:'GDMS',role:'Privileged',privilegedTypes:['ADMIN']});
+});
+
 test('consolidates legacy agreement filenames into one User Agreement requirement',()=>{
  for(const filename of [
   'Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf',

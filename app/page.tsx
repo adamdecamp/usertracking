@@ -18,7 +18,7 @@ import {readSaarFormFields,type SaarIdentity} from './saar-form-utils';
 import {idleTimeoutMs,sessionIdleExpired} from './session-utils';
 import {createSyncIndex,isSyncCancellation,readSyncIndex,syncIndexChecksumFilename,syncIndexEntryMatches,syncIndexFilename,syncIndexKey,throwIfSyncCancelled,type SyncIndexEntry} from './sync-utils';
 import {applicationVersion,complianceRuleSetVersion} from './version';
-import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,notificationRecipientBatches,reconcileEvidence,type ComplianceException,type ReconciliationIssue} from './workflow-utils';
+import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,type ComplianceException,type ReconciliationIssue} from './workflow-utils';
 type SystemRecord={id:string;name:string;type:string;organization:string;archived:boolean};
 type Artifact={kind:string;filename:string;sha256?:string;path?:string;storedAt?:string;storedBy?:string;source?:'Manual Add'|'Manual Update'|'Sync'};
 type ChangeRecord={timestamp:string;actor:string;action:string;description:string;rolesBefore:string[];rolesAfter:string[];files:string[]};
@@ -314,8 +314,7 @@ export default function Home(){
      const source=selected.filename,emailResult=saarReads.get(source)??await readSaar(scanResult.handles.get(source),controller.signal);
      if(emailResult.error){newUserCorrections.push({source,reason:emailResult.error});continue}
     const record:UserRecord={id:uid(),systemId:sourceSystem.id,organization:selected.organization,last:selected.identity.last,first:selected.identity.first,middle:emailResult.identity?.middle??'',email:emailResult.email,disabled:false,roles:[selected.role],privilegedUsernames:[],privilegedTypes:selected.privilegedTypes,artifacts:[]};
-     const identityFiles=files.filter(filename=>filenameIdentityMatches(filename,record));
-     record.artifacts=requiredKinds(record).map(kind=>{const filename=kind==='SAAR'?source:newestMatch(identityFiles,kind,name=>name);return filename?{kind,filename}:undefined}).filter((artifact):artifact is Artifact=>!!artifact);
+      record.artifacts=proposedNewUserArtifacts(files,record,requiredKinds(record),source);
      newUsers.push({id:record.id,record,source});
      updateProcessing('Validating New-User SAARs',groupIndex,saarGroups.size,`${newUsers.length} proposed new user${newUsers.length===1?'':'s'} passed validation.`,'SAARs');
     }
