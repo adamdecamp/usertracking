@@ -42,7 +42,6 @@ internal static class PortableStorageTests
         Directory.CreateDirectory(root);
         string compatibilityRoot = Path.Combine(root, "write-compatibility"), compatibilityCache = Path.Combine(root, "write-compatibility-mappings.json");
         Directory.CreateDirectory(compatibilityRoot);
-        PortableStorage.ForceBufferedIoForTests = true;
         using (var compatibilityStorage = new PortableStorage("DOMAIN\\compatibility-operator", compatibilityCache))
         {
             compatibilityStorage.Map("compatibility-key", compatibilityRoot);
@@ -52,11 +51,14 @@ internal static class PortableStorageTests
             compatibilityStorage.AppendAudit("compatibility-key", "COMPATIBILITY WRITE TEST");
             compatibilityStorage.ReleaseLease("compatibility-key", "compatibility-session");
         }
-        PortableStorage.ForceBufferedIoForTests = false;
         Assert(File.Exists(Path.Combine(compatibilityRoot, "information-system-user-tracker.json")) && File.Exists(Path.Combine(compatibilityRoot, "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv")) && Directory.EnumerateFiles(Path.Combine(compatibilityRoot, "Audit Logs"), "audit-*.jsonl").Any(), "Compatible buffered I/O should preserve manifest, backup, and audit writes.");
+        string legacyCache = Path.Combine(root, "legacy-folder-mappings.json");
+        File.WriteAllText(legacyCache, "{\"version\":1,\"lastSystemId\":\"legacy\",\"mappings\":[{\"systemId\":\"legacy\",\"path\":\"" + compatibilityRoot.Replace("\\", "\\\\") + "\"}]}", Encoding.UTF8);
+        using (var legacyStorage = new PortableStorage("DOMAIN\\operator", legacyCache)) Assert(!legacyStorage.CachedMappings().Contains("legacy"), "Version-1 development mapping caches should be ignored so a clean update cannot restore stale test systems.");
         string mappingCache = Path.Combine(root, "local-folder-mappings.json");
         var storage = new PortableStorage("DOMAIN\\operator", mappingCache);
         storage.Map("mapping-key", root);
+        Assert(!Directory.EnumerateFiles(root, ".isut-map-probe-*", SearchOption.TopDirectoryOnly).Any(), "A successful mapping compatibility probe should remove its temporary file.");
         var competingStorage = new PortableStorage("DOMAIN\\second-operator", mappingCache);
         competingStorage.Map("mapping-key", root);
 
@@ -69,7 +71,7 @@ internal static class PortableStorageTests
         releaseManifestBlocker.Join();
         Assert(File.ReadAllText(manifestPathForLockTest, Encoding.UTF8).Contains("first@example.mil") && !Directory.EnumerateFiles(root, ".isut-*", SearchOption.TopDirectoryOnly).Any(), "A brief SMB-style replacement lock should be retried without changing or stranding the manifest.");
         string cachedFile = File.ReadAllText(mappingCache, Encoding.UTF8);
-        Assert(cachedFile.Contains("mapping-key") && cachedFile.Contains(root.Replace("\\", "\\\\")) && !cachedFile.Contains("first@example.mil"), "The local cache should contain only mapping metadata, not operational user records.");
+        Assert(cachedFile.Contains("\"version\":2") && cachedFile.Contains("mapping-key") && cachedFile.Contains(root.Replace("\\", "\\\\")) && !cachedFile.Contains("first@example.mil"), "The local cache should contain only current-version mapping metadata, not operational user records.");
         var restoredStorage = new PortableStorage("DOMAIN\\operator", mappingCache);
         string restoredMappings = restoredStorage.CachedMappings();
         Assert(restoredMappings.Contains("\"storageId\":\"mapping-key\"") && restoredMappings.Contains("\"systemId\":\"system-1\"") && restoredMappings.Contains("first@example.mil"), "A new launcher should reload the current manifest through its cached folder mapping.");
@@ -121,10 +123,10 @@ internal static class PortableStorageTests
         Assert(!Convert.ToBoolean(damagedIndexItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip")["unchanged"]), "A damaged Sync-index checksum should fall back to full validation.");
         Assert(!cachedScanItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]).StartsWith("tracker-sync-index.json", StringComparison.OrdinalIgnoreCase)), "Sync index files must be excluded from evidence results.");
         string alternateDateEvidence = storage.StoreEvidence("mapping-key", "GOV", "Shaw", "Vivian", "Shaw_Vivian_GEN_User_Agreement_20260826.pdf.zip", EvidenceZip("Shaw_Vivian_GEN_User_Agreement_20260826.pdf", PdfBytes()));
-        string alternateDateRelative = Path.Combine("User Evidence", "GOV", "Shaw_Vivian", alternateDateEvidence), alternateDatePath = Path.Combine(root, alternateDateRelative), normalizedDateName = "Shaw_Vivian_GEN_User_Agreement_26AUG2026.pdf.zip";byte[] alternateDateBytes = File.ReadAllBytes(alternateDatePath);
+        string alternateDateRelative = Path.Combine("User Evidence", "GOV", "Shaw_Vivian", alternateDateEvidence), alternateDatePath = Path.Combine(root, alternateDateRelative), normalizedDateName = "Shaw_Vivian_(GOV)_GEN_User_Agreement_26AUG2026.pdf.zip";byte[] alternateDateBytes = File.ReadAllBytes(alternateDatePath);
         var normalizedDateResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.NormalizeEvidenceFilename("mapping-key", alternateDateRelative, normalizedDateName));
         string normalizedDatePath = Path.Combine(root, "User Evidence", "GOV", "Shaw_Vivian", normalizedDateName);
-        Assert(!File.Exists(alternateDatePath) && File.Exists(normalizedDatePath) && alternateDateBytes.SequenceEqual(File.ReadAllBytes(normalizedDatePath)) && Convert.ToString(normalizedDateResponse["renamed"]).EndsWith(normalizedDateName), "Date normalization should rename evidence without changing any file bytes.");
+        Assert(!File.Exists(alternateDatePath) && File.Exists(normalizedDatePath) && alternateDateBytes.SequenceEqual(File.ReadAllBytes(normalizedDatePath)) && Convert.ToString(normalizedDateResponse["renamed"]).EndsWith(normalizedDateName), "Filename normalization should apply the folder organization and standard date without changing any file bytes.");
         bool rejectedUnsafeRename = false;
         try { storage.NormalizeEvidenceFilename("mapping-key", Path.Combine("User Evidence", "GOV", "Shaw_Vivian", normalizedDateName), "..\\escape.zip"); } catch (InvalidDataException) { rejectedUnsafeRename = true; }
         Assert(rejectedUnsafeRename, "Date normalization should reject an unsafe target filename.");

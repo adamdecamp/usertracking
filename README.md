@@ -12,7 +12,7 @@ Use the executable attached to the latest GitHub Release. Every release also inc
 - Records the active Windows account in consequential audit entries.
 - Does not transmit tracker data or evidence to an external service.
 - Uses a native Windows folder selector; the local launcher owns atomic manifest, backup, evidence, audit, and lease writes instead of relying on browser lifecycle events.
-- Supports mapped drive letters and UNC network-share folders, retries brief SMB write/lock failures, uses write-through temporary files, and SHA-256 verifies replacements. Failed replacement attempts preserve or restore the previous verified file and return network-specific diagnostic details.
+- Supports mapped drive letters and UNC network-share folders, probes create/write/read/delete compatibility before saving a mapping, retries brief SMB write/lock failures, uses broadly compatible buffered file operations, and SHA-256 verifies replacements. Failed replacement attempts preserve or restore the previous verified file and return operation-specific diagnostics.
 - Holds an exclusive Windows file lock while a system folder is active, preventing a second launcher from acquiring write access on lock-capable SMB/Windows shares.
 - Starts every release with no systems or users and does not retain operational records in browser storage.
 - Validates shared manifests, filenames, request paths, and CSV output.

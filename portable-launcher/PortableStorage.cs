@@ -18,6 +18,7 @@ internal sealed class PortableStorage : IDisposable
     private const long AuditFileLimit = 100L * 1024 * 1024;
     private const int AuditVersion = 1;
     private const int SyncIndexVersion = 1;
+    private const int MappingCacheVersion = 2;
     private const string SyncIndexFilename = "tracker-sync-index.json";
     private const string SyncIndexChecksumFilename = "tracker-sync-index.json.sha256";
     private static readonly string AuditGenesisHash = new string('0', 64);
@@ -30,7 +31,6 @@ internal sealed class PortableStorage : IDisposable
     private readonly string actor;
     private readonly string mappingCachePath;
     private string lastSystemId;
-    internal static bool ForceBufferedIoForTests { get; set; }
 
     static PortableStorage()
     {
@@ -69,6 +69,7 @@ internal sealed class PortableStorage : IDisposable
         ValidateSystemId(systemId);
         string full = NormalizeRootPath(path);
         if (!Directory.Exists(full)) throw new DirectoryNotFoundException("The selected system folder is unavailable.");
+        ProbeMappedFolder(full);
         object gate;
         lock (mapGate)
         {
@@ -83,6 +84,7 @@ internal sealed class PortableStorage : IDisposable
                 string current;
                 if (roots.TryGetValue(systemId, out current) && !String.Equals(current, full, StringComparison.OrdinalIgnoreCase) && heldLeases.TryGetValue(systemId, out held)) heldLeases.Remove(systemId);
                 roots[systemId] = full;
+                foreach (string duplicate in cachedRoots.Where(item => !String.Equals(item.Key, systemId, StringComparison.Ordinal) && String.Equals(item.Value, full, StringComparison.OrdinalIgnoreCase)).Select(item => item.Key).ToArray()) cachedRoots.Remove(duplicate);
                 cachedRoots[systemId] = full;
                 lastSystemId = systemId;
             }
@@ -119,6 +121,7 @@ internal sealed class PortableStorage : IDisposable
             }
             catch { }
         }
+        available = available.GroupBy(item => Convert.ToString(item["systemId"]), StringComparer.Ordinal).Select(group => group.FirstOrDefault(item => String.Equals(Convert.ToString(item["storageId"]), selected, StringComparison.Ordinal)) ?? group.Last()).ToList();
         Dictionary<string, object> selectedMapping = available.FirstOrDefault(item => String.Equals(Convert.ToString(item["storageId"]), selected, StringComparison.Ordinal));
         selected = selectedMapping != null ? Convert.ToString(selectedMapping["systemId"]) : available.Count > 0 ? Convert.ToString(available[0]["systemId"]) : "";
         return json.Serialize(new Dictionary<string, object> { { "lastSystemId", selected ?? "" }, { "mappings", available } });
@@ -828,7 +831,7 @@ internal sealed class PortableStorage : IDisposable
         {
             if (!File.Exists(mappingCachePath) || new FileInfo(mappingCachePath).Length > 1024 * 1024) return;
             Dictionary<string, object> value = ObjectDictionary(json.DeserializeObject(File.ReadAllText(mappingCachePath, Encoding.UTF8)));
-            if (Convert.ToInt32(value["version"], CultureInfo.InvariantCulture) != 1) return;
+            if (Convert.ToInt32(value["version"], CultureInfo.InvariantCulture) != MappingCacheVersion) return;
             object[] mappings = ObjectArray(value["mappings"]);
             if (mappings.Length > 1000) return;
             foreach (object item in mappings)
@@ -853,7 +856,7 @@ internal sealed class PortableStorage : IDisposable
             string selected;
             lock (mapGate) { mappings = cachedRoots.ToArray(); selected = lastSystemId; }
             var items = mappings.Select(mapping => (object)new Dictionary<string, object> { { "systemId", mapping.Key }, { "path", mapping.Value } }).ToArray();
-            var value = new Dictionary<string, object> { { "version", 1 }, { "lastSystemId", selected ?? "" }, { "mappings", items } };
+            var value = new Dictionary<string, object> { { "version", MappingCacheVersion }, { "lastSystemId", selected ?? "" }, { "mappings", items } };
             AtomicWrite(mappingCachePath, Encoding.UTF8.GetBytes(json.Serialize(value)));
         }
         catch { }
@@ -1009,27 +1012,12 @@ internal sealed class PortableStorage : IDisposable
     private static string ReadText(string path, long limit) { var info = new FileInfo(path); if (!info.Exists) throw new FileNotFoundException("The requested file is missing."); if (info.Length > limit) throw new InvalidDataException("The requested file exceeds its size limit."); return File.ReadAllText(path, Encoding.UTF8); }
     private static string Sha256(string value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(value))).Replace("-", "").ToLowerInvariant(); } }
     private static string Sha256Bytes(byte[] value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(value)).Replace("-", "").ToLowerInvariant(); } }
-    private static bool IsInvalidParameter(IOException error) { return (error.HResult & 0xffff) == 87; }
     private static FileStream OpenCompatibleFileStream(string path, FileMode mode, FileAccess access, FileShare share, int bufferSize)
     {
-        if (!ForceBufferedIoForTests)
-        {
-            try { return new FileStream(path, mode, access, share, bufferSize, FileOptions.WriteThrough); }
-            catch (IOException error)
-            {
-                if (!IsInvalidParameter(error)) throw;
-                if (mode == FileMode.CreateNew && File.Exists(path)) TryDelete(path);
-            }
-        }
         return new FileStream(path, mode, access, share, bufferSize, FileOptions.None);
     }
     private static void FlushCompatible(FileStream stream)
     {
-        if (!ForceBufferedIoForTests)
-        {
-            try { stream.Flush(true); return; }
-            catch (IOException error) { if (!IsInvalidParameter(error)) throw; }
-        }
         stream.Flush();
     }
     private static void AtomicWrite(string path, byte[] bytes)
@@ -1051,14 +1039,18 @@ internal sealed class PortableStorage : IDisposable
                     TryDelete(previous);
                     try { File.Replace(temporary, path, previous, true); }
                     catch (PlatformNotSupportedException) { VerifiedCopyReplace(temporary, path, previous, bytes); }
-                    catch (IOException error) { if (!IsInvalidParameter(error) && attempt < 2) throw; VerifiedCopyReplace(temporary, path, previous, bytes); }
+                    catch (IOException) { VerifiedCopyReplace(temporary, path, previous, bytes); }
                 }
                 else File.Move(temporary, path);
                 if (!String.Equals(Sha256Bytes(File.ReadAllBytes(path)), Sha256Bytes(bytes), StringComparison.OrdinalIgnoreCase)) throw new IOException("The network-share write completed but failed its SHA-256 verification.");
                 TryDelete(previous);
                 return;
             }
-            catch (IOException) { if (attempt >= 2) throw; Thread.Sleep(75 * (attempt + 1)); }
+            catch (IOException error)
+            {
+                if (attempt >= 2) throw new IOException("Compatible write failed for " + Path.GetFileName(path) + " during create, replace, or verification. " + CleanLine(error.Message, 300), error);
+                Thread.Sleep(75 * (attempt + 1));
+            }
             finally { TryDelete(temporary); }
         }
     }
@@ -1075,6 +1067,27 @@ internal sealed class PortableStorage : IDisposable
         {
             try { if (File.Exists(previous)) File.Copy(previous, path, true); } catch { }
             throw;
+        }
+    }
+    private static void ProbeMappedFolder(string root)
+    {
+        string path = Path.Combine(root, ".isut-map-probe-" + Guid.NewGuid().ToString("N") + ".tmp");
+        byte[] expected = Encoding.ASCII.GetBytes("ISUT-MAPPED-FOLDER-PROBE");
+        try
+        {
+            using (var stream = OpenCompatibleFileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096))
+            {
+                stream.Write(expected, 0, expected.Length);
+                FlushCompatible(stream);
+            }
+            byte[] actual = File.ReadAllBytes(path);
+            if (!String.Equals(Sha256Bytes(actual), Sha256Bytes(expected), StringComparison.OrdinalIgnoreCase)) throw new IOException("The mapped-folder probe could not verify the bytes it wrote.");
+            File.Delete(path);
+        }
+        catch (Exception error)
+        {
+            TryDelete(path);
+            throw new IOException("Mapped-folder compatibility probe failed while creating, writing, reading, or deleting a temporary file. " + CleanLine(error.Message, 300), error);
         }
     }
     private static void TryDelete(string path) { try { if (File.Exists(path)) File.Delete(path); } catch { } }

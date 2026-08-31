@@ -125,11 +125,12 @@ internal sealed class TrackerContext : ApplicationContext
             if (path.StartsWith("/api/storage/", StringComparison.Ordinal))
             {
                 RecordActivity();
+                string storageAction = "storage request";
                 try
                 {
                     string tail = path.Substring("/api/storage/".Length); int separator = tail.IndexOf('/');
                     if (separator <= 0) throw new InvalidDataException("The storage request is invalid.");
-                    string systemId = tail.Substring(0, separator), action = tail.Substring(separator + 1), response;
+                    string systemId = tail.Substring(0, separator), action = tail.Substring(separator + 1), response; storageAction = action;
                     if (action == "select" && parts[0] == "POST")
                     {
                         string selected = await ChooseFolder();
@@ -162,7 +163,7 @@ internal sealed class TrackerContext : ApplicationContext
                 }
                 catch (Exception ex)
                 {
-                    string message = StorageError(ex);
+                    string message = StorageError(ex, storageAction);
                     Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(message)), false, "no-store").GetAwaiter().GetResult(); return;
                 }
             }
@@ -233,13 +234,14 @@ internal sealed class TrackerContext : ApplicationContext
     }
 
     private static string CleanError(string value) { if (String.IsNullOrWhiteSpace(value)) return "The storage request failed."; string clean = value.Replace("\r", " ").Replace("\n", " ").Replace("\0", " ").Trim(); return clean.Length > 1200 ? clean.Substring(0, 1200) : clean; }
-    private static string StorageError(Exception ex)
+    private static string StorageError(Exception ex, string operation)
     {
-        if (ex is PathTooLongException) return "PathTooLongException: The mapped folder path plus the evidence filename exceeds the Windows path limit. This build uses long-path support and short temporary names; if the error continues, map the share to a drive letter or shorten the folders above the evidence file.";
-        string detail = ex.GetType().Name + ": " + CleanError(ex.Message);
+        string stage = String.IsNullOrWhiteSpace(operation) ? "storage request" : operation.Replace('-', ' ');
+        if (ex is PathTooLongException) return "Storage operation " + stage + " failed. PathTooLongException: The mapped folder path plus the evidence filename exceeds the Windows path limit. This build uses long-path support and short temporary names; if the error continues, map the share to a drive letter or shorten the folders above the evidence file.";
+        string detail = "Storage operation " + stage + " failed. " + ex.GetType().Name + ": " + CleanError(ex.Message);
         if (ex is UnauthorizedAccessException) return detail + " Confirm that your Windows account has read, create, modify, delete, and rename permissions on the network share.";
         if (ex is DirectoryNotFoundException || ex is DriveNotFoundException) return detail + " The mapped network location is unavailable. Reconnect the drive or UNC share, then map the system folder again.";
-        if (ex is IOException && (ex.HResult & 0xffff) == 87) return detail + " The selected filesystem rejected a Windows write option. This build automatically retries with a compatible write mode while retaining exclusive locking and SHA-256 verification.";
+        if (ex is IOException && ((ex.HResult & 0xffff) == 87 || ex.InnerException is IOException && (ex.InnerException.HResult & 0xffff) == 87)) return detail + " The selected filesystem rejected this operation even though the launcher used compatible buffered I/O. The operation name above identifies the failing stage.";
         if (ex is IOException) return detail + " The network share may be offline, reconnecting, or holding a file lock. Confirm connectivity and permissions, then retry; the app preserves the previous verified file when replacement cannot be completed.";
         return detail;
     }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {analyzeDocumentText,buildTrackerFilename,folderOrganizationDiffers,organizationFromFolderPath} from '../app/document-renamer-utils.ts';
+import {analyzeDocumentText,buildTrackerFilename,folderOrganizationDiffers,normalizeFilenameOrganization,organizationFromFolderPath} from '../app/document-renamer-utils.ts';
 
 const users=[{first:'Jacob',last:'Brown',organization:'LM',roles:['General'],privilegedTypes:[]}];
 
@@ -25,10 +25,18 @@ test('builds privileged SAAR names with the account type',()=>{
  assert.equal(buildTrackerFilename({kind:'SAAR',first:'Ava',last:'Shaw',organization:'GOV',date:'2026-08-24',role:'PRIV',privilegedType:'DTA'}),'Shaw_Ava_(GOV)_PRIV_DTA_SAAR_24AUG2026.pdf');
 });
 
-test('uses the immediate containing folder as the organization',()=>{
+test('uses the organization folder while skipping the managed user-evidence identity folder',()=>{
  assert.equal(organizationFromFolderPath('Intelligence Group/certificate.pdf','DEFAULT'),'Intelligence Group');
- assert.equal(organizationFromFolderPath('User Evidence/LM/Brown_Jacob/certificate.pdf','DEFAULT'),'Brown_Jacob');
+ assert.equal(organizationFromFolderPath('User Evidence/LM/Brown_Jacob/certificate.pdf','DEFAULT'),'LM');
+ assert.equal(organizationFromFolderPath('GDMS/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf','DEFAULT'),'GDMS');
+ assert.equal(organizationFromFolderPath('LM/Brown_Jacob/Brown_Jacob_(GOV)_SAAR_26AUG2026.pdf','DEFAULT'),'LM');
  assert.equal(organizationFromFolderPath('certificate.pdf','DEFAULT'),'DEFAULT');
  assert.equal(folderOrganizationDiffers('GOV/certificate.pdf','LM','DEFAULT'),true);
  assert.equal(folderOrganizationDiffers('GOV/certificate.pdf','gov','DEFAULT'),false);
+});
+
+test('normalizes the filename organization to its authoritative parent folder',()=>{
+ assert.deepEqual(normalizeFilenameOrganization('Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf','GDMS'),{normalized:'Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf',organization:'GDMS',changed:true});
+ assert.deepEqual(normalizeFilenameOrganization('Brown, Jacob DoD Cyber Cert 26AUG2026.pdf','GDMS'),{normalized:'Brown, Jacob_(GDMS)_DoD Cyber Cert 26AUG2026.pdf',organization:'GDMS',changed:true});
+ assert.equal(normalizeFilenameOrganization('Brown_Jacob_(GDMS)_User_Agreement_26AUG2026.pdf','GDMS')?.changed,false);
 });

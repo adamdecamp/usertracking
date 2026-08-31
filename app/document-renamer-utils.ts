@@ -8,11 +8,24 @@ const normalized=(value:string)=>clean(value,100000).toUpperCase().replace(/[^A-
 
 export function organizationFromFolderPath(path:string,rootFallback=''){
  const parts=path.replaceAll('\\','/').split('/').map(part=>clean(part)).filter(Boolean);
- return parts.length>1?parts.at(-2)!.slice(0,200):clean(rootFallback);
+ const directories=parts.slice(0,-1);if(!directories.length)return clean(rootFallback);
+ const evidenceRoot=directories.findIndex(part=>normalized(part)==='USER EVIDENCE');
+ if(evidenceRoot>=0&&directories[evidenceRoot+1])return directories[evidenceRoot+1].slice(0,200);
+ const immediate=directories.at(-1)!,filename=parts.at(-1)??'',identity=filename.match(/^\s*([^_,()\s]+)\s*(?:_\s*|,\s*|\s+)([^_,()\s]+)/);
+ if(identity&&directories.length>1&&normalized(immediate)===normalized(`${identity[1]} ${identity[2]}`))return directories.at(-2)!.slice(0,200);
+ return immediate.slice(0,200);
 }
 
 export function folderOrganizationDiffers(path:string,filenameOrganization:string|undefined,rootFallback=''){
  return organizationFromFolderPath(path,rootFallback).toUpperCase()!==(filenameOrganization??'').trim().toUpperCase();
+}
+
+export function normalizeFilenameOrganization(filename:string,organization:string){
+ const safeOrganization=clean(organization,100).replace(/[()<>:"/\\|?*]/g,' ').replace(/\s+/g,' ').trim();if(!safeOrganization)return;
+ const existing=filename.match(/\([^()]{1,100}\)/);let normalizedFilename:string;
+ if(existing)normalizedFilename=`${filename.slice(0,existing.index)}(${safeOrganization})${filename.slice((existing.index??0)+existing[0].length)}`;
+ else{const identity=filename.match(/^(\s*[^_,()\s]+\s*(?:_\s*|,\s*|\s+)[^_,()\s]+)(.*)$/);if(!identity)return;const remainder=identity[2].replace(/^\s*[_,-]?\s*/,'');normalizedFilename=`${identity[1]}_(${safeOrganization})_${remainder}`}
+ return{normalized:normalizedFilename,organization:safeOrganization,changed:normalizedFilename!==filename};
 }
 
 const kindRules:[string,RegExp[]][]=[
