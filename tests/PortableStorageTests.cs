@@ -94,6 +94,17 @@ internal static class PortableStorageTests
             }
             finally { PortableStorage.ForceNativeEnumerationForTests = false; }
             Assert(repeatedNativeItems.Length == total && repeatedNativeItems.Cast<Dictionary<string, object>>().Count(item => Convert.ToBoolean(item["accepted"])) == total / 2, "Repeated native enumeration should remain deterministic after the shared Sync index exists.");
+
+            object[] shellItems;
+            try
+            {
+                PortableStorage.ForceShellEnumerationForTests = true;
+                shellItems = (object[])Json.DeserializeObject(fuzzStorage.Scan("fuzz-system", "fuzz-rules", false));
+            }
+            finally { PortableStorage.ForceShellEnumerationForTests = false; }
+            Assert(shellItems.Length == total, "Windows Explorer namespace enumeration should return every generated file exactly once; returned " + shellItems.Length.ToString() + " of " + total.ToString() + ".");
+            Assert(shellItems.Cast<Dictionary<string, object>>().Count(item => Convert.ToBoolean(item["accepted"])) == total / 2, "Windows Explorer namespace enumeration should preserve evidence validation results.");
+            Assert(shellItems.Cast<Dictionary<string, object>>().All(item => Convert.ToString(item["path"]).IndexOf("..", StringComparison.Ordinal) < 0), "Windows Explorer namespace enumeration must not return paths outside the mapped root.");
         }
     }
 

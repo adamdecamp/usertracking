@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -33,6 +34,7 @@ internal sealed class PortableStorage : IDisposable
     private readonly string mappingCachePath;
     private string lastSystemId;
     internal static bool ForceNativeEnumerationForTests { get; set; }
+    internal static bool ForceShellEnumerationForTests { get; set; }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct NativeFindData
@@ -924,6 +926,7 @@ internal sealed class PortableStorage : IDisposable
 
     private static string[] EnumerateScanFiles(string root, string directory)
     {
+        if (ForceShellEnumerationForTests) return EnumerateShellScanEntries(root, directory, false);
         if (ForceNativeEnumerationForTests) return EnumerateNativeScanEntries(root, directory, false);
         try { return Directory.GetFiles(directory, "*", SearchOption.TopDirectoryOnly); }
         catch (IOException error)
@@ -942,6 +945,7 @@ internal sealed class PortableStorage : IDisposable
 
     private static string[] EnumerateScanDirectories(string root, string directory)
     {
+        if (ForceShellEnumerationForTests) return EnumerateShellScanEntries(root, directory, true);
         if (ForceNativeEnumerationForTests) return EnumerateNativeScanEntries(root, directory, true);
         try { return Directory.GetDirectories(directory, "*", SearchOption.TopDirectoryOnly); }
         catch (IOException error)
@@ -984,13 +988,76 @@ internal sealed class PortableStorage : IDisposable
                     if (!String.IsNullOrEmpty(name) && name != "." && name != ".." && isDirectory == directories) result.Add(Path.Combine(directory, name));
                     if (FindNextFileW(handle, out data)) continue;
                     lastError = Marshal.GetLastWin32Error();
+                    if (lastError == 87) return EnumerateShellScanEntries(root, directory, directories);
                     if (lastError != 18) throw ScanFailure(root, directory, "enumerating " + kind + " through the native Windows fallback", new IOException("Windows error " + lastError.ToString(CultureInfo.InvariantCulture) + "."));
                     return result.ToArray();
                 }
             }
             finally { FindClose(handle); }
         }
-        throw ScanFailure(root, directory, "enumerating " + kind + " through both native Windows search patterns", new IOException("Windows error " + lastError.ToString(CultureInfo.InvariantCulture) + "."));
+        return EnumerateShellScanEntries(root, directory, directories);
+    }
+
+    private static string[] EnumerateShellScanEntries(string root, string directory, bool directories)
+    {
+        string kind = directories ? "subfolders" : "files";
+        object shell = null, folder = null, items = null;
+        try
+        {
+            Type shellType = Type.GetTypeFromProgID("Shell.Application");
+            if (shellType == null) throw new NotSupportedException("The Windows Shell namespace is unavailable.");
+            shell = Activator.CreateInstance(shellType);
+            folder = shellType.InvokeMember("NameSpace", BindingFlags.InvokeMethod, null, shell, new object[] { directory });
+            if (folder == null) throw new DirectoryNotFoundException("Windows Explorer could not open the folder.");
+            Type folderType = folder.GetType();
+            items = folderType.InvokeMember("Items", BindingFlags.InvokeMethod, null, folder, null);
+            if (items == null) throw new IOException("Windows Explorer did not return the folder contents.");
+            Type itemsType = items.GetType();
+            int count = Convert.ToInt32(itemsType.InvokeMember("Count", BindingFlags.GetProperty, null, items, null), CultureInfo.InvariantCulture);
+            if (count < 0 || count > 100000) throw new InvalidDataException("The Windows Explorer folder item count exceeds the scan limit.");
+            string fullDirectory = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var result = new List<string>(Math.Min(count, 4096));
+            for (int index = 0; index < count; index++)
+            {
+                object item = null;
+                try
+                {
+                    item = itemsType.InvokeMember("Item", BindingFlags.InvokeMethod, null, items, new object[] { index });
+                    if (item == null) continue;
+                    Type itemType = item.GetType();
+                    bool isFolder = Convert.ToBoolean(itemType.InvokeMember("IsFolder", BindingFlags.GetProperty, null, item, null), CultureInfo.InvariantCulture);
+                    bool isLink = Convert.ToBoolean(itemType.InvokeMember("IsLink", BindingFlags.GetProperty, null, item, null), CultureInfo.InvariantCulture);
+                    string path = Convert.ToString(itemType.InvokeMember("Path", BindingFlags.GetProperty, null, item, null), CultureInfo.InvariantCulture);
+                    if (String.IsNullOrWhiteSpace(path) || isLink) continue;
+                    // Explorer exposes ZIP archives as namespace folders. They remain evidence files for Sync.
+                    if (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) isFolder = false;
+                    if (isFolder != directories) continue;
+                    string full = Path.GetFullPath(path);
+                    if (!full.StartsWith(fullDirectory, StringComparison.OrdinalIgnoreCase) || !String.Equals(Path.GetDirectoryName(full), fullDirectory.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)) continue;
+                    result.Add(full);
+                }
+                finally { ReleaseComObject(item); }
+            }
+            return result.ToArray();
+        }
+        catch (Exception error)
+        {
+            Exception detail = error is TargetInvocationException && error.InnerException != null ? error.InnerException : error;
+            throw ScanFailure(root, directory, "enumerating " + kind + " through the Windows Explorer namespace fallback", detail);
+        }
+        finally
+        {
+            ReleaseComObject(items);
+            ReleaseComObject(folder);
+            ReleaseComObject(shell);
+        }
+    }
+
+    private static void ReleaseComObject(object value)
+    {
+        if (value == null || !Marshal.IsComObject(value)) return;
+        try { Marshal.ReleaseComObject(value); }
+        catch { }
     }
 
     private static bool IsScanReparsePoint(string root, string directory)
