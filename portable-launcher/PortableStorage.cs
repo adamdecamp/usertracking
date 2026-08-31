@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -31,6 +32,29 @@ internal sealed class PortableStorage : IDisposable
     private readonly string actor;
     private readonly string mappingCachePath;
     private string lastSystemId;
+    internal static bool ForceNativeEnumerationForTests { get; set; }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct NativeFindData
+    {
+        public FileAttributes Attributes;
+        public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint Reserved0;
+        public uint Reserved1;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string FileName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)] public string AlternateFileName;
+    }
+
+    private static readonly IntPtr InvalidFindHandle = new IntPtr(-1);
+    private const uint InvalidFileAttributes = 0xffffffff;
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr FindFirstFileW(string fileName, out NativeFindData findData);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool FindNextFileW(IntPtr findHandle, out NativeFindData findData);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool FindClose(IntPtr findHandle);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern uint GetFileAttributesW(string fileName);
 
     static PortableStorage()
     {
@@ -306,8 +330,7 @@ internal sealed class PortableStorage : IDisposable
                 {
                     string name = Path.GetFileName(directory);
                     if (current.Item2 == 0 && (String.Equals(name, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Reports", StringComparison.OrdinalIgnoreCase))) continue;
-                    try { if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) continue; }
-                    catch (Exception error) { if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;throw ScanFailure(root, directory, "checking folder attributes", error); }
+                    if (IsScanReparsePoint(root, directory)) continue;
                     pending.Push(Tuple.Create(directory, current.Item2 + 1));
                 }
             }
@@ -901,26 +924,90 @@ internal sealed class PortableStorage : IDisposable
 
     private static string[] EnumerateScanFiles(string root, string directory)
     {
+        if (ForceNativeEnumerationForTests) return EnumerateNativeScanEntries(root, directory, false);
         try { return Directory.GetFiles(directory, "*", SearchOption.TopDirectoryOnly); }
         catch (IOException error)
         {
             if ((error.HResult & 0xffff) != 87) throw ScanFailure(root, directory, "enumerating files", error);
             try { return Directory.GetFiles(directory, "*.*", SearchOption.TopDirectoryOnly); }
-            catch (Exception fallback) { if (!(fallback is IOException) && !(fallback is UnauthorizedAccessException)) throw;throw ScanFailure(root, directory, "enumerating files with both compatible search patterns", fallback); }
+            catch (IOException fallback)
+            {
+                if ((fallback.HResult & 0xffff) == 87) return EnumerateNativeScanEntries(root, directory, false);
+                throw ScanFailure(root, directory, "enumerating files with the compatible managed search pattern", fallback);
+            }
+            catch (UnauthorizedAccessException fallback) { throw ScanFailure(root, directory, "enumerating files with the compatible managed search pattern", fallback); }
         }
         catch (UnauthorizedAccessException error) { throw ScanFailure(root, directory, "enumerating files", error); }
     }
 
     private static string[] EnumerateScanDirectories(string root, string directory)
     {
+        if (ForceNativeEnumerationForTests) return EnumerateNativeScanEntries(root, directory, true);
         try { return Directory.GetDirectories(directory, "*", SearchOption.TopDirectoryOnly); }
         catch (IOException error)
         {
             if ((error.HResult & 0xffff) != 87) throw ScanFailure(root, directory, "enumerating subfolders", error);
             try { return Directory.GetDirectories(directory, "*.*", SearchOption.TopDirectoryOnly); }
-            catch (Exception fallback) { if (!(fallback is IOException) && !(fallback is UnauthorizedAccessException)) throw;throw ScanFailure(root, directory, "enumerating subfolders with both compatible search patterns", fallback); }
+            catch (IOException fallback)
+            {
+                if ((fallback.HResult & 0xffff) == 87) return EnumerateNativeScanEntries(root, directory, true);
+                throw ScanFailure(root, directory, "enumerating subfolders with the compatible managed search pattern", fallback);
+            }
+            catch (UnauthorizedAccessException fallback) { throw ScanFailure(root, directory, "enumerating subfolders with the compatible managed search pattern", fallback); }
         }
         catch (UnauthorizedAccessException error) { throw ScanFailure(root, directory, "enumerating subfolders", error); }
+    }
+
+    private static string[] EnumerateNativeScanEntries(string root, string directory, bool directories)
+    {
+        string kind = directories ? "subfolders" : "files";
+        int lastError = 87;
+        foreach (string pattern in new[] { "*", "*.*" })
+        {
+            NativeFindData data;
+            IntPtr handle = FindFirstFileW(Path.Combine(directory, pattern), out data);
+            if (handle == InvalidFindHandle)
+            {
+                lastError = Marshal.GetLastWin32Error();
+                if (lastError == 2 || lastError == 18) return new string[0];
+                if (lastError == 87) continue;
+                throw ScanFailure(root, directory, "enumerating " + kind + " through the native Windows fallback", new IOException("Windows error " + lastError.ToString(CultureInfo.InvariantCulture) + "."));
+            }
+
+            var result = new List<string>();
+            try
+            {
+                while (true)
+                {
+                    string name = data.FileName;
+                    bool isDirectory = (data.Attributes & FileAttributes.Directory) != 0;
+                    if (!String.IsNullOrEmpty(name) && name != "." && name != ".." && isDirectory == directories) result.Add(Path.Combine(directory, name));
+                    if (FindNextFileW(handle, out data)) continue;
+                    lastError = Marshal.GetLastWin32Error();
+                    if (lastError != 18) throw ScanFailure(root, directory, "enumerating " + kind + " through the native Windows fallback", new IOException("Windows error " + lastError.ToString(CultureInfo.InvariantCulture) + "."));
+                    return result.ToArray();
+                }
+            }
+            finally { FindClose(handle); }
+        }
+        throw ScanFailure(root, directory, "enumerating " + kind + " through both native Windows search patterns", new IOException("Windows error " + lastError.ToString(CultureInfo.InvariantCulture) + "."));
+    }
+
+    private static bool IsScanReparsePoint(string root, string directory)
+    {
+        try { return (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0; }
+        catch (IOException error)
+        {
+            if ((error.HResult & 0xffff) != 87) throw ScanFailure(root, directory, "checking folder attributes", error);
+            uint attributes = GetFileAttributesW(directory);
+            if (attributes == InvalidFileAttributes)
+            {
+                int code = Marshal.GetLastWin32Error();
+                throw ScanFailure(root, directory, "checking folder attributes through the native Windows fallback", new IOException("Windows error " + code.ToString(CultureInfo.InvariantCulture) + "."));
+            }
+            return (((FileAttributes)attributes) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (UnauthorizedAccessException error) { throw ScanFailure(root, directory, "checking folder attributes", error); }
     }
 
     private static IOException ScanFailure(string root, string path, string stage, Exception error)

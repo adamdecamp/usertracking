@@ -35,11 +35,74 @@ internal static class PortableStorageTests
         return Json.Serialize(new Dictionary<string, object> { { "version", 2 }, { "updated", DateTime.UtcNow.ToString("o") }, { "systems", new object[] { system } }, { "users", new object[] { user } } });
     }
 
+    private static void RunStorageEnumerationFuzz(string parent)
+    {
+        string fuzzRoot = Path.Combine(parent, "Storage Fuzz (Mapped), Unicode-\u00e9");
+        Directory.CreateDirectory(fuzzRoot);
+        string[] organizations = { "GDMS", "NGC", "LM", "GOV", "Boeing", "Org With Spaces", "Org_(Mixed)", "Org-\u00e9" };
+        string[] separators = { "_", "__", " ", "   ", ", " };
+        var random = new Random(0x53a91f27);
+        const int total = 800;
+        for (int index = 0; index < total; index++)
+        {
+            string organization = organizations[index % organizations.Length];
+            string directory = Path.Combine(fuzzRoot, organization, "Layer " + (index % 4).ToString(), "Batch_" + (index % 31).ToString("00"));
+            Directory.CreateDirectory(directory);
+            string separator = separators[index % separators.Length];
+            string stem = "Last" + index.ToString("0000") + separator + "First" + index.ToString("0000") + separator + "(" + organization + ")" + separator + (index % 2 == 0 ? "DoD Cyber Cert" : "GEN User Agreement") + separator + "26AUG2026";
+            switch (index % 4)
+            {
+                case 0:
+                    File.WriteAllBytes(Path.Combine(directory, stem + ".pdf"), PdfBytes());
+                    break;
+                case 1:
+                    File.WriteAllBytes(Path.Combine(directory, stem + ".pdf.zip"), EvidenceZip(stem + ".pdf", PdfBytes()));
+                    break;
+                case 2:
+                    var invalid = new byte[32 + random.Next(224)];random.NextBytes(invalid);
+                    File.WriteAllBytes(Path.Combine(directory, stem + ".pdf"), invalid);
+                    break;
+                default:
+                    File.WriteAllText(Path.Combine(directory, stem + ".txt"), "Not evidence", Encoding.UTF8);
+                    break;
+            }
+        }
+
+        string cache = Path.Combine(parent, "storage-fuzz-mappings.json");
+        using (var fuzzStorage = new PortableStorage("DOMAIN\\fuzz-operator", cache))
+        {
+            fuzzStorage.Map("fuzz-system", fuzzRoot);
+            object[] nativeItems;
+            try
+            {
+                PortableStorage.ForceNativeEnumerationForTests = true;
+                nativeItems = (object[])Json.DeserializeObject(fuzzStorage.Scan("fuzz-system", "fuzz-rules", true));
+            }
+            finally { PortableStorage.ForceNativeEnumerationForTests = false; }
+            Assert(nativeItems.Length == total, "Native enumeration fuzz should return every generated file exactly once.");
+            Assert(nativeItems.Cast<Dictionary<string, object>>().Count(item => Convert.ToBoolean(item["accepted"])) == total / 2, "Native enumeration fuzz should accept only the valid PDF and PDF-in-ZIP cases.");
+
+            object[] incrementalItems = (object[])Json.DeserializeObject(fuzzStorage.Scan("fuzz-system", "fuzz-rules", false));
+            Assert(incrementalItems.Length == total, "Incremental managed enumeration should return the same complete fuzz corpus.");
+            Assert(incrementalItems.Cast<Dictionary<string, object>>().Count(item => Convert.ToBoolean(item["unchanged"])) == total * 3 / 4, "Incremental Sync should reuse validation for every unchanged PDF or ZIP while leaving irrelevant extensions uncached.");
+
+            object[] repeatedNativeItems;
+            try
+            {
+                PortableStorage.ForceNativeEnumerationForTests = true;
+                repeatedNativeItems = (object[])Json.DeserializeObject(fuzzStorage.Scan("fuzz-system", "fuzz-rules", false));
+            }
+            finally { PortableStorage.ForceNativeEnumerationForTests = false; }
+            Assert(repeatedNativeItems.Length == total && repeatedNativeItems.Cast<Dictionary<string, object>>().Count(item => Convert.ToBoolean(item["accepted"])) == total / 2, "Repeated native enumeration should remain deterministic after the shared Sync index exists.");
+        }
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length != 1) throw new ArgumentException("A test directory is required.");
         string root = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(root);
+        RunStorageEnumerationFuzz(Path.GetDirectoryName(root));
         string compatibilityRoot = Path.Combine(root, "write-compatibility"), compatibilityCache = Path.Combine(root, "write-compatibility-mappings.json");
         Directory.CreateDirectory(compatibilityRoot);
         using (var compatibilityStorage = new PortableStorage("DOMAIN\\compatibility-operator", compatibilityCache))
@@ -96,6 +159,14 @@ internal static class PortableStorageTests
         Assert(scan.Contains("Shaw_Vivian_SAAR_24AUG2026.pdf.zip") && scan.Contains("\"accepted\":true") && scan.Contains("\"unchanged\":false"), "The first directory scan should validate launcher-stored PDF evidence.");
         Dictionary<string, object> ignoredNonEvidence = ((object[])Json.DeserializeObject(scan)).Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "operator-notes.txt");
         Assert(Convert.ToInt64(ignoredNonEvidence["size"]) == 0 && !Convert.ToBoolean(ignoredNonEvidence["accepted"]), "Sync should classify irrelevant extensions without requesting provider metadata for them.");
+        try
+        {
+            PortableStorage.ForceNativeEnumerationForTests = true;
+            object[] nativeScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", true));
+            Assert(nativeScanItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip" && Convert.ToBoolean(item["accepted"])), "The native Windows fallback should enumerate and validate evidence files.");
+            Assert(nativeScanItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]) == "operator-notes.txt" && !Convert.ToBoolean(item["accepted"])), "The native Windows fallback should enumerate non-evidence files for review without accepting them.");
+        }
+        finally { PortableStorage.ForceNativeEnumerationForTests = false; }
         Assert(File.Exists(Path.Combine(root, "tracker-sync-index.json")) && File.Exists(Path.Combine(root, "tracker-sync-index.json.sha256")), "A successful scan should store a checksum-protected shared Sync index.");
         object[] cachedScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", false));
         Dictionary<string, object> cachedEvidenceItem = cachedScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
