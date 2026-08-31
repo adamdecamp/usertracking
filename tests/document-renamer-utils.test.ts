@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {analyzeDocumentText,buildTrackerFilename} from '../app/document-renamer-utils.ts';
+import {analyzeDocumentText,buildTrackerFilename,folderOrganizationDiffers,organizationFromFolderPath} from '../app/document-renamer-utils.ts';
 
 const users=[{first:'Jacob',last:'Brown',organization:'LM',roles:['General'],privilegedTypes:[]}];
 
@@ -23,4 +23,12 @@ test('requires operator input when a signed date is not labeled',()=>{
 
 test('builds privileged SAAR names with the account type',()=>{
  assert.equal(buildTrackerFilename({kind:'SAAR',first:'Ava',last:'Shaw',organization:'GOV',date:'2026-08-24',role:'PRIV',privilegedType:'DTA'}),'Shaw_Ava_(GOV)_PRIV_DTA_SAAR_24AUG2026.pdf');
+});
+
+test('uses the immediate containing folder as the organization',()=>{
+ assert.equal(organizationFromFolderPath('Intelligence Group/certificate.pdf','DEFAULT'),'Intelligence Group');
+ assert.equal(organizationFromFolderPath('User Evidence/LM/Brown_Jacob/certificate.pdf','DEFAULT'),'Brown_Jacob');
+ assert.equal(organizationFromFolderPath('certificate.pdf','DEFAULT'),'DEFAULT');
+ assert.equal(folderOrganizationDiffers('GOV/certificate.pdf','LM','DEFAULT'),true);
+ assert.equal(folderOrganizationDiffers('GOV/certificate.pdf','gov','DEFAULT'),false);
 });

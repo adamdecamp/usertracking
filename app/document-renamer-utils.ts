@@ -6,6 +6,15 @@ const clean=(value:string,max=200)=>value.replace(/[\r\n\u0000-\u001f\u007f]/g,'
 const token=(value:string,max=80)=>clean(value,max).replace(/[<>:"/\\|?*()]/g,' ').replace(/[^A-Za-z0-9'+.-]+/g,'_').replace(/^_+|_+$/g,'');
 const normalized=(value:string)=>clean(value,100000).toUpperCase().replace(/[^A-Z0-9+]+/g,' ').replace(/\s+/g,' ').trim();
 
+export function organizationFromFolderPath(path:string,rootFallback=''){
+ const parts=path.replaceAll('\\','/').split('/').map(part=>clean(part)).filter(Boolean);
+ return parts.length>1?parts.at(-2)!.slice(0,200):clean(rootFallback);
+}
+
+export function folderOrganizationDiffers(path:string,filenameOrganization:string|undefined,rootFallback=''){
+ return organizationFromFolderPath(path,rootFallback).toUpperCase()!==(filenameOrganization??'').trim().toUpperCase();
+}
+
 const kindRules:[string,RegExp[]][]=[
  ['DTA Training Cert',[/\bDTA\b.{0,80}\bTRAINING\b/i,/\bDELEGATED TRUSTED AGENT\b.{0,80}\bTRAINING\b/i]],
  ['DTA Agreement',[/\bDTA\b.{0,80}\bAGREEMENT\b/i,/\bDELEGATED TRUSTED AGENT\b.{0,80}\bAGREEMENT\b/i]],

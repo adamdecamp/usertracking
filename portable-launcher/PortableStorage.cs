@@ -1010,22 +1010,48 @@ internal sealed class PortableStorage : IDisposable
     private static string Sha256Bytes(byte[] value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(value)).Replace("-", "").ToLowerInvariant(); } }
     private static void AtomicWrite(string path, byte[] bytes)
     {
-        string directory = Path.GetDirectoryName(path);
-        Directory.CreateDirectory(directory);
-        string operationId = Guid.NewGuid().ToString("N"), temporary = Path.Combine(directory, ".isut-" + operationId + ".tmp"), previous = Path.Combine(directory, ".isut-" + operationId + ".previous");
+        for (int attempt = 0; ; attempt++)
+        {
+            string directory = Path.GetDirectoryName(path);
+            Directory.CreateDirectory(directory);
+            string operationId = Guid.NewGuid().ToString("N"), temporary = Path.Combine(directory, ".isut-" + operationId + ".tmp"), previous = Path.Combine(directory, ".isut-" + operationId + ".previous");
+            try
+            {
+                using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.WriteThrough))
+                {
+                    stream.Write(bytes, 0, bytes.Length);
+                    stream.Flush(true);
+                }
+                if (File.Exists(path))
+                {
+                    TryDelete(previous);
+                    try { File.Replace(temporary, path, previous, true); }
+                    catch (PlatformNotSupportedException) { VerifiedCopyReplace(temporary, path, previous, bytes); }
+                    catch (IOException) { if (attempt < 2) throw; VerifiedCopyReplace(temporary, path, previous, bytes); }
+                }
+                else File.Move(temporary, path);
+                if (!String.Equals(Sha256Bytes(File.ReadAllBytes(path)), Sha256Bytes(bytes), StringComparison.OrdinalIgnoreCase)) throw new IOException("The network-share write completed but failed its SHA-256 verification.");
+                TryDelete(previous);
+                return;
+            }
+            catch (IOException) { if (attempt >= 2) throw; Thread.Sleep(75 * (attempt + 1)); }
+            finally { TryDelete(temporary); }
+        }
+    }
+    private static void VerifiedCopyReplace(string temporary, string path, string previous, byte[] expected)
+    {
+        File.Copy(path, previous, true);
         try
         {
-            File.WriteAllBytes(temporary, bytes);
-            if (File.Exists(path))
-            {
-                TryDelete(previous);
-                try { File.Replace(temporary, path, previous, true); TryDelete(previous); }
-                catch (PlatformNotSupportedException) { if (File.Exists(temporary)) { File.Copy(temporary, path, true); TryDelete(temporary); } }
-                catch (IOException) { if (File.Exists(temporary)) { File.Copy(temporary, path, true); TryDelete(temporary); } }
-            }
-            else File.Move(temporary, path);
+            File.Copy(temporary, path, true);
+            if (!String.Equals(Sha256Bytes(File.ReadAllBytes(path)), Sha256Bytes(expected), StringComparison.OrdinalIgnoreCase)) throw new IOException("The network-share fallback write failed its SHA-256 verification.");
+            TryDelete(temporary);
         }
-        finally { TryDelete(temporary); }
+        catch
+        {
+            try { if (File.Exists(previous)) File.Copy(previous, path, true); } catch { }
+            throw;
+        }
     }
     private static void TryDelete(string path) { try { if (File.Exists(path)) File.Delete(path); } catch { } }
 }

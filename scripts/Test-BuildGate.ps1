@@ -23,6 +23,8 @@ $regressionTests = @(
     "tests/session-utils.test.ts",
     "tests/filename-utils.test.ts",
     "tests/document-renamer-utils.test.ts",
+    "tests/error-utils.test.ts",
+    "tests/manifest-validation.test.ts",
     "tests/saar-form-utils.test.ts",
     "tests/manual-saar-utils.test.ts",
     "tests/workflow-utils.test.ts"

@@ -47,6 +47,13 @@ internal static class PortableStorageTests
         competingStorage.Map("mapping-key", root);
 
         storage.SaveManifest("mapping-key", Database("first@example.mil"));
+        string manifestPathForLockTest = Path.Combine(root, "information-system-user-tracker.json");
+        var manifestBlocker = new FileStream(manifestPathForLockTest, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        var releaseManifestBlocker = new Thread(new ThreadStart(delegate { Thread.Sleep(100); manifestBlocker.Dispose(); }));
+        releaseManifestBlocker.Start();
+        storage.SaveManifest("mapping-key", Database("first@example.mil"));
+        releaseManifestBlocker.Join();
+        Assert(File.ReadAllText(manifestPathForLockTest, Encoding.UTF8).Contains("first@example.mil") && !Directory.EnumerateFiles(root, ".isut-*", SearchOption.TopDirectoryOnly).Any(), "A brief SMB-style replacement lock should be retried without changing or stranding the manifest.");
         string cachedFile = File.ReadAllText(mappingCache, Encoding.UTF8);
         Assert(cachedFile.Contains("mapping-key") && cachedFile.Contains(root.Replace("\\", "\\\\")) && !cachedFile.Contains("first@example.mil"), "The local cache should contain only mapping metadata, not operational user records.");
         var restoredStorage = new PortableStorage("DOMAIN\\operator", mappingCache);

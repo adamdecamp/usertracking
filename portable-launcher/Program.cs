@@ -162,7 +162,7 @@ internal sealed class TrackerContext : ApplicationContext
                 }
                 catch (Exception ex)
                 {
-                    string message = ex is PathTooLongException ? "The mapped folder path plus the evidence filename exceeds the Windows path limit. This build uses long-path support and short temporary names; if the error continues, map the share to a drive letter or shorten the folders above the evidence file." : ex.Message;
+                    string message = StorageError(ex);
                     Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(message)), false, "no-store").GetAwaiter().GetResult(); return;
                 }
             }
@@ -232,7 +232,16 @@ internal sealed class TrackerContext : ApplicationContext
         throw new InvalidDataException("A required request value is missing.");
     }
 
-    private static string CleanError(string value) { if (String.IsNullOrWhiteSpace(value)) return "The storage request failed."; return value.Replace("\r", " ").Replace("\n", " ").Replace("\0", " ").Trim(); }
+    private static string CleanError(string value) { if (String.IsNullOrWhiteSpace(value)) return "The storage request failed."; string clean = value.Replace("\r", " ").Replace("\n", " ").Replace("\0", " ").Trim(); return clean.Length > 1200 ? clean.Substring(0, 1200) : clean; }
+    private static string StorageError(Exception ex)
+    {
+        if (ex is PathTooLongException) return "PathTooLongException: The mapped folder path plus the evidence filename exceeds the Windows path limit. This build uses long-path support and short temporary names; if the error continues, map the share to a drive letter or shorten the folders above the evidence file.";
+        string detail = ex.GetType().Name + ": " + CleanError(ex.Message);
+        if (ex is UnauthorizedAccessException) return detail + " Confirm that your Windows account has read, create, modify, delete, and rename permissions on the network share.";
+        if (ex is DirectoryNotFoundException || ex is DriveNotFoundException) return detail + " The mapped network location is unavailable. Reconnect the drive or UNC share, then map the system folder again.";
+        if (ex is IOException) return detail + " The network share may be offline, reconnecting, or holding a file lock. Confirm connectivity and permissions, then retry; the app preserves the previous verified file when replacement cannot be completed.";
+        return detail;
+    }
 
     private void RecordActivity()
     {

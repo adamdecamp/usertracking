@@ -12,6 +12,7 @@ Use the executable attached to the latest GitHub Release. Every release also inc
 - Records the active Windows account in consequential audit entries.
 - Does not transmit tracker data or evidence to an external service.
 - Uses a native Windows folder selector; the local launcher owns atomic manifest, backup, evidence, audit, and lease writes instead of relying on browser lifecycle events.
+- Supports mapped drive letters and UNC network-share folders, retries brief SMB write/lock failures, uses write-through temporary files, and SHA-256 verifies replacements. Failed replacement attempts preserve or restore the previous verified file and return network-specific diagnostic details.
 - Holds an exclusive Windows file lock while a system folder is active, preventing a second launcher from acquiring write access on lock-capable SMB/Windows shares.
 - Starts every release with no systems or users and does not retain operational records in browser storage.
 - Validates shared manifests, filenames, request paths, and CSV output.
@@ -21,9 +22,10 @@ Use the executable attached to the latest GitHub Release. Every release also inc
 - Includes a read-only Reconciliation Center for missing referenced files, changed content, orphan evidence, duplicate identities or emails, organization conflicts, and rejected evidence.
 - Uses filenames as the primary identity and organization source, with a fillable-form fallback for standard DD Form 2875 XFA packets and the derived SAAR AcroForm. Scanned or flattened SAAR copies cannot create users automatically.
 - Recognizes common valid filename date formats and atomically normalizes nonstandard dates to `DDMMMYYYY` before matching.
-- Includes a review-first Document Renamer that reads local PDF text and standard SAAR form fields, matches existing users, proposes canonical tracker filenames, previews the original PDF, and verifies an unchanged SHA-256 after every approved rename. Image-only scans remain available for manual entry and are never guessed.
+- Includes a review-first Document Renamer that reads local PDF text and standard SAAR form fields, matches existing users, and uses each PDF's immediate containing-folder name as the authoritative organization in the proposed canonical filename. Root-level PDFs use the system organization. The original PDF can be previewed, and an unchanged SHA-256 is verified after every approved rename. Image-only scans remain available for manual entry and are never guessed.
 - Sync only identifies duplicate, superseded, and loose PDF evidence. The operator-controlled Clean Up workflow can move selected old files into `Archive Review` or compress selected loose PDFs in place; a source PDF is deleted only after its ZIP is created and validated.
 - Generates daily tamper-evident audit logs with ISO 8601 UTC timestamps, a continuous sequence, and a SHA-256 hash chain. Storage verification fails if an entry is changed, removed, reordered, or inserted.
+- Shows bounded diagnostic details for operational failures and writes an `ERROR:` entry to the affected mapped system's audit log. Failures before a folder is mapped identify that no audit destination is available; storage-verification and audit-chain-verification failures are deliberately not appended because an unverified chain must not be extended.
 - Generates filtered Compliance Snapshot PDF reports, stores a checksum-protected copy in each selected system's `Reports` folder, and records the report identifier and SHA-256 in the audit chain.
 - Tracks time-limited compliance exceptions without changing the underlying Missing or Overdue status. Approvals and revocations require named approvers and justifications and are written to the audit chain.
 - Splits Outlook notification recipients into safe-size BCC batches, excludes active exceptions, and records a separate audit entry for every draft batch opened.
