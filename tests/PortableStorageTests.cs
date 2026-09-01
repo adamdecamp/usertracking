@@ -243,8 +243,6 @@ internal static class PortableStorageTests
         var retainedArchiveResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.ArchiveEvidence("mapping-key", Path.Combine("GDMS", "General", "Brown_Jacob", retainedEvidenceName)));
         string retainedArchivedRelative = Convert.ToString(retainedArchiveResponse["archived"]);
         Assert(retainedArchivedRelative.StartsWith("GDMS/GDMS Archive/Superseded/", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(root, retainedArchivedRelative.Replace('/', Path.DirectorySeparatorChar))), "Archived training evidence older than five years should be retained in the organization's Superseded folder.");
-        string retentionStatus = storage.RetentionStatus("mapping-key");
-        Assert(retentionStatus.Contains("\"organization\":\"GDMS\"") && retentionStatus.Contains("\"category\":\"Superseded\"") && retentionStatus.Contains("\"oldestEvidenceDate\":\"2019-08-24\""), "The retention dashboard should summarize per-organization Superseded evidence and its oldest filename date.");
         string looseRelative = Path.Combine("User Evidence", "GOV", "Shaw_Vivian", "Shaw_Vivian_GEN_User_Agreement_24AUG2026.pdf"), loosePath = Path.Combine(root, looseRelative);
         File.WriteAllBytes(loosePath, PdfBytes());
         var compressionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.CompressEvidence("mapping-key", looseRelative));

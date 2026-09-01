@@ -437,41 +437,6 @@ internal sealed class PortableStorage : IDisposable
         return "{\"cleared\":true}";
     }
 
-    public string RetentionStatus(string systemId)
-    {
-        string root = Root(systemId);
-        var aggregates = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
-        var pending = new Stack<string>();pending.Push(root);
-        while (pending.Count > 0)
-        {
-            string directory = pending.Pop();
-            foreach (string child in EnumerateScanDirectories(root, directory))
-            {
-                string name = Path.GetFileName(child), category = name.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase) ? "Rework" : name.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase) ? "Archive" : "";
-                if (!String.IsNullOrEmpty(category))
-                {
-                    string organization = name.Substring(0, name.Length - (category.Length + 1));
-                    var managed = new Stack<string>();managed.Push(child);
-                    while (managed.Count > 0)
-                    {
-                        string managedDirectory = managed.Pop(), managedRelative = managedDirectory.Length > child.Length ? managedDirectory.Substring(child.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) : "";bool superseded = category == "Archive" && managedRelative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries).Any(part => String.Equals(part, "Superseded", StringComparison.OrdinalIgnoreCase));
-                        foreach (string file in EnumerateScanFiles(root, managedDirectory))
-                        {
-                            string itemCategory = superseded ? "Superseded" : category, key = organization + "\0" + itemCategory;Dictionary<string, object> aggregate;
-                            if (!aggregates.TryGetValue(key, out aggregate)) { aggregate = new Dictionary<string, object> { { "organization", CleanLine(organization, 200) }, { "category", itemCategory }, { "count", 0 }, { "oldestEvidenceDate", "" } };aggregates[key] = aggregate; }
-                            aggregate["count"] = Convert.ToInt32(aggregate["count"], CultureInfo.InvariantCulture) + 1;DateTime? date = EvidenceDate(Path.GetFileName(file));string oldest = Convert.ToString(aggregate["oldestEvidenceDate"], CultureInfo.InvariantCulture);
-                            if (date.HasValue && (String.IsNullOrEmpty(oldest) || date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture).CompareTo(oldest) < 0)) aggregate["oldestEvidenceDate"] = date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-                        }
-                        foreach (string nested in EnumerateScanDirectories(root, managedDirectory)) managed.Push(nested);
-                    }
-                    continue;
-                }
-                if (!IsManagedStorageDirectory(name)) pending.Push(child);
-            }
-        }
-        return json.Serialize(new Dictionary<string, object> { { "generatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "items", aggregates.Values.OrderBy(item => Convert.ToString(item["organization"], CultureInfo.InvariantCulture)).ThenBy(item => Convert.ToString(item["category"], CultureInfo.InvariantCulture)).Cast<object>().ToArray() } });
-    }
-
     public string ArchiveEvidence(string systemId, string relative)
     {
         lock (RootLock(systemId))
