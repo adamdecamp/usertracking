@@ -357,7 +357,16 @@ internal sealed class TrackerContext : ApplicationContext
         if (result.Count == 0) throw new InvalidDataException("The embedded asset manifest contains no browser assets.");
         return result;
     }
-    protected override void ExitThreadCore() { lifecycleTimer.Stop(); lifecycleTimer.Dispose(); TryFinalizeBackups(); storage.Dispose(); stop.Cancel(); listener.Stop(); tray.Visible = false; tray.Dispose(); dispatcher.Dispose(); base.ExitThreadCore(); }
+    protected override void ExitThreadCore()
+    {
+        try { lifecycleTimer.Stop(); lifecycleTimer.Dispose(); } catch { }
+        try { TryFinalizeBackups(); } catch { }
+        try { storage.Dispose(); } catch { }
+        try { stop.Cancel(); listener.Stop(); } catch { }
+        try { tray.Visible = false; tray.Dispose(); } catch { }
+        try { dispatcher.Dispose(); } catch { }
+        finally { base.ExitThreadCore(); Environment.Exit(0); }
+    }
 }
 
 internal static class Program

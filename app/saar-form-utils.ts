@@ -1,11 +1,21 @@
-import {decodePDFRawStream,PDFArray,PDFDict,PDFDocument,PDFHexString,PDFName,PDFRawStream,PDFString,PDFTextField} from 'pdf-lib';
+import {decodePDFRawStream,PDFArray,PDFDict,PDFDocument,PDFHexString,PDFName,PDFRawStream,PDFSignature,PDFString,PDFTextField} from 'pdf-lib';
 
 const clean=(value:string,max=500)=>value.replace(/<[^>]*>/g,' ').replace(/[\r\n\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
 const normalizedName=(value:string)=>value.toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
 const emailPattern=/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+/gi;
 
 export type SaarIdentity={last:string;first:string;middle?:string};
-export type SaarFormFields={fillable:boolean;format?:'AcroForm'|'XFA';identity?:SaarIdentity;organization?:string;email?:string};
+export type SaarFormFields={fillable:boolean;format?:'AcroForm'|'XFA';identity?:SaarIdentity;organization?:string;email?:string;requestDate?:string};
+
+const calendarDate=(year:number,month:number,day:number)=>{const date=new Date(Date.UTC(year,month-1,day));return year>=1900&&year<=2099&&date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day?date:undefined};
+const shortYear=(value:string)=>value.length===2?(+value>=70?1900+ +value:2000+ +value):+value;
+const monthNames=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+export function parseSaarRequestDate(value?:string){
+ const source=clean(value??'',200).toUpperCase();if(!source)return;
+ const pdf=source.match(/^D:(\d{4})(\d{2})(\d{2})/),iso=source.match(/^(\d{4})[-/.]?(\d{2})[-/.]?(\d{2})$/),us=source.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/),dayMonth=source.match(/^(\d{1,2})[-_. ]*([A-Z]{3})[-_. ]*(\d{2}|\d{4})$/),monthDay=source.match(/^([A-Z]{3})[-_. ]*(\d{1,2})[-_. ]*(\d{2}|\d{4})$/);let parts:[number,number,number]|undefined;
+ if(pdf)parts=[+pdf[1],+pdf[2],+pdf[3]];else if(iso)parts=[+iso[1],+iso[2],+iso[3]];else if(us)parts=[shortYear(us[3]),+us[1],+us[2]];else if(dayMonth&&monthNames.includes(dayMonth[2]))parts=[shortYear(dayMonth[3]),monthNames.indexOf(dayMonth[2])+1,+dayMonth[1]];else if(monthDay&&monthNames.includes(monthDay[1]))parts=[shortYear(monthDay[3]),monthNames.indexOf(monthDay[1])+1,+monthDay[2]];
+ if(!parts)return;const date=calendarDate(...parts);return date?.toISOString().slice(0,10)
+}
 
 export function officialEmailFromText(text:string){
  const source=text.replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\u00ad/g,'-').replace(/\s+/g,' ').slice(0,500000),labels=Array.from(source.matchAll(/\bOFFICIAL(?:\s*\/\s*ORGANIZATION)?\s+E[\s-]*MAIL(?:\s+ADDRESS)?\b/gi));
@@ -25,11 +35,17 @@ export function parseSaarName(value:string):SaarIdentity|undefined{
  return{last,first,...(middle?{middle}:{})}
 }
 
-function fieldKind(name:string):'name'|'organization'|'email'|undefined{
+function fieldKind(name:string):'name'|'organization'|'email'|'requestDate'|undefined{
  const normalized=normalizedName(name);
  if(normalized==='1 NAME LAST FIRST MIDDLE INITIAL'||normalized==='1 NAME'||normalized==='NAME1')return'name';
  if(normalized==='2 ORGANIZATION'||normalized==='ORGANIZATION2')return'organization';
  if(normalized==='4 OFFICIAL EMAIL ADDRESS'||normalized==='5 OFFICIAL E MAIL ADDRESS'||normalized==='EMAIL ADDRESS5'||/^(?:\d+ )?OFFICIAL(?: ORGANIZATION)? E ?MAIL(?: ADDRESS)?$/.test(normalized))return'email';
+ if(/^(?:12A? )?(?:USER|REQUESTER)(?: SIGNATURE)? (?:SIGNED )?DATE$/.test(normalized)||normalized==='SIGNEDDATE12'||normalized==='TYPE REQUEST DATE')return'requestDate';
+}
+
+function signatureRequestDate(field:PDFSignature){
+ const name=normalizedName(field.getName());if(!/^(?:12 )?USER SIGNATURE$|^REQUESTER SIGNATURE$/.test(name))return;
+ const value=field.acroField.V();if(!(value instanceof PDFDict))return;const signed=value.lookup(PDFName.of('M'));return signed instanceof PDFString||signed instanceof PDFHexString?parseSaarRequestDate(signed.decodeText()):undefined
 }
 
 function decodeXml(value:string){
@@ -69,18 +85,18 @@ export async function readSaarFormFields(pdfBytes:Uint8Array):Promise<SaarFormFi
  const xfa=xfaDatasets(pdf);
  if(xfa.present){
   if(!xfa.xml)return{fillable:false};
-  const name=xmlValue(xfa.xml,['name1']),organization=xmlValue(xfa.xml,['Organization2']),email=xmlValue(xfa.xml,['Email_Address5','Official_Email','OfficialEmail','Official_Email_Address','OfficialEmailAddress']);
-  return{fillable:true,format:'XFA',identity:name?parseSaarName(name):undefined,organization:organization?clean(organization,200):undefined,email:email?clean(email,254):undefined}
+  const name=xmlValue(xfa.xml,['name1']),organization=xmlValue(xfa.xml,['Organization2']),email=xmlValue(xfa.xml,['Email_Address5','Official_Email','OfficialEmail','Official_Email_Address','OfficialEmailAddress']),requestDate=parseSaarRequestDate(xmlValue(xfa.xml,['signedDate12','SignedDate12','typeReqDate']));
+  return{fillable:true,format:'XFA',identity:name?parseSaarName(name):undefined,organization:organization?clean(organization,200):undefined,email:email?clean(email,254):undefined,...(requestDate?{requestDate}:{})}
  }
- const values:Partial<Record<'name'|'organization'|'email',string>>={};
+ const values:Partial<Record<'name'|'organization'|'email'|'requestDate',string>>={};let signedRequestDate:string|undefined;
  try{
   const fields=pdf.getForm().getFields();
   for(const field of fields){
-   if(!(field instanceof PDFTextField))continue;
+   if(field instanceof PDFSignature){signedRequestDate=signedRequestDate??signatureRequestDate(field);continue}if(!(field instanceof PDFTextField))continue;
    const kind=fieldKind(field.getName());if(!kind||values[kind])continue;
    const value=clean(field.getText()??'',500);if(value)values[kind]=value
   }
-  if(fields.length>0)return{fillable:true,format:'AcroForm',identity:values.name?parseSaarName(values.name):undefined,organization:values.organization?clean(values.organization,200):undefined,email:values.email?clean(values.email,254):undefined}
+  const requestDate=parseSaarRequestDate(values.requestDate)??signedRequestDate;if(fields.length>0)return{fillable:true,format:'AcroForm',identity:values.name?parseSaarName(values.name):undefined,organization:values.organization?clean(values.organization,200):undefined,email:values.email?clean(values.email,254):undefined,...(requestDate?{requestDate}:{})}
  }catch{}
  return{fillable:false}
 }

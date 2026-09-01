@@ -17,5 +17,5 @@ export async function extractPdfText(bytes:Uint8Array,maxPages=15,options:PdfTex
   const document=await bounded(task.promise,deadline,options.signal),totalPages=document.numPages,pages=Math.min(totalPages,maxPages);
   for(let index=1;index<=pages;index++){const page=await bounded(document.getPage(index),deadline,options.signal),content=await bounded(page.getTextContent(),deadline,options.signal),text=content.items.map(item=>'str'in item?item.str:'').join(' ').replace(/\s+/g,' ').trim();if(text)parts.push(text)}
   return{pagesRead:pages,totalPages,text:parts.join('\n')};
- }finally{void Promise.resolve(task.destroy()).catch(()=>undefined)}
+ }finally{try{await task.destroy()}catch{}}
 }

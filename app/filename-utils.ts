@@ -97,7 +97,8 @@ export function identityFromFilename(filename:string){
 export type NewUserSaarFilenameValidation=
  |{valid:true;identity:{last:string;first:string};organization:string;role:'General'|'Privileged';privilegedTypes:string[]}
  |{valid:false;reason:string};
-export function validateNewUserSaarFilename(filename:string,fallback?:{identity?:{last:string;first:string};organization?:string}):NewUserSaarFilenameValidation{
+const verifiedRequestDate=(date?:Date)=>date&&!Number.isNaN(date.getTime())&&date.getUTCFullYear()>=1900&&date.getUTCFullYear()<=2099?date:undefined;
+export function validateNewUserSaarFilename(filename:string,fallback?:{identity?:{last:string;first:string};organization?:string;requestDate?:Date}):NewUserSaarFilenameValidation{
  if(!filenameMatchesKind(filename,'SAAR'))return{valid:false,reason:'The filename is not recognized as a SAAR.'};
  const filenameIdentity=identityFromFilename(filename),reservedIdentityTokens=new Set(['LAST','FIRST','ORG','ORGANIZATION','GEN','PRIV','SAAR','DOD','CYBER','CERT','USER','AGREEMENT','TRAINING','MEMO','TYPE']),filenameIdentityUsable=filenameIdentity&&!reservedIdentityTokens.has(filenameIdentity.last.toUpperCase())&&!reservedIdentityTokens.has(filenameIdentity.first.toUpperCase()),identity=filenameIdentityUsable?filenameIdentity:fallback?.identity;
  if(!identity)return{valid:false,reason:'The SAAR filename must begin with Last Name followed by First Name.'};
@@ -105,7 +106,7 @@ export function validateNewUserSaarFilename(filename:string,fallback?:{identity?
  const filenameOrganization=organizationFrom(filename),organization=filenameOrganization&&!['ORG','ORGANIZATION'].includes(filenameOrganization.toUpperCase())?filenameOrganization:fallback?.organization;
  if(!organization)return{valid:false,reason:'The SAAR filename is missing its parenthesized organization.'};
  if(['ORG','ORGANIZATION'].includes(organization.toUpperCase()))return{valid:false,reason:'The SAAR filename still contains the organization template placeholder and the form organization could not be read.'};
- if(!parseDate(filename))return{valid:false,reason:'The SAAR filename is missing a valid recognized date.'};
+ if(!parseDate(filename)&&!verifiedRequestDate(fallback?.requestDate))return{valid:false,reason:'The SAAR filename is missing a valid recognized date, and no requester-signed date could be read from the fillable form.'};
  const markers=saarMarkers(filename),hasGeneral=markers.general,hasPrivileged=!!markers.privilegedType;
  if(hasGeneral===hasPrivileged)return{valid:false,reason:'The SAAR filename must identify exactly one role: GEN or PRIV.'};
  if(hasGeneral)return{valid:true,identity,organization,role:'General',privilegedTypes:[]};
@@ -113,8 +114,8 @@ export function validateNewUserSaarFilename(filename:string,fallback?:{identity?
  if(!privilegedType||privilegedType==='TYPE')return{valid:false,reason:'A PRIV SAAR filename must contain the actual privileged account type between PRIV and SAAR.'};
  return{valid:true,identity,organization,role:'Privileged',privilegedTypes:[privilegedType]};
 }
-export function canonicalValidatedSaarFilename(filename:string,validation:Extract<NewUserSaarFilenameValidation,{valid:true}>){
- const date=parseDate(filename),last=canonicalFilePart(validation.identity.last),first=canonicalFilePart(validation.identity.first),organization=canonicalFilePart(validation.organization),type=validation.role==='Privileged'?canonicalFilePart(validation.privilegedTypes[0]??''):'';
+export function canonicalValidatedSaarFilename(filename:string,validation:Extract<NewUserSaarFilenameValidation,{valid:true}>,requestDate?:Date){
+ const date=parseDate(filename)??verifiedRequestDate(requestDate),last=canonicalFilePart(validation.identity.last),first=canonicalFilePart(validation.identity.first),organization=canonicalFilePart(validation.organization),type=validation.role==='Privileged'?canonicalFilePart(validation.privilegedTypes[0]??''):'';
  if(!date||!last||!first||!organization||(validation.role==='Privileged'&&!type))return;
  const dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`,artifact=validation.role==='General'?'GEN_SAAR':`PRIV_${type}_SAAR`,extension=/\.zip$/i.test(filename)?'.pdf.zip':'.pdf',target=`${last}_${first}_(${organization})_${artifact}_${dateToken}${extension}`;
  return target.length<=180?target:undefined;

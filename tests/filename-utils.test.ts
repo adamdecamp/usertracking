@@ -141,6 +141,16 @@ test('canonicalizes a fallback-matched SAAR before it seeds a new user',()=>{
  if(privileged.valid)assert.equal(canonicalValidatedSaarFilename('PRIV_dta_SAAR_20260826.pdf',privileged),'Brown_Jacob_(LM)_PRIV_DTA_SAAR_26AUG2026.pdf');
 });
 
+test('uses a verified requester signature date to canonicalize an otherwise complete SAAR',()=>{
+ const requestDate=new Date('2026-08-26T00:00:00.000Z'),filename='Brown_Jacob_(LM)_GEN_SAAR.pdf',validation=validateNewUserSaarFilename(filename,{requestDate});
+ assert.equal(validation.valid,true);
+ if(validation.valid)assert.equal(canonicalValidatedSaarFilename(filename,validation,requestDate),'Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf');
+});
+
+test('rejects an invalid requester signature date fallback',()=>{
+ assert.equal(validateNewUserSaarFilename('Brown_Jacob_(LM)_GEN_SAAR.pdf',{requestDate:new Date(Number.NaN)}).valid,false);
+});
+
 test('recognizes common date formats and normalizes them to DDMMMYYYY',()=>{
  const variants=['20260826','08262026','AUG262026','082626','26-08-2026','2026.8.26','26 AUG 26'];
  for(const value of variants){

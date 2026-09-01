@@ -25,6 +25,26 @@ test('recognizes Cyber Awareness Challenge certificates and canonicalizes their 
  }
 });
 
+test('uses the labeled DoD Cyber completion date instead of print and expiration dates',()=>{
+ const analysis=analyzeDocumentText('Cyber Awareness Challenge Certificate This certifies that Jacob Brown. Printed 09/01/2026. Completion Date: 08/26/2026. Expiration Date: 08/26/2027.','Cyber Awareness Certificate.pdf',users);
+ assert.equal(analysis.kind,'DoD Cyber Cert');
+ assert.equal(analysis.date,'2026-08-26');
+ assert.equal(analysis.confidence,'High');
+});
+
+test('does not guess a DoD Cyber date from print metadata or conflicting completion fields',()=>{
+ const metadata=analyzeDocumentText('Cyber Awareness Challenge Certificate This certifies that Jacob Brown. Printed Date: 09/01/2026.','Cyber Awareness Certificate.pdf',users);
+ assert.equal(metadata.date,'');assert.equal(metadata.confidence,'Manual');
+ const ambiguous=analyzeDocumentText('Cyber Awareness Challenge Certificate Jacob Brown Completion Date: 08/26/2026 Completion Date: 08/27/2026.','Cyber Awareness Certificate.pdf',users);
+ assert.equal(ambiguous.date,'');assert.equal(ambiguous.confidence,'Manual');
+});
+
+test('canonicalizes legacy General and Privileged agreement names in every organization folder',()=>{
+ const organizations=['GOV','GDMS','NGC','LM','Boeing','Raytheon','SAIC','Leidos','MITRE','USAF','USN','USA'],variants=['Brown_Jacob_(WRONG)_GEN_User_Agreement_26AUG2026.pdf','Brown, Jacob (WRONG) Privileged User Agreement 26AUG2026.pdf','Brown Jacob (WRONG) GEN and PRIV Agreement 26AUG2026.pdf'];let checked=0;
+ for(const organization of organizations)for(const filename of variants){const path=`${organization}/Users/Brown_Jacob/${filename}`,folder=organizationFromFolderPath(path,'SYSTEM'),target=canonicalEvidenceFilename(filename,folder);assert.equal(folder,organization);assert.equal(target,`Brown_Jacob_(${organization})_User_Agreement_26AUG2026.pdf`,path);checked++}
+ assert.equal(checked,organizations.length*variants.length);
+});
+
 test('reads a full completion date from a privileged training certificate when its filename has only a year',()=>{
  const analysis=analyzeDocumentText('DCSA Privileged User Cybersecurity Responsibilities Training Certificate. This certifies that Jacob Brown completed the course. August 26, 2023 Certificate Date.','Brown_Jacob_(LM)_PRIV_User_Training_2023.pdf',users);
  assert.equal(analysis.kind,'Privileged User Training Cert');
