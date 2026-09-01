@@ -62,6 +62,11 @@ test('recognizes the reported General User Agreement filename',()=>{
 test('recognizes the stored one-PDF ZIP form of both filenames',()=>{
  assert.equal(filenameMatchesKind(`${dod}.zip`,'DoD Cyber Cert'),true);
  assert.equal(filenameMatchesKind(`${general}.zip`,'User Agreement'),true);
+ const bareZip='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.zip';
+ assert.equal(looksLikeEvidenceFilename(bareZip),true);
+ assert.equal(filenameIdentityMatches(bareZip,{last:'Brown',first:'Jacob'}),true);
+ assert.equal(parseDate(bareZip)?.toISOString(),'2026-08-26T00:00:00.000Z');
+ assert.equal(canonicalEvidenceFilename(bareZip,'LM'),'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip');
 });
 
 test('tolerates commas, missing underscores, and additional spaces',()=>{
