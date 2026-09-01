@@ -47,6 +47,7 @@ next-env.d.ts
 # portable build output
 /release/
 /release-update/
+/artifacts/
 /portable-launcher/wwwroot/
 /portable-launcher/embedded/
 /portable-launcher/*.exe
@@ -72,3 +73,5 @@ Audit Logs/
 backup/
 Reports/
 Archive Review/
+Sync Journals/
+Storage Transactions/

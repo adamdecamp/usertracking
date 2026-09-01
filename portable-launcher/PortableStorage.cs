@@ -20,8 +20,11 @@ internal sealed class PortableStorage : IDisposable
     private const long EvidenceLimit = 110L * 1024 * 1024;
     private const long AuditFileLimit = 100L * 1024 * 1024;
     private const long RenamerQueueLimit = 20L * 1024 * 1024;
+    private const long JournalLimit = 100L * 1024 * 1024;
     private const int AuditVersion = 1;
     private const int SyncIndexVersion = 1;
+    private const int SyncJournalVersion = 1;
+    private const int StorageTransactionVersion = 1;
     private const int MappingCacheVersion = 2;
     private const string SyncIndexFilename = "tracker-sync-index.json";
     private const string SyncIndexChecksumFilename = "tracker-sync-index.json.sha256";
@@ -38,6 +41,7 @@ internal sealed class PortableStorage : IDisposable
     private string lastSystemId;
     internal static bool ForceNativeEnumerationForTests { get; set; }
     internal static bool ForceShellEnumerationForTests { get; set; }
+    internal static string FailAfterStageForTests { get; set; }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct NativeFindData
@@ -86,6 +90,15 @@ internal sealed class PortableStorage : IDisposable
         public readonly List<Dictionary<string, object>> Recent = new List<Dictionary<string, object>>();
     }
 
+    private sealed class SyncJournalState
+    {
+        public string Path;
+        public string RunId;
+        public string RuleSetVersion;
+        public int ResumedFiles;
+        public readonly Dictionary<string, Dictionary<string, object>> Completed = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
+    }
+
     public PortableStorage(string currentActor, string cachePath = null)
     {
         actor = CleanLine(currentActor, 500);
@@ -107,6 +120,7 @@ internal sealed class PortableStorage : IDisposable
         }
         lock (gate)
         {
+            RecoverTransactions(full);
             HeldLease held = null;
             lock (mapGate)
             {
@@ -176,7 +190,11 @@ internal sealed class PortableStorage : IDisposable
         lock (RootLock(systemId))
         {
             string root = Root(systemId), manifest = Path.Combine(root, "information-system-user-tracker.json");
-            AtomicWrite(manifest, Encoding.UTF8.GetBytes(canonical));
+            RecoverTransactions(root);
+            byte[] manifestBytes = Encoding.UTF8.GetBytes(canonical);
+            string destinationHash = Sha256Bytes(manifestBytes), transaction = BeginTransaction(root, "manifest-write", manifest, manifest, TryFileHash(manifest), destinationHash);
+            try { AtomicWrite(manifest, manifestBytes);FailAfter("manifest-write");CompleteTransaction(transaction); }
+            catch { if (!String.Equals(TryFileHash(manifest), destinationHash, StringComparison.OrdinalIgnoreCase)) CompleteTransaction(transaction);throw; }
             string backupDirectory = Path.Combine(root, "backup");
             Directory.CreateDirectory(backupDirectory);
             string backupCreated = CreateSnapshot(backupDirectory, database, false);
@@ -302,11 +320,20 @@ internal sealed class PortableStorage : IDisposable
 
     public string Scan(string systemId, string ruleSetVersion, bool fullRescan)
     {
+        Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(ScanWithJournal(systemId, ruleSetVersion, fullRescan)));
+        return json.Serialize(ObjectArray(envelope["items"]));
+    }
+
+    public string ScanWithJournal(string systemId, string ruleSetVersion, bool fullRescan)
+    {
         string cleanRuleSet = CleanLine(ruleSetVersion, 100);
         if (String.IsNullOrWhiteSpace(cleanRuleSet)) throw new InvalidDataException("The Sync rule-set version is missing.");
         lock (RootLock(systemId))
         {
             string root = Root(systemId);
+            RecoverTransactions(root);
+            SyncJournalState journal = StartOrResumeSyncJournal(root, cleanRuleSet, fullRescan);
+            FailAfter("scan-start");
             Dictionary<string, Dictionary<string, object>> previous = fullRescan ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : LoadSyncIndex(root, cleanRuleSet);
             var result = new List<Dictionary<string, object>>();
             var next = new List<Dictionary<string, object>>();
@@ -321,10 +348,24 @@ internal sealed class PortableStorage : IDisposable
                     if (result.Count >= 100000) throw new InvalidDataException("File scan limit exceeded.");
                     string filename = Path.GetFileName(file), relative = Relative(root, file).Replace(Path.DirectorySeparatorChar, '/');
                     if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase))) continue;
-                    bool supportedExtension = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+                    bool supportedExtension = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);long journalSize = 0L, journalModified = 0L;
+                    if (supportedExtension) try { var journalInfo = new FileInfo(file);journalSize = journalInfo.Length;journalModified = new DateTimeOffset(journalInfo.LastWriteTimeUtc).ToUnixTimeMilliseconds(); } catch { }
+                    Dictionary<string, object> resumed;
+                    if (journal.Completed.TryGetValue(relative, out resumed) && resumed.ContainsKey("cacheable") && Convert.ToBoolean(resumed["cacheable"], CultureInfo.InvariantCulture) && JournalItemMatches(resumed, filename, journalSize, journalModified))
+                    {
+                        Dictionary<string, object> indexed;bool indexUnchanged = previous.TryGetValue(relative, out indexed) && JournalItemMatches(indexed, filename, journalSize, journalModified);
+                        var resumedItem = new Dictionary<string, object>(resumed);resumedItem["unchanged"] = indexUnchanged;resumedItem["resumed"] = true;
+                        result.Add(resumedItem);journal.ResumedFiles++;
+                        bool resumedCacheable = resumed.ContainsKey("cacheable") && Convert.ToBoolean(resumed["cacheable"], CultureInfo.InvariantCulture);
+                        if (resumedCacheable) next.Add(IndexItem(resumedItem));
+                        continue;
+                    }
+                    AppendSyncJournal(journal.Path, new Dictionary<string, object> { { "type", "file" }, { "state", "pending" }, { "path", relative }, { "name", CleanLine(filename, 500) }, { "size", journalSize }, { "lastModifiedUnixMs", journalModified }, { "timestampUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) } });
+                    FailAfter("scan-file-pending");
                     if (!supportedExtension)
                     {
-                        result.Add(new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", 0L }, { "lastModifiedUnixMs", 0L }, { "accepted", false }, { "error", "Only PDF evidence or a ZIP containing one PDF is accepted." }, { "unchanged", false } });
+                        var rejected = new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", journalSize }, { "lastModifiedUnixMs", journalModified }, { "accepted", false }, { "error", "Only PDF evidence or a ZIP containing one PDF is accepted." }, { "unchanged", false }, { "cacheable", true } };
+                        result.Add(rejected);AppendSyncJournalResult(journal.Path, rejected, "rejected");
                         continue;
                     }
                     var info = new FileInfo(file);long size, lastModifiedUnixMs;
@@ -332,7 +373,8 @@ internal sealed class PortableStorage : IDisposable
                     catch (Exception error)
                     {
                         if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;
-                        result.Add(new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", 0L }, { "lastModifiedUnixMs", 0L }, { "accepted", false }, { "error", "File metadata could not be read: " + CleanLine(error.Message, 240) }, { "unchanged", false } });
+                        var rejected = new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", 0L }, { "lastModifiedUnixMs", 0L }, { "accepted", false }, { "error", "File metadata could not be read: " + CleanLine(error.Message, 240) }, { "unchanged", false }, { "cacheable", false } };
+                        result.Add(rejected);AppendSyncJournalResult(journal.Path, rejected, "rejected");
                         continue;
                     }
                     Dictionary<string, object> cached;
@@ -348,6 +390,7 @@ internal sealed class PortableStorage : IDisposable
                     var item = new Dictionary<string, object> { { "name", cleanName }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", lastModifiedUnixMs }, { "accepted", accepted }, { "error", cleanError }, { "unchanged", unchanged } };
                     result.Add(item);
                     if (cacheable) next.Add(new Dictionary<string, object> { { "name", cleanName }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", lastModifiedUnixMs }, { "accepted", accepted }, { "error", cleanError } });
+                    item["cacheable"] = cacheable;AppendSyncJournalResult(journal.Path, item, accepted ? "validated" : "rejected");item.Remove("cacheable");
                 }
                 foreach (string directory in EnumerateScanDirectories(root, current.Item1))
                 {
@@ -358,8 +401,100 @@ internal sealed class PortableStorage : IDisposable
                 }
             }
             SaveSyncIndex(root, cleanRuleSet, next);
-            return json.Serialize(result);
+            AppendSyncJournal(journal.Path, new Dictionary<string, object> { { "type", "run-state" }, { "state", "indexed" }, { "timestampUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "files", result.Count } });
+            return json.Serialize(new Dictionary<string, object> { { "version", SyncJournalVersion }, { "runId", journal.RunId }, { "resumedFiles", journal.ResumedFiles }, { "items", result.ToArray() } });
         }
+    }
+
+    public string CommitSyncJournal(string systemId, string runId)
+    {
+        ValidateSessionId(runId);
+        lock (RootLock(systemId))
+        {
+            string directory = Path.Combine(Root(systemId), "Sync Journals"), path = Path.Combine(directory, "sync-" + runId + ".jsonl");
+            if (!File.Exists(path)) throw new FileNotFoundException("The Sync journal no longer exists.");
+            AppendSyncJournal(path, new Dictionary<string, object> { { "type", "run-state" }, { "state", "committed" }, { "timestampUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) } });
+            PruneSyncJournals(directory);
+            return "{\"committed\":true}";
+        }
+    }
+
+    private SyncJournalState StartOrResumeSyncJournal(string root, string ruleSetVersion, bool fullRescan)
+    {
+        string directory = Path.Combine(root, "Sync Journals");Directory.CreateDirectory(directory);
+        if (!fullRescan)
+        {
+            foreach (string candidate in Directory.EnumerateFiles(directory, "sync-*.jsonl", SearchOption.TopDirectoryOnly).OrderByDescending(Path.GetFileName))
+            {
+                SyncJournalState resumed = ReadResumableSyncJournal(candidate, ruleSetVersion);
+                if (resumed != null) return resumed;
+            }
+        }
+        string runId = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N"), path = Path.Combine(directory, "sync-" + runId + ".jsonl");
+        var state = new SyncJournalState { Path = path, RunId = runId, RuleSetVersion = ruleSetVersion };
+        AppendSyncJournal(path, new Dictionary<string, object> { { "type", "run" }, { "version", SyncJournalVersion }, { "runId", runId }, { "ruleSetVersion", ruleSetVersion }, { "state", "running" }, { "startedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) } });
+        return state;
+    }
+
+    private SyncJournalState ReadResumableSyncJournal(string path, string ruleSetVersion)
+    {
+        try
+        {
+            var info = new FileInfo(path);if (!info.Exists || info.Length <= 0 || info.Length > JournalLimit) return null;
+            var state = new SyncJournalState { Path = path };
+            bool header = false, committed = false;
+            foreach (string line in File.ReadLines(path, Encoding.UTF8))
+            {
+                if (String.IsNullOrWhiteSpace(line)) continue;
+                Dictionary<string, object> item = ObjectDictionary(json.DeserializeObject(line));
+                string type = item.ContainsKey("type") ? Convert.ToString(item["type"], CultureInfo.InvariantCulture) : "";
+                if (type == "run")
+                {
+                    if (Convert.ToInt32(item["version"], CultureInfo.InvariantCulture) != SyncJournalVersion) return null;
+                    state.RunId = Convert.ToString(item["runId"], CultureInfo.InvariantCulture);state.RuleSetVersion = Convert.ToString(item["ruleSetVersion"], CultureInfo.InvariantCulture);header = true;
+                }
+                else if (type == "file" && item.ContainsKey("path") && item.ContainsKey("state"))
+                {
+                    string itemState = Convert.ToString(item["state"], CultureInfo.InvariantCulture), relative = Convert.ToString(item["path"], CultureInfo.InvariantCulture);
+                    if (itemState == "validated" || itemState == "rejected") state.Completed[relative] = item;
+                }
+                else if (type == "run-state" && String.Equals(Convert.ToString(item["state"], CultureInfo.InvariantCulture), "committed", StringComparison.Ordinal)) committed = true;
+            }
+            if (!header || committed || !String.Equals(state.RuleSetVersion, ruleSetVersion, StringComparison.Ordinal) || String.IsNullOrWhiteSpace(state.RunId)) return null;
+            return state;
+        }
+        catch { return null; }
+    }
+
+    private void AppendSyncJournalResult(string path, Dictionary<string, object> item, string state)
+    {
+        var entry = new Dictionary<string, object>(item);entry["type"] = "file";entry["state"] = state;entry["timestampUtc"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+        entry.Remove("unchanged");entry.Remove("resumed");AppendSyncJournal(path, entry);
+    }
+
+    private void AppendSyncJournal(string path, Dictionary<string, object> item)
+    {
+        string line = json.Serialize(item) + Environment.NewLine;byte[] bytes = Encoding.UTF8.GetBytes(line);
+        var info = new FileInfo(path);if (info.Exists && info.Length + bytes.Length > JournalLimit) throw new InvalidDataException("The resumable Sync journal exceeds the 100 MB limit.");
+        Directory.CreateDirectory(Path.GetDirectoryName(path));
+        using (var stream = OpenCompatibleFileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, 8192)) { stream.Write(bytes, 0, bytes.Length);FlushCompatible(stream); }
+    }
+
+    private static bool JournalItemMatches(Dictionary<string, object> item, string filename, long size, long modified)
+    {
+        try { return String.Equals(Convert.ToString(item["name"], CultureInfo.InvariantCulture), filename, StringComparison.OrdinalIgnoreCase) && Convert.ToInt64(item["size"], CultureInfo.InvariantCulture) == size && Convert.ToInt64(item["lastModifiedUnixMs"], CultureInfo.InvariantCulture) == modified && item.ContainsKey("accepted") && item.ContainsKey("error"); }
+        catch { return false; }
+    }
+
+    private static Dictionary<string, object> IndexItem(Dictionary<string, object> item)
+    {
+        return new Dictionary<string, object> { { "name", item["name"] }, { "path", item["path"] }, { "size", item["size"] }, { "lastModifiedUnixMs", item["lastModifiedUnixMs"] }, { "accepted", item["accepted"] }, { "error", item["error"] } };
+    }
+
+    private static void PruneSyncJournals(string directory)
+    {
+        if (!Directory.Exists(directory)) return;
+        foreach (string stale in Directory.EnumerateFiles(directory, "sync-*.jsonl", SearchOption.TopDirectoryOnly).OrderByDescending(Path.GetFileName).Skip(30)) TryDelete(stale);
     }
 
     private Dictionary<string, Dictionary<string, object>> LoadSyncIndex(string root, string ruleSetVersion)
@@ -441,7 +576,7 @@ internal sealed class PortableStorage : IDisposable
     {
         lock (RootLock(systemId))
         {
-            string root = Root(systemId), source = SafeRelativePath(root, relative), normalized = Relative(root, source);
+            string root = Root(systemId);RecoverTransactions(root);string source = SafeRelativePath(root, relative), normalized = Relative(root, source);
             if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active evidence files can be moved to an organization Archive folder.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string validationError;
@@ -451,7 +586,10 @@ internal sealed class PortableStorage : IDisposable
             Directory.CreateDirectory(directory);
             string extension = Path.GetExtension(filename), stem = Path.GetFileNameWithoutExtension(filename), destination = Path.Combine(directory, filename);
             for (int index = 1; File.Exists(destination); index++) destination = Path.Combine(directory, stem + "_" + index.ToString(CultureInfo.InvariantCulture) + extension);
-            File.Move(source, destination);
+            string transaction = BeginTransaction(root, "archive", source, destination, Sha256Bytes(File.ReadAllBytes(source)), "");
+            File.Move(source, destination);FailAfter("archive-move");
+            if (!String.Equals(Sha256Bytes(File.ReadAllBytes(destination)), Convert.ToString(ObjectDictionary(json.DeserializeObject(ReadText(transaction, 1024 * 1024)))["sourceHash"]), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The archived evidence failed its SHA-256 integrity check.");
+            CompleteTransaction(transaction);
             string archived = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
             return json.Serialize(new Dictionary<string, object> { { "archived", archived } });
         }
@@ -459,20 +597,106 @@ internal sealed class PortableStorage : IDisposable
 
     private static DateTime? EvidenceDate(string filename)
     {
-        MatchCollection matches = Regex.Matches(filename ?? "", @"(?<![A-Za-z0-9])(0[1-9]|[12][0-9]|3[01])(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)((?:19|20)[0-9]{2})(?![A-Za-z0-9])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        if (matches.Count == 0) return null;
-        DateTime evidenceDate;
-        if (!DateTime.TryParseExact(matches[matches.Count - 1].Value, "ddMMMyyyy", CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out evidenceDate)) return null;
-        return evidenceDate.Date;
+        string value = filename ?? "";
+        var candidates = new List<Tuple<int, DateTime>>();
+        AddEvidenceDates(candidates, value, @"(?<![A-Za-z0-9])(0[1-9]|[12][0-9]|3[01])(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)((?:19|20)[0-9]{2})(?![A-Za-z0-9])", "ddMMMyyyy");
+        AddEvidenceDates(candidates, value, @"(?<![A-Za-z0-9])(0?[1-9]|[12][0-9]|3[01])[-_., ]+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-_., ]+((?:19|20)[0-9]{2})(?![A-Za-z0-9])", "d-MMM-yyyy");
+        AddEvidenceDates(candidates, value, @"(?<![A-Za-z0-9])(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-_., ]*(0?[1-9]|[12][0-9]|3[01])[-_., ]*((?:19|20)[0-9]{2})(?![A-Za-z0-9])", "MMM-d-yyyy");
+        AddEvidenceDates(candidates, value, @"(?<![A-Za-z0-9])((?:19|20)[0-9]{2})[-_., ]*(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12][0-9]|3[01])(?![A-Za-z0-9])", "yyyy-MM-dd");
+        AddEvidenceDates(candidates, value, @"(?<![A-Za-z0-9])(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12][0-9]|3[01])[-_., ]*((?:19|20)[0-9]{2})(?![A-Za-z0-9])", "MM-dd-yyyy");
+        if (candidates.Count == 0) return null;
+        return candidates.OrderByDescending(item => item.Item1).First().Item2.Date;
+    }
+
+    private static void AddEvidenceDates(List<Tuple<int, DateTime>> candidates, string value, string pattern, string format)
+    {
+        foreach (Match match in Regex.Matches(value, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            DateTime date;
+            string token = Regex.Replace(match.Value, "[-_., ]+", "-"), effectiveFormat = token.IndexOf('-') >= 0 ? format : format.Replace("-", "");
+            if (DateTime.TryParseExact(token, effectiveFormat, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out date) && date.Year >= 1900 && date.Year <= 2099) candidates.Add(Tuple.Create(match.Index, date.Date));
+        }
     }
 
     private static bool EvidenceOlderThanYears(string filename, int years) { DateTime? date = EvidenceDate(filename);return date.HasValue && date.Value < DateTime.UtcNow.Date.AddYears(-years); }
+
+    public string ProcessReworkRetention(string systemId)
+    {
+        lock (RootLock(systemId))
+        {
+            string root = Root(systemId);RecoverTransactions(root);
+            var reworkDirectories = new List<string>();
+            var errors = new List<Dictionary<string, object>>();
+            var pending = new Stack<Tuple<string, int>>();
+            pending.Push(Tuple.Create(root, 0));
+            while (pending.Count > 0)
+            {
+                Tuple<string, int> current = pending.Pop();
+                if (current.Item2 > 25) { errors.Add(RetentionError(root, current.Item1, "Folder nesting limit exceeded while locating Rework folders."));continue; }
+                string[] directories;
+                try { directories = EnumerateScanDirectories(root, current.Item1); }
+                catch (Exception error) { errors.Add(RetentionError(root, current.Item1, CleanLine(error.Message, 300)));continue; }
+                foreach (string directory in directories)
+                {
+                    string name = Path.GetFileName(directory);
+                    if (IsReworkStorageDirectory(name)) { reworkDirectories.Add(directory);continue; }
+                    if (IsManagedStorageDirectory(name) || IsScanReparsePoint(root, directory)) continue;
+                    pending.Push(Tuple.Create(directory, current.Item2 + 1));
+                }
+            }
+
+            var moved = new List<Dictionary<string, object>>();int scanned = 0, skippedSaar = 0, currentFiles = 0, undated = 0;
+            foreach (string reworkDirectory in reworkDirectories)
+            {
+                var reworkPending = new Stack<Tuple<string, int>>();reworkPending.Push(Tuple.Create(reworkDirectory, 0));
+                while (reworkPending.Count > 0)
+                {
+                    Tuple<string, int> current = reworkPending.Pop();
+                    if (current.Item2 > 10) { errors.Add(RetentionError(root, current.Item1, "Rework folder nesting limit exceeded."));continue; }
+                    string[] files;
+                    try { files = EnumerateScanFiles(root, current.Item1); }
+                    catch (Exception error) { errors.Add(RetentionError(root, current.Item1, CleanLine(error.Message, 300)));continue; }
+                    foreach (string source in files)
+                    {
+                        if (scanned >= 100000) { errors.Add(RetentionError(root, current.Item1, "Rework retention file limit exceeded."));break; }
+                        string filename = Path.GetFileName(source);if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;scanned++;
+                        if (filename.IndexOf("SAAR", StringComparison.OrdinalIgnoreCase) >= 0) { skippedSaar++;continue; }
+                        DateTime? evidenceDate = EvidenceDate(filename);if (!evidenceDate.HasValue) { undated++;continue; }
+                        if (evidenceDate.Value >= DateTime.UtcNow.Date.AddYears(-1)) { currentFiles++;continue; }
+                        try
+                        {
+                            Tuple<string, string> organization = OrganizationStorageLocation(root, source);string bucket = evidenceDate.Value < DateTime.UtcNow.Date.AddYears(-5) ? "Superseded" : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Archive", bucket);
+                            Directory.CreateDirectory(directory);string destination = UniqueDestination(directory, filename), sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "rework-retention", source, destination, sourceHash, "");
+                            File.Move(source, destination);FailAfter("rework-retention-move");
+                            if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The retained Rework evidence failed its SHA-256 integrity check.");
+                            CompleteTransaction(transaction);moved.Add(new Dictionary<string, object> { { "source", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "archived", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') }, { "bucket", bucket }, { "evidenceDate", evidenceDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) } });
+                        }
+                        catch (Exception error) { errors.Add(RetentionError(root, source, CleanLine(error.Message, 300))); }
+                    }
+                    string[] directories;
+                    try { directories = EnumerateScanDirectories(root, current.Item1); }
+                    catch (Exception error) { errors.Add(RetentionError(root, current.Item1, CleanLine(error.Message, 300)));continue; }
+                    foreach (string directory in directories) if (!IsScanReparsePoint(root, directory)) reworkPending.Push(Tuple.Create(directory, current.Item2 + 1));
+                }
+            }
+            return json.Serialize(new Dictionary<string, object> { { "moved", moved.ToArray() }, { "errors", errors.ToArray() }, { "scanned", scanned }, { "skippedSaar", skippedSaar }, { "current", currentFiles }, { "undated", undated } });
+        }
+    }
+
+    private static bool IsReworkStorageDirectory(string name) { return String.Equals(name, "Rework", StringComparison.OrdinalIgnoreCase) || name.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase); }
+    private static Dictionary<string, object> RetentionError(string root, string path, string message) { return new Dictionary<string, object> { { "path", Relative(root, path).Replace(Path.DirectorySeparatorChar, '/') }, { "message", message } }; }
+    private static string UniqueDestination(string directory, string filename)
+    {
+        string safeName = Path.GetFileName(filename), extension = Path.GetExtension(safeName), stem = Path.GetFileNameWithoutExtension(safeName), destination = Path.Combine(directory, safeName);
+        for (int index = 1; File.Exists(destination); index++) destination = Path.Combine(directory, stem + "_" + index.ToString(CultureInfo.InvariantCulture) + extension);
+        return destination;
+    }
 
     public string MoveEvidenceToRework(string systemId, string relative)
     {
         lock (RootLock(systemId))
         {
-            string root = Root(systemId), source = SafeRelativePath(root, relative), normalized = Relative(root, source);
+            string root = Root(systemId);RecoverTransactions(root);string source = SafeRelativePath(root, relative), normalized = Relative(root, source);
             if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active correction PDFs can be moved to an organization Rework folder.");
             if (!source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only a PDF requiring correction can be moved to Rework.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected correction PDF no longer exists.");
@@ -481,7 +705,10 @@ internal sealed class PortableStorage : IDisposable
             Directory.CreateDirectory(directory);
             string extension = Path.GetExtension(filename), stem = Path.GetFileNameWithoutExtension(filename), destination = Path.Combine(directory, filename);
             for (int index = 1; File.Exists(destination); index++) destination = Path.Combine(directory, stem + "_" + index.ToString(CultureInfo.InvariantCulture) + extension);
-            File.Move(source, destination);
+            string sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "rework", source, destination, sourceHash, "");
+            File.Move(source, destination);FailAfter("rework-move");
+            if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The Rework move failed its SHA-256 integrity check.");
+            CompleteTransaction(transaction);
             string reworked = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
             return json.Serialize(new Dictionary<string, object> { { "reworked", reworked } });
         }
@@ -491,7 +718,7 @@ internal sealed class PortableStorage : IDisposable
     {
         lock (RootLock(systemId))
         {
-            string root = Root(systemId), source = SafeRelativePath(root, relative), normalized = Relative(root, source);
+            string root = Root(systemId);RecoverTransactions(root);string source = SafeRelativePath(root, relative), normalized = Relative(root, source);
             if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active evidence filenames can be normalized.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string safeName = SafePart(filename, 180);
@@ -502,7 +729,8 @@ internal sealed class PortableStorage : IDisposable
             if (String.Equals(source, destination, StringComparison.Ordinal)) return json.Serialize(new Dictionary<string, object> { { "renamed", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "alreadyCompleted", true } });
             if (File.Exists(destination)) return json.Serialize(new Dictionary<string, object> { { "renamed", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "collision", true }, { "existing", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') } });
             string sourceHash = Sha256Bytes(File.ReadAllBytes(source));
-            File.Move(source, destination);
+            string transaction = BeginTransaction(root, "rename", source, destination, sourceHash, "");
+            File.Move(source, destination);FailAfter("rename-move");
             try
             {
                 if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The renamed PDF failed its content-integrity check.");
@@ -512,6 +740,7 @@ internal sealed class PortableStorage : IDisposable
                 if (!File.Exists(source) && File.Exists(destination)) File.Move(destination, source);
                 throw;
             }
+            CompleteTransaction(transaction);
             return json.Serialize(new Dictionary<string, object> { { "renamed", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') } });
         }
     }
@@ -520,7 +749,7 @@ internal sealed class PortableStorage : IDisposable
     {
         lock (RootLock(systemId))
         {
-            string root = Root(systemId), source = SafeRelativePath(root, relative), normalized = Relative(root, source);
+            string root = Root(systemId);RecoverTransactions(root);string source = SafeRelativePath(root, relative), normalized = Relative(root, source);
             if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active evidence files can be compressed.");
             if (!source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only a loose PDF can be compressed.");
             string destination = source + ".zip";
@@ -552,8 +781,9 @@ internal sealed class PortableStorage : IDisposable
                     ValidateEvidenceZip(output, Path.GetFileName(destination));
                     FlushCompatible(output);
                 }
-                File.Move(temporary, destination);
-                try { File.Delete(source); }
+                string transaction = BeginTransaction(root, "compression", source, destination, Sha256Bytes(File.ReadAllBytes(source)), "");
+                File.Move(temporary, destination);FailAfter("compression-move");
+                try { File.Delete(source);CompleteTransaction(transaction); }
                 catch { TryDelete(destination); throw; }
             }
             catch { TryDelete(temporary); throw; }
@@ -592,6 +822,31 @@ internal sealed class PortableStorage : IDisposable
             AtomicWrite(path, bytes);
             try { AtomicWrite(path + ".sha256", Encoding.ASCII.GetBytes(hash + "  " + safeName + "\n")); }
             catch { TryDelete(path); throw; }
+            return json.Serialize(new Dictionary<string, object> { { "filename", safeName }, { "saved", saved }, { "sha256", hash } });
+        }
+    }
+
+    public string StoreInspectionPackage(string systemId, string filename, byte[] bytes)
+    {
+        if (bytes == null || bytes.Length == 0 || bytes.Length > 50L * 1024 * 1024) throw new InvalidDataException("The inspection package is empty or exceeds the 50 MB limit.");
+        string safeName = SafePart(filename, 180);if (!safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Inspection packages must use the ZIP format.");
+        var required = new HashSet<string>(new[] { "compliance-snapshot.pdf", "filtered-users.csv", "evidence-inventory.csv", "audit-chain-verification.json", "release-metadata.json", "active-exceptions.csv" }, StringComparer.OrdinalIgnoreCase);
+        using (var memory = new MemoryStream(bytes, false))
+        using (var archive = new ZipArchive(memory, ZipArchiveMode.Read, true))
+        {
+            if (archive.Entries.Count != required.Count) throw new InvalidDataException("The inspection package must contain exactly the six required inspection files.");
+            foreach (ZipArchiveEntry entry in archive.Entries)
+            {
+                ValidateZipEntryName(entry.FullName);if (!required.Remove(entry.FullName)) throw new InvalidDataException("The inspection package contains an unexpected or duplicate entry.");
+                if (entry.Length <= 0 || entry.Length > 25L * 1024 * 1024) throw new InvalidDataException("An inspection-package entry is empty or exceeds its size limit.");
+                if (entry.FullName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) using (Stream pdf = entry.Open()) ValidatePdfStream(pdf, entry.FullName, entry.Length);
+            }
+            if (required.Count != 0) throw new InvalidDataException("The inspection package is missing a required entry.");
+        }
+        lock (RootLock(systemId))
+        {
+            string directory = Path.Combine(Root(systemId), "Reports"), path = Path.Combine(directory, safeName), hash = Sha256Bytes(bytes), saved = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);Directory.CreateDirectory(directory);
+            AtomicWrite(path, bytes);try { AtomicWrite(path + ".sha256", Encoding.ASCII.GetBytes(hash + "  " + safeName + "\n")); } catch { TryDelete(path);throw; }
             return json.Serialize(new Dictionary<string, object> { { "filename", safeName }, { "saved", saved }, { "sha256", hash } });
         }
     }
@@ -893,8 +1148,8 @@ internal sealed class PortableStorage : IDisposable
         Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(text));
         if (Convert.ToInt32(envelope["backupVersion"]) != 1 || !(envelope["created"] is string) || !(envelope["contentHash"] is string) || !envelope.ContainsKey("database")) throw new InvalidDataException("The backup format is invalid.");
         Dictionary<string, object> database = ObjectDictionary(envelope["database"]);
-        ValidateDatabaseObject(database);
         if (!String.Equals(Convert.ToString(envelope["contentHash"]), StateHash(database), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The backup content hash does not match its records.");
+        database = MigrateDatabaseObject(database);envelope["database"] = database;
         return envelope;
     }
 
@@ -918,16 +1173,32 @@ internal sealed class PortableStorage : IDisposable
         Dictionary<string, object> value;
         try { value = ObjectDictionary(json.DeserializeObject(text)); }
         catch (Exception) { throw new InvalidDataException("The database manifest is invalid JSON."); }
-        ValidateDatabaseObject(value);
+        return MigrateDatabaseObject(value);
+    }
+
+    private static Dictionary<string, object> MigrateDatabaseObject(Dictionary<string, object> value)
+    {
+        int version = value.ContainsKey("version") ? Convert.ToInt32(value["version"], CultureInfo.InvariantCulture) : 1;
+        if (version == 1)
+        {
+            if (!value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid.");
+            foreach (object raw in ObjectArray(value["users"]))
+            {
+                Dictionary<string, object> user = ObjectDictionary(raw);
+                if (!user.ContainsKey("privilegedUsernames")) user["privilegedUsernames"] = new object[0];
+                if (!user.ContainsKey("privilegedTypes")) user["privilegedTypes"] = new object[0];
+                if (!user.ContainsKey("changes")) user["changes"] = new object[0];
+                if (!user.ContainsKey("exceptions")) user["exceptions"] = new object[0];
+            }
+            value["version"] = 2;version = 2;
+        }
+        if (version != 2 || !value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid or uses a newer unsupported schema.");
+        object[] systems = ObjectArray(value["systems"]), users = ObjectArray(value["users"]);
+        if (systems.Length > 1000 || users.Length > 100000) throw new InvalidDataException("The database manifest exceeds its record limits.");
         return value;
     }
 
-    private static void ValidateDatabaseObject(Dictionary<string, object> value)
-    {
-        if (!value.ContainsKey("version") || Convert.ToInt32(value["version"]) != 2 || !value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid.");
-        object[] systems = ObjectArray(value["systems"]), users = ObjectArray(value["users"]);
-        if (systems.Length > 1000 || users.Length > 100000) throw new InvalidDataException("The database manifest exceeds its record limits.");
-    }
+    private static void ValidateDatabaseObject(Dictionary<string, object> value) { MigrateDatabaseObject(value); }
 
     private string StateHash(Dictionary<string, object> database)
     {
@@ -970,6 +1241,61 @@ internal sealed class PortableStorage : IDisposable
         lock (mapGate) { string root; if (roots.TryGetValue(systemId, out root)) return root; }
         throw new InvalidOperationException("Map the selected information system folder first.");
     }
+
+    private string BeginTransaction(string root, string operation, string source, string destination, string sourceHash, string destinationHash)
+    {
+        string directory = Path.Combine(root, "Storage Transactions");Directory.CreateDirectory(directory);
+        string id = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N"), path = Path.Combine(directory, "transaction-" + id + ".json");
+        var value = new Dictionary<string, object> { { "version", StorageTransactionVersion }, { "id", id }, { "operation", operation }, { "createdAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "source", RelativeOrSelf(root, source) }, { "destination", RelativeOrSelf(root, destination) }, { "sourceHash", sourceHash ?? "" }, { "destinationHash", destinationHash ?? "" }, { "state", "prepared" } };
+        AtomicWrite(path, Encoding.UTF8.GetBytes(json.Serialize(value)));return path;
+    }
+
+    private void RecoverTransactions(string root)
+    {
+        string directory = Path.Combine(root, "Storage Transactions");if (!Directory.Exists(directory)) return;
+        string[] paths = Directory.EnumerateFiles(directory, "transaction-*.json", SearchOption.TopDirectoryOnly).OrderBy(path => path, StringComparer.Ordinal).Take(1001).ToArray();
+        if (paths.Length > 1000) throw new InvalidDataException("The recoverable storage transaction count exceeds the safety limit.");
+        foreach (string path in paths)
+        {
+            Dictionary<string, object> item;
+            try { item = ObjectDictionary(json.DeserializeObject(ReadText(path, 1024 * 1024))); }
+            catch (Exception error) { throw new InvalidDataException("A storage transaction journal is unreadable: " + Path.GetFileName(path) + ". " + CleanLine(error.Message, 200)); }
+            if (Convert.ToInt32(item["version"], CultureInfo.InvariantCulture) != StorageTransactionVersion) throw new InvalidDataException("A storage transaction uses an unsupported version.");
+            string operation = Convert.ToString(item["operation"], CultureInfo.InvariantCulture), source = SafeRelativeOrSelf(root, Convert.ToString(item["source"], CultureInfo.InvariantCulture)), destination = SafeRelativeOrSelf(root, Convert.ToString(item["destination"], CultureInfo.InvariantCulture)), sourceHash = Convert.ToString(item["sourceHash"], CultureInfo.InvariantCulture), destinationHash = Convert.ToString(item["destinationHash"], CultureInfo.InvariantCulture);
+            if (operation == "compression")
+            {
+                if (File.Exists(destination))
+                {
+                    string validationError;if (!TryValidateEvidenceFile(destination, out validationError)) { if (File.Exists(source)) { TryDelete(destination);CompleteTransaction(path);continue; } throw new InvalidDataException("An interrupted evidence compression left an invalid ZIP without its source PDF."); }
+                    if (File.Exists(source)) File.Delete(source);
+                    CompleteTransaction(path);continue;
+                }
+                if (File.Exists(source)) { CompleteTransaction(path);continue; }
+                throw new InvalidDataException("An interrupted evidence compression lost both source and destination files.");
+            }
+            if (operation == "manifest-write")
+            {
+                if (!File.Exists(destination)) { CompleteTransaction(path);continue; }
+                string currentHash = Sha256Bytes(File.ReadAllBytes(destination));
+                if ((!String.IsNullOrEmpty(destinationHash) && String.Equals(currentHash, destinationHash, StringComparison.OrdinalIgnoreCase)) || (!String.IsNullOrEmpty(sourceHash) && String.Equals(currentHash, sourceHash, StringComparison.OrdinalIgnoreCase))) { CompleteTransaction(path);continue; }
+                throw new InvalidDataException("An interrupted manifest transaction could not be reconciled safely.");
+            }
+            bool sourceExists = File.Exists(source), destinationExists = File.Exists(destination);
+            if (!sourceExists && destinationExists)
+            {
+                if (!String.IsNullOrEmpty(sourceHash) && !String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A recovered file move failed its SHA-256 integrity check.");
+                CompleteTransaction(path);continue;
+            }
+            if (sourceExists && !destinationExists) { CompleteTransaction(path);continue; }
+            if (sourceExists && destinationExists && !String.IsNullOrEmpty(sourceHash) && String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) { TryDelete(destination);CompleteTransaction(path);continue; }
+            throw new InvalidDataException("An interrupted file transaction requires manual review: " + Path.GetFileName(path) + ".");
+        }
+    }
+
+    private static string RelativeOrSelf(string root, string path) { return String.Equals(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) ? "." : Relative(root, path).Replace(Path.DirectorySeparatorChar, '/'); }
+    private static string SafeRelativeOrSelf(string root, string relative) { return relative == "." ? root : SafeRelativePath(root, relative); }
+    private static void CompleteTransaction(string path) { if (File.Exists(path)) File.Delete(path); }
+    private static void FailAfter(string stage) { if (String.Equals(FailAfterStageForTests, stage, StringComparison.Ordinal)) { FailAfterStageForTests = null;throw new IOException("Injected interruption after " + stage + "."); } }
 
     private void RememberLastSystem(string systemId)
     {
@@ -1041,7 +1367,7 @@ internal sealed class PortableStorage : IDisposable
     private static bool IsManagedStorageDirectory(string name)
     {
         string value = (name ?? "").Trim();
-        return String.Equals(value, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Reports", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase);
+        return String.Equals(value, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Reports", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Sync Journals", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Storage Transactions", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool ContainsManagedStorageDirectory(string relative)
@@ -1364,6 +1690,7 @@ internal sealed class PortableStorage : IDisposable
     private static string ReadText(string path, long limit) { var info = new FileInfo(path); if (!info.Exists) throw new FileNotFoundException("The requested file is missing."); if (info.Length > limit) throw new InvalidDataException("The requested file exceeds its size limit."); return File.ReadAllText(path, Encoding.UTF8); }
     private static string Sha256(string value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(value))).Replace("-", "").ToLowerInvariant(); } }
     private static string Sha256Bytes(byte[] value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(value)).Replace("-", "").ToLowerInvariant(); } }
+    private static string TryFileHash(string path) { try { return File.Exists(path) ? Sha256Bytes(File.ReadAllBytes(path)) : ""; } catch { return ""; } }
     private static FileStream OpenCompatibleFileStream(string path, FileMode mode, FileAccess access, FileShare share, int bufferSize)
     {
         return new FileStream(path, mode, access, share, bufferSize, FileOptions.None);

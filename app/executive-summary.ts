@@ -39,20 +39,20 @@ export async function createExecutiveSummaryPdf(input:ExecutiveSummaryInput){
 
  let leftY=611;leftY=heading(page,'Executive Purpose',42,leftY,bold);leftY=paragraph(page,'Provides a single administrative view of user access, roles, training, agreements, and supporting evidence across multiple information systems. It is designed for intermittent Windows use with organization-controlled shared folders.',42,leftY,248,regular);leftY-=9;leftY=heading(page,'Core Capabilities',42,leftY,bold);bullets(page,[
   'Folder-first automation restores mapped systems and starts Sync at launch, after mapping, and when changing systems.',
-  'Evidence-driven records discover users from validated SAAR PDFs and update requirements from approved PDF or one-PDF ZIP evidence.',
+  'Evidence-driven records discover users from validated SAARs or correctly named supporting evidence, while clearly marking absent SAARs and email data.',
   'Role-aware tracking distinguishes General and Privileged users, including multiple privileged types such as DTA, admin, developer, and cyber.',
   'Actionable status identifies Current, Due Within 30 Days, Missing, and Overdue items and prepares targeted Outlook drafts.'
  ],42,leftY,248,regular);
 
  let rightY=611;rightY=heading(page,'Audit and Inspection Readiness',322,rightY,bold);rightY=bullets(page,[
   'Tamper-evident daily audit logs use ISO 8601 UTC timestamps, a SHA-256 chain, and the active Windows operator identity.',
-  'Daily CSV and versioned JSON backups include checksums, retention controls, integrity verification, and guided restoration.',
-  'Compliance Snapshot PDFs and filtered CSV exports provide leadership counts, requirement status, overdue aging, and organizational breakdowns.',
+  'Daily CSV and versioned JSON backups include checksums, retention controls, explicit data migrations, integrity verification, and guided restoration.',
+  'One-click Inspection Packages combine the Compliance Snapshot, filtered CSV, evidence hashes, audit verification, release metadata, and active exceptions.',
   'Clean Up review identifies invalid, duplicate, superseded, and loose PDF evidence for approved organization Rework, organization Archive, or ZIP conversion.'
  ],322,rightY,248,regular);rightY-=2;rightY=heading(page,'Secure, Lightweight Deployment',322,rightY,bold);bullets(page,[
   'One portable Windows executable runs locally without an installer or cloud database.',
   'Local-loopback hosting and per-system folders keep records under existing Windows or SMB permissions.',
-  'Exclusive folder locking prevents concurrent writers; logoff and automatic shutdown perform final backups.',
+  'Exclusive folder locking prevents concurrent writers; resumable Sync journals and recoverable file transactions withstand interruption.',
   'Strict PDF and ZIP validation, release-clean packaging, and mandatory regression and fuzz tests protect each build.'
  ],322,rightY,248,regular);
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -23,6 +24,19 @@ internal static class PortableStorageTests
             {
                 ZipArchiveEntry entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
                 using (Stream output = entry.Open()) output.Write(contents, 0, contents.Length);
+            }
+            return memory.ToArray();
+        }
+    }
+
+    private static byte[] InspectionZip()
+    {
+        using (var memory = new MemoryStream())
+        {
+            using (var archive = new ZipArchive(memory, ZipArchiveMode.Create, true))
+            {
+                foreach (var item in new Dictionary<string, byte[]> { { "compliance-snapshot.pdf", PdfBytes() }, { "filtered-users.csv", Encoding.UTF8.GetBytes("header\nvalue") }, { "evidence-inventory.csv", Encoding.UTF8.GetBytes("header\nvalue") }, { "audit-chain-verification.json", Encoding.UTF8.GetBytes("{\"healthy\":true}") }, { "release-metadata.json", Encoding.UTF8.GetBytes("{\"version\":1}") }, { "active-exceptions.csv", Encoding.UTF8.GetBytes("header\nnone") } })
+                { ZipArchiveEntry entry = archive.CreateEntry(item.Key, CompressionLevel.Optimal);using (Stream output = entry.Open()) output.Write(item.Value, 0, item.Value.Length); }
             }
             return memory.ToArray();
         }
@@ -292,6 +306,17 @@ internal static class PortableStorageTests
         var nestedReworkResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.MoveEvidenceToRework("mapping-key", Path.Combine("NGC", "Privileged", "Miller_Ava", nestedReworkName)));
         string nestedReworkedRelative = Convert.ToString(nestedReworkResponse["reworked"]);
         Assert(nestedReworkedRelative.StartsWith("NGC/NGC Rework/", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(root, nestedReworkedRelative.Replace('/', Path.DirectorySeparatorChar))), "A nested organization should receive its own organization-named Rework folder.");
+        string reworkDirectory = Path.Combine(root, "NGC", "NGC Rework"), archiveDate = DateTime.UtcNow.Date.AddYears(-2).AddDays(-1).ToString("ddMMMyyyy", CultureInfo.InvariantCulture).ToUpperInvariant(), supersededDate = DateTime.UtcNow.Date.AddYears(-6).ToString("ddMMMyyyy", CultureInfo.InvariantCulture).ToUpperInvariant(), currentDate = DateTime.UtcNow.Date.AddMonths(-6).ToString("ddMMMyyyy", CultureInfo.InvariantCulture).ToUpperInvariant(), oldSaarDate = DateTime.UtcNow.Date.AddYears(-8).ToString("ddMMMyyyy", CultureInfo.InvariantCulture).ToUpperInvariant();
+        string oldReworkName = "Miller_Ava_(WRONG)_DoD_Cyber_Cert_" + archiveDate + ".pdf", supersededReworkName = "Miller_Ava_(WRONG)_User_Agreement_" + supersededDate + ".pdf.zip", currentReworkName = "Miller_Ava_(WRONG)_DoD_Cyber_Cert_" + currentDate + ".pdf", oldSaarReworkName = "Miller_Ava_(WRONG)_PRIV_DTA_SAAR_" + oldSaarDate + ".pdf";
+        File.WriteAllBytes(Path.Combine(reworkDirectory, oldReworkName), Encoding.ASCII.GetBytes("old filename correction"));
+        File.WriteAllBytes(Path.Combine(reworkDirectory, supersededReworkName), Encoding.ASCII.GetBytes("retained old record"));
+        File.WriteAllBytes(Path.Combine(reworkDirectory, currentReworkName), Encoding.ASCII.GetBytes("current correction"));
+        File.WriteAllBytes(Path.Combine(reworkDirectory, oldSaarReworkName), Encoding.ASCII.GetBytes("non-expiring SAAR correction"));
+        var retentionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessReworkRetention("mapping-key"));object[] retentionMoves = (object[])retentionResponse["moved"];
+        Assert(retentionMoves.Length == 2, "Rework retention should move only dated non-SAAR evidence older than one year.");
+        Assert(File.Exists(Path.Combine(root, "NGC", "NGC Archive", DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), oldReworkName)), "A one-to-five-year-old Rework file should move to the organization's dated Archive without changing its filename.");
+        Assert(File.Exists(Path.Combine(root, "NGC", "NGC Archive", "Superseded", supersededReworkName)), "A Rework file older than five years should move directly to the organization's Superseded folder without changing its filename.");
+        Assert(File.Exists(Path.Combine(reworkDirectory, currentReworkName)) && File.Exists(Path.Combine(reworkDirectory, oldSaarReworkName)), "Current evidence and SAARs of any age must remain in Rework for filename correction.");
         string postCleanupScan = storage.Scan("mapping-key");
         Assert(!postCleanupScan.Contains(nestedArchiveName) && !postCleanupScan.Contains(nestedReworkName), "Organization Archive and Rework folders must be excluded from every later Sync scan.");
         bool rejectedInvalidCompression = false;
@@ -304,6 +329,18 @@ internal static class PortableStorageTests
         Assert(rejectedNonPdfEntry, "Launcher storage should reject a ZIP containing a non-PDF file.");
         string reportResult = storage.StoreReport("mapping-key", "Compliance-Snapshot_TEST.pdf", PdfBytes());
         Assert(reportResult.Contains("\"sha256\"") && File.Exists(Path.Combine(root, "Reports", "Compliance-Snapshot_TEST.pdf")) && File.Exists(Path.Combine(root, "Reports", "Compliance-Snapshot_TEST.pdf.sha256")), "Compliance reports should be stored with a matching SHA-256 file.");
+        string packageResult = storage.StoreInspectionPackage("mapping-key", "Inspection-Package_TEST.zip", InspectionZip());
+        Assert(packageResult.Contains("\"sha256\"") && File.Exists(Path.Combine(root, "Reports", "Inspection-Package_TEST.zip")) && File.Exists(Path.Combine(root, "Reports", "Inspection-Package_TEST.zip.sha256")), "Inspection packages should contain the required files and be stored with a matching SHA-256 file.");
+
+        string journalFirst = storage.ScanWithJournal("mapping-key", "journal-rules", true);var journalFirstObject = (Dictionary<string, object>)Json.DeserializeObject(journalFirst);string journalRun = Convert.ToString(journalFirstObject["runId"]);
+        string journalResumed = storage.ScanWithJournal("mapping-key", "journal-rules", false);var journalResumedObject = (Dictionary<string, object>)Json.DeserializeObject(journalResumed);
+        Assert(journalRun == Convert.ToString(journalResumedObject["runId"]) && Convert.ToInt32(journalResumedObject["resumedFiles"]) > 0, "An uncommitted Sync journal should resume completed file validation after restart or reconnect.");
+        storage.CommitSyncJournal("mapping-key", journalRun);Assert(storage.CommitSyncJournal("mapping-key", journalRun).Contains("\"committed\":true"), "Sync journal commit should be safely repeatable.");
+        string interruptedRelative = Path.Combine("GOV", "Transaction_User_(GOV)_User_Agreement_24AUG2026.pdf"), interruptedPath = Path.Combine(root, interruptedRelative), interruptedTarget = "Transaction_User_(GOV)_User_Agreement_25AUG2026.pdf";Directory.CreateDirectory(Path.GetDirectoryName(interruptedPath));File.WriteAllBytes(interruptedPath, PdfBytes());
+        bool interruptionObserved = false;try { PortableStorage.FailAfterStageForTests = "rename-move";storage.NormalizeEvidenceFilename("mapping-key", interruptedRelative, interruptedTarget); } catch (IOException) { interruptionObserved = true; } finally { PortableStorage.FailAfterStageForTests = null; }
+        Assert(interruptionObserved, "The transaction recovery test must simulate a crash after a completed move.");storage.Map("mapping-key", root);Assert(!File.Exists(interruptedPath) && File.Exists(Path.Combine(Path.GetDirectoryName(interruptedPath), interruptedTarget)) && !Directory.EnumerateFiles(Path.Combine(root, "Storage Transactions"), "transaction-*.json").Any(), "Mapping after an interrupted rename should reconcile the durable transaction without duplicating or losing the file.");
+        string pendingRelative = Path.Combine("GOV", "Pending_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf"), pendingPath = Path.Combine(root, pendingRelative);File.WriteAllBytes(pendingPath, PdfBytes());bool pendingInterrupted = false;try { PortableStorage.FailAfterStageForTests = "scan-file-pending";storage.ScanWithJournal("mapping-key", "pending-rules", true); } catch (IOException) { pendingInterrupted = true; } finally { PortableStorage.FailAfterStageForTests = null; }
+        Assert(pendingInterrupted && storage.ScanWithJournal("mapping-key", "pending-rules", false).Contains("Pending_User"), "A crash after a pending Sync journal entry should resume and validate that file on the next run.");
         storage.AppendAudit("mapping-key", "TEST ACTION");
         storage.AppendAudit("mapping-key", "SECOND ACTION");
         storage.AppendAuditBatch("mapping-key", new[] { "BATCH ACTION ONE", "BATCH ACTION TWO", "BATCH ACTION THREE" });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,applySyncArtifactProvenance,certificateRecoveryUsers,committedRecordWithExceptions,duplicateContentGroups,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence} from '../app/workflow-utils.ts';
+import {activeComplianceException,applySyncArtifactProvenance,certificateRecoveryUsers,committedRecordWithExceptions,duplicateContentGroups,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,reworkRetentionDisposition} from '../app/workflow-utils.ts';
 
 test('groups exact duplicate PDF content hashes without trusting filenames',()=>{
  const same='a'.repeat(64),groups=duplicateContentGroups([{filename:'one.pdf',path:'GOV/one.pdf',sha256:same},{filename:'different-name.pdf.zip',path:'GOV/different-name.pdf.zip',sha256:same.toUpperCase()},{filename:'unique.pdf',path:'GOV/unique.pdf',sha256:'b'.repeat(64)},{filename:'invalid.pdf',path:'GOV/invalid.pdf',sha256:'not-a-hash'}]);
@@ -11,6 +11,16 @@ test('returns only an active, unrevoked compliance exception',()=>{
  const exceptions=[{id:'old',artifact:'8140 Cert Memo',reason:'old',approvedBy:'A',createdAt:'2026-01-01T00:00:00Z',createdBy:'B',expiresOn:'2026-01-31'},{id:'active',artifact:'8140 Cert Memo',reason:'temporary',approvedBy:'A',createdAt:'2026-08-01T00:00:00Z',createdBy:'B',expiresOn:'2026-09-30'}];
  assert.equal(activeComplianceException(exceptions,'8140 Cert Memo',new Date('2026-08-28T12:00:00Z'))?.id,'active');
  assert.equal(activeComplianceException(exceptions,'SAAR',new Date('2026-08-28T12:00:00Z')),undefined);
+});
+
+test('archives obsolete Rework evidence without expiring SAARs',()=>{
+ const asOf=new Date('2026-09-01T12:00:00Z');
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_31AUG2025.pdf',asOf),'Archive');
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_User_Agreement_31AUG2020.pdf.zip',asOf),'Superseded');
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_GEN_SAAR_31AUG2019.pdf',asOf),undefined);
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_GENSAAR_31AUG2019.pdf',asOf),undefined);
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_01SEP2025.pdf',asOf),undefined);
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_NO_DATE.pdf',asOf),undefined);
 });
 
 test('deduplicates and splits notification recipients by count and encoded length',()=>{
@@ -60,6 +70,13 @@ test('scopes supporting evidence for a new SAAR user to the same organization',(
   {kind:'SAAR',filename:saar},
   {kind:'DoD Cyber Cert',filename:'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf'},
  ]);
+});
+
+test('treats the containing organization folder as authoritative during reconciliation',()=>{
+ const users=[{id:'u1',last:'Brown',first:'Jacob',email:'jacob@example.invalid',organization:'GDMS',artifacts:[]}];
+ const issues=reconcileEvidence(users,[{filename:'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf',path:'GDMS/Brown_Jacob/file.pdf',folderOrganization:'GDMS'}],[]);
+ assert.ok(issues.some(issue=>issue.id.startsWith('folder-organization:')&&issue.detail.includes('GDMS')));
+ assert.ok(!issues.some(issue=>issue.id.startsWith('organization:u1:')));
 });
 
 test('reconciles missing, orphaned, conflicting, duplicate, and rejected evidence',()=>{

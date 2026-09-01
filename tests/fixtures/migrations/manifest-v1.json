@@ -1,0 +1,1 @@
+{"version":1,"systems":[{"id":"fixture-system","name":"Fixture System","type":"Test","organization":"EXAMPLE","archived":false}],"users":[{"id":"fixture-user","systemId":"fixture-system","organization":"EXAMPLE","last":"Sample","first":"User","middle":"","email":"sample.user@example.invalid","disabled":false,"roles":["General"],"artifacts":[]}]}

@@ -30,6 +30,7 @@ $regressionTests = @(
     "tests/operation-timeout.test.ts",
     "tests/pagination-utils.test.ts",
     "tests/workflow-utils.test.ts"
+    "tests/data-migrations.test.ts"
 )
 
 Push-Location $projectRoot

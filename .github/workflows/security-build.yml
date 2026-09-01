@@ -9,6 +9,9 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   validate:
@@ -16,19 +19,19 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Check out source
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Verify release-clean source
         shell: pwsh
         run: ./scripts/Test-ReleaseClean.ps1 -SourceOnly
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
         with:
           version: 11.19.0
 
       - name: Install Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22.13.0
           cache: pnpm
@@ -45,9 +48,9 @@ jobs:
       - name: Test backup integrity and restoration utilities
         run: pnpm test
 
-      - name: Test Windows launcher storage
+      - name: Test Windows launcher and network-share fault recovery
         shell: pwsh
-        run: ./scripts/Test-PortableStorage.ps1
+        run: ./scripts/Test-NetworkShareChaos.ps1
 
       - name: Build browser application
         run: pnpm build
@@ -60,13 +63,42 @@ jobs:
         shell: pwsh
         run: ./scripts/Test-ReleaseClean.ps1
 
+      - name: Create evidence artifact directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: artifacts/information-system-user-tracker.spdx.json
+          upload-artifact: false
+
+      - name: Attest build provenance and SBOM
+        if: github.event_name != 'pull_request'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: release/InformationSystemUserTracker.exe
+          sbom-path: artifacts/information-system-user-tracker.spdx.json
+
+      - name: Attest release build provenance
+        if: github.event_name != 'pull_request'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: |
+            release/InformationSystemUserTracker.exe
+            release/Information-System-User-Tracker-Executive-Summary.pdf
+            release/SHA256SUMS.txt
+
       - name: Upload unsigned validation build
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: unsigned-validation-build
           path: |
             release/InformationSystemUserTracker.exe
             release/Information-System-User-Tracker-Executive-Summary.pdf
             release/SHA256SUMS.txt
+            artifacts/information-system-user-tracker.spdx.json
           if-no-files-found: error
           retention-days: 7

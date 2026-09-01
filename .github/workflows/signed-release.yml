@@ -7,6 +7,8 @@ on:
 permissions:
   contents: write
   id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   sign-and-release:
@@ -15,19 +17,19 @@ jobs:
     environment: release
     steps:
       - name: Check out tagged source
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Verify release-clean source
         shell: pwsh
         run: ./scripts/Test-ReleaseClean.ps1 -SourceOnly
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
         with:
           version: 11.19.0
 
       - name: Install Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22.13.0
           cache: pnpm
@@ -42,23 +44,23 @@ jobs:
           pnpm test
           pnpm build
 
-      - name: Test Windows launcher storage
+      - name: Test Windows launcher and network-share fault recovery
         shell: pwsh
-        run: ./scripts/Test-PortableStorage.ps1
+        run: ./scripts/Test-NetworkShareChaos.ps1
 
       - name: Build standalone executable
         shell: pwsh
         run: ./scripts/build-portable.ps1
 
       - name: Sign in to Microsoft Azure
-        uses: azure/login@v3
+        uses: azure/login@4c03e4685fe81df2c50d5714c7d93cf39d8deb7f # v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign and timestamp executable
-        uses: azure/artifact-signing-action@v2
+        uses: azure/artifact-signing-action@c0ae2c1d0c1847ab81ac0ab8521bee597cfedd30 # v2
         with:
           endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
@@ -85,6 +87,32 @@ jobs:
         shell: pwsh
         run: ./scripts/Test-ReleaseClean.ps1
 
+      - name: Create evidence artifact directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: artifacts/information-system-user-tracker.spdx.json
+          upload-artifact: false
+
+      - name: Attest signed executable and SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: release/InformationSystemUserTracker.exe
+          sbom-path: artifacts/information-system-user-tracker.spdx.json
+
+      - name: Attest signed release provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: |
+            release/InformationSystemUserTracker.exe
+            release/Information-System-User-Tracker-Executive-Summary.pdf
+            release/SHA256SUMS.txt
+
       - name: Publish GitHub Release
         shell: pwsh
         env:
@@ -94,6 +122,7 @@ jobs:
             "release\InformationSystemUserTracker.exe" `
             "release\Information-System-User-Tracker-Executive-Summary.pdf" `
             "release\SHA256SUMS.txt" `
+            "artifacts\information-system-user-tracker.spdx.json" `
             --verify-tag `
             --generate-notes `
             --title "Information System User Tracker ${{ github.ref_name }}"

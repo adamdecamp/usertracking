@@ -94,11 +94,11 @@ internal sealed class TrackerContext : ApplicationContext
             string headerBlock = await ReadHeaderBlock(stream);
             if (String.IsNullOrEmpty(headerBlock)) return;
             string[] lines = headerBlock.Split(new[] { "\r\n" }, StringSplitOptions.None), parts = lines[0].Split(' ');
-            if (parts.Length < 2 || (parts[0] != "GET" && parts[0] != "HEAD" && parts[0] != "POST")) { await Respond(stream, 405, "text/plain", Encoding.UTF8.GetBytes("Method Not Allowed"), false, "no-store"); return; }
+            if (parts.Length < 2 || (parts[0] != "GET" && parts[0] != "HEAD" && parts[0] != "POST" && parts[0] != "DELETE")) { await Respond(stream, 405, "text/plain", Encoding.UTF8.GetBytes("Method Not Allowed"), false, "no-store"); return; }
             string host = null, origin = null; long contentLength = 0;
             for (int i = 1; i < lines.Length; i++) { string line = lines[i]; if (line.StartsWith("Host:", StringComparison.OrdinalIgnoreCase)) host = line.Substring(5).Trim(); if (line.StartsWith("Origin:", StringComparison.OrdinalIgnoreCase)) origin = line.Substring(7).Trim(); if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)) Int64.TryParse(line.Substring(15).Trim(), out contentLength); }
             if (!String.Equals(host, "localhost:" + Port, StringComparison.OrdinalIgnoreCase) && !String.Equals(host, "127.0.0.1:" + Port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), parts[0] == "HEAD", "no-store"); return; }
-            if (parts[0] == "POST" && !String.Equals(origin, "http://localhost:" + Port, StringComparison.OrdinalIgnoreCase) && !String.Equals(origin, "http://127.0.0.1:" + Port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), false, "no-store"); return; }
+            if ((parts[0] == "POST" || parts[0] == "DELETE") && !String.Equals(origin, "http://localhost:" + Port, StringComparison.OrdinalIgnoreCase) && !String.Equals(origin, "http://127.0.0.1:" + Port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), false, "no-store"); return; }
             if (contentLength < 0 || contentLength > 110L * 1024 * 1024) { await Respond(stream, 413, "text/plain", Encoding.UTF8.GetBytes("Request body is too large."), false, "no-store"); return; }
             byte[] requestBody = contentLength > 0 ? await ReadBody(stream, contentLength) : new byte[0];
             string target = parts[1], path = null;
@@ -139,17 +139,20 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "restore" && parts[0] == "POST") response = storage.Restore(systemId, QueryValue(target, "logical"), QueryValue(target, "file"));
                     else if (action == "restore-drill" && parts[0] == "POST") response = storage.RestoreDrill(systemId, QueryValue(target, "logical"), QueryValue(target, "file"));
                     else if (action == "verify" && parts[0] == "GET") response = storage.VerifyLatest(systemId, QueryValue(target, "logical"));
-                    else if (action == "scan" && parts[0] == "GET") response = storage.Scan(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal));
+                    else if (action == "scan" && parts[0] == "GET") response = storage.ScanWithJournal(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal));
+                    else if (action == "sync-commit" && parts[0] == "POST") response = storage.CommitSyncJournal(systemId, QueryValue(target, "run"));
                     else if (action == "renamer-queue" && parts[0] == "GET") response = storage.ReadRenamerQueue(systemId);
                     else if (action == "renamer-queue" && parts[0] == "POST") response = storage.SaveRenamerQueue(systemId, requestBody);
                     else if (action == "renamer-queue" && parts[0] == "DELETE") response = storage.ClearRenamerQueue(systemId);
                     else if (action == "file" && parts[0] == "GET") { byte[] fileBytes = storage.ReadRelativeFile(systemId, QueryValue(target, "path")); await Respond(stream, 200, "application/octet-stream", fileBytes, false, "no-store"); return; }
                     else if (action == "archive" && parts[0] == "POST") response = storage.ArchiveEvidence(systemId, QueryValue(target, "path"));
                     else if (action == "rework" && parts[0] == "POST") response = storage.MoveEvidenceToRework(systemId, QueryValue(target, "path"));
+                    else if (action == "rework-retention" && parts[0] == "POST") response = storage.ProcessReworkRetention(systemId);
                     else if (action == "compress" && parts[0] == "POST") response = storage.CompressEvidence(systemId, QueryValue(target, "path"));
                     else if (action == "normalize-date" && parts[0] == "POST") response = storage.NormalizeEvidenceFilename(systemId, QueryValue(target, "path"), QueryValue(target, "filename"));
                     else if (action == "evidence" && parts[0] == "POST") response = "{\"filename\":\"" + Json(storage.StoreEvidence(systemId, QueryValue(target, "organization"), QueryValue(target, "last"), QueryValue(target, "first"), QueryValue(target, "filename"), requestBody)) + "\"}";
                     else if (action == "report" && parts[0] == "POST") response = storage.StoreReport(systemId, QueryValue(target, "filename"), requestBody);
+                    else if (action == "inspection-package" && parts[0] == "POST") response = storage.StoreInspectionPackage(systemId, QueryValue(target, "filename"), requestBody);
                     else if (action == "audit" && parts[0] == "POST") { storage.AppendAudit(systemId, Encoding.UTF8.GetString(requestBody)); response = "{\"ok\":true}"; }
                     else if (action == "audit-batch" && parts[0] == "POST") { storage.AppendAuditBatchJson(systemId, Encoding.UTF8.GetString(requestBody)); response = "{\"ok\":true}"; }
                     else if (action == "audit-verify" && parts[0] == "GET") response = storage.VerifyAuditLogs(systemId);
