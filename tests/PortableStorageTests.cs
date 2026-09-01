@@ -156,6 +156,13 @@ internal static class PortableStorageTests
         Assert(firstItems.Length == 1, "The first database save should create one snapshot.");
         string firstFilename = Convert.ToString(((Dictionary<string, object>)firstItems[0])["filename"]);
         Assert(Convert.ToBoolean(((Dictionary<string, object>)firstItems[0])["valid"]), "The first snapshot should verify.");
+        string drill = storage.RestoreDrill("mapping-key", "system-1", firstFilename);
+        Assert(drill.Contains("\"healthy\":true") && drill.Contains("\"nonDestructive\":true") && drill.Contains("\"userCount\":1") && File.ReadAllText(manifestPathForLockTest, Encoding.UTF8).Contains("first@example.mil"), "The restore drill should verify and reconstruct a snapshot without changing the live manifest.");
+        byte[] queueBytes = Encoding.UTF8.GetBytes("{\"version\":1,\"items\":[]}");
+        storage.SaveRenamerQueue("mapping-key", queueBytes);
+        Assert(storage.ReadRenamerQueue("mapping-key").Contains("\"version\":1") && !storage.Scan("mapping-key").Contains("tracker-document-renamer-queue.json"), "The resumable renamer queue should round-trip and remain excluded from evidence scans.");
+        storage.ClearRenamerQueue("mapping-key");
+        Assert(storage.ReadRenamerQueue("mapping-key") == "null", "Clearing the resumable renamer queue should be idempotent.");
 
         storage.SaveManifest("mapping-key", Database("second@example.mil"));
         object[] secondItems = (object[])Json.DeserializeObject(storage.ListBackups("mapping-key", "system-1"));
@@ -222,8 +229,22 @@ internal static class PortableStorageTests
         string olderRelative = Path.Combine("User Evidence", "GOV", "Shaw_Vivian", olderEvidence), archiveResult = storage.ArchiveEvidence("mapping-key", olderRelative);
         var archiveResponse = (Dictionary<string, object>)Json.DeserializeObject(archiveResult);
         string archivedRelative = Convert.ToString(archiveResponse["archived"]), archivedPath = Path.Combine(root, archivedRelative.Replace('/', Path.DirectorySeparatorChar));
-        Assert(!File.Exists(Path.Combine(root, olderRelative)) && File.Exists(archivedPath), "Approved cleanup should move evidence into Archive Review without deleting it.");
+        Assert(!File.Exists(Path.Combine(root, olderRelative)) && File.Exists(archivedPath) && archivedRelative.StartsWith("User Evidence/GOV/GOV Archive/", StringComparison.OrdinalIgnoreCase), "Approved cleanup should move evidence into the dated Archive folder inside its organization folder without deleting it.");
         Assert(!storage.Scan("mapping-key").Contains("Shaw_Vivian_SAAR_24AUG2025.pdf.zip"), "Archived evidence should be excluded from later Sync scans.");
+        string nestedOrganizationDirectory = Path.Combine(root, "GDMS", "General", "Brown_Jacob");
+        Directory.CreateDirectory(nestedOrganizationDirectory);
+        string nestedArchiveName = "Brown_Jacob_(GDMS)_GEN_User_Agreement_24AUG2025.pdf.zip", nestedArchivePath = Path.Combine(nestedOrganizationDirectory, nestedArchiveName);
+        File.WriteAllBytes(nestedArchivePath, EvidenceZip("Brown_Jacob_(GDMS)_GEN_User_Agreement_24AUG2025.pdf", PdfBytes()));
+        var nestedArchiveResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.ArchiveEvidence("mapping-key", Path.Combine("GDMS", "General", "Brown_Jacob", nestedArchiveName)));
+        string nestedArchivedRelative = Convert.ToString(nestedArchiveResponse["archived"]);
+        Assert(nestedArchivedRelative.StartsWith("GDMS/GDMS Archive/", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(root, nestedArchivedRelative.Replace('/', Path.DirectorySeparatorChar))), "A nested organization should receive its own organization-named Archive folder.");
+        string retainedEvidenceName = "Brown_Jacob_(GDMS)_PRIV_Training_Cert_24AUG2019.pdf.zip", retainedEvidencePath = Path.Combine(nestedOrganizationDirectory, retainedEvidenceName);
+        File.WriteAllBytes(retainedEvidencePath, EvidenceZip("Brown_Jacob_(GDMS)_PRIV_Training_Cert_24AUG2019.pdf", PdfBytes()));
+        var retainedArchiveResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.ArchiveEvidence("mapping-key", Path.Combine("GDMS", "General", "Brown_Jacob", retainedEvidenceName)));
+        string retainedArchivedRelative = Convert.ToString(retainedArchiveResponse["archived"]);
+        Assert(retainedArchivedRelative.StartsWith("GDMS/GDMS Archive/Superseded/", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(root, retainedArchivedRelative.Replace('/', Path.DirectorySeparatorChar))), "Archived training evidence older than five years should be retained in the organization's Superseded folder.");
+        string retentionStatus = storage.RetentionStatus("mapping-key");
+        Assert(retentionStatus.Contains("\"organization\":\"GDMS\"") && retentionStatus.Contains("\"category\":\"Superseded\"") && retentionStatus.Contains("\"oldestEvidenceDate\":\"2019-08-24\""), "The retention dashboard should summarize per-organization Superseded evidence and its oldest filename date.");
         string looseRelative = Path.Combine("User Evidence", "GOV", "Shaw_Vivian", "Shaw_Vivian_GEN_User_Agreement_24AUG2026.pdf"), loosePath = Path.Combine(root, looseRelative);
         File.WriteAllBytes(loosePath, PdfBytes());
         var compressionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.CompressEvidence("mapping-key", looseRelative));
@@ -263,8 +284,18 @@ internal static class PortableStorageTests
         File.WriteAllBytes(correctionPath, Encoding.ASCII.GetBytes("correction required"));
         var reworkResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.MoveEvidenceToRework("mapping-key", correctionRelative));
         string reworkedRelative = Convert.ToString(reworkResponse["reworked"]), reworkedPath = Path.Combine(root, reworkedRelative.Replace('/', Path.DirectorySeparatorChar));
-        Assert(!File.Exists(correctionPath) && File.Exists(reworkedPath) && reworkedRelative.StartsWith("Rework/", StringComparison.OrdinalIgnoreCase), "Correction PDFs should move into the root Rework folder even when their PDF bytes are invalid.");
+        string rootOrganization = new DirectoryInfo(root).Name;
+        Assert(!File.Exists(correctionPath) && File.Exists(reworkedPath) && reworkedRelative.StartsWith(rootOrganization + " Rework/", StringComparison.OrdinalIgnoreCase), "A correction PDF at the organization root should move into that organization's named Rework folder even when its PDF bytes are invalid.");
         Assert(!storage.Scan("mapping-key").Contains("Shaw_Vivian_GEN_SAAR_24AUG2026.pdf"), "Rework files should be excluded from later Sync scans.");
+        string nestedReworkDirectory = Path.Combine(root, "NGC", "Privileged", "Miller_Ava");
+        Directory.CreateDirectory(nestedReworkDirectory);
+        string nestedReworkName = "Miller_Ava_(NGC)_GEN_SAAR_24AUG2026.pdf", nestedReworkPath = Path.Combine(nestedReworkDirectory, nestedReworkName);
+        File.WriteAllBytes(nestedReworkPath, Encoding.ASCII.GetBytes("correction required"));
+        var nestedReworkResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.MoveEvidenceToRework("mapping-key", Path.Combine("NGC", "Privileged", "Miller_Ava", nestedReworkName)));
+        string nestedReworkedRelative = Convert.ToString(nestedReworkResponse["reworked"]);
+        Assert(nestedReworkedRelative.StartsWith("NGC/NGC Rework/", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(root, nestedReworkedRelative.Replace('/', Path.DirectorySeparatorChar))), "A nested organization should receive its own organization-named Rework folder.");
+        string postCleanupScan = storage.Scan("mapping-key");
+        Assert(!postCleanupScan.Contains(nestedArchiveName) && !postCleanupScan.Contains(nestedReworkName), "Organization Archive and Rework folders must be excluded from every later Sync scan.");
         bool rejectedInvalidCompression = false;
         try { storage.CompressEvidence("mapping-key", "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf"); } catch (InvalidDataException) { rejectedInvalidCompression = true; }
         Assert(rejectedInvalidCompression && File.Exists(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf")) && !File.Exists(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf.zip")), "Failed ZIP validation should preserve the original loose PDF and remove any incomplete ZIP.");

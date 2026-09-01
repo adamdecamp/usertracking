@@ -7,11 +7,20 @@ export type ReconciliationRejection={filename:string;reason:string;path?:string}
 export type ReconciliationIssue={id:string;category:'Missing File'|'Content Changed'|'Orphan Evidence'|'Duplicate Identity'|'Duplicate Email'|'Organization Conflict'|'Rejected Evidence';severity:'High'|'Medium';summary:string;detail:string;path?:string;userId?:string};
 export type SyncProvenanceArtifact={kind:string;filename:string;sha256?:string;path?:string;storedAt?:string;storedBy?:string;source?:string};
 export type SyncProvenanceUser={id:string;last:string;first:string;artifacts:SyncProvenanceArtifact[]};
+export type HashedEvidence={filename:string;path:string;sha256:string};
+export type DuplicateContentGroup={sha256:string;files:{filename:string;path:string}[]};
 
-export function proposedNewUserArtifacts(filenames:string[],user:{last:string;first:string},kinds:string[],saarSource:string){
- const identityFiles=filenames.filter(filename=>filenameIdentityMatches(filename,user));
+export function duplicateContentGroups(items:HashedEvidence[]):DuplicateContentGroup[]{
+ const groups=new Map<string,{filename:string;path:string}[]>();
+ for(const item of items){const hash=item.sha256.trim().toLowerCase();if(!/^[a-f0-9]{64}$/.test(hash))continue;const files=groups.get(hash)??[];if(!files.some(file=>file.path.toUpperCase()===item.path.toUpperCase()))files.push({filename:item.filename,path:item.path});groups.set(hash,files)}
+ return Array.from(groups.entries()).filter(([,files])=>files.length>1).map(([sha256,files])=>({sha256,files:files.sort((left,right)=>left.path.localeCompare(right.path))})).sort((left,right)=>left.files[0].path.localeCompare(right.files[0].path));
+}
+
+export function proposedNewUserArtifacts(filenames:string[],user:{last:string;first:string;organization?:string},kinds:string[],saarSource:string){
+ const organization=user.organization?.trim().toUpperCase(),sameOrganization=(filename:string)=>!organization||organizationFrom(filename)?.trim().toUpperCase()===organization;
+ const identityFiles=filenames.filter(filename=>filenameIdentityMatches(filename,user)&&sameOrganization(filename));
  return kinds.map(kind=>{
-  if(kind==='SAAR')return filenameIdentityMatches(saarSource,user)&&filenameMatchesKind(saarSource,'SAAR')?{kind,filename:saarSource}:undefined;
+  if(kind==='SAAR')return filenameIdentityMatches(saarSource,user)&&sameOrganization(saarSource)&&filenameMatchesKind(saarSource,'SAAR')?{kind,filename:saarSource}:undefined;
   const filename=identityFiles.filter(item=>filenameMatchesKind(item,kind)&&!!parseDate(item)).sort((left,right)=>(parseDate(right)!.getTime()-parseDate(left)!.getTime())||left.localeCompare(right))[0];
   return filename?{kind,filename}:undefined;
  }).filter((artifact):artifact is{kind:string;filename:string}=>!!artifact);

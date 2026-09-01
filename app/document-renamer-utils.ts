@@ -11,9 +11,20 @@ export function organizationFromFolderPath(path:string,rootFallback=''){
  const directories=parts.slice(0,-1);if(!directories.length)return clean(rootFallback);
  const evidenceRoot=directories.findIndex(part=>normalized(part)==='USER EVIDENCE');
  if(evidenceRoot>=0&&directories[evidenceRoot+1])return directories[evidenceRoot+1].slice(0,200);
- const immediate=directories.at(-1)!,filename=parts.at(-1)??'',identity=filename.match(/^\s*([^_,()\s]+)\s*(?:_\s*|,\s*|\s+)([^_,()\s]+)/);
- if(identity&&directories.length>1&&normalized(immediate)===normalized(`${identity[1]} ${identity[2]}`))return directories.at(-2)!.slice(0,200);
- return immediate.slice(0,200);
+ const topLevel=directories[0],filename=parts.at(-1)??'',identity=filename.match(/^\s*([^_,()\s]+)\s*(?:_\s*|,\s*|\s+)([^_,()\s]+)/);
+ if(identity&&normalized(topLevel)===normalized(`${identity[1]} ${identity[2]}`))return clean(rootFallback);
+ return topLevel.slice(0,200);
+}
+
+export function organizationStorageLocation(path:string,rootFallback=''){
+ const parts=path.replaceAll('\\','/').split('/').map(part=>clean(part)).filter(Boolean),directories=parts.slice(0,-1),organization=organizationFromFolderPath(path,rootFallback);
+ const organizationIndex=directories.findLastIndex(part=>normalized(part)===normalized(organization));
+ return{organization,relativeDirectory:organizationIndex>=0?directories.slice(0,organizationIndex+1).join('/'):''};
+}
+
+export function organizationCleanupDirectory(path:string,rootFallback:string,category:'Rework'|'Archive'){
+ const location=organizationStorageLocation(path,rootFallback),organization=token(location.organization,60)||'Organization',folder=`${organization} ${category}`;
+ return{...location,folder,path:[location.relativeDirectory,folder].filter(Boolean).join('/')};
 }
 
 export function folderOrganizationDiffers(path:string,filenameOrganization:string|undefined,rootFallback=''){
@@ -30,11 +41,11 @@ export function normalizeFilenameOrganization(filename:string,organization:strin
 
 const kindRules:[string,RegExp[]][]=[
  ['DTA Training Cert',[/\bDTA\b.{0,80}\bTRAINING\b/i,/\bDELEGATED TRUSTED AGENT\b.{0,80}\bTRAINING\b/i]],
- ['Privileged User Training Cert',[/\bPRIVILEGED USER\b.{0,100}\bTRAINING\b/i,/\bPRIVILEGED ACCESS\b.{0,100}\bTRAINING\b/i]],
+ ['Privileged User Training Cert',[/\bPRIV(?:ILEGED)?(?:\s+USER)?\b.{0,100}\bTRAINING\b/i,/\bPRIVILEGED ACCESS\b.{0,100}\bTRAINING\b/i,/\bPRIVILEGED USER CYBERSECURITY RESPONSIBILITIES\b/i]],
  ['8140 Cert Memo',[/\b8140(?:\.0+)?\b.{0,180}\b(?:MEMO|MEMORANDUM|CERTIFICATION|QUALIFICATION)\b/i,/\b(?:MEMO|MEMORANDUM)\b.{0,180}\b8140(?:\.0+)?\b/i]],
  ['SAAR',[/\bDD\s*FORM\s*2875\b/i,/\bSYSTEM AUTHORIZATION ACCESS REQUEST\b/i,/\bSAAR\b/i]],
  ['User Agreement',[/\bAGREEMENTS?\b/i,/\bACCEPTABLE USE POLICY\b/i]],
- ['DoD Cyber Cert',[/\bCOMPTIA\b/i,/\bSECURITY\s*\+/i,/\bCYSA\s*\+/i,/\bCASP\s*\+/i,/\bCISSP\b/i,/\bCERTIFIED ETHICAL HACKER\b/i,/\bCYBER(?:SECURITY)? (?:CERTIFICATE|CERTIFICATION)\b/i]],
+ ['DoD Cyber Cert',[/\b(?:DOD\s+)?CYBER\s+AWARENESS(?:\s+CHALLENGE)?(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bAWARENESS\s+CHALLENGE(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bCOMPTIA\b/i,/\bSECURITY\s*\+/i,/\bCYSA\s*\+/i,/\bCASP\s*\+/i,/\bCISSP\b/i,/\bCERTIFIED ETHICAL HACKER\b/i,/\bCYBER(?:SECURITY)? (?:CERTIFICATE|CERTIFICATION)\b/i]],
 ];
 
 function detectKind(text:string,filename:string){const source=`${text.slice(0,120000)}\n${filename.replace(/[_-]+/g,' ')}`;for(const[kind,rules]of kindRules)if(rules.some(rule=>rule.test(source)))return kind;return''}
@@ -61,7 +72,7 @@ function parseCalendarDate(value:string){
 
 function signedDate(text:string){
  const datePattern=/(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|(?:JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUN(?:E)?|JUL(?:Y)?|AUG(?:UST)?|SEP(?:TEMBER)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?)\s+\d{1,2},?\s+\d{2,4}|\d{1,2}\s+(?:JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUN(?:E)?|JUL(?:Y)?|AUG(?:UST)?|SEP(?:TEMBER)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?)\s+\d{2,4})/gi;
- const candidates:{date:string;score:number;context:string}[]=[];for(const match of text.matchAll(datePattern)){const date=parseCalendarDate(match[0]);if(!date)continue;const index=match.index??0,leading=clean(text.slice(Math.max(0,index-75),index),100).toUpperCase(),context=clean(text.slice(Math.max(0,index-90),Math.min(text.length,index+match[0].length+35)),180);let score=0;if(/DATE\s+(?:SIGNED|OF SIGNATURE)|SIGNED\s+(?:ON|DATE)?|SIGNATURE\s+DATE/.test(leading))score+=9;if(/DATE\s+(?:CERTIFIED|COMPLETED|EARNED|ISSUED)|CERTIFICATION\s+DATE|COMPLETION\s+DATE|ISSUE\s+DATE/.test(leading))score+=8;if(/\bDATE\b/.test(leading))score+=2;if(/EXPIR|VALID\s+(?:THROUGH|UNTIL)|RENEW/.test(leading))score-=10;candidates.push({date,score,context})}return candidates.sort((a,b)=>b.score-a.score)[0];
+ const candidates:{date:string;score:number;context:string}[]=[];for(const match of text.matchAll(datePattern)){const date=parseCalendarDate(match[0]);if(!date)continue;const index=match.index??0,leading=clean(text.slice(Math.max(0,index-75),index),100).toUpperCase(),context=clean(text.slice(Math.max(0,index-90),Math.min(text.length,index+match[0].length+90)),260),nearby=context.toUpperCase();let score=0;if(/DATE\s+(?:SIGNED|OF SIGNATURE)|SIGNED\s+(?:ON|DATE)?|SIGNATURE\s+DATE/.test(nearby))score+=9;if(/DATE\s+(?:CERTIFIED|COMPLETED|EARNED|ISSUED|OF\s+COMPLETION)|CERTIFICATION\s+DATE|CERTIFICATE\s+DATE|COMPLETION\s+DATE|COMPLETED\s+(?:ON|DATE)|ISSUE\s+DATE/.test(nearby))score+=8;if(/\bDATE\b/.test(nearby))score+=2;if(/EXPIR|VALID\s+(?:THROUGH|UNTIL)|RENEW/.test(leading))score-=10;candidates.push({date,score,context})}return candidates.sort((a,b)=>b.score-a.score)[0];
 }
 
 export function analyzeDocumentText(text:string,filename:string,users:RenamerUser[],defaultOrganization=''):RenamerAnalysis{

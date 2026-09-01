@@ -48,7 +48,7 @@ export async function createExecutiveSummaryPdf(input:ExecutiveSummaryInput){
   'Tamper-evident daily audit logs use ISO 8601 UTC timestamps, a SHA-256 chain, and the active Windows operator identity.',
   'Daily CSV and versioned JSON backups include checksums, retention controls, integrity verification, and guided restoration.',
   'Compliance Snapshot PDFs and filtered CSV exports provide leadership counts, requirement status, overdue aging, and organizational breakdowns.',
-  'Clean Up review identifies invalid, duplicate, superseded, and loose PDF evidence for approved Rework, Archive Review, or ZIP conversion.'
+  'Clean Up review identifies invalid, duplicate, superseded, and loose PDF evidence for approved organization Rework, organization Archive, or ZIP conversion.'
  ],322,rightY,248,regular);rightY-=2;rightY=heading(page,'Secure, Lightweight Deployment',322,rightY,bold);bullets(page,[
   'One portable Windows executable runs locally without an installer or cloud database.',
   'Local-loopback hosting and per-system folders keep records under existing Windows or SMB permissions.',

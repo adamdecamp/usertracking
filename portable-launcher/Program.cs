@@ -143,8 +143,13 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "csv" && parts[0] == "POST") response = "{\"saved\":\"" + Json(storage.SaveCsv(systemId, requestBody)) + "\"}";
                     else if (action == "backups" && parts[0] == "GET") response = storage.ListBackups(systemId, QueryValue(target, "logical"));
                     else if (action == "restore" && parts[0] == "POST") response = storage.Restore(systemId, QueryValue(target, "logical"), QueryValue(target, "file"));
+                    else if (action == "restore-drill" && parts[0] == "POST") response = storage.RestoreDrill(systemId, QueryValue(target, "logical"), QueryValue(target, "file"));
                     else if (action == "verify" && parts[0] == "GET") response = storage.VerifyLatest(systemId, QueryValue(target, "logical"));
                     else if (action == "scan" && parts[0] == "GET") response = storage.Scan(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal));
+                    else if (action == "renamer-queue" && parts[0] == "GET") response = storage.ReadRenamerQueue(systemId);
+                    else if (action == "renamer-queue" && parts[0] == "POST") response = storage.SaveRenamerQueue(systemId, requestBody);
+                    else if (action == "renamer-queue" && parts[0] == "DELETE") response = storage.ClearRenamerQueue(systemId);
+                    else if (action == "retention-status" && parts[0] == "GET") response = storage.RetentionStatus(systemId);
                     else if (action == "file" && parts[0] == "GET") { byte[] fileBytes = storage.ReadRelativeFile(systemId, QueryValue(target, "path")); await Respond(stream, 200, "application/octet-stream", fileBytes, false, "no-store"); return; }
                     else if (action == "archive" && parts[0] == "POST") response = storage.ArchiveEvidence(systemId, QueryValue(target, "path"));
                     else if (action == "rework" && parts[0] == "POST") response = storage.MoveEvidenceToRework(systemId, QueryValue(target, "path"));

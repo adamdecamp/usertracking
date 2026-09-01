@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 
@@ -18,11 +19,13 @@ internal sealed class PortableStorage : IDisposable
     private const long SyncIndexLimit = 50L * 1024 * 1024;
     private const long EvidenceLimit = 110L * 1024 * 1024;
     private const long AuditFileLimit = 100L * 1024 * 1024;
+    private const long RenamerQueueLimit = 20L * 1024 * 1024;
     private const int AuditVersion = 1;
     private const int SyncIndexVersion = 1;
     private const int MappingCacheVersion = 2;
     private const string SyncIndexFilename = "tracker-sync-index.json";
     private const string SyncIndexChecksumFilename = "tracker-sync-index.json.sha256";
+    private const string RenamerQueueFilename = "tracker-document-renamer-queue.json";
     private static readonly string AuditGenesisHash = new string('0', 64);
     private readonly Dictionary<string, string> roots = new Dictionary<string, string>(StringComparer.Ordinal);
     private readonly Dictionary<string, string> cachedRoots = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -244,6 +247,24 @@ internal sealed class PortableStorage : IDisposable
         }
     }
 
+    public string RestoreDrill(string systemId, string logicalSystemId, string filename)
+    {
+        ValidateSystemId(logicalSystemId);
+        string directory = Path.Combine(Root(systemId), "backup"), path = SafeBackupPath(directory, filename);
+        lock (RootLock(systemId))
+        {
+            Dictionary<string, object> envelope = VerifySnapshot(path), database = ObjectDictionary(envelope["database"]);
+            ValidateDatabaseObject(database);
+            object[] systems = ObjectArray(database["systems"]), users = ObjectArray(database["users"]);
+            if (systems.Length != 1 || !String.Equals(Convert.ToString(ObjectDictionary(systems[0])["id"]), logicalSystemId, StringComparison.Ordinal)) throw new InvalidDataException("The backup does not match the selected information system.");
+            string roundTrip = json.Serialize(database);
+            Dictionary<string, object> reconstructed = ValidateDatabase(roundTrip);
+            if (!String.Equals(StateHash(reconstructed), Convert.ToString(envelope["contentHash"], CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The restore drill reconstructed records with an unexpected content hash.");
+            Dictionary<string, object> system = ObjectDictionary(systems[0]);
+            return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "filename", Path.GetFileName(path) }, { "created", Convert.ToString(envelope["created"], CultureInfo.InvariantCulture) }, { "systemName", Convert.ToString(system["name"], CultureInfo.InvariantCulture) }, { "userCount", users.Length }, { "contentHash", Convert.ToString(envelope["contentHash"], CultureInfo.InvariantCulture) }, { "testedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "nonDestructive", true } });
+        }
+    }
+
     public string VerifyLatest(string systemId, string logicalSystemId)
     {
         ValidateSystemId(logicalSystemId);
@@ -299,7 +320,7 @@ internal sealed class PortableStorage : IDisposable
                 {
                     if (result.Count >= 100000) throw new InvalidDataException("File scan limit exceeded.");
                     string filename = Path.GetFileName(file), relative = Relative(root, file).Replace(Path.DirectorySeparatorChar, '/');
-                    if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase))) continue;
+                    if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase))) continue;
                     bool supportedExtension = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
                     if (!supportedExtension)
                     {
@@ -331,7 +352,7 @@ internal sealed class PortableStorage : IDisposable
                 foreach (string directory in EnumerateScanDirectories(root, current.Item1))
                 {
                     string name = Path.GetFileName(directory);
-                    if (current.Item2 == 0 && (String.Equals(name, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "Reports", StringComparison.OrdinalIgnoreCase))) continue;
+                    if (IsManagedStorageDirectory(name)) continue;
                     if (IsScanReparsePoint(root, directory)) continue;
                     pending.Push(Tuple.Create(directory, current.Item2 + 1));
                 }
@@ -389,17 +410,79 @@ internal sealed class PortableStorage : IDisposable
         return File.ReadAllBytes(path);
     }
 
+    public string ReadRenamerQueue(string systemId)
+    {
+        string path = Path.Combine(Root(systemId), RenamerQueueFilename);
+        if (!File.Exists(path)) return "null";
+        string text = ReadText(path, RenamerQueueLimit);
+        object parsed = json.DeserializeObject(text);
+        if (!(parsed is Dictionary<string, object>)) throw new InvalidDataException("The saved Document Renamer queue is invalid.");
+        return text;
+    }
+
+    public string SaveRenamerQueue(string systemId, byte[] bytes)
+    {
+        if (bytes == null || bytes.LongLength == 0 || bytes.LongLength > RenamerQueueLimit) throw new InvalidDataException("The Document Renamer queue is empty or exceeds the 20 MB limit.");
+        string text = new UTF8Encoding(false, true).GetString(bytes);
+        var value = json.DeserializeObject(text) as Dictionary<string, object>;
+        object rawVersion, rawItems;
+        if (value == null || !value.TryGetValue("version", out rawVersion) || Convert.ToInt32(rawVersion, CultureInfo.InvariantCulture) != 1 || !value.TryGetValue("items", out rawItems) || !(rawItems is object[]) || ((object[])rawItems).Length > 10000) throw new InvalidDataException("The Document Renamer queue has an invalid structure.");
+        AtomicWrite(Path.Combine(Root(systemId), RenamerQueueFilename), bytes);
+        return "{\"saved\":true}";
+    }
+
+    public string ClearRenamerQueue(string systemId)
+    {
+        TryDelete(Path.Combine(Root(systemId), RenamerQueueFilename));
+        return "{\"cleared\":true}";
+    }
+
+    public string RetentionStatus(string systemId)
+    {
+        string root = Root(systemId);
+        var aggregates = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
+        var pending = new Stack<string>();pending.Push(root);
+        while (pending.Count > 0)
+        {
+            string directory = pending.Pop();
+            foreach (string child in EnumerateScanDirectories(root, directory))
+            {
+                string name = Path.GetFileName(child), category = name.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase) ? "Rework" : name.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase) ? "Archive" : "";
+                if (!String.IsNullOrEmpty(category))
+                {
+                    string organization = name.Substring(0, name.Length - (category.Length + 1));
+                    var managed = new Stack<string>();managed.Push(child);
+                    while (managed.Count > 0)
+                    {
+                        string managedDirectory = managed.Pop(), managedRelative = managedDirectory.Length > child.Length ? managedDirectory.Substring(child.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) : "";bool superseded = category == "Archive" && managedRelative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries).Any(part => String.Equals(part, "Superseded", StringComparison.OrdinalIgnoreCase));
+                        foreach (string file in EnumerateScanFiles(root, managedDirectory))
+                        {
+                            string itemCategory = superseded ? "Superseded" : category, key = organization + "\0" + itemCategory;Dictionary<string, object> aggregate;
+                            if (!aggregates.TryGetValue(key, out aggregate)) { aggregate = new Dictionary<string, object> { { "organization", CleanLine(organization, 200) }, { "category", itemCategory }, { "count", 0 }, { "oldestEvidenceDate", "" } };aggregates[key] = aggregate; }
+                            aggregate["count"] = Convert.ToInt32(aggregate["count"], CultureInfo.InvariantCulture) + 1;DateTime? date = EvidenceDate(Path.GetFileName(file));string oldest = Convert.ToString(aggregate["oldestEvidenceDate"], CultureInfo.InvariantCulture);
+                            if (date.HasValue && (String.IsNullOrEmpty(oldest) || date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture).CompareTo(oldest) < 0)) aggregate["oldestEvidenceDate"] = date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                        }
+                        foreach (string nested in EnumerateScanDirectories(root, managedDirectory)) managed.Push(nested);
+                    }
+                    continue;
+                }
+                if (!IsManagedStorageDirectory(name)) pending.Push(child);
+            }
+        }
+        return json.Serialize(new Dictionary<string, object> { { "generatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "items", aggregates.Values.OrderBy(item => Convert.ToString(item["organization"], CultureInfo.InvariantCulture)).ThenBy(item => Convert.ToString(item["category"], CultureInfo.InvariantCulture)).Cast<object>().ToArray() } });
+    }
+
     public string ArchiveEvidence(string systemId, string relative)
     {
         lock (RootLock(systemId))
         {
             string root = Root(systemId), source = SafeRelativePath(root, relative), normalized = Relative(root, source);
-            string topLevel = normalized.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
-            if (String.Equals(topLevel, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Reports", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only active evidence files can be moved to Archive Review.");
+            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active evidence files can be moved to an organization Archive folder.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string validationError;
             if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
-            string day = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), directory = Path.Combine(root, "Archive Review", day), filename = SafePart(Path.GetFileName(source), 180);
+            Tuple<string, string> organization = OrganizationStorageLocation(root, source);
+            string bucket = EvidenceOlderThanYears(Path.GetFileName(source), 5) ? "Superseded" : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Archive", bucket), filename = SafePart(Path.GetFileName(source), 180);
             Directory.CreateDirectory(directory);
             string extension = Path.GetExtension(filename), stem = Path.GetFileNameWithoutExtension(filename), destination = Path.Combine(directory, filename);
             for (int index = 1; File.Exists(destination); index++) destination = Path.Combine(directory, stem + "_" + index.ToString(CultureInfo.InvariantCulture) + extension);
@@ -409,16 +492,27 @@ internal sealed class PortableStorage : IDisposable
         }
     }
 
+    private static DateTime? EvidenceDate(string filename)
+    {
+        MatchCollection matches = Regex.Matches(filename ?? "", @"(?<![A-Za-z0-9])(0[1-9]|[12][0-9]|3[01])(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)((?:19|20)[0-9]{2})(?![A-Za-z0-9])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (matches.Count == 0) return null;
+        DateTime evidenceDate;
+        if (!DateTime.TryParseExact(matches[matches.Count - 1].Value, "ddMMMyyyy", CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out evidenceDate)) return null;
+        return evidenceDate.Date;
+    }
+
+    private static bool EvidenceOlderThanYears(string filename, int years) { DateTime? date = EvidenceDate(filename);return date.HasValue && date.Value < DateTime.UtcNow.Date.AddYears(-years); }
+
     public string MoveEvidenceToRework(string systemId, string relative)
     {
         lock (RootLock(systemId))
         {
             string root = Root(systemId), source = SafeRelativePath(root, relative), normalized = Relative(root, source);
-            string topLevel = normalized.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
-            if (String.Equals(topLevel, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Reports", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only active correction PDFs can be moved to Rework.");
+            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active correction PDFs can be moved to an organization Rework folder.");
             if (!source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only a PDF requiring correction can be moved to Rework.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected correction PDF no longer exists.");
-            string directory = Path.Combine(root, "Rework"), filename = SafePart(Path.GetFileName(source), 180);
+            Tuple<string, string> organization = OrganizationStorageLocation(root, source);
+            string directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Rework"), filename = SafePart(Path.GetFileName(source), 180);
             Directory.CreateDirectory(directory);
             string extension = Path.GetExtension(filename), stem = Path.GetFileNameWithoutExtension(filename), destination = Path.Combine(directory, filename);
             for (int index = 1; File.Exists(destination); index++) destination = Path.Combine(directory, stem + "_" + index.ToString(CultureInfo.InvariantCulture) + extension);
@@ -433,8 +527,7 @@ internal sealed class PortableStorage : IDisposable
         lock (RootLock(systemId))
         {
             string root = Root(systemId), source = SafeRelativePath(root, relative), normalized = Relative(root, source);
-            string topLevel = normalized.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
-            if (String.Equals(topLevel, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Reports", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only active evidence filenames can be normalized.");
+            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active evidence filenames can be normalized.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string safeName = SafePart(filename, 180);
             if (!String.Equals(safeName, filename, StringComparison.Ordinal) || !String.Equals(Path.GetFileName(filename), filename, StringComparison.Ordinal)) throw new InvalidDataException("The normalized evidence filename is invalid or too long.");
@@ -463,8 +556,7 @@ internal sealed class PortableStorage : IDisposable
         lock (RootLock(systemId))
         {
             string root = Root(systemId), source = SafeRelativePath(root, relative), normalized = Relative(root, source);
-            string topLevel = normalized.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
-            if (String.Equals(topLevel, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(topLevel, "Reports", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only active evidence files can be compressed.");
+            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active evidence files can be compressed.");
             if (!source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only a loose PDF can be compressed.");
             string destination = source + ".zip";
             if (!File.Exists(source))
@@ -922,6 +1014,45 @@ internal sealed class PortableStorage : IDisposable
         string prefix = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, full = Path.GetFullPath(path);
         if (!full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) throw new UnauthorizedAccessException("A scanned file is outside the mapped folder.");
         return full.Substring(prefix.Length);
+    }
+
+    private static bool IsManagedStorageDirectory(string name)
+    {
+        string value = (name ?? "").Trim();
+        return String.Equals(value, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Reports", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ContainsManagedStorageDirectory(string relative)
+    {
+        string[] parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+        for (int index = 0; index < parts.Length - 1; index++) if (IsManagedStorageDirectory(parts[index])) return true;
+        return false;
+    }
+
+    private static string ComparableStorageName(string value)
+    {
+        var result = new StringBuilder();
+        foreach (char character in value ?? "") if (Char.IsLetterOrDigit(character)) result.Append(Char.ToUpperInvariant(character));
+        return result.ToString();
+    }
+
+    private static Tuple<string, string> OrganizationStorageLocation(string root, string source)
+    {
+        string relative = Relative(root, source);
+        string[] parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+        string rootOrganization = new DirectoryInfo(root).Name;
+        if (parts.Length <= 1) return Tuple.Create(root, rootOrganization);
+        int directoryCount = parts.Length - 1;
+        for (int index = 0; index < directoryCount - 1; index++)
+        {
+            if (!String.Equals(parts[index], "User Evidence", StringComparison.OrdinalIgnoreCase)) continue;
+            string organization = parts[index + 1], directory = root;
+            for (int part = 0; part <= index + 1; part++) directory = Path.Combine(directory, parts[part]);
+            return Tuple.Create(directory, organization);
+        }
+        string filenameIdentity = ComparableStorageName(Path.GetFileNameWithoutExtension(parts[parts.Length - 1])), topLevel = ComparableStorageName(parts[0]);
+        if (!String.IsNullOrEmpty(topLevel) && filenameIdentity.StartsWith(topLevel, StringComparison.OrdinalIgnoreCase)) return Tuple.Create(root, rootOrganization);
+        return Tuple.Create(Path.Combine(root, parts[0]), parts[0]);
     }
 
     private static string[] EnumerateScanFiles(string root, string directory)

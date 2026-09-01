@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence} from '../app/workflow-utils.ts';
+import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence} from '../app/workflow-utils.ts';
+
+test('groups exact duplicate PDF content hashes without trusting filenames',()=>{
+ const same='a'.repeat(64),groups=duplicateContentGroups([{filename:'one.pdf',path:'GOV/one.pdf',sha256:same},{filename:'different-name.pdf.zip',path:'GOV/different-name.pdf.zip',sha256:same.toUpperCase()},{filename:'unique.pdf',path:'GOV/unique.pdf',sha256:'b'.repeat(64)},{filename:'invalid.pdf',path:'GOV/invalid.pdf',sha256:'not-a-hash'}]);
+ assert.deepEqual(groups,[{sha256:same,files:[{filename:'different-name.pdf.zip',path:'GOV/different-name.pdf.zip'},{filename:'one.pdf',path:'GOV/one.pdf'}]}]);
+});
 
 test('returns only an active, unrevoked compliance exception',()=>{
  const exceptions=[{id:'old',artifact:'8140 Cert Memo',reason:'old',approvedBy:'A',createdAt:'2026-01-01T00:00:00Z',createdBy:'B',expiresOn:'2026-01-31'},{id:'active',artifact:'8140 Cert Memo',reason:'temporary',approvedBy:'A',createdAt:'2026-08-01T00:00:00Z',createdBy:'B',expiresOn:'2026-09-30'}];
@@ -36,6 +41,14 @@ test('seeds a new user from the SAAR before matching supporting evidence',()=>{
   {kind:'SAAR',filename:saar},
   {kind:'DoD Cyber Cert',filename:'Brown_Jacob_(GDMS)_DoDCyberCert_26AUG2026.pdf'},
   {kind:'User Agreement',filename:'Brown_Jacob_(GDMS)_GENUserAgreement_26AUG2026.pdf'},
+ ]);
+});
+
+test('scopes supporting evidence for a new SAAR user to the same organization',()=>{
+ const saar='Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf',files=[saar,'Brown_Jacob_(GOV)_DoD_Cyber_Cert_30AUG2026.pdf','Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf'];
+ assert.deepEqual(proposedNewUserArtifacts(files,{last:'Brown',first:'Jacob',organization:'LM'},['SAAR','DoD Cyber Cert'],saar),[
+  {kind:'SAAR',filename:saar},
+  {kind:'DoD Cyber Cert',filename:'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf'},
  ]);
 });
 

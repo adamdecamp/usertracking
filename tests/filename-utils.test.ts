@@ -16,6 +16,17 @@ test('recognizes the reported DoD Cyber certificate filename',()=>{
  assert.equal(parseDate(dod)?.toISOString(),'2026-08-26T00:00:00.000Z');
 });
 
+test('recognizes Cyber Awareness filename wording as DoD Cyber evidence',()=>{
+ for(const filename of [
+  'Brown_Jacob_(LM)_Cyber_Awareness_Challenge_Certificate_08262026.pdf',
+  'Brown, Jacob (LM) Cyber Awareness Certificate AUG262026.pdf',
+  'Brown Jacob (LM) Awareness Challenge Certificate 26 AUG 26.pdf',
+ ]){
+  assert.equal(filenameMatchesKind(filename,'DoD Cyber Cert'),true,filename);
+  assert.equal(looksLikeEvidenceFilename(filename),true,filename);
+ }
+});
+
 test('recognizes the reported General User Agreement filename',()=>{
  assert.equal(looksLikeEvidenceFilename(general),true);
  assert.equal(filenameMatchesKind(general,'User Agreement'),true);

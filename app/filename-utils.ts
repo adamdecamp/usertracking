@@ -56,7 +56,7 @@ export function filenameMatchesKind(filename:string,kind:string){
  const canonical=canonicalArtifactKind(kind),tokens=fileTokens(filename),compact=filename.toUpperCase().replace(/[^A-Z0-9]+/g,''),saar=hasSaarMarker(filename);
  if(canonical==='SAAR')return saar;
  if(saar)return false;
- if(canonical==='DoD Cyber Cert')return tokens.has('DOD')||(compact.includes('DOD')&&compact.includes('CYBER'));
+ if(canonical==='DoD Cyber Cert')return tokens.has('DOD')||(compact.includes('DOD')&&compact.includes('CYBER'))||(compact.includes('CYBER')&&compact.includes('AWARENESS'))||compact.includes('AWARENESSCHALLENGE');
  if(canonical===agreementArtifactKind)return tokens.has('AGREEMENT')||tokens.has('AGREEMENTS')||compact.includes('AGREEMENT');
  if(canonical==='8140 Cert Memo')return tokens.has('8140')||compact.includes('8140');
  if(canonical==='Privileged User Training Cert')return (tokens.has('PRIV')&&tokens.has('TRAINING'))||(compact.includes('PRIV')&&compact.includes('TRAINING'));
