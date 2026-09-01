@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {verifyAuditText} from '../app/audit-utils.ts';
+import {normalizeFilenameOrganization,organizationFromFolderPath} from '../app/document-renamer-utils.ts';
 import {inspectEvidenceBytes} from '../app/evidence-validation.ts';
 import {artifactKinds,canonicalEvidenceFilename,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
-import {readSaarFormFields} from '../app/saar-form-utils.ts';
+import {officialEmailFromText,readSaarFormFields} from '../app/saar-form-utils.ts';
 import {readSyncIndex} from '../app/sync-utils.ts';
 import {PDFDocument,PDFName,PDFString} from 'pdf-lib';
 
@@ -18,8 +19,18 @@ test('fuzzes filename parsing without uncaught parser failures',()=>{
   const filename=randomText();
   assert.doesNotThrow(()=>{
    fileTokenList(filename);fileTokens(filename);parseDate(filename);normalizeFilenameDate(filename);organizationFrom(filename);identityFromFilename(filename);looksLikeEvidenceFilename(filename);canonicalEvidenceFilename(filename,'Fuzz Organization');trainingCertificateRecoveryKind(filename);validateNewUserSaarFilename(filename);filenameIdentityMatches(filename,{last:'Brown',first:'Jacob'});
+   const folder=organizationFromFolderPath(`${randomText(100)}/${filename}`,'Fallback');normalizeFilenameOrganization(filename,folder);
    for(const kind of artifactKinds)filenameMatchesKind(filename,kind);
   });
+ }
+});
+
+test('fuzzes Official Email selectable-text recovery without accepting unlabeled addresses',()=>{
+ for(let index=0;index<2500;index++){
+  const noise=randomText(500),address=`user${index}@example.mil`;
+  assert.doesNotThrow(()=>officialEmailFromText(noise));
+  assert.equal(officialEmailFromText(`${noise} OFFICIAL EMAIL ADDRESS ${address} JOB TITLE`),address);
+  assert.equal(officialEmailFromText(`${noise} ${address}`),undefined);
  }
 });
 

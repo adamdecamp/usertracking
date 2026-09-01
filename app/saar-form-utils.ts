@@ -2,9 +2,15 @@ import {decodePDFRawStream,PDFArray,PDFDict,PDFDocument,PDFHexString,PDFName,PDF
 
 const clean=(value:string,max=500)=>value.replace(/<[^>]*>/g,' ').replace(/[\r\n\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
 const normalizedName=(value:string)=>value.toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
+const emailPattern=/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+/gi;
 
 export type SaarIdentity={last:string;first:string;middle?:string};
 export type SaarFormFields={fillable:boolean;format?:'AcroForm'|'XFA';identity?:SaarIdentity;organization?:string;email?:string};
+
+export function officialEmailFromText(text:string){
+ const source=text.replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\u00ad/g,'-').replace(/\s+/g,' ').slice(0,500000),labels=Array.from(source.matchAll(/\bOFFICIAL(?:\s*\/\s*ORGANIZATION)?\s+E[\s-]*MAIL(?:\s+ADDRESS)?\b/gi));
+ for(const label of labels){const start=(label.index??0)+label[0].length,window=source.slice(start,start+400),match=Array.from(window.matchAll(emailPattern))[0];if(!match)continue;const before=window.slice(0,match.index??0);if(/\b(?:SUPERVISOR|SPONSOR|SECURITY\s+MANAGER|APPROVING\s+OFFICIAL)\b.{0,60}\bE[\s-]*MAIL\b/i.test(before))continue;return match[0].toLowerCase()}
+}
 
 export function parseSaarName(value:string):SaarIdentity|undefined{
  const source=clean(value,300);if(!source)return;
@@ -23,7 +29,7 @@ function fieldKind(name:string):'name'|'organization'|'email'|undefined{
  const normalized=normalizedName(name);
  if(normalized==='1 NAME LAST FIRST MIDDLE INITIAL'||normalized==='1 NAME'||normalized==='NAME1')return'name';
  if(normalized==='2 ORGANIZATION'||normalized==='ORGANIZATION2')return'organization';
- if(normalized==='4 OFFICIAL EMAIL ADDRESS'||normalized==='5 OFFICIAL E MAIL ADDRESS'||normalized==='EMAIL ADDRESS5')return'email';
+ if(normalized==='4 OFFICIAL EMAIL ADDRESS'||normalized==='5 OFFICIAL E MAIL ADDRESS'||normalized==='EMAIL ADDRESS5'||/^(?:\d+ )?OFFICIAL(?: ORGANIZATION)? E ?MAIL(?: ADDRESS)?$/.test(normalized))return'email';
 }
 
 function decodeXml(value:string){
@@ -63,7 +69,7 @@ export async function readSaarFormFields(pdfBytes:Uint8Array):Promise<SaarFormFi
  const xfa=xfaDatasets(pdf);
  if(xfa.present){
   if(!xfa.xml)return{fillable:false};
-  const name=xmlValue(xfa.xml,['name1']),organization=xmlValue(xfa.xml,['Organization2']),email=xmlValue(xfa.xml,['Email_Address5']);
+  const name=xmlValue(xfa.xml,['name1']),organization=xmlValue(xfa.xml,['Organization2']),email=xmlValue(xfa.xml,['Email_Address5','Official_Email','OfficialEmail','Official_Email_Address','OfficialEmailAddress']);
   return{fillable:true,format:'XFA',identity:name?parseSaarName(name):undefined,organization:organization?clean(organization,200):undefined,email:email?clean(email,254):undefined}
  }
  const values:Partial<Record<'name'|'organization'|'email',string>>={};

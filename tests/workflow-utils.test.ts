@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence} from '../app/workflow-utils.ts';
+import {activeComplianceException,applySyncArtifactProvenance,certificateRecoveryUsers,committedRecordWithExceptions,duplicateContentGroups,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence} from '../app/workflow-utils.ts';
 
 test('groups exact duplicate PDF content hashes without trusting filenames',()=>{
  const same='a'.repeat(64),groups=duplicateContentGroups([{filename:'one.pdf',path:'GOV/one.pdf',sha256:same},{filename:'different-name.pdf.zip',path:'GOV/different-name.pdf.zip',sha256:same.toUpperCase()},{filename:'unique.pdf',path:'GOV/unique.pdf',sha256:'b'.repeat(64)},{filename:'invalid.pdf',path:'GOV/invalid.pdf',sha256:'not-a-hash'}]);
@@ -42,6 +42,16 @@ test('seeds a new user from the SAAR before matching supporting evidence',()=>{
   {kind:'DoD Cyber Cert',filename:'Brown_Jacob_(GDMS)_DoDCyberCert_26AUG2026.pdf'},
   {kind:'User Agreement',filename:'Brown_Jacob_(GDMS)_GENUserAgreement_26AUG2026.pdf'},
  ]);
+});
+
+test('uses validated new-user SAAR identities to recover loose training certificates',()=>{
+ const existing=[{last:'Existing',first:'User',organization:'LM',roles:['General'],privilegedTypes:[]}],files=['Brown_Jacob_(GOV)_GEN_SAAR_26AUG2026.pdf','Shaw_Vivian_(Boeing)_PRIV_DTA_SAAR_26AUG2026.pdf'];
+ assert.deepEqual(certificateRecoveryUsers(existing,files),[
+  existing[0],
+  {last:'Brown',first:'Jacob',organization:'GOV',roles:['General'],privilegedTypes:[]},
+  {last:'Shaw',first:'Vivian',organization:'Boeing',roles:['Privileged'],privilegedTypes:['DTA']},
+ ]);
+ assert.deepEqual(certificateRecoveryUsers([],['Brown_Jacob_(GOV)_GEN_SAAR_26AUG2026.pdf','Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf']),[]);
 });
 
 test('scopes supporting evidence for a new SAAR user to the same organization',()=>{

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {analyzeDocumentText,buildTrackerFilename,folderOrganizationDiffers,normalizeFilenameOrganization,organizationCleanupDirectory,organizationFromFolderPath,organizationStorageLocation} from '../app/document-renamer-utils.ts';
+import {canonicalEvidenceFilename} from '../app/filename-utils.ts';
 
 const users=[{first:'Jacob',last:'Brown',organization:'LM',roles:['General'],privilegedTypes:[]}];
 
@@ -49,6 +50,8 @@ test('uses the organization folder while skipping the managed user-evidence iden
  assert.equal(organizationFromFolderPath('GDMS/Privileged/Brown_Jacob/Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','DEFAULT'),'GDMS');
  assert.equal(organizationFromFolderPath('Active Evidence/GDMS/Brown_Jacob/Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','DEFAULT'),'GDMS');
  assert.equal(organizationFromFolderPath('Active Evidence/GDMS/Privileged Users/Brown_Jacob/Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','DEFAULT'),'GDMS');
+ assert.equal(organizationFromFolderPath('GOV/Privileged/Unsorted/Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','DEFAULT'),'GOV');
+ assert.equal(organizationFromFolderPath('Boeing/Hill_Morgan/Last_First_(ORG)_GEN_SAAR_26AUG2026.pdf','DEFAULT',{last:'Hill',first:'Morgan'}),'Boeing');
  assert.equal(organizationFromFolderPath('certificate.pdf','DEFAULT'),'DEFAULT');
  assert.equal(organizationFromFolderPath('Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','NGC'),'NGC');
  assert.equal(organizationFromFolderPath('Brown_Jacob/Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','NGC'),'NGC');
@@ -69,4 +72,11 @@ test('normalizes the filename organization to its authoritative parent folder',(
  assert.deepEqual(normalizeFilenameOrganization('Brown, Jacob DoD Cyber Cert 26AUG2026.pdf','GDMS'),{normalized:'Brown, Jacob_(GDMS)_DoD Cyber Cert 26AUG2026.pdf',organization:'GDMS',changed:true});
  assert.equal(normalizeFilenameOrganization('Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf',organizationFromFolderPath('Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','NGC'))?.normalized,'Brown_Jacob_(NGC)_SAAR_26AUG2026.pdf');
  assert.equal(normalizeFilenameOrganization('Brown_Jacob_(GDMS)_User_Agreement_26AUG2026.pdf','GDMS')?.changed,false);
+ assert.deepEqual(normalizeFilenameOrganization('Brown_Jacob_(WRONG)_Unrecognized_Form_26AUG2026.pdf','GOV'),{normalized:'Brown_Jacob_(GOV)_Unrecognized_Form_26AUG2026.pdf',organization:'GOV',changed:true});
+});
+
+test('evaluates every artifact in every sibling organization folder',()=>{
+ const organizations=['GOV','GDMS','NGC','LM','Boeing','Raytheon','SAIC','Leidos','MITRE','USAF','USN','USA'],filenames=['Brown_Jacob_(WRONG)_GEN_SAAR_26AUG2026.pdf','Brown_Jacob_(WRONG)_DoD_Cyber_Cert_26AUG2026.pdf','Brown_Jacob_(WRONG)_User_Agreement_26AUG2026.pdf','Brown_Jacob_(WRONG)_8140_Cert_Memo_26AUG2026.pdf','Brown_Jacob_(WRONG)_Privileged_User_Training_Cert_26AUG2026.pdf','Brown_Jacob_(WRONG)_DTA_Training_Cert_26AUG2026.pdf'];let checked=0;
+ for(const organization of organizations)for(const filename of filenames){const folder=organizationFromFolderPath(`${organization}/Privileged/Brown_Jacob/${filename}`,'SYSTEM'),normalized=normalizeFilenameOrganization(filename,folder)?.normalized,canonical=canonicalEvidenceFilename(filename,folder);assert.equal(folder,organization);assert.ok(normalized?.includes(`_(${organization})_`));assert.ok(canonical?.includes(`_(${organization})_`));checked++}
+ assert.equal(checked,organizations.length*filenames.length);
 });
