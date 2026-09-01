@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {verifyAuditText} from '../app/audit-utils.ts';
 import {inspectEvidenceBytes} from '../app/evidence-validation.ts';
-import {artifactKinds,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {artifactKinds,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
 import {readSaarFormFields} from '../app/saar-form-utils.ts';
 import {readSyncIndex} from '../app/sync-utils.ts';
 import {PDFDocument,PDFName,PDFString} from 'pdf-lib';
@@ -17,7 +17,7 @@ test('fuzzes filename parsing without uncaught parser failures',()=>{
  for(let index=0;index<5000;index++){
   const filename=randomText();
   assert.doesNotThrow(()=>{
-   fileTokenList(filename);fileTokens(filename);parseDate(filename);normalizeFilenameDate(filename);organizationFrom(filename);identityFromFilename(filename);looksLikeEvidenceFilename(filename);validateNewUserSaarFilename(filename);filenameIdentityMatches(filename,{last:'Brown',first:'Jacob'});
+   fileTokenList(filename);fileTokens(filename);parseDate(filename);normalizeFilenameDate(filename);organizationFrom(filename);identityFromFilename(filename);looksLikeEvidenceFilename(filename);trainingCertificateRecoveryKind(filename);validateNewUserSaarFilename(filename);filenameIdentityMatches(filename,{last:'Brown',first:'Jacob'});
    for(const kind of artifactKinds)filenameMatchesKind(filename,kind);
   });
  }

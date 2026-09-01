@@ -62,6 +62,13 @@ export function filenameMatchesKind(filename:string,kind:string){
  if(canonical==='Privileged User Training Cert')return (tokens.has('PRIV')&&tokens.has('TRAINING'))||(compact.includes('PRIV')&&compact.includes('TRAINING'));
  return (tokens.has('DTA')&&tokens.has('TRAINING'))||(compact.includes('DTA')&&compact.includes('TRAINING'));
 }
+
+export function trainingCertificateRecoveryKind(filename:string){
+ const compact=filename.toUpperCase().replace(/[^A-Z0-9]+/g,''),kind=compact.includes('CYBERAWARENESS')||compact.includes('AWARENESSCHALLENGE')?'DoD Cyber Cert':compact.includes('PRIVUSERTRAINING')||compact.includes('PRIVILEGEDUSERTRAINING')||compact.includes('PRIVILEGEDACCESSTRAINING')||compact.includes('PRIVILEGEDUSERCYBERSECURITYRESPONSIBILITIES')?'Privileged User Training Cert':'';
+ if(!kind)return;
+ const identity=identityFromFilename(filename),organization=organizationFrom(filename),identityComplete=!!identity&&!['LAST','FIRST'].includes(identity.last.toUpperCase())&&!['LAST','FIRST'].includes(identity.first.toUpperCase()),organizationComplete=!!organization&&!['ORG','ORGANIZATION'].includes(organization.toUpperCase());
+ return identityComplete&&organizationComplete&&filenameMatchesKind(filename,kind)&&!!parseDate(filename)?undefined:kind;
+}
 export function looksLikeEvidenceFilename(filename:string){return !!parseDate(filename)&&artifactKinds.some(kind=>filenameMatchesKind(filename,kind))}
 
 export function identityFromFilename(filename:string){
