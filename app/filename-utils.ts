@@ -63,6 +63,17 @@ export function filenameMatchesKind(filename:string,kind:string){
  return (tokens.has('DTA')&&tokens.has('TRAINING'))||(compact.includes('DTA')&&compact.includes('TRAINING'));
 }
 
+const canonicalFilePart=(value:string,maxLength=80)=>clean(value,maxLength).replace(/[<>:"/\\|?*()]/g,' ').replace(/[^A-Za-z0-9'+.-]+/g,'_').replace(/^_+|_+$/g,'');
+export function canonicalEvidenceFilename(filename:string,organizationOverride?:string){
+ const identity=identityFromFilename(filename),organization=organizationOverride||organizationFrom(filename),date=parseDate(filename),kind=artifactKinds.find(candidate=>filenameMatchesKind(filename,candidate));
+ if(!identity||!organization||!date||!kind)return;
+ const last=canonicalFilePart(identity.last),first=canonicalFilePart(identity.first),org=canonicalFilePart(organization),dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`;if(!last||!first||!org)return;
+ let artifact=kind.replaceAll(' ','_');
+ if(kind==='SAAR'){const markers=saarMarkers(filename);if(markers.general===!!markers.privilegedType)return;artifact=markers.general?'GEN_SAAR':`PRIV_${canonicalFilePart(markers.privilegedType??'')}_SAAR`;if(artifact.includes('__'))return}
+ const extension=/\.zip$/i.test(filename)?'.pdf.zip':'.pdf',target=`${last}_${first}_(${org})_${artifact}_${dateToken}${extension}`;
+ return target.length<=180?target:undefined;
+}
+
 export function trainingCertificateRecoveryKind(filename:string){
  const compact=filename.toUpperCase().replace(/[^A-Z0-9]+/g,''),kind=compact.includes('CYBERAWARENESS')||compact.includes('AWARENESSCHALLENGE')?'DoD Cyber Cert':compact.includes('PRIVUSERTRAINING')||compact.includes('PRIVILEGEDUSERTRAINING')||compact.includes('PRIVILEGEDACCESSTRAINING')||compact.includes('PRIVILEGEDUSERCYBERSECURITYRESPONSIBILITIES')?'Privileged User Training Cert':'';
  if(!kind)return;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canonicalArtifactKind,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {canonicalArtifactKind,canonicalEvidenceFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -37,6 +37,19 @@ test('opens certificate content only when filename metadata is incomplete',()=>{
  assert.equal(trainingCertificateRecoveryKind('Brown_Jacob_(LM)_Cyber_Awareness_Challenge_Certificate_2026.pdf'),'DoD Cyber Cert');
  assert.equal(trainingCertificateRecoveryKind('Privileged_User_Cybersecurity_Responsibilities_Training_2023.pdf'),'Privileged User Training Cert');
  assert.equal(trainingCertificateRecoveryKind('Last_First_(ORG)_Cyber_Awareness_Challenge_Certificate_26AUG2026.pdf'),'DoD Cyber Cert');
+});
+
+test('canonicalizes every recognized evidence filename from parsed metadata',()=>{
+ const cases:[string,string][]=[
+  ['Brown, Jacob (LM) Cyber Awareness Challenge Certificate 2026-08-26.pdf','Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf'],
+  ['Brown_Jacob_(LM)_GEN_User_Agreement_08262026.pdf','Brown_Jacob_(GDMS)_User_Agreement_26AUG2026.pdf'],
+  ['Brown Jacob (LM) 8140 Memo AUG262026.pdf','Brown_Jacob_(GDMS)_8140_Cert_Memo_26AUG2026.pdf'],
+  ['Brown_Jacob_(LM)_PRIV_User_Training_26 AUG 26.pdf','Brown_Jacob_(GDMS)_Privileged_User_Training_Cert_26AUG2026.pdf'],
+  ['Brown_Jacob_(LM)_DTA_Training_20260826.pdf','Brown_Jacob_(GDMS)_DTA_Training_Cert_26AUG2026.pdf'],
+  ['Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf','Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf'],
+  ['Brown_Jacob_(LM)_PRIV_admin_SAAR_26AUG2026.pdf.zip','Brown_Jacob_(GDMS)_PRIV_ADMIN_SAAR_26AUG2026.pdf.zip'],
+ ];
+ for(const[filename,expected]of cases)assert.equal(canonicalEvidenceFilename(filename,'GDMS'),expected,filename);
 });
 
 test('recognizes the reported General User Agreement filename',()=>{
