@@ -681,7 +681,7 @@ internal sealed class PortableStorage : IDisposable
             Directory.CreateDirectory(directory);
             AuditState state = VerifyAuditChainWithRetry(directory);
             DateTimeOffset now = DateTimeOffset.UtcNow;
-            if (state.LastInstant.HasValue && now < state.LastInstant.Value) throw new InvalidDataException("The system clock is earlier than the most recent audit entry.");
+            if (state.LastInstant.HasValue && now < state.LastInstant.Value.Subtract(TimeSpan.FromSeconds(1))) throw new InvalidDataException("The system clock is earlier than the most recent audit entry.");
             if (state.LastInstant.HasValue && now <= state.LastInstant.Value) now = state.LastInstant.Value.AddTicks(1);
             string currentPath = null;
             var buffer = new StringBuilder();
