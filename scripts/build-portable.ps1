@@ -49,14 +49,21 @@ try {
 finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw "Portable browser build failed." }
 
-$scriptFiles = @(Get-ChildItem -LiteralPath (Join-Path $webRoot "assets") -Filter "*.js" -File)
-$styleFiles = @(Get-ChildItem -LiteralPath (Join-Path $webRoot "assets") -Filter "*.css" -File)
-if ($scriptFiles.Count -ne 1 -or $styleFiles.Count -ne 1) { throw "Expected exactly one JavaScript and one CSS asset." }
-
-$scriptGzip = Join-Path $embeddedRoot "script.gz"
-$styleGzip = Join-Path $embeddedRoot "style.gz"
-Compress-Asset $scriptFiles[0].FullName $scriptGzip
-Compress-Asset $styleFiles[0].FullName $styleGzip
+$assetFiles = @(Get-ChildItem -LiteralPath (Join-Path $webRoot "assets") -File | Where-Object { $_.Extension -in ".js", ".css" } | Sort-Object Name)
+if ($assetFiles.Count -lt 2 -or -not ($assetFiles.Extension -contains ".js") -or -not ($assetFiles.Extension -contains ".css")) { throw "Expected at least one JavaScript and one CSS asset." }
+$assetManifest = Join-Path $embeddedRoot "assets.tsv"
+$assetManifestLines = New-Object System.Collections.Generic.List[string]
+$assetResourceArgs = New-Object System.Collections.Generic.List[string]
+for ($index = 0; $index -lt $assetFiles.Count; $index++) {
+    $asset = $assetFiles[$index]
+    $compressed = Join-Path $embeddedRoot ("asset-{0}.gz" -f $index)
+    $resourceName = "Tracker.Asset$index"
+    $contentType = if ($asset.Extension -eq ".js") { "text/javascript; charset=utf-8" } else { "text/css; charset=utf-8" }
+    Compress-Asset $asset.FullName $compressed
+    $assetManifestLines.Add("/assets/$($asset.Name)`t$resourceName`t$contentType")
+    $assetResourceArgs.Add("/resource:$compressed,$resourceName")
+}
+[System.IO.File]::WriteAllLines($assetManifest, $assetManifestLines, (New-Object System.Text.UTF8Encoding($false)))
 
 $compiler = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if (-not (Test-Path -LiteralPath $compiler)) { throw "The Windows C# compiler was not found." }
@@ -64,7 +71,12 @@ $executable = Join-Path $outputRoot "InformationSystemUserTracker.exe"
 $executiveSummary = Join-Path $outputRoot "Information-System-User-Tracker-Executive-Summary.pdf"
 $manifest = Join-Path $portableRoot "app.manifest"
 if (-not (Test-Path -LiteralPath $manifest)) { throw "The Windows application manifest was not found." }
-& $compiler /nologo /target:winexe "/out:$executable" "/win32manifest:$manifest" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll "/resource:$webRoot\index.html,Tracker.Index" "/resource:$scriptGzip,Tracker.ScriptGzip" "/resource:$styleGzip,Tracker.StyleGzip" (Join-Path $portableRoot "Program.cs") (Join-Path $portableRoot "PortableStorage.cs")
+$compilerArgs = New-Object System.Collections.Generic.List[string]
+@('/nologo', '/target:winexe', "/out:$executable", "/win32manifest:$manifest", '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll', '/reference:System.IO.Compression.dll', '/reference:System.IO.Compression.FileSystem.dll', "/resource:$webRoot\index.html,Tracker.Index", "/resource:$assetManifest,Tracker.AssetManifest") | ForEach-Object { $compilerArgs.Add($_) }
+$assetResourceArgs | ForEach-Object { $compilerArgs.Add($_) }
+$compilerArgs.Add((Join-Path $portableRoot "Program.cs"))
+$compilerArgs.Add((Join-Path $portableRoot "PortableStorage.cs"))
+& $compiler $compilerArgs
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $executable)) { throw "Standalone launcher compilation failed." }
 
 & (Get-Command node.exe -ErrorAction Stop).Source --experimental-strip-types (Join-Path $projectRoot "scripts\New-ExecutiveSummaryPdf.ts") --output $executiveSummary

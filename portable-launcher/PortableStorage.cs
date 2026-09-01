@@ -636,7 +636,7 @@ internal sealed class PortableStorage : IDisposable
         lock (RootLock(systemId))
         {
             string directory = Path.Combine(Root(systemId), "Audit Logs");
-            AuditState state = VerifyAuditChain(directory);
+            AuditState state = VerifyAuditChainWithRetry(directory);
             return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "entries", state.Entries }, { "files", state.Files }, { "legacyFiles", state.LegacyFiles }, { "firstTimestamp", state.FirstTimestamp }, { "lastTimestamp", state.LastTimestamp }, { "headHash", state.HeadHash } });
         }
     }
@@ -654,32 +654,89 @@ internal sealed class PortableStorage : IDisposable
 
     public void AppendAudit(string systemId, string action)
     {
+        AppendAuditBatch(systemId, new[] { action });
+    }
+
+    public void AppendAuditBatchJson(string systemId, string body)
+    {
+        object[] values;
+        try { values = json.DeserializeObject(body) as object[]; }
+        catch (Exception) { throw new InvalidDataException("The audit batch is not valid JSON."); }
+        if (values == null) throw new InvalidDataException("The audit batch must be a JSON array.");
+        var actions = new string[values.Length];
+        for (int index = 0; index < values.Length; index++)
+        {
+            actions[index] = values[index] as string;
+            if (actions[index] == null) throw new InvalidDataException("Every audit batch item must be text.");
+        }
+        AppendAuditBatch(systemId, actions);
+    }
+
+    public void AppendAuditBatch(string systemId, string[] actions)
+    {
+        if (actions == null || actions.Length == 0 || actions.Length > 10000) throw new InvalidDataException("The audit batch must contain between 1 and 10,000 actions.");
+        lock (RootLock(systemId))
+        {
+            string directory = Path.Combine(Root(systemId), "Audit Logs");
+            Directory.CreateDirectory(directory);
+            AuditState state = VerifyAuditChainWithRetry(directory);
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            if (state.LastInstant.HasValue && now < state.LastInstant.Value) throw new InvalidDataException("The system clock is earlier than the most recent audit entry.");
+            if (state.LastInstant.HasValue && now <= state.LastInstant.Value) now = state.LastInstant.Value.AddTicks(1);
+            string currentPath = null;
+            var buffer = new StringBuilder();
+            for (int index = 0; index < actions.Length; index++)
+            {
+                if (index > 0) now = now.AddTicks(1);
+                string timestamp = now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture), cleanAction = CleanLine(actions[index], 500);
+                long sequence = checked(state.Entries + 1);
+                string entryHash = AuditEntryHash(AuditVersion, sequence, timestamp, actor, cleanAction, state.HeadHash);
+                var entry = new Dictionary<string, object> { { "version", AuditVersion }, { "sequence", sequence }, { "timestampUtc", timestamp }, { "actor", actor }, { "action", cleanAction }, { "previousHash", state.HeadHash }, { "entryHash", entryHash } };
+                string path = Path.Combine(directory, "audit-" + now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".jsonl");
+                if (currentPath != null && !String.Equals(currentPath, path, StringComparison.Ordinal))
+                {
+                    AppendAuditBytes(currentPath, Encoding.UTF8.GetBytes(buffer.ToString()));
+                    buffer.Clear();
+                }
+                currentPath = path;
+                buffer.Append(json.Serialize(entry)).Append('\n');
+                state.Entries = sequence;
+                state.HeadHash = entryHash;
+                state.LastInstant = now;
+                state.LastTimestamp = timestamp;
+            }
+            if (currentPath != null) AppendAuditBytes(currentPath, Encoding.UTF8.GetBytes(buffer.ToString()));
+        }
+    }
+
+    private static void AppendAuditBytes(string path, byte[] bytes)
+    {
         for (int attempt = 0; ; attempt++)
         {
             try
             {
-                lock (RootLock(systemId))
+                long existingLength = File.Exists(path) ? new FileInfo(path).Length : 0L;
+                if (existingLength + bytes.Length > AuditFileLimit) throw new InvalidDataException(Path.GetFileName(path) + " exceeds the audit-log size limit.");
+                using (var stream = OpenCompatibleFileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, 4096))
                 {
-                    string directory = Path.Combine(Root(systemId), "Audit Logs");
-                    Directory.CreateDirectory(directory);
-                    AuditState state = VerifyAuditChain(directory);
-                    DateTimeOffset now = DateTimeOffset.UtcNow;
-                    if (state.LastInstant.HasValue && now < state.LastInstant.Value) throw new InvalidDataException("The system clock is earlier than the most recent audit entry.");
-                    if (state.LastInstant.HasValue && now == state.LastInstant.Value) now = state.LastInstant.Value.AddTicks(1);
-                    string timestamp = now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture), cleanAction = CleanLine(action, 500);
-                    long sequence = checked(state.Entries + 1);
-                    string entryHash = AuditEntryHash(AuditVersion, sequence, timestamp, actor, cleanAction, state.HeadHash);
-                    var entry = new Dictionary<string, object> { { "version", AuditVersion }, { "sequence", sequence }, { "timestampUtc", timestamp }, { "actor", actor }, { "action", cleanAction }, { "previousHash", state.HeadHash }, { "entryHash", entryHash } };
-                    string path = Path.Combine(directory, "audit-" + now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".jsonl"), line = json.Serialize(entry) + "\n";
-                    byte[] bytes = Encoding.UTF8.GetBytes(line);
-                    using (var stream = OpenCompatibleFileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, 4096))
-                    {
-                        stream.Write(bytes, 0, bytes.Length);
-                        FlushCompatible(stream);
-                    }
+                    stream.Write(bytes, 0, bytes.Length);
+                    FlushCompatible(stream);
                 }
                 return;
             }
+            catch (IOException)
+            {
+                if (attempt >= 2) throw;
+                Thread.Sleep(75 * (attempt + 1));
+            }
+        }
+    }
+
+    private AuditState VerifyAuditChainWithRetry(string directory)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try { return VerifyAuditChain(directory); }
             catch (IOException)
             {
                 if (attempt >= 2) throw;

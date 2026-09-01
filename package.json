@@ -1,7 +1,7 @@
 {
   "name": "information-system-user-tracker",
-  "version": "1.1.4",
-  "packageManager": "pnpm@10.14.0",
+  "version": "1.1.5",
+  "packageManager": "pnpm@11.19.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"

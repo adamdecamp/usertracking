@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -158,4 +158,10 @@ test('rejects impossible dates rather than normalizing them',()=>{
   assert.equal(parseDate(filename),undefined,filename);
   assert.equal(normalizeFilenameDate(filename),undefined,filename);
  }
+});
+
+test('preserves the source evidence extension for every normalized target',()=>{
+ assert.equal(preserveEvidenceExtension('Brown_Jacob.pdf','Brown_Jacob_Normalized.pdf'),'Brown_Jacob_Normalized.pdf');
+ assert.equal(preserveEvidenceExtension('Brown_Jacob.pdf.zip','Brown_Jacob_Normalized.pdf'),'Brown_Jacob_Normalized.pdf.zip');
+ assert.equal(preserveEvidenceExtension('Brown_Jacob.pdf','Brown_Jacob_Normalized.pdf.zip'),'Brown_Jacob_Normalized.pdf');
 });

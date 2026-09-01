@@ -5,14 +5,17 @@ export const canonicalArtifactKind=(kind:string)=>legacyAgreementKinds.has(kind)
 const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const clean=(value:string,max=500)=>value.replace(/[\r\n\u0000-\u001f\u007f]/g,' ').trim().slice(0,max);
 type DateMatch={date:Date;start:number;end:number;normalized:string;defaultFormat:boolean};
+const filenameCacheLimit=20000,dateCache=new Map<string,DateMatch|null>(),tokenListCache=new Map<string,string[]>(),tokenSetCache=new Map<string,Set<string>>(),compactCache=new Map<string,string>(),organizationCache=new Map<string,string|null>(),identityCache=new Map<string,{last:string;first:string}|null>();
+function remember<K,V>(cache:Map<K,V>,key:K,value:V){if(cache.size>=filenameCacheLimit)cache.clear();cache.set(key,value);return value}
 
-export const fileTokenList=(value:string)=>value.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
-export const fileTokens=(value:string)=>new Set(fileTokenList(value));
+export const fileTokenList=(value:string)=>tokenListCache.get(value)??remember(tokenListCache,value,value.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean));
+export const fileTokens=(value:string)=>tokenSetCache.get(value)??remember(tokenSetCache,value,new Set(fileTokenList(value)));
+const compactFilename=(value:string)=>compactCache.get(value)??remember(compactCache,value,value.toUpperCase().replace(/[^A-Z0-9]+/g,''));
 
 const calendarDate=(year:number,month:number,day:number)=>{const date=new Date(Date.UTC(year,month-1,day));return year>=1900&&year<=2099&&date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day?date:undefined};
 const monthNumber=(value:string)=>/^\d+$/.test(value)?+value:months.indexOf(value.toUpperCase())+1;
 const fourDigitYear=(value:string)=>value.length===2?(+value>=70?1900+ +value:2000+ +value):+value;
-function dateMatch(filename:string):DateMatch|undefined{
+function computeDateMatch(filename:string):DateMatch|undefined{
  const value=filename.toUpperCase(),candidates:DateMatch[]=[];
  const add=(pattern:RegExp,parts:(match:RegExpExecArray)=>[string,string,string],defaultFormat=false)=>{
   for(const match of value.matchAll(pattern)){
@@ -42,10 +45,11 @@ function dateMatch(filename:string):DateMatch|undefined{
  const maximal=candidates.filter(candidate=>!candidates.some(other=>other!==candidate&&other.start<=candidate.start&&other.end>=candidate.end&&other.end-other.start>candidate.end-candidate.start));
  return maximal.sort((left,right)=>right.start-left.start||Number(right.defaultFormat)-Number(left.defaultFormat))[0]
 }
+function dateMatch(filename:string):DateMatch|undefined{const cached=dateCache.get(filename);if(cached!==undefined)return cached??undefined;return remember(dateCache,filename,computeDateMatch(filename)??null)??undefined}
 export function parseDate(filename:string){return dateMatch(filename)?.date}
 export function normalizeFilenameDate(filename:string){const match=dateMatch(filename);if(!match)return;const normalized=`${filename.slice(0,match.start)}${match.normalized}${filename.slice(match.end)}`;return{date:match.date,normalized,changed:normalized.toUpperCase()!==filename.toUpperCase()}}
 
-export function organizationFrom(filename:string){const match=filename.match(/\(([^()]{1,100})\)/),organization=match?clean(match[1],100):'';return organization||undefined}
+export function organizationFrom(filename:string){const cached=organizationCache.get(filename);if(cached!==undefined)return cached??undefined;const match=filename.match(/\(([^()]{1,100})\)/),organization=match?clean(match[1],100):'';return remember(organizationCache,filename,organization||null)??undefined}
 
 function saarMarkers(filename:string){
  const upper=(filename.split(/[\\/]/).pop()??filename).toUpperCase(),general=/(?:^|[^A-Z0-9])GEN[^A-Z0-9]*SAAR(?:[^A-Z0-9]|$)/.test(upper),privileged=upper.match(/(?:^|[^A-Z0-9])PRIV[^A-Z0-9]*([A-Z0-9]+?)[^A-Z0-9]*SAAR(?:[^A-Z0-9]|$)/);
@@ -53,7 +57,7 @@ function saarMarkers(filename:string){
 }
 function hasSaarMarker(filename:string){const tokens=fileTokens(filename),markers=saarMarkers(filename);return tokens.has('SAAR')||markers.general||!!markers.privilegedType}
 export function filenameMatchesKind(filename:string,kind:string){
- const canonical=canonicalArtifactKind(kind),tokens=fileTokens(filename),compact=filename.toUpperCase().replace(/[^A-Z0-9]+/g,''),saar=hasSaarMarker(filename);
+ const canonical=canonicalArtifactKind(kind),tokens=fileTokens(filename),compact=compactFilename(filename),saar=hasSaarMarker(filename);
  if(canonical==='SAAR')return saar;
  if(saar)return false;
  if(canonical==='DoD Cyber Cert')return tokens.has('DOD')||(compact.includes('DOD')&&compact.includes('CYBER'))||(compact.includes('CYBER')&&compact.includes('AWARENESS'))||compact.includes('AWARENESSCHALLENGE');
@@ -75,7 +79,7 @@ export function canonicalEvidenceFilename(filename:string,organizationOverride?:
 }
 
 export function trainingCertificateRecoveryKind(filename:string){
- const compact=filename.toUpperCase().replace(/[^A-Z0-9]+/g,''),kind=compact.includes('CYBERAWARENESS')||compact.includes('AWARENESSCHALLENGE')?'DoD Cyber Cert':compact.includes('PRIVUSERTRAINING')||compact.includes('PRIVILEGEDUSERTRAINING')||compact.includes('PRIVILEGEDACCESSTRAINING')||compact.includes('PRIVILEGEDUSERCYBERSECURITYRESPONSIBILITIES')?'Privileged User Training Cert':'';
+ const compact=compactFilename(filename),kind=compact.includes('CYBERAWARENESS')||compact.includes('AWARENESSCHALLENGE')?'DoD Cyber Cert':compact.includes('PRIVUSERTRAINING')||compact.includes('PRIVILEGEDUSERTRAINING')||compact.includes('PRIVILEGEDACCESSTRAINING')||compact.includes('PRIVILEGEDUSERCYBERSECURITYRESPONSIBILITIES')?'Privileged User Training Cert':'';
  if(!kind)return;
  const identity=identityFromFilename(filename),organization=organizationFrom(filename),identityComplete=!!identity&&!['LAST','FIRST'].includes(identity.last.toUpperCase())&&!['LAST','FIRST'].includes(identity.first.toUpperCase()),organizationComplete=!!organization&&!['ORG','ORGANIZATION'].includes(organization.toUpperCase());
  return identityComplete&&organizationComplete&&filenameMatchesKind(filename,kind)&&!!parseDate(filename)?undefined:kind;
@@ -83,11 +87,12 @@ export function trainingCertificateRecoveryKind(filename:string){
 export function looksLikeEvidenceFilename(filename:string){return !!parseDate(filename)&&artifactKinds.some(kind=>filenameMatchesKind(filename,kind))}
 
 export function identityFromFilename(filename:string){
+ const cached=identityCache.get(filename);if(cached!==undefined)return cached??undefined;
  const base=filename.split(/[\\/]/).pop()??filename;
  const match=base.match(/^\s*([^_,()\s]+)\s*(?:_\s*|,\s*|\s+)([^_,()\s]+)(?=\s*(?:_|,|\(|\s))/);
- if(!match)return;
+ if(!match)return remember(identityCache,filename,null)??undefined;
  const last=clean(match[1]),first=clean(match[2]);
- return last&&first?{last,first}:undefined;
+ return remember(identityCache,filename,last&&first?{last,first}:null)??undefined;
 }
 export type NewUserSaarFilenameValidation=
  |{valid:true;identity:{last:string;first:string};organization:string;role:'General'|'Privileged';privilegedTypes:string[]}
@@ -116,3 +121,4 @@ export function canonicalValidatedSaarFilename(filename:string,validation:Extrac
 }
 export const identityKey=(last:string,first:string)=>`${clean(last).toUpperCase()}\u0000${clean(first).toUpperCase()}`;
 export function filenameIdentityMatches(filename:string,user:{last:string;first:string}){const identity=identityFromFilename(filename);return !!identity&&identityKey(identity.last,identity.first)===identityKey(user.last,user.first)}
+export function preserveEvidenceExtension(sourceFilename:string,targetFilename:string){const source=sourceFilename.match(/\.(pdf|zip)$/i)?.[0].toLowerCase(),target=targetFilename.match(/\.(pdf|zip)$/i)?.[0].toLowerCase();if(!source||source===target)return targetFilename;if(source==='.zip'&&/\.pdf$/i.test(targetFilename))return`${targetFilename}.zip`;if(source==='.pdf'&&/\.pdf\.zip$/i.test(targetFilename))return targetFilename.slice(0,-4);if(target)return`${targetFilename.slice(0,-target.length)}${source}`;return`${targetFilename}${source}`}

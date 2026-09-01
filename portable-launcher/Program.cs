@@ -16,12 +16,10 @@ using System.Windows.Forms;
 internal sealed class TrackerContext : ApplicationContext
 {
     private const int Port = 38473;
+    private sealed class WebAsset { public byte[] Bytes; public string ContentType; }
     private readonly string user;
     private readonly byte[] indexHtml;
-    private readonly byte[] scriptGzip;
-    private readonly byte[] styleGzip;
-    private readonly string scriptPath;
-    private readonly string stylePath;
+    private readonly Dictionary<string, WebAsset> assets;
     private readonly TcpListener listener;
     private readonly CancellationTokenSource stop = new CancellationTokenSource();
     private readonly SemaphoreSlim connections = new SemaphoreSlim(16, 16);
@@ -43,11 +41,7 @@ internal sealed class TrackerContext : ApplicationContext
     public TrackerContext()
     {
         indexHtml = LoadResource("Tracker.Index");
-        scriptGzip = LoadResource("Tracker.ScriptGzip");
-        styleGzip = LoadResource("Tracker.StyleGzip");
-        string markup = Encoding.UTF8.GetString(indexHtml);
-        scriptPath = FindAssetPath(markup, "src=\"");
-        stylePath = FindAssetPath(markup, "href=\"");
+        assets = LoadAssets();
         user = WindowsIdentity.GetCurrent().Name;
         storage = new PortableStorage(user);
         dispatcher = new Control();
@@ -158,6 +152,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "evidence" && parts[0] == "POST") response = "{\"filename\":\"" + Json(storage.StoreEvidence(systemId, QueryValue(target, "organization"), QueryValue(target, "last"), QueryValue(target, "first"), QueryValue(target, "filename"), requestBody)) + "\"}";
                     else if (action == "report" && parts[0] == "POST") response = storage.StoreReport(systemId, QueryValue(target, "filename"), requestBody);
                     else if (action == "audit" && parts[0] == "POST") { storage.AppendAudit(systemId, Encoding.UTF8.GetString(requestBody)); response = "{\"ok\":true}"; }
+                    else if (action == "audit-batch" && parts[0] == "POST") { storage.AppendAuditBatchJson(systemId, Encoding.UTF8.GetString(requestBody)); response = "{\"ok\":true}"; }
                     else if (action == "audit-verify" && parts[0] == "GET") response = storage.VerifyAuditLogs(systemId);
                     else if (action == "audit-view" && parts[0] == "GET") response = storage.ReadAuditLogs(systemId);
                     else if (action == "lease-acquire" && parts[0] == "POST") response = "{\"acquired\":" + (storage.AcquireLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
@@ -172,8 +167,8 @@ internal sealed class TrackerContext : ApplicationContext
                     Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(message)), false, "no-store").GetAwaiter().GetResult(); return;
                 }
             }
-            if (path == scriptPath) { await Respond(stream, 200, "text/javascript; charset=utf-8", scriptGzip, parts[0] == "HEAD", "public, max-age=31536000, immutable", "gzip"); return; }
-            if (path == stylePath) { await Respond(stream, 200, "text/css; charset=utf-8", styleGzip, parts[0] == "HEAD", "public, max-age=31536000, immutable", "gzip"); return; }
+            WebAsset asset;
+            if (assets.TryGetValue(path, out asset)) { await Respond(stream, 200, asset.ContentType, asset.Bytes, parts[0] == "HEAD", "public, max-age=31536000, immutable", "gzip"); return; }
             if (path == "/" || path == "/index.html" || !Path.HasExtension(path)) { await Respond(stream, 200, "text/html; charset=utf-8", indexHtml, parts[0] == "HEAD", "no-cache"); return; }
             await Respond(stream, 404, "text/plain", Encoding.UTF8.GetBytes("Not Found"), parts[0] == "HEAD", "no-store");
         }
@@ -349,7 +344,19 @@ internal sealed class TrackerContext : ApplicationContext
 
     private static string Json(string value) { return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", ""); }
     private static byte[] LoadResource(string name) { using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)) { if (stream == null) throw new InvalidDataException("Embedded application resource is missing: " + name); using (var memory = new MemoryStream()) { stream.CopyTo(memory); return memory.ToArray(); } } }
-    private static string FindAssetPath(string markup, string attribute) { int start = markup.IndexOf(attribute + "/assets/", StringComparison.Ordinal); if (start < 0) throw new InvalidDataException("Embedded application asset reference is missing."); start += attribute.Length; int end = markup.IndexOf('"', start); if (end < 0) throw new InvalidDataException("Embedded application asset reference is invalid."); return markup.Substring(start, end - start); }
+    private static Dictionary<string, WebAsset> LoadAssets()
+    {
+        var result = new Dictionary<string, WebAsset>(StringComparer.Ordinal);
+        string manifest = Encoding.UTF8.GetString(LoadResource("Tracker.AssetManifest"));
+        foreach (string line in manifest.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] fields = line.Split('\t');
+            if (fields.Length != 3 || !fields[0].StartsWith("/assets/", StringComparison.Ordinal) || !fields[1].StartsWith("Tracker.Asset", StringComparison.Ordinal) || (fields[2] != "text/javascript; charset=utf-8" && fields[2] != "text/css; charset=utf-8")) throw new InvalidDataException("The embedded asset manifest is invalid.");
+            result.Add(fields[0], new WebAsset { Bytes = LoadResource(fields[1]), ContentType = fields[2] });
+        }
+        if (result.Count == 0) throw new InvalidDataException("The embedded asset manifest contains no browser assets.");
+        return result;
+    }
     protected override void ExitThreadCore() { lifecycleTimer.Stop(); lifecycleTimer.Dispose(); TryFinalizeBackups(); storage.Dispose(); stop.Cancel(); listener.Stop(); tray.Visible = false; tray.Dispose(); dispatcher.Dispose(); base.ExitThreadCore(); }
 }
 
