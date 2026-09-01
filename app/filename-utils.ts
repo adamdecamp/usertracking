@@ -108,5 +108,11 @@ export function validateNewUserSaarFilename(filename:string,fallback?:{identity?
  if(!privilegedType||privilegedType==='TYPE')return{valid:false,reason:'A PRIV SAAR filename must contain the actual privileged account type between PRIV and SAAR.'};
  return{valid:true,identity,organization,role:'Privileged',privilegedTypes:[privilegedType]};
 }
+export function canonicalValidatedSaarFilename(filename:string,validation:Extract<NewUserSaarFilenameValidation,{valid:true}>){
+ const date=parseDate(filename),last=canonicalFilePart(validation.identity.last),first=canonicalFilePart(validation.identity.first),organization=canonicalFilePart(validation.organization),type=validation.role==='Privileged'?canonicalFilePart(validation.privilegedTypes[0]??''):'';
+ if(!date||!last||!first||!organization||(validation.role==='Privileged'&&!type))return;
+ const dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`,artifact=validation.role==='General'?'GEN_SAAR':`PRIV_${type}_SAAR`,extension=/\.zip$/i.test(filename)?'.pdf.zip':'.pdf',target=`${last}_${first}_(${organization})_${artifact}_${dateToken}${extension}`;
+ return target.length<=180?target:undefined;
+}
 export const identityKey=(last:string,first:string)=>`${clean(last).toUpperCase()}\u0000${clean(first).toUpperCase()}`;
 export function filenameIdentityMatches(filename:string,user:{last:string;first:string}){const identity=identityFromFilename(filename);return !!identity&&identityKey(identity.last,identity.first)===identityKey(user.last,user.first)}

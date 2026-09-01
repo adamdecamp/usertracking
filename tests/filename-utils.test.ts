@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canonicalArtifactKind,canonicalEvidenceFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -130,6 +130,15 @@ test('uses fillable-PDF identity and organization only when filename values are 
  assert.deepEqual(validateNewUserSaarFilename('Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf',{identity:{last:'Wrong',first:'Person'},organization:'Wrong'}),{
   valid:true,identity:{last:'Brown',first:'Jacob'},organization:'LM',role:'General',privilegedTypes:[],
  });
+});
+
+test('canonicalizes a fallback-matched SAAR before it seeds a new user',()=>{
+ const validation=validateNewUserSaarFilename('Last_First_(ORG)_GEN_SAAR_26AUG2026.pdf.zip',{identity:{last:'Shaw',first:'Vivian'},organization:'GOV'});
+ assert.equal(validation.valid,true);
+ if(validation.valid)assert.equal(canonicalValidatedSaarFilename('Last_First_(ORG)_GEN_SAAR_26AUG2026.pdf.zip',validation),'Shaw_Vivian_(GOV)_GEN_SAAR_26AUG2026.pdf.zip');
+ const privileged=validateNewUserSaarFilename('PRIV_dta_SAAR_20260826.pdf',{identity:{last:'Brown',first:'Jacob'},organization:'LM'});
+ assert.equal(privileged.valid,true);
+ if(privileged.valid)assert.equal(canonicalValidatedSaarFilename('PRIV_dta_SAAR_20260826.pdf',privileged),'Brown_Jacob_(LM)_PRIV_DTA_SAAR_26AUG2026.pdf');
 });
 
 test('recognizes common date formats and normalizes them to DDMMMYYYY',()=>{

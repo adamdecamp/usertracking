@@ -47,6 +47,8 @@ test('uses the organization folder while skipping the managed user-evidence iden
  assert.equal(organizationFromFolderPath('GDMS/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf','DEFAULT'),'GDMS');
  assert.equal(organizationFromFolderPath('LM/Brown_Jacob/Brown_Jacob_(GOV)_SAAR_26AUG2026.pdf','DEFAULT'),'LM');
  assert.equal(organizationFromFolderPath('GDMS/Privileged/Brown_Jacob/Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','DEFAULT'),'GDMS');
+ assert.equal(organizationFromFolderPath('Active Evidence/GDMS/Brown_Jacob/Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','DEFAULT'),'GDMS');
+ assert.equal(organizationFromFolderPath('Active Evidence/GDMS/Privileged Users/Brown_Jacob/Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','DEFAULT'),'GDMS');
  assert.equal(organizationFromFolderPath('certificate.pdf','DEFAULT'),'DEFAULT');
  assert.equal(organizationFromFolderPath('Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','NGC'),'NGC');
  assert.equal(organizationFromFolderPath('Brown_Jacob/Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','NGC'),'NGC');

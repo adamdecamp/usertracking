@@ -9,9 +9,12 @@ const normalized=(value:string)=>clean(value,100000).toUpperCase().replace(/[^A-
 export function organizationFromFolderPath(path:string,rootFallback=''){
  const parts=path.replaceAll('\\','/').split('/').map(part=>clean(part)).filter(Boolean);
  const directories=parts.slice(0,-1);if(!directories.length)return clean(rootFallback);
+ const filename=parts.at(-1)??'',identity=filename.match(/^\s*([^_,()\s]+)\s*(?:_\s*|,\s*|\s+)([^_,()\s]+)/),identityDirectory=identity?normalized(`${identity[1]} ${identity[2]}`):'',identityIndex=identityDirectory?directories.findLastIndex(part=>{const value=normalized(part);return value===identityDirectory||value.startsWith(`${identityDirectory} `)}):-1;
+ if(identityIndex>0){const structural=new Set(['GENERAL','GENERAL USERS','PRIVILEGED','PRIVILEGED USERS','USERS','USER RECORDS','USER ACCOUNTS','EVIDENCE']);let parentIndex=identityIndex-1;while(parentIndex>0&&structural.has(normalized(directories[parentIndex])))parentIndex--;if(normalized(directories[parentIndex])!=='USER EVIDENCE')return directories[parentIndex].slice(0,200)}
+ if(identityIndex===0)return clean(rootFallback);
  const evidenceRoot=directories.findIndex(part=>normalized(part)==='USER EVIDENCE');
  if(evidenceRoot>=0&&directories[evidenceRoot+1])return directories[evidenceRoot+1].slice(0,200);
- const topLevel=directories[0],filename=parts.at(-1)??'',identity=filename.match(/^\s*([^_,()\s]+)\s*(?:_\s*|,\s*|\s+)([^_,()\s]+)/);
+ const topLevel=directories[0];
  if(identity&&normalized(topLevel)===normalized(`${identity[1]} ${identity[2]}`))return clean(rootFallback);
  return topLevel.slice(0,200);
 }
