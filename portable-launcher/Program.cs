@@ -149,6 +149,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "rework" && parts[0] == "POST") response = storage.MoveEvidenceToRework(systemId, QueryValue(target, "path"));
                     else if (action == "rework-retention" && parts[0] == "POST") response = storage.ProcessReworkRetention(systemId);
                     else if (action == "compress" && parts[0] == "POST") response = storage.CompressEvidence(systemId, QueryValue(target, "path"));
+                    else if (action == "organize" && parts[0] == "POST") response = storage.OrganizeEvidence(systemId, QueryValue(target, "path"), QueryValue(target, "folder"));
                     else if (action == "normalize-date" && parts[0] == "POST") response = storage.NormalizeEvidenceFilename(systemId, QueryValue(target, "path"), QueryValue(target, "filename"));
                     else if (action == "evidence" && parts[0] == "POST") response = "{\"filename\":\"" + Json(storage.StoreEvidence(systemId, QueryValue(target, "organization"), QueryValue(target, "last"), QueryValue(target, "first"), QueryValue(target, "filename"), requestBody)) + "\"}";
                     else if (action == "report" && parts[0] == "POST") response = storage.StoreReport(systemId, QueryValue(target, "filename"), requestBody);

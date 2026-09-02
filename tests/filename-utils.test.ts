@@ -1,11 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
 const spacedDod='Brown, Jacob (LM) DoD Cyber Cert 26AUG2026.pdf';
 const extraSpaceGeneral='  Brown  _   Jacob   (LM)   GEN   User   Agreement   26AUG2026.pdf';
+
+test('maps canonical evidence kinds to organization document-type folders',()=>{
+ assert.equal(artifactStorageFolder('SAAR'),'SAAR');
+ assert.equal(artifactStorageFolder('GEN and PRIV Agreement'),'User Agreement');
+ assert.equal(artifactStorageFolder('DoD Cyber Cert'),'DoD Cyber Cert');
+ assert.equal(artifactStorageFolder('8140 Cert Memo'),'8140 Certification Memo');
+ assert.equal(artifactStorageFolder('Privileged User Training Cert'),'Privileged User Training');
+ assert.equal(artifactStorageFolder('DTA Training Cert'),'DTA Training');
+ assert.equal(artifactStorageFolder('Unknown'),undefined);
+});
 
 test('recognizes the reported DoD Cyber certificate filename',()=>{
  assert.equal(looksLikeEvidenceFilename(dod),true);

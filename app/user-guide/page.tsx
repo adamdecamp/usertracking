@@ -338,9 +338,16 @@ export default function Guide() {
           readability. Renamed non-PDFs, unreadable PDFs, unsafe archive paths,
           encrypted or unsupported ZIPs, mixed-content archives, multi-document
           archives, files over 100 MB, and suspiciously high ZIP expansion
-          ratios are rejected. Scanned or flattened SAAR copies are not accepted
-          for automatic user discovery because the required form fields cannot
-          be verified. Rejected evidence-like filenames appear in the Sync
+          ratios are rejected. An active file with any extension other than PDF
+          or ZIP is automatically moved to that organization&apos;s Rework folder
+          and flagged as <b>Unaccepted File Format</b>. Scanned or flattened SAAR
+          copies are not accepted for automatic user discovery because the
+          required form fields cannot be verified. When the PDF parser opens a
+          file marked SAAR and conclusively finds no fillable AcroForm or XFA
+          fields, Sync compresses the copy when necessary and moves it into the
+          permanent <code>ORG SAAR Archive</code>. An unreadable or temporarily
+          locked PDF is reported and left in place rather than being assumed to
+          be flattened. Rejected evidence-like filenames appear in the Sync
           Review with the reason and are never used to populate compliance
           status.
         </p>
@@ -360,10 +367,22 @@ export default function Guide() {
           is ever placed in Superseded or selected for deletion. The preflight
           also repairs prior storage mistakes: archived SAARs are recovered into
           the permanent SAAR Archive, and non-SAAR evidence less than five years
-          old is moved out of Superseded into a dated Archive folder. Other SAARs never expire, and current or undated Rework files stay in Rework until their
+          old is moved out of Superseded into a dated Archive folder. Every loose
+          PDF already in a dated Archive, Superseded, or permanent SAAR Archive
+          is converted to a ZIP containing exactly that one validated PDF. The
+          source PDF is removed only after the ZIP is reopened and verified;
+          existing ZIP evidence is not recompressed. Other SAARs never expire,
+          and current or undated Rework files stay in Rework until their
           filenames are corrected. Any file-level retention error is listed at
           the end of Sync without stopping the remaining files. Other
-          correction, duplicate, superseded, and loose-PDF actions remain
+          After filename normalization, accepted active files are placed into a
+          canonical document-type folder inside the authoritative organization,
+          including <code>SAAR</code>, <code>User Agreement</code>,{" "}
+          <code>DoD Cyber Cert</code>, <code>8140 Certification Memo</code>,{" "}
+          <code>Privileged User Training</code>, and <code>DTA Training</code>.
+          Archive, SAAR Archive, Rework, and Superseded trees remain separate
+          managed locations. Other correction, duplicate, superseded, and
+          active loose-PDF actions remain
           operator controlled. When the first Sync discovers
           valid users, choosing <b>Apply Verified Updates</b> ingests those
           records and immediately re-evaluates the evidence already scanned
@@ -788,7 +807,9 @@ export default function Guide() {
         old out of Superseded and into the current dated Archive bucket. A filename containing only a four-digit year uses
         the end of that year as a conservative retention date, preventing a
         current or borderline year from being archived prematurely. Retention
-        preserves the existing filename and does not delete evidence.
+        preserves the existing evidence filename. Archive compression replaces
+        only a loose PDF container with a verified one-PDF ZIP; it does not
+        discard the PDF evidence content.
       </aside>
       <aside>
         <b>Non-Destructive Restore Drill:</b> In <b>Restore Backup</b>, select a

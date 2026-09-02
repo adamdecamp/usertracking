@@ -634,12 +634,13 @@ internal sealed class PortableStorage : IDisposable
             string root = Root(systemId);RecoverTransactions(root);
             var errors = new List<Dictionary<string, object>>();
             var moved = new List<Dictionary<string, object>>();
-            var pending = new Stack<Tuple<string, int, bool>>();
-            pending.Push(Tuple.Create(root, 0, false));
+            var compressed = new List<Dictionary<string, object>>();
+            var pending = new Stack<Tuple<string, int, bool, bool, bool>>();
+            pending.Push(Tuple.Create(root, 0, false, false, false));
             int scanned = 0, skippedSaar = 0, currentFiles = 0, undated = 0;
             while (pending.Count > 0)
             {
-                Tuple<string, int, bool> current = pending.Pop();
+                Tuple<string, int, bool, bool, bool> current = pending.Pop();
                 if (current.Item2 > 25) { errors.Add(RetentionError(root, current.Item1, "Folder nesting limit exceeded during the Archive preflight."));continue; }
                 string[] files;
                 try { files = EnumerateScanFiles(root, current.Item1); }
@@ -648,27 +649,58 @@ internal sealed class PortableStorage : IDisposable
                 {
                     if (scanned >= 100000) { errors.Add(RetentionError(root, current.Item1, "Archive preflight file limit exceeded."));break; }
                     string filename = Path.GetFileName(source);
-                    if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
+                    bool supported = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+                    if (!supported)
+                    {
+                        if (current.Item3 || current.Item5 || IsRootControlFile(root, source)) continue;
+                        scanned++;
+                        try
+                        {
+                            Tuple<string, string> organization = OrganizationStorageLocation(root, source);string directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Rework");Directory.CreateDirectory(directory);
+                            string destination = UniqueDestination(directory, Path.GetFileName(source)), sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "rework", source, destination, sourceHash, "");
+                            File.Move(source, destination);FailAfter("rework-retention-move");
+                            if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The unaccepted-file Rework move failed its SHA-256 integrity check.");
+                            CompleteTransaction(transaction);
+                            moved.Add(new Dictionary<string, object> { { "source", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "archived", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') }, { "bucket", "Unaccepted File Format" }, { "evidenceDate", "Not Applicable" } });
+                        }
+                        catch (Exception error) { errors.Add(RetentionError(root, source, CleanLine(error.Message, 300))); }
+                        continue;
+                    }
                     scanned++;
-                    bool saar = IsSaarFilename(filename), disabledSaar = saar && IsDisabledSaarFilename(filename), archivedSaar = current.Item3 && saar;
+                    string effectiveSource = source;
+                    if (current.Item3 && source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            string compressedPath = CompressEvidenceFile(root, source, true);compressed.Add(new Dictionary<string, object> { { "source", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "compressed", Relative(root, compressedPath).Replace(Path.DirectorySeparatorChar, '/') } });effectiveSource = compressedPath;filename = Path.GetFileName(compressedPath);
+                        }
+                        catch (Exception error) { errors.Add(RetentionError(root, source, "Archive compression failed: " + CleanLine(error.Message, 260))); }
+                    }
+                    bool saar = IsSaarFilename(filename), disabledSaar = saar && IsDisabledSaarFilename(filename), archivedSaar = current.Item3 && !current.Item4 && saar;
                     DateTime? evidenceDate = EvidenceDate(filename);bool insideSuperseded = current.Item3 && IsSupersededDirectory(root, current.Item1), datedArchiveRepair = insideSuperseded && !saar && evidenceDate.HasValue && evidenceDate.Value >= DateTime.UtcNow.Date.AddYears(-5);
+                    if (current.Item4) continue;
                     if (current.Item3 && !archivedSaar && !datedArchiveRepair) continue;
                     if (!current.Item3 && saar && !disabledSaar) { skippedSaar++;continue; }
                     if (!disabledSaar && !archivedSaar && !datedArchiveRepair && !evidenceDate.HasValue) { undated++;continue; }
                     if (!disabledSaar && !archivedSaar && !datedArchiveRepair && evidenceDate.Value >= DateTime.UtcNow.Date.AddYears(-1)) { currentFiles++;continue; }
                     try
                     {
-                        Tuple<string, string> organization = OrganizationStorageLocation(root, source);
+                        if (effectiveSource.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                        {
+                            try { string compressedPath = CompressEvidenceFile(root, effectiveSource, true);compressed.Add(new Dictionary<string, object> { { "source", Relative(root, effectiveSource).Replace(Path.DirectorySeparatorChar, '/') }, { "compressed", Relative(root, compressedPath).Replace(Path.DirectorySeparatorChar, '/') } });effectiveSource = compressedPath;filename = Path.GetFileName(compressedPath); }
+                            catch (Exception compressionError) { errors.Add(RetentionError(root, effectiveSource, "Archive compression failed; the source file was preserved for archival: " + CleanLine(compressionError.Message, 220))); }
+                        }
+                        Tuple<string, string> organization = OrganizationStorageLocation(root, effectiveSource);
                         bool permanentSaar = disabledSaar || archivedSaar;string bucket = permanentSaar ? "Permanent SAAR" : evidenceDate.HasValue && evidenceDate.Value < DateTime.UtcNow.Date.AddYears(-5) ? "Superseded" : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
                         string directory = permanentSaar ? Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " SAAR Archive") : Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Archive", bucket), destination;
                         Directory.CreateDirectory(directory);destination = UniqueDestination(directory, filename);
-                        string sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "retention-preflight", source, destination, sourceHash, "");
-                        File.Move(source, destination);FailAfter("rework-retention-move");
+                        string sourceHash = Sha256Bytes(File.ReadAllBytes(effectiveSource)), transaction = BeginTransaction(root, "retention-preflight", effectiveSource, destination, sourceHash, "");
+                        File.Move(effectiveSource, destination);FailAfter("rework-retention-move");
                         if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The Archive preflight evidence failed its SHA-256 integrity check.");
                         CompleteTransaction(transaction);
-                        moved.Add(new Dictionary<string, object> { { "source", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "archived", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') }, { "bucket", bucket }, { "evidenceDate", evidenceDate.HasValue ? evidenceDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : permanentSaar ? "Permanent SAAR" : "Recognized Filename Year" } });
+                        moved.Add(new Dictionary<string, object> { { "source", Relative(root, effectiveSource).Replace(Path.DirectorySeparatorChar, '/') }, { "archived", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') }, { "bucket", bucket }, { "evidenceDate", evidenceDate.HasValue ? evidenceDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : permanentSaar ? "Permanent SAAR" : "Recognized Filename Year" } });
                     }
-                    catch (Exception error) { errors.Add(RetentionError(root, source, CleanLine(error.Message, 300))); }
+                    catch (Exception error) { errors.Add(RetentionError(root, effectiveSource, CleanLine(error.Message, 300))); }
                 }
                 string[] directories;
                 try { directories = EnumerateScanDirectories(root, current.Item1); }
@@ -676,14 +708,14 @@ internal sealed class PortableStorage : IDisposable
                 foreach (string directory in directories)
                 {
                     string name = Path.GetFileName(directory);
-                    if (name.EndsWith(" SAAR Archive", StringComparison.OrdinalIgnoreCase)) continue;
-                    if (current.Item3 || name.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase)) { if (!IsScanReparsePoint(root, directory)) pending.Push(Tuple.Create(directory, current.Item2 + 1, true));continue; }
-                    if (IsReworkStorageDirectory(name)) { pending.Push(Tuple.Create(directory, current.Item2 + 1, false));continue; }
+                    bool isSaarArchive = name.EndsWith(" SAAR Archive", StringComparison.OrdinalIgnoreCase);
+                    if (current.Item3 || name.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase)) { if (!IsScanReparsePoint(root, directory)) pending.Push(Tuple.Create(directory, current.Item2 + 1, true, current.Item4 || isSaarArchive, false));continue; }
+                    if (IsReworkStorageDirectory(name)) { pending.Push(Tuple.Create(directory, current.Item2 + 1, false, false, true));continue; }
                     if (IsManagedStorageDirectory(name) || IsScanReparsePoint(root, directory)) continue;
-                    pending.Push(Tuple.Create(directory, current.Item2 + 1, false));
+                    pending.Push(Tuple.Create(directory, current.Item2 + 1, false, false, false));
                 }
             }
-            return json.Serialize(new Dictionary<string, object> { { "moved", moved.ToArray() }, { "errors", errors.ToArray() }, { "scanned", scanned }, { "skippedSaar", skippedSaar }, { "current", currentFiles }, { "undated", undated } });
+            return json.Serialize(new Dictionary<string, object> { { "moved", moved.ToArray() }, { "compressed", compressed.ToArray() }, { "errors", errors.ToArray() }, { "scanned", scanned }, { "skippedSaar", skippedSaar }, { "current", currentFiles }, { "undated", undated } });
         }
     }
 
@@ -691,6 +723,12 @@ internal sealed class PortableStorage : IDisposable
     private static bool IsSupersededDirectory(string root, string directory) { return Relative(root, directory).Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries).Any(part => String.Equals(part, "Superseded", StringComparison.OrdinalIgnoreCase)); }
     private static bool IsSaarFilename(string filename) { return (filename ?? "").IndexOf("SAAR", StringComparison.OrdinalIgnoreCase) >= 0; }
     private static bool IsDisabledSaarFilename(string filename) { return IsSaarFilename(filename) && Regex.IsMatch(filename ?? "", @"(?:^|[^A-Za-z0-9])DISABLED(?:[^A-Za-z0-9]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant); }
+    private static bool IsRootControlFile(string root, string path)
+    {
+        if (!String.Equals(Path.GetDirectoryName(path).TrimEnd(Path.DirectorySeparatorChar), root.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)) return false;
+        string name = Path.GetFileName(path);
+        return String.Equals(name, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase) || String.Equals(name, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(name, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(name, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase);
+    }
     private static Dictionary<string, object> RetentionError(string root, string path, string message) { return new Dictionary<string, object> { { "path", Relative(root, path).Replace(Path.DirectorySeparatorChar, '/') }, { "message", message } }; }
     private static string UniqueDestination(string directory, string filename)
     {
@@ -718,6 +756,29 @@ internal sealed class PortableStorage : IDisposable
             CompleteTransaction(transaction);
             string reworked = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
             return json.Serialize(new Dictionary<string, object> { { "reworked", reworked } });
+        }
+    }
+
+    public string OrganizeEvidence(string systemId, string relative, string folder)
+    {
+        lock (RootLock(systemId))
+        {
+            string root = Root(systemId);RecoverTransactions(root);string source = SafeRelativePath(root, relative), normalized = Relative(root, source), safeFolder = SafePart(folder, 60);
+            string[] allowed = { "SAAR", "User Agreement", "DoD Cyber Cert", "8140 Certification Memo", "Privileged User Training", "DTA Training" };
+            if (!allowed.Any(item => String.Equals(item, safeFolder, StringComparison.OrdinalIgnoreCase)) || !String.Equals(safeFolder, folder, StringComparison.Ordinal)) throw new InvalidDataException("The evidence document-type folder is invalid.");
+            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active evidence files can be organized by document type.");
+            if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
+            string validationError;if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
+            Tuple<string, string> organization = OrganizationStorageLocation(root, source);string directory = Path.Combine(organization.Item1, safeFolder);Directory.CreateDirectory(directory);
+            string destination = Path.Combine(directory, Path.GetFileName(source));
+            if (String.Equals(source, destination, StringComparison.OrdinalIgnoreCase)) return json.Serialize(new Dictionary<string, object> { { "organized", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "alreadyCompleted", true } });
+            if (File.Exists(destination)) return json.Serialize(new Dictionary<string, object> { { "organized", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "collision", true }, { "existing", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') } });
+            string sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "organize", source, destination, sourceHash, "");
+            File.Move(source, destination);FailAfter("organize-move");
+            try { if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The organized evidence failed its SHA-256 integrity check."); }
+            catch { if (!File.Exists(source) && File.Exists(destination)) File.Move(destination, source);throw; }
+            CompleteTransaction(transaction);
+            return json.Serialize(new Dictionary<string, object> { { "organized", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') } });
         }
     }
 
@@ -758,45 +819,51 @@ internal sealed class PortableStorage : IDisposable
         {
             string root = Root(systemId);RecoverTransactions(root);string source = SafeRelativePath(root, relative), normalized = Relative(root, source);
             if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active evidence files can be compressed.");
-            if (!source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only a loose PDF can be compressed.");
-            string destination = source + ".zip";
-            if (!File.Exists(source))
-            {
-                string existingError;
-                if (File.Exists(destination) && TryValidateEvidenceFile(destination, out existingError))
-                {
-                    string existing = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
-                    return json.Serialize(new Dictionary<string, object> { { "compressed", existing }, { "alreadyCompleted", true } });
-                }
-                throw new FileNotFoundException("The selected PDF no longer exists.");
-            }
-            string validationError;
-            if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected PDF is invalid." : validationError);
-            if (File.Exists(destination)) throw new IOException("A ZIP with the same filename already exists. Review the duplicate before compressing this PDF.");
-            string temporary = Path.Combine(Path.GetDirectoryName(destination), ".isut-" + Guid.NewGuid().ToString("N") + ".tmp");
-            try
-            {
-                using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
-                {
-                    using (var archive = new ZipArchive(output, ZipArchiveMode.Create, true))
-                    {
-                        ZipArchiveEntry entry = archive.CreateEntry(Path.GetFileName(source), CompressionLevel.Optimal);
-                        using (Stream input = File.Open(source, FileMode.Open, FileAccess.Read, FileShare.Read))
-                        using (Stream target = entry.Open()) input.CopyTo(target);
-                    }
-                    output.Position = 0;
-                    ValidateEvidenceZip(output, Path.GetFileName(destination));
-                    FlushCompatible(output);
-                }
-                string transaction = BeginTransaction(root, "compression", source, destination, Sha256Bytes(File.ReadAllBytes(source)), "");
-                File.Move(temporary, destination);FailAfter("compression-move");
-                try { File.Delete(source);CompleteTransaction(transaction); }
-                catch { TryDelete(destination); throw; }
-            }
-            catch { TryDelete(temporary); throw; }
-            string compressed = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
+            bool alreadyCompleted;string destination = CompressEvidenceFile(root, source, false, out alreadyCompleted), compressed = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
+            if (alreadyCompleted) return json.Serialize(new Dictionary<string, object> { { "compressed", compressed }, { "alreadyCompleted", true } });
             return json.Serialize(new Dictionary<string, object> { { "compressed", compressed } });
         }
+    }
+
+    private string CompressEvidenceFile(string root, string source, bool allowManaged) { bool ignored;return CompressEvidenceFile(root, source, allowManaged, out ignored); }
+
+    private string CompressEvidenceFile(string root, string source, bool allowManaged, out bool alreadyCompleted)
+    {
+        alreadyCompleted = false;
+        if (!allowManaged && ContainsManagedStorageDirectory(Relative(root, source))) throw new InvalidDataException("Only active evidence files can be compressed.");
+        if (!source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only a loose PDF can be compressed.");
+        string destination = source + ".zip";
+        if (!File.Exists(source))
+        {
+            string existingError;
+            if (File.Exists(destination) && TryValidateEvidenceFile(destination, out existingError)) { alreadyCompleted = true;return destination; }
+            throw new FileNotFoundException("The selected PDF no longer exists.");
+        }
+        string validationError;
+        if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected PDF is invalid." : validationError);
+        if (File.Exists(destination)) throw new IOException("A ZIP with the same filename already exists. Review the duplicate before compressing this PDF.");
+        string temporary = Path.Combine(Path.GetDirectoryName(destination), ".isut-" + Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+            {
+                using (var archive = new ZipArchive(output, ZipArchiveMode.Create, true))
+                {
+                    ZipArchiveEntry entry = archive.CreateEntry(Path.GetFileName(source), CompressionLevel.Optimal);
+                    using (Stream input = File.Open(source, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    using (Stream target = entry.Open()) input.CopyTo(target);
+                }
+                output.Position = 0;
+                ValidateEvidenceZip(output, Path.GetFileName(destination));
+                FlushCompatible(output);
+            }
+            string transaction = BeginTransaction(root, "compression", source, destination, Sha256Bytes(File.ReadAllBytes(source)), "");
+            File.Move(temporary, destination);FailAfter("compression-move");
+            try { File.Delete(source);CompleteTransaction(transaction); }
+            catch { TryDelete(destination);throw; }
+        }
+        catch { TryDelete(temporary);throw; }
+        return destination;
     }
 
     public string StoreEvidence(string systemId, string organization, string last, string first, string filename, byte[] bytes)

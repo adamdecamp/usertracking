@@ -2,6 +2,10 @@ export const agreementArtifactKind='User Agreement';
 export const artifactKinds=['SAAR','DoD Cyber Cert',agreementArtifactKind,'8140 Cert Memo','Privileged User Training Cert','DTA Training Cert'];
 const legacyAgreementKinds=new Set(['GEN User Agreement','GEN and PRIV Agreement','DTA Agreement']);
 export const canonicalArtifactKind=(kind:string)=>legacyAgreementKinds.has(kind)?agreementArtifactKind:kind;
+export function artifactStorageFolder(kind:string){
+ const canonical=canonicalArtifactKind(kind);
+ return canonical==='SAAR'?'SAAR':canonical==='DoD Cyber Cert'?'DoD Cyber Cert':canonical===agreementArtifactKind?'User Agreement':canonical==='8140 Cert Memo'?'8140 Certification Memo':canonical==='Privileged User Training Cert'?'Privileged User Training':canonical==='DTA Training Cert'?'DTA Training':undefined
+}
 const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const clean=(value:string,max=500)=>value.replace(/[\r\n\u0000-\u001f\u007f]/g,' ').trim().slice(0,max);
 const documentTitleIdentityWords=new Set(['ACCESS','AGREEMENT','AWARENESS','CERTIFICATE','CHALLENGE','COMPLETION','COURSE','CYBER','DOD','GENERAL','INFORMATION','NAME','PRIVILEGED','REQUEST','SECURITY','SYSTEM','TRAINING','USER']);
