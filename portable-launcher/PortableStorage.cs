@@ -582,7 +582,8 @@ internal sealed class PortableStorage : IDisposable
             string validationError;
             if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
             Tuple<string, string> organization = OrganizationStorageLocation(root, source);
-            string bucket = EvidenceOlderThanYears(Path.GetFileName(source), 5) ? "Superseded" : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Archive", bucket), filename = SafePart(Path.GetFileName(source), 180);
+            string filename = SafePart(Path.GetFileName(source), 180);bool permanentSaar = IsSaarFilename(filename);
+            string bucket = permanentSaar ? "Permanent SAAR" : EvidenceOlderThanYears(filename, 5) ? "Superseded" : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), directory = permanentSaar ? Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " SAAR Archive") : Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Archive", bucket);
             Directory.CreateDirectory(directory);
             string extension = Path.GetExtension(filename), stem = Path.GetFileNameWithoutExtension(filename), destination = Path.Combine(directory, filename);
             for (int index = 1; File.Exists(destination); index++) destination = Path.Combine(directory, stem + "_" + index.ToString(CultureInfo.InvariantCulture) + extension);
@@ -633,12 +634,12 @@ internal sealed class PortableStorage : IDisposable
             string root = Root(systemId);RecoverTransactions(root);
             var errors = new List<Dictionary<string, object>>();
             var moved = new List<Dictionary<string, object>>();
-            var pending = new Stack<Tuple<string, int>>();
-            pending.Push(Tuple.Create(root, 0));
+            var pending = new Stack<Tuple<string, int, bool>>();
+            pending.Push(Tuple.Create(root, 0, false));
             int scanned = 0, skippedSaar = 0, currentFiles = 0, undated = 0;
             while (pending.Count > 0)
             {
-                Tuple<string, int> current = pending.Pop();
+                Tuple<string, int, bool> current = pending.Pop();
                 if (current.Item2 > 25) { errors.Add(RetentionError(root, current.Item1, "Folder nesting limit exceeded during the Archive preflight."));continue; }
                 string[] files;
                 try { files = EnumerateScanFiles(root, current.Item1); }
@@ -649,22 +650,23 @@ internal sealed class PortableStorage : IDisposable
                     string filename = Path.GetFileName(source);
                     if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
                     scanned++;
-                    bool saar = filename.IndexOf("SAAR", StringComparison.OrdinalIgnoreCase) >= 0, disabledSaar = saar && IsDisabledSaarFilename(filename);
-                    if (saar && !disabledSaar) { skippedSaar++;continue; }
-                    DateTime? evidenceDate = EvidenceDate(filename);
-                    if (!disabledSaar && !evidenceDate.HasValue) { undated++;continue; }
-                    if (!disabledSaar && evidenceDate.Value >= DateTime.UtcNow.Date.AddYears(-1)) { currentFiles++;continue; }
+                    bool saar = IsSaarFilename(filename), disabledSaar = saar && IsDisabledSaarFilename(filename), archivedSaar = current.Item3 && saar;
+                    DateTime? evidenceDate = EvidenceDate(filename);bool insideSuperseded = current.Item3 && IsSupersededDirectory(root, current.Item1), datedArchiveRepair = insideSuperseded && !saar && evidenceDate.HasValue && evidenceDate.Value >= DateTime.UtcNow.Date.AddYears(-5);
+                    if (current.Item3 && !archivedSaar && !datedArchiveRepair) continue;
+                    if (!current.Item3 && saar && !disabledSaar) { skippedSaar++;continue; }
+                    if (!disabledSaar && !archivedSaar && !datedArchiveRepair && !evidenceDate.HasValue) { undated++;continue; }
+                    if (!disabledSaar && !archivedSaar && !datedArchiveRepair && evidenceDate.Value >= DateTime.UtcNow.Date.AddYears(-1)) { currentFiles++;continue; }
                     try
                     {
                         Tuple<string, string> organization = OrganizationStorageLocation(root, source);
-                        string bucket = evidenceDate.HasValue && evidenceDate.Value < DateTime.UtcNow.Date.AddYears(-5) ? "Superseded" : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-                        string directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Archive", bucket), destination;
+                        bool permanentSaar = disabledSaar || archivedSaar;string bucket = permanentSaar ? "Permanent SAAR" : evidenceDate.HasValue && evidenceDate.Value < DateTime.UtcNow.Date.AddYears(-5) ? "Superseded" : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                        string directory = permanentSaar ? Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " SAAR Archive") : Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Archive", bucket), destination;
                         Directory.CreateDirectory(directory);destination = UniqueDestination(directory, filename);
                         string sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "retention-preflight", source, destination, sourceHash, "");
                         File.Move(source, destination);FailAfter("rework-retention-move");
                         if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The Archive preflight evidence failed its SHA-256 integrity check.");
                         CompleteTransaction(transaction);
-                        moved.Add(new Dictionary<string, object> { { "source", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "archived", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') }, { "bucket", bucket }, { "evidenceDate", evidenceDate.HasValue ? evidenceDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "Disabled SAAR" } });
+                        moved.Add(new Dictionary<string, object> { { "source", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "archived", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') }, { "bucket", bucket }, { "evidenceDate", evidenceDate.HasValue ? evidenceDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : permanentSaar ? "Permanent SAAR" : "Recognized Filename Year" } });
                     }
                     catch (Exception error) { errors.Add(RetentionError(root, source, CleanLine(error.Message, 300))); }
                 }
@@ -674,9 +676,11 @@ internal sealed class PortableStorage : IDisposable
                 foreach (string directory in directories)
                 {
                     string name = Path.GetFileName(directory);
-                    if (IsReworkStorageDirectory(name)) { pending.Push(Tuple.Create(directory, current.Item2 + 1));continue; }
+                    if (name.EndsWith(" SAAR Archive", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (current.Item3 || name.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase)) { if (!IsScanReparsePoint(root, directory)) pending.Push(Tuple.Create(directory, current.Item2 + 1, true));continue; }
+                    if (IsReworkStorageDirectory(name)) { pending.Push(Tuple.Create(directory, current.Item2 + 1, false));continue; }
                     if (IsManagedStorageDirectory(name) || IsScanReparsePoint(root, directory)) continue;
-                    pending.Push(Tuple.Create(directory, current.Item2 + 1));
+                    pending.Push(Tuple.Create(directory, current.Item2 + 1, false));
                 }
             }
             return json.Serialize(new Dictionary<string, object> { { "moved", moved.ToArray() }, { "errors", errors.ToArray() }, { "scanned", scanned }, { "skippedSaar", skippedSaar }, { "current", currentFiles }, { "undated", undated } });
@@ -684,7 +688,9 @@ internal sealed class PortableStorage : IDisposable
     }
 
     private static bool IsReworkStorageDirectory(string name) { return String.Equals(name, "Rework", StringComparison.OrdinalIgnoreCase) || name.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase); }
-    private static bool IsDisabledSaarFilename(string filename) { return filename.IndexOf("SAAR", StringComparison.OrdinalIgnoreCase) >= 0 && Regex.IsMatch(filename ?? "", @"(?:^|[^A-Za-z0-9])DISABLED(?:[^A-Za-z0-9]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant); }
+    private static bool IsSupersededDirectory(string root, string directory) { return Relative(root, directory).Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries).Any(part => String.Equals(part, "Superseded", StringComparison.OrdinalIgnoreCase)); }
+    private static bool IsSaarFilename(string filename) { return (filename ?? "").IndexOf("SAAR", StringComparison.OrdinalIgnoreCase) >= 0; }
+    private static bool IsDisabledSaarFilename(string filename) { return IsSaarFilename(filename) && Regex.IsMatch(filename ?? "", @"(?:^|[^A-Za-z0-9])DISABLED(?:[^A-Za-z0-9]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant); }
     private static Dictionary<string, object> RetentionError(string root, string path, string message) { return new Dictionary<string, object> { { "path", Relative(root, path).Replace(Path.DirectorySeparatorChar, '/') }, { "message", message } }; }
     private static string UniqueDestination(string directory, string filename)
     {

@@ -255,10 +255,10 @@ export default function Guide() {
           tracker rules, reads selectable text and supported SAAR form fields
           locally, and uses the selected system&apos;s User Directory to propose
           Last Name, First Name, document type, and signed or certification
-          date. Analysis yields to the interface every 100 documents and
-          supports administrative batches of up to 10,000 candidate PDFs in one
-          mapped repository. Progress is checkpointed in the mapped folder every
-          100 files. Choose <b>Pause Analysis</b> or close the window; reopening
+          date. Analysis yields to the interface after each small batch and
+          supports administrative migrations of up to 10,000 candidate PDFs in one
+          mapped repository. Progress is checkpointed in the mapped folder after
+          every completed batch. Choose <b>Pause Analysis</b> or close the window; reopening
           Document Renamer resumes unchanged files from that saved queue.{" "}
           <b>Analyze Again</b> clears the checkpoint and starts a fresh
           analysis. The queue contains proposed metadata only and is excluded
@@ -318,6 +318,18 @@ export default function Guide() {
           until the launcher knows how many files are present.
         </p>
         <p>
+          Large legacy repositories are handled in two stages. Files that already
+          contain a complete canonical identity, organization, artifact type, and
+          date are matched without opening the PDF. Incomplete training-certificate
+          names receive a short first-page classification pass in concurrent
+          batches. Only unresolved certificates receive the slower four-page read
+          and isolated retry. Successful batch renames are applied and audited
+          immediately, so stopping or restarting Sync does not discard the filename
+          normalization already completed. Files with no usable filename metadata
+          remain available in the resumable <b>Document Renamer</b> queue for
+          operator-reviewed migration rather than blocking clean-file Sync.
+        </p>
+        <p>
           Sync accepts direct PDFs and ZIPs containing exactly one PDF. It
           checks actual PDF and ZIP structure instead of trusting the extension.
           For a valid ZIP, Sync reads identity, organization, artifact type, and
@@ -342,9 +354,13 @@ export default function Guide() {
           beyond the one-year currency window is moved to that organization&apos;s
           dated Archive folder without correcting its filename; if it is older than five years, it
           moves directly to <code>ORG Archive / Superseded</code>. A SAAR whose
-          filename contains the standalone word <b>DISABLED</b> is also archived
-          during this preflight and is never attached to or used to create a
-          User Directory profile. Other SAARs never expire, and current or undated Rework files stay in Rework until their
+          filename contains the standalone word <b>DISABLED</b> moves into the
+          permanent <code>ORG SAAR Archive</code> during this preflight and is
+          never attached to or used to create a User Directory profile. No SAAR
+          is ever placed in Superseded or selected for deletion. The preflight
+          also repairs prior storage mistakes: archived SAARs are recovered into
+          the permanent SAAR Archive, and non-SAAR evidence less than five years
+          old is moved out of Superseded into a dated Archive folder. Other SAARs never expire, and current or undated Rework files stay in Rework until their
           filenames are corrected. Any file-level retention error is listed at
           the end of Sync without stopping the remaining files. Other
           correction, duplicate, superseded, and loose-PDF actions remain
@@ -365,7 +381,8 @@ export default function Guide() {
           superseded files explicitly approved by the operator are moved into
           that organization&apos;s dated Archive folder, such as{" "}
           <code>GDMS / GDMS Archive / YYYY-MM-DD</code>, for later manual review
-          or deletion. A prior SAAR is eligible as a duplicate only when a newer
+          or deletion. Archived SAARs instead move permanently to{" "}
+          <code>GDMS / GDMS SAAR Archive</code> and are retained indefinitely. A prior SAAR is eligible as a duplicate only when a newer
           valid SAAR for the same user and organization is already recorded, or
           the operator approves that newer SAAR in the same Sync review. Evidence
           from another organization can never justify archiving the user&apos;s SAAR.
@@ -744,7 +761,9 @@ export default function Guide() {
         are normalized later without reading PDF text. Evidence with missing or
         incomplete filename metadata is opened to recover its user and labeled
         completion, certification, certificate, or issue date, and each recovery
-        attempt has a 30-second safety limit so one file cannot hold the batch.
+        attempt begins with a short first-page pass. Only unresolved files receive
+        the deeper four-page read, with one isolated retry, so a difficult PDF
+        cannot hold the fast batch.
         Recovery matches against both existing
         User Directory records and identities established by validated new-user
         SAARs found earlier in the same Sync. A high-confidence match is renamed
@@ -761,8 +780,12 @@ export default function Guide() {
         organization&apos;s{" "}
         <code>ORG Archive / Superseded</code> folder instead of the current
         dated Archive folder. SAARs remain active or in Rework regardless of age
-        because they do not expire, unless their filename contains a standalone
-        DISABLED marker. A filename containing only a four-digit year uses
+        because they do not expire. A SAAR with a standalone DISABLED marker, or
+        a SAAR approved for archival after replacement, moves to the permanent
+        <code>ORG SAAR Archive</code>; it never enters Superseded and is never
+        automatically deleted. Sync repairs any SAAR previously left in a dated
+        or Superseded archive. It also moves evidence that is not yet five years
+        old out of Superseded and into the current dated Archive bucket. A filename containing only a four-digit year uses
         the end of that year as a conservative retention date, preventing a
         current or borderline year from being archived prematurely. Retention
         preserves the existing filename and does not delete evidence.
