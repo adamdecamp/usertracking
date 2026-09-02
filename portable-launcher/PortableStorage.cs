@@ -631,58 +631,52 @@ internal sealed class PortableStorage : IDisposable
         lock (RootLock(systemId))
         {
             string root = Root(systemId);RecoverTransactions(root);
-            var reworkDirectories = new List<string>();
             var errors = new List<Dictionary<string, object>>();
+            var moved = new List<Dictionary<string, object>>();
             var pending = new Stack<Tuple<string, int>>();
             pending.Push(Tuple.Create(root, 0));
+            int scanned = 0, skippedSaar = 0, currentFiles = 0, undated = 0;
             while (pending.Count > 0)
             {
                 Tuple<string, int> current = pending.Pop();
-                if (current.Item2 > 25) { errors.Add(RetentionError(root, current.Item1, "Folder nesting limit exceeded while locating Rework folders."));continue; }
+                if (current.Item2 > 25) { errors.Add(RetentionError(root, current.Item1, "Folder nesting limit exceeded during the Archive preflight."));continue; }
+                string[] files;
+                try { files = EnumerateScanFiles(root, current.Item1); }
+                catch (Exception error) { errors.Add(RetentionError(root, current.Item1, CleanLine(error.Message, 300)));files = new string[0]; }
+                foreach (string source in files)
+                {
+                    if (scanned >= 100000) { errors.Add(RetentionError(root, current.Item1, "Archive preflight file limit exceeded."));break; }
+                    string filename = Path.GetFileName(source);
+                    if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
+                    scanned++;
+                    bool saar = filename.IndexOf("SAAR", StringComparison.OrdinalIgnoreCase) >= 0, disabledSaar = saar && IsDisabledSaarFilename(filename);
+                    if (saar && !disabledSaar) { skippedSaar++;continue; }
+                    DateTime? evidenceDate = EvidenceDate(filename);
+                    if (!disabledSaar && !evidenceDate.HasValue) { undated++;continue; }
+                    if (!disabledSaar && evidenceDate.Value >= DateTime.UtcNow.Date.AddYears(-1)) { currentFiles++;continue; }
+                    try
+                    {
+                        Tuple<string, string> organization = OrganizationStorageLocation(root, source);
+                        string bucket = evidenceDate.HasValue && evidenceDate.Value < DateTime.UtcNow.Date.AddYears(-5) ? "Superseded" : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                        string directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Archive", bucket), destination;
+                        Directory.CreateDirectory(directory);destination = UniqueDestination(directory, filename);
+                        string sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "retention-preflight", source, destination, sourceHash, "");
+                        File.Move(source, destination);FailAfter("rework-retention-move");
+                        if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The Archive preflight evidence failed its SHA-256 integrity check.");
+                        CompleteTransaction(transaction);
+                        moved.Add(new Dictionary<string, object> { { "source", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "archived", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') }, { "bucket", bucket }, { "evidenceDate", evidenceDate.HasValue ? evidenceDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "Disabled SAAR" } });
+                    }
+                    catch (Exception error) { errors.Add(RetentionError(root, source, CleanLine(error.Message, 300))); }
+                }
                 string[] directories;
                 try { directories = EnumerateScanDirectories(root, current.Item1); }
                 catch (Exception error) { errors.Add(RetentionError(root, current.Item1, CleanLine(error.Message, 300)));continue; }
                 foreach (string directory in directories)
                 {
                     string name = Path.GetFileName(directory);
-                    if (IsReworkStorageDirectory(name)) { reworkDirectories.Add(directory);continue; }
+                    if (IsReworkStorageDirectory(name)) { pending.Push(Tuple.Create(directory, current.Item2 + 1));continue; }
                     if (IsManagedStorageDirectory(name) || IsScanReparsePoint(root, directory)) continue;
                     pending.Push(Tuple.Create(directory, current.Item2 + 1));
-                }
-            }
-
-            var moved = new List<Dictionary<string, object>>();int scanned = 0, skippedSaar = 0, currentFiles = 0, undated = 0;
-            foreach (string reworkDirectory in reworkDirectories)
-            {
-                var reworkPending = new Stack<Tuple<string, int>>();reworkPending.Push(Tuple.Create(reworkDirectory, 0));
-                while (reworkPending.Count > 0)
-                {
-                    Tuple<string, int> current = reworkPending.Pop();
-                    if (current.Item2 > 10) { errors.Add(RetentionError(root, current.Item1, "Rework folder nesting limit exceeded."));continue; }
-                    string[] files;
-                    try { files = EnumerateScanFiles(root, current.Item1); }
-                    catch (Exception error) { errors.Add(RetentionError(root, current.Item1, CleanLine(error.Message, 300)));continue; }
-                    foreach (string source in files)
-                    {
-                        if (scanned >= 100000) { errors.Add(RetentionError(root, current.Item1, "Rework retention file limit exceeded."));break; }
-                        string filename = Path.GetFileName(source);if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;scanned++;
-                        if (filename.IndexOf("SAAR", StringComparison.OrdinalIgnoreCase) >= 0) { skippedSaar++;continue; }
-                        DateTime? evidenceDate = EvidenceDate(filename);if (!evidenceDate.HasValue) { undated++;continue; }
-                        if (evidenceDate.Value >= DateTime.UtcNow.Date.AddYears(-1)) { currentFiles++;continue; }
-                        try
-                        {
-                            Tuple<string, string> organization = OrganizationStorageLocation(root, source);string bucket = evidenceDate.Value < DateTime.UtcNow.Date.AddYears(-5) ? "Superseded" : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Archive", bucket);
-                            Directory.CreateDirectory(directory);string destination = UniqueDestination(directory, filename), sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "rework-retention", source, destination, sourceHash, "");
-                            File.Move(source, destination);FailAfter("rework-retention-move");
-                            if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The retained Rework evidence failed its SHA-256 integrity check.");
-                            CompleteTransaction(transaction);moved.Add(new Dictionary<string, object> { { "source", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "archived", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') }, { "bucket", bucket }, { "evidenceDate", evidenceDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) } });
-                        }
-                        catch (Exception error) { errors.Add(RetentionError(root, source, CleanLine(error.Message, 300))); }
-                    }
-                    string[] directories;
-                    try { directories = EnumerateScanDirectories(root, current.Item1); }
-                    catch (Exception error) { errors.Add(RetentionError(root, current.Item1, CleanLine(error.Message, 300)));continue; }
-                    foreach (string directory in directories) if (!IsScanReparsePoint(root, directory)) reworkPending.Push(Tuple.Create(directory, current.Item2 + 1));
                 }
             }
             return json.Serialize(new Dictionary<string, object> { { "moved", moved.ToArray() }, { "errors", errors.ToArray() }, { "scanned", scanned }, { "skippedSaar", skippedSaar }, { "current", currentFiles }, { "undated", undated } });
@@ -690,6 +684,7 @@ internal sealed class PortableStorage : IDisposable
     }
 
     private static bool IsReworkStorageDirectory(string name) { return String.Equals(name, "Rework", StringComparison.OrdinalIgnoreCase) || name.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase); }
+    private static bool IsDisabledSaarFilename(string filename) { return filename.IndexOf("SAAR", StringComparison.OrdinalIgnoreCase) >= 0 && Regex.IsMatch(filename ?? "", @"(?:^|[^A-Za-z0-9])DISABLED(?:[^A-Za-z0-9]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant); }
     private static Dictionary<string, object> RetentionError(string root, string path, string message) { return new Dictionary<string, object> { { "path", Relative(root, path).Replace(Path.DirectorySeparatorChar, '/') }, { "message", message } }; }
     private static string UniqueDestination(string directory, string filename)
     {

@@ -67,6 +67,7 @@ export function filenameMatchesKind(filename:string,kind:string){
  if(canonical==='Privileged User Training Cert')return (tokens.has('PRIV')&&tokens.has('TRAINING'))||(compact.includes('PRIV')&&compact.includes('TRAINING'));
  return (tokens.has('DTA')&&tokens.has('TRAINING'))||(compact.includes('DTA')&&compact.includes('TRAINING'));
 }
+export function disabledSaarFilename(filename:string){return filenameMatchesKind(filename,'SAAR')&&fileTokens(filename).has('DISABLED')}
 
 const canonicalFilePart=(value:string,maxLength=80)=>clean(value,maxLength).replace(/[<>:"/\\|?*()]/g,' ').replace(/[^A-Za-z0-9'+.-]+/g,'_').replace(/^_+|_+$/g,'');
 export function canonicalEvidenceFilename(filename:string,organizationOverride?:string){
@@ -106,6 +107,7 @@ export type NewUserSaarFilenameValidation=
 const verifiedRequestDate=(date?:Date)=>date&&!Number.isNaN(date.getTime())&&date.getUTCFullYear()>=1900&&date.getUTCFullYear()<=2099?date:undefined;
 export function validateNewUserSaarFilename(filename:string,fallback?:{identity?:{last:string;first:string};organization?:string;requestDate?:Date}):NewUserSaarFilenameValidation{
  if(!filenameMatchesKind(filename,'SAAR'))return{valid:false,reason:'The filename is not recognized as a SAAR.'};
+ if(disabledSaarFilename(filename))return{valid:false,reason:'A SAAR marked DISABLED is an archive record and cannot create or update an active user profile.'};
  const filenameIdentity=identityFromFilename(filename),reservedIdentityTokens=new Set(['LAST','FIRST','ORG','ORGANIZATION','GEN','PRIV','SAAR','DOD','CYBER','CERT','USER','AGREEMENT','TRAINING','MEMO','TYPE']),filenameIdentityUsable=filenameIdentity&&!reservedIdentityTokens.has(filenameIdentity.last.toUpperCase())&&!reservedIdentityTokens.has(filenameIdentity.first.toUpperCase()),identity=filenameIdentityUsable?filenameIdentity:fallback?.identity;
  if(!identity)return{valid:false,reason:'The SAAR filename must begin with Last Name followed by First Name.'};
  if(identity.last.toUpperCase()==='LAST'&&identity.first.toUpperCase()==='FIRST')return{valid:false,reason:'The SAAR filename still contains the Last_First template placeholders and the form identity could not be read.'};
@@ -119,6 +121,10 @@ export function validateNewUserSaarFilename(filename:string,fallback?:{identity?
  const privilegedType=clean(markers.privilegedType??'',200);
  if(!privilegedType||privilegedType==='TYPE')return{valid:false,reason:'A PRIV SAAR filename must contain the actual privileged account type between PRIV and SAAR.'};
  return{valid:true,identity,organization,role:'Privileged',privilegedTypes:[privilegedType]};
+}
+export function canRecoverNewUserSaarFromForm(filename:string,fallback?:{organization?:string}){
+ if(validateNewUserSaarFilename(filename,fallback).valid)return false;
+ return validateNewUserSaarFilename(filename,{identity:{last:'RecoveredLast',first:'RecoveredFirst'},organization:fallback?.organization||'RecoveredOrganization',requestDate:new Date('2000-01-01T00:00:00.000Z')}).valid;
 }
 export function canonicalValidatedSaarFilename(filename:string,validation:Extract<NewUserSaarFilenameValidation,{valid:true}>,requestDate?:Date){
  const date=parseDate(filename)??verifiedRequestDate(requestDate),last=canonicalFilePart(validation.identity.last),first=canonicalFilePart(validation.identity.first),organization=canonicalFilePart(validation.organization),type=validation.role==='Privileged'?canonicalFilePart(validation.privilegedTypes[0]??''):'';

@@ -335,13 +335,16 @@ export default function Guide() {
         <p>
           Sync automatically renames a recognized nonstandard evidence date to
           DDMMMYYYY in the same active folder and records the change in the
-          audit log. At the beginning of every Sync, the tracker also checks
-          each organization&apos;s Rework folder. A non-SAAR artifact with either a
+          audit log. At the beginning of every Sync, a lightweight Archive
+          preflight checks every active organization folder and Rework folder
+          before any PDF content or form-field extraction. A non-SAAR artifact with either a
           full evidence date or a recognizable four-digit year that is safely
           beyond the one-year currency window is moved to that organization&apos;s
           dated Archive folder without correcting its filename; if it is older than five years, it
-          moves directly to <code>ORG Archive / Superseded</code>. SAARs never
-          expire, and current or undated Rework files stay in Rework until their
+          moves directly to <code>ORG Archive / Superseded</code>. A SAAR whose
+          filename contains the standalone word <b>DISABLED</b> is also archived
+          during this preflight and is never attached to or used to create a
+          User Directory profile. Other SAARs never expire, and current or undated Rework files stay in Rework until their
           filenames are corrected. Any file-level retention error is listed at
           the end of Sync without stopping the remaining files. Other
           correction, duplicate, superseded, and loose-PDF actions remain
@@ -752,13 +755,14 @@ export default function Guide() {
       </aside>
       <aside>
         <b>Five-Year Archive Retention:</b> Archived evidence keeps its original
-        evidence date. At Sync start, non-SAAR evidence already in Rework that
-        is older than one year bypasses filename correction and moves to
+        evidence date. At Sync start, non-SAAR evidence in active or Rework
+        folders that is older than one year bypasses filename correction and moves to
         Archive; evidence older than five years moves directly to the
         organization&apos;s{" "}
         <code>ORG Archive / Superseded</code> folder instead of the current
-        dated Archive folder. SAARs remain in Rework regardless of age because
-        they do not expire. A filename containing only a four-digit year uses
+        dated Archive folder. SAARs remain active or in Rework regardless of age
+        because they do not expire, unless their filename contains a standalone
+        DISABLED marker. A filename containing only a four-digit year uses
         the end of that year as a conservative retention date, preventing a
         current or borderline year from being archived prematurely. Retention
         preserves the existing filename and does not delete evidence.
@@ -778,12 +782,42 @@ export default function Guide() {
         launcher active. The idle clocks restart from zero only after Sync
         completes, fails, or is stopped by the operator, so a large directory
         scan cannot log off the operator merely because it exceeds an idle
-        limit. During new-user ingestion, the Processing Status advances as each
-        SAAR is read. A network file or fillable-PDF read that does not finish
-        within 30 seconds is listed for correction and Sync continues with the
-        next SAAR. Each SAAR read is cached for the rest of that Sync so
-        filename normalization, user validation, and Official Email extraction
-        do not reopen the same file.
+        limit. During new-user ingestion, a complete filename is accepted
+        without opening the PDF, and the containing organization folder supplies
+        a missing filename organization without a PDF read. Only SAARs that need
+        recoverable identity or requester-date fields are opened. Those form-field
+        reads run in a bounded group of four with visible completed-file progress;
+        a read that does not finish within 30 seconds receives one fresh retry
+        with a 60-second limit while the other readers continue. A second timeout
+        is listed for correction without stopping the batch. Selectable-text Official Email recovery
+        is deferred until Sync selects the newest SAAR for a proposed user, so it
+        is not performed across every candidate form. Incomplete DoD Cyber and
+        Privileged User Training certificates are processed in a separate
+        bounded group of three. Only the first four pages are inspected, because
+        accepted certificates place the recipient and completion date near the
+        beginning. A complete filename bypasses certificate content extraction.
+        Each certificate has a 30-second whole-operation limit and one bounded
+        60-second retry, including file access, parsing, and cleanup. If PDF.js
+        cannot destroy a stalled loading
+        task promptly, the tracker terminates that worker and continues the batch.
+      </aside>
+      <aside>
+        <b>Batch Processing Resilience:</b> High-volume read-only work uses
+        bounded queues instead of one unlimited batch or one blocking serial
+        loop. Initial validation gives each changed file a 30-second read limit;
+        duplicate-content checks, provenance hashing, Reconciliation hashing,
+        and Inspection Package inventory hashing process no more than four files
+        at once. Timed-out read-only operations receive no more than one fresh
+        retry; deterministic validation failures are not retried. Document Renamer processes saved
+        batches of 12 with three active PDF readers, stores progress after every
+        batch, and records individual read failures without discarding completed
+        analysis. Reconciliation exposes scanning and hashing progress and keeps
+        unreadable files as review issues. File mutations—rename, compression,
+        Rework, Archive, and manifest commits—remain sequential and transactional
+        so concurrency cannot produce partial or conflicting writes. Browser-mode
+        audit files are verified in chronological order with a 30-second read
+        limit per daily file; verification fails closed instead of hanging or
+        extending an unverified chain.
       </aside>
       <aside>
         <b>Extension Safety:</b> Every automated rename preserves the source

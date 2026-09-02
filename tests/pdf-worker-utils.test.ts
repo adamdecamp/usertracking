@@ -21,3 +21,9 @@ test('continues cleanup when an earlier destroy operation fails',async()=>{
  );
  assert.deepEqual(calls,['task','worker','port']);
 });
+
+test('does not wait forever for a hung PDF loading-task destroy',async()=>{
+ const calls:string[]=[];const started=Date.now();
+ await destroyPdfResources({destroy:()=>new Promise(()=>undefined)},{destroy:()=>calls.push('worker')},{terminate:()=>calls.push('port')},10);
+ assert.ok(Date.now()-started<250);assert.deepEqual(calls,['worker','port']);
+});

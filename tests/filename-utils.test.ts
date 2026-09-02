@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -165,6 +165,23 @@ test('uses a verified requester signature date to canonicalize an otherwise comp
 
 test('rejects an invalid requester signature date fallback',()=>{
  assert.equal(validateNewUserSaarFilename('Brown_Jacob_(LM)_GEN_SAAR.pdf',{requestDate:new Date(Number.NaN)}).valid,false);
+});
+
+test('opens only SAARs whose missing filename fields can be recovered from the form',()=>{
+ assert.equal(canRecoverNewUserSaarFromForm('Last_First_(ORG)_GEN_SAAR_26AUG2026.pdf',{organization:'GDMS'}),true);
+ assert.equal(canRecoverNewUserSaarFromForm('Brown_Jacob_GEN_SAAR_26AUG2026.pdf',{organization:'GDMS'}),false);
+ assert.equal(validateNewUserSaarFilename('Brown_Jacob_GEN_SAAR_26AUG2026.pdf',{organization:'GDMS'}).valid,true);
+ assert.equal(canRecoverNewUserSaarFromForm('Brown_Jacob_(GDMS)_SAAR_26AUG2026.pdf',{organization:'GDMS'}),false);
+ assert.equal(canRecoverNewUserSaarFromForm('Brown_Jacob_(GDMS)_PRIV_TYPE_SAAR_26AUG2026.pdf',{organization:'GDMS'}),false);
+});
+
+test('treats a standalone DISABLED marker on a SAAR as archive-only evidence',()=>{
+ const disabled='Brown_Jacob_(LM)_GEN_SAAR_DISABLED_26AUG2026.pdf';
+ assert.equal(disabledSaarFilename(disabled),true);
+ assert.equal(validateNewUserSaarFilename(disabled).valid,false);
+ assert.equal(canRecoverNewUserSaarFromForm(disabled,{organization:'LM'}),false);
+ assert.equal(disabledSaarFilename('Disabledson_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf'),false);
+ assert.equal(disabledSaarFilename('Brown_Jacob_(LM)_GEN_SAAR_NOTDISABLED_26AUG2026.pdf'),false);
 });
 
 test('recognizes common date formats and normalizes them to DDMMMYYYY',()=>{

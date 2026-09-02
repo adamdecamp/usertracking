@@ -1,4 +1,4 @@
-import {filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom,parseDate,validateNewUserSaarFilename} from './filename-utils.ts';
+import {disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom,parseDate,validateNewUserSaarFilename} from './filename-utils.ts';
 
 export type ComplianceException={id:string;artifact:string;reason:string;approvedBy:string;createdAt:string;createdBy:string;expiresOn:string;revokedAt?:string;revokedBy?:string};
 export type ReconciliationUser={id:string;last:string;first:string;email:string;organization:string;artifacts:{kind:string;filename:string;sha256?:string}[]};
@@ -29,7 +29,7 @@ export function proposedNewUserArtifacts(filenames:string[],user:{last:string;fi
  const organization=user.organization?.trim().toUpperCase(),sameOrganization=(filename:string)=>!organization||organizationFrom(filename)?.trim().toUpperCase()===organization;
  const identityFiles=filenames.filter(filename=>filenameIdentityMatches(filename,user)&&sameOrganization(filename));
  return kinds.map(kind=>{
-  if(kind==='SAAR')return filenameIdentityMatches(saarSource,user)&&sameOrganization(saarSource)&&filenameMatchesKind(saarSource,'SAAR')?{kind,filename:saarSource}:undefined;
+  if(kind==='SAAR')return !disabledSaarFilename(saarSource)&&filenameIdentityMatches(saarSource,user)&&sameOrganization(saarSource)&&filenameMatchesKind(saarSource,'SAAR')?{kind,filename:saarSource}:undefined;
   const filename=identityFiles.filter(item=>filenameMatchesKind(item,kind)&&!!parseDate(item)).sort((left,right)=>(parseDate(right)!.getTime()-parseDate(left)!.getTime())||left.localeCompare(right))[0];
   return filename?{kind,filename}:undefined;
  }).filter((artifact):artifact is{kind:string;filename:string}=>!!artifact);

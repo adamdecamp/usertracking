@@ -59,6 +59,12 @@ test('seeds a new user from the SAAR before matching supporting evidence',()=>{
  ]);
 });
 
+test('never attaches an archive-only disabled SAAR to a new user',()=>{
+ const saar='Brown_Jacob_(GDMS)_GEN_SAAR_DISABLED_26AUG2026.pdf';
+ assert.deepEqual(proposedNewUserArtifacts([saar],{last:'Brown',first:'Jacob',organization:'GDMS'},['SAAR'],saar),[]);
+ assert.deepEqual(certificateRecoveryUsers([],[saar]),[]);
+});
+
 test('uses validated new-user SAAR identities to recover loose training certificates',()=>{
  const existing=[{last:'Existing',first:'User',organization:'LM',roles:['General'],privilegedTypes:[]}],files=['Brown_Jacob_(GOV)_GEN_SAAR_26AUG2026.pdf','Shaw_Vivian_(Boeing)_PRIV_DTA_SAAR_26AUG2026.pdf'];
  assert.deepEqual(certificateRecoveryUsers(existing,files),[

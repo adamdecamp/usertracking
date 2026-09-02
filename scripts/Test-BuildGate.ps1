@@ -18,6 +18,7 @@ $regressionTests = @(
     "tests/compliance-report.test.ts",
     "tests/executive-summary.test.ts",
     "tests/cleanup-utils.test.ts",
+    "tests/concurrency-utils.test.ts",
     "tests/notification-utils.test.ts",
     "tests/sync-utils.test.ts",
     "tests/session-utils.test.ts",

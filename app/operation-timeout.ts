@@ -11,6 +11,14 @@ export function withOperationTimeout<T>(operation:(signal:AbortSignal)=>Promise<
   const abort=()=>{controller.abort();const error=new Error('Sync stopped by the operator.');error.name='AbortError';finish(()=>reject(error))};
   const timer=setTimeout(()=>{controller.abort();finish(()=>reject(new OperationTimeoutError(options.message)))},timeoutMs);
   options.signal?.addEventListener('abort',abort,{once:true});
-  Promise.resolve().then(()=>operation(controller.signal)).then(value=>finish(()=>resolve(value)),error=>finish(()=>reject(error)));
+ Promise.resolve().then(()=>operation(controller.signal)).then(value=>finish(()=>resolve(value)),error=>finish(()=>reject(error)));
  })
+}
+
+export async function withReadRetry<T>(operation:(signal:AbortSignal,attempt:1|2)=>Promise<T>,options:{timeoutMs:number;retryTimeoutMs?:number;message:string;retryMessage?:string;signal?:AbortSignal;onRetry?:()=>void}){
+ try{return await withOperationTimeout(signal=>operation(signal,1),options)}catch(error){
+  if(!(error instanceof OperationTimeoutError)||options.signal?.aborted)throw error;
+  options.onRetry?.();
+  return withOperationTimeout(signal=>operation(signal,2),{timeoutMs:options.retryTimeoutMs??Math.min(options.timeoutMs*2,120000),message:options.retryMessage??options.message,signal:options.signal});
+ }
 }
