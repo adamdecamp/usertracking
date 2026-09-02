@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createSyncIndex,isSyncCancellation,readSyncIndex,syncIndexEntryMatches,syncIndexKey,throwIfSyncCancelled,type SyncIndexEntry} from '../app/sync-utils.ts';
+import {createSyncIndex,isSyncCancellation,readSyncIndex,syncIndexEntryMatches,syncIndexKey,throwIfSyncCancelled,trainingCertificateSyncPolicy,type SyncIndexEntry} from '../app/sync-utils.ts';
+
+test('keeps automatic training-certificate recovery to one bounded first-page pass',()=>{
+ assert.deepEqual(trainingCertificateSyncPolicy,{maxPages:1,timeoutMs:10000,concurrency:6,batchSize:48,deepRecovery:false});
+});
 
 test('allows an active Sync and throws a recognizable cancellation after Stop Sync',()=>{
  const controller=new AbortController();

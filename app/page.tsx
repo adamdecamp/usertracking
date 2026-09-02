@@ -20,7 +20,7 @@ import {OperationTimeoutError,withOperationTimeout,withReadRetry} from './operat
 import {paginateItems} from './pagination-utils';
 import type {SaarIdentity} from './saar-form-utils';
 import {idleTimeoutMs,sessionIdleExpired} from './session-utils';
-import {createSyncIndex,isSyncCancellation,readSyncIndex,syncIndexChecksumFilename,syncIndexEntryMatches,syncIndexFilename,syncIndexKey,throwIfSyncCancelled,type SyncIndexEntry} from './sync-utils';
+import {createSyncIndex,isSyncCancellation,readSyncIndex,syncIndexChecksumFilename,syncIndexEntryMatches,syncIndexFilename,syncIndexKey,throwIfSyncCancelled,trainingCertificateSyncPolicy,type SyncIndexEntry} from './sync-utils';
 import {accessChangeOverrideAllowed,reactivationEvidenceRequirementSatisfied,updatedSaarRequirementSatisfied} from './user-update-utils';
 import {applicationVersion,complianceRuleSetVersion} from './version';
 import {activeComplianceException,applySyncArtifactProvenance,certificateRecoveryUsers,committedRecordWithExceptions,duplicateContentGroups,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,reworkRetentionDisposition,type ComplianceException,type ReconciliationIssue} from './workflow-utils';
@@ -60,7 +60,7 @@ const directoryColumns=[['SAAR','SAAR'],['DoD Cyber','DoD Cyber Cert'],['User Ag
 const leaseRenewMs=60*1000,leaseStaleMs=3*leaseRenewMs,leaseFile='tracker-active-session.json';
 const renamerCandidateLimit=10000,renamerBatchSize=12,renamerReadConcurrency=3;
 const renamerQueueFilename='tracker-document-renamer-queue.json';
-const saarReadTimeoutMs=30000,saarReadConcurrency=4,certificateFastReadConcurrency=6,certificateDeepReadConcurrency=2,certificateFastBatchSize=48,certificateDeepBatchSize=12,certificateFastPageLimit=1,certificatePageLimit=4;
+const saarReadTimeoutMs=30000,saarReadConcurrency=4,certificateFastReadConcurrency=trainingCertificateSyncPolicy.concurrency,certificateFastBatchSize=trainingCertificateSyncPolicy.batchSize,certificateFastPageLimit=trainingCertificateSyncPolicy.maxPages;
 const starterSystems:SystemRecord[]=[];
 const starterUsers:UserRecord[]=[];
 function newestArtifactFor(u:UserRecord,kind:string){return newestMatch(u.artifacts.filter(artifact=>canonicalArtifactKind(artifact.kind)===kind&&acceptsEvidenceExtension(artifact.filename)&&!(kind==='SAAR'&&disabledSaarFilename(artifact.filename))&&(kind==='SAAR'||filenameIdentityMatches(artifact.filename,u))),kind,artifact=>artifact.filename)}
@@ -365,42 +365,33 @@ function duplicateArchiveCandidates(usersToCheck:UserRecord[],evidence:ScannedEv
      const certificateUsers=certificateRecoveryUsers(sourceUsers,scanResult.evidence.map(item=>item.filename)),certificateCandidates=new Map<string,ScannedEvidence>();
      for(const item of scanResult.evidence)if(acceptsEvidenceExtension(item.filename)&&trainingCertificateRecoveryKind(item.filename))certificateCandidates.set(scanPathKey(item.path),item);
      let certificateReadFailures=0;
-     if(certificateCandidates.size){
-      const items=Array.from(certificateCandidates.values()),deepQueue:ScannedEvidence[]=[];
-      const readCertificate=async(item:ScannedEvidence,mode:'fast'|'deep')=>{
-       const expectedKind=trainingCertificateRecoveryKind(item.filename);
-       try{
-        const read=async(operationSignal:AbortSignal,attempt:1|2)=>{
-         throwIfSyncCancelled(operationSignal);
-         const file=await evidenceFile(item.ref,operationSignal),bytes=new Uint8Array(await file.arrayBuffer()),inspected=inspectEvidenceBytes(item.filename,bytes),pages=mode==='fast'?certificateFastPageLimit:certificatePageLimit,timeout=mode==='fast'?9000:attempt===1?25000:55000,text=await extractPdfText(inspected.pdfBytes,pages,{signal:operationSignal,timeoutMs:timeout}),analysis=analyzeDocumentText(text.text,item.filename,certificateUsers,h.name),folderOrganization=organizationFromFolderPath(item.path,h.name,analysis.last&&analysis.first?{last:analysis.last,first:analysis.first}:undefined),normalizedAnalysis={...analysis,organization:folderOrganization,evidence:[...analysis.evidence,`Organization set from containing folder: ${folderOrganization}`]},target=buildTrackerFilename(normalizedAnalysis);
-         return{item,expectedKind,normalizedAnalysis,folderOrganization,target};
-        };
-        if(mode==='fast')return await withOperationTimeout(signal=>read(signal,1),{timeoutMs:10000,signal:controller.signal,message:'The quick training-certificate pass exceeded 10 seconds.'});
-        return await withReadRetry(read,{timeoutMs:30000,retryTimeoutMs:60000,signal:controller.signal,message:'The training certificate could not be read within 30 seconds.',retryMessage:'The training certificate could not be read after one isolated retry within 60 seconds.'});
-       }catch(error){throwIfSyncCancelled(controller.signal);return{item,expectedKind,error:errorDetail(error,mode==='fast'?'The quick training-certificate pass did not finish.':'The training certificate could not be read within the safety limit.')}}
-      };
-      const applyCertificateOutcome=async(outcome:Awaited<ReturnType<typeof readCertificate>>,allowDeepQueue:boolean)=>{
-       throwIfSyncCancelled(controller.signal);const item=outcome.item;
-       if('error'in outcome){if(allowDeepQueue){deepQueue.push(item);return}certificateReadFailures++;normalizationFailures.push({filename:item.filename,path:item.path,ref:item.ref,reason:`Training certificate normalization failed: ${outcome.error}`});normalizationAudits.push(errorAuditAction(`Training certificate normalization failed for ${item.path}.`,outcome.error));return}
-       const{expectedKind,normalizedAnalysis,folderOrganization,target}=outcome;
-       if(!expectedKind||normalizedAnalysis.kind!==expectedKind||normalizedAnalysis.confidence!=='High'||!target){if(allowDeepQueue){deepQueue.push(item);return}certificateReadFailures++;normalizationFailures.push({filename:item.filename,path:item.path,ref:item.ref,reason:'Training certificate normalization needs operator review because identity, artifact type, or completion date could not be recovered with high confidence.'});return}
+      if(certificateCandidates.size){
+       const items=Array.from(certificateCandidates.values());
+       const readCertificate=async(item:ScannedEvidence)=>{
+        const expectedKind=trainingCertificateRecoveryKind(item.filename);
+        try{
+         return await withOperationTimeout(async operationSignal=>{
+          throwIfSyncCancelled(operationSignal);
+          const file=await evidenceFile(item.ref,operationSignal),bytes=new Uint8Array(await file.arrayBuffer()),inspected=inspectEvidenceBytes(item.filename,bytes),text=await extractPdfText(inspected.pdfBytes,certificateFastPageLimit,{signal:operationSignal,timeoutMs:trainingCertificateSyncPolicy.timeoutMs-1000}),analysis=analyzeDocumentText(text.text,item.filename,certificateUsers,h.name),folderOrganization=organizationFromFolderPath(item.path,h.name,analysis.last&&analysis.first?{last:analysis.last,first:analysis.first}:undefined),normalizedAnalysis={...analysis,organization:folderOrganization,evidence:[...analysis.evidence,`Organization set from containing folder: ${folderOrganization}`]},target=buildTrackerFilename(normalizedAnalysis);
+          return{item,expectedKind,normalizedAnalysis,folderOrganization,target};
+         },{timeoutMs:trainingCertificateSyncPolicy.timeoutMs,signal:controller.signal,message:'The quick training-certificate pass exceeded 10 seconds.'});
+        }catch(error){throwIfSyncCancelled(controller.signal);return{item,expectedKind,error:errorDetail(error,'The quick training-certificate pass did not finish.')}}
+       };
+       const applyCertificateOutcome=async(outcome:Awaited<ReturnType<typeof readCertificate>>)=>{
+        throwIfSyncCancelled(controller.signal);const item=outcome.item;
+        if('error'in outcome){certificateReadFailures++;normalizationFailures.push({filename:item.filename,path:item.path,ref:item.ref,reason:`Quick training certificate classification failed: ${outcome.error} Use Document Renamer for operator-reviewed correction.`});normalizationAudits.push(errorAuditAction(`Quick training certificate classification failed for ${item.path}.`,outcome.error));return}
+        const{expectedKind,normalizedAnalysis,folderOrganization,target}=outcome;
+        if(!expectedKind||normalizedAnalysis.kind!==expectedKind||normalizedAnalysis.confidence!=='High'||!target){certificateReadFailures++;normalizationFailures.push({filename:item.filename,path:item.path,ref:item.ref,reason:'Training certificate normalization needs operator review because the quick first-page pass could not recover identity, artifact type, and completion date with high confidence. Use Document Renamer for correction.'});return}
        if(target.toUpperCase()===item.filename.toUpperCase())return;
        const previousPath=item.path;
        try{const result=await normalizeEvidenceDate(h,item,target);if(!result.collisionPath){renamedDuringSync++;applyEvidenceRename(item,result);return`NORMALIZE ${expectedKind.toUpperCase()} CERTIFICATE: ${previousPath} renamed to ${result.path}; matched user ${normalizedAnalysis.last}, ${normalizedAnalysis.first}; organization ${folderOrganization}; completion date ${normalizedAnalysis.date}`}}catch(error){throwIfSyncCancelled(controller.signal);certificateReadFailures++;const detail=errorDetail(error,'The training certificate could not be normalized.');normalizationFailures.push({filename:item.filename,path:previousPath,ref:item.ref,reason:`Training certificate normalization failed: ${detail}`});normalizationAudits.push(errorAuditAction(`Training certificate normalization failed for ${previousPath}.`,detail))}
       };
-      updateProcessing('Quickly Classifying Legacy Training Certificates',0,items.length,`Reading only the first page of up to ${certificateFastReadConcurrency} incomplete certificates at a time. Completed filenames are skipped.`,'files');
-      let fastCompleted=0;
-      for(let offset=0;offset<items.length;offset+=certificateFastBatchSize){
-       throwIfSyncCancelled(controller.signal);const batch=items.slice(offset,offset+certificateFastBatchSize),outcomes=await mapWithConcurrency(batch,certificateFastReadConcurrency,item=>readCertificate(item,'fast'),{signal:controller.signal,onCompleted:(completed,_total,index)=>updateProcessing('Quickly Classifying Legacy Training Certificates',fastCompleted+completed,items.length,`Fast pass: ${batch[index].filename}`,'files')});
-       const batchAudits:string[]=[];for(const outcome of outcomes){const action=await applyCertificateOutcome(outcome,true);if(action)batchAudits.push(action)}if(batchAudits.length)warnAuditFailure(await appendAudits(batchAudits,sourceSystem.id));fastCompleted+=batch.length;await new Promise(resolve=>window.setTimeout(resolve,0));
-      }
-      if(deepQueue.length){
-       updateProcessing('Recovering Difficult Legacy Training Certificates',0,deepQueue.length,`${deepQueue.length} file${deepQueue.length===1?'':'s'} need a deeper four-page read. Successful batches are renamed immediately, so completed work survives a stopped Sync.`,'files');let deepCompleted=0;
-       for(let offset=0;offset<deepQueue.length;offset+=certificateDeepBatchSize){
-        throwIfSyncCancelled(controller.signal);const batch=deepQueue.slice(offset,offset+certificateDeepBatchSize),outcomes=await mapWithConcurrency(batch,certificateDeepReadConcurrency,item=>readCertificate(item,'deep'),{signal:controller.signal,onCompleted:(completed,_total,index)=>updateProcessing('Recovering Difficult Legacy Training Certificates',deepCompleted+completed,deepQueue.length,`Deep recovery: ${batch[index].filename}`,'files')});
-        const batchAudits:string[]=[];for(const outcome of outcomes){const action=await applyCertificateOutcome(outcome,false);if(action)batchAudits.push(action)}if(batchAudits.length)warnAuditFailure(await appendAudits(batchAudits,sourceSystem.id));deepCompleted+=batch.length;await new Promise(resolve=>window.setTimeout(resolve,0));
+       updateProcessing('Checking Incomplete Training Certificates',0,items.length,`Reading only the first page of up to ${certificateFastReadConcurrency} incomplete certificates at a time. Completed filenames are skipped; no deep recovery pass is performed.`,'files');
+       let fastCompleted=0;
+       for(let offset=0;offset<items.length;offset+=certificateFastBatchSize){
+        throwIfSyncCancelled(controller.signal);const batch=items.slice(offset,offset+certificateFastBatchSize),outcomes=await mapWithConcurrency(batch,certificateFastReadConcurrency,item=>readCertificate(item),{signal:controller.signal,onCompleted:(completed,_total,index)=>updateProcessing('Checking Incomplete Training Certificates',fastCompleted+completed,items.length,`First-page pass: ${batch[index].filename}`,'files')});
+        const batchAudits:string[]=[];for(const outcome of outcomes){const action=await applyCertificateOutcome(outcome);if(action)batchAudits.push(action)}if(batchAudits.length)warnAuditFailure(await appendAudits(batchAudits,sourceSystem.id));fastCompleted+=batch.length;await new Promise(resolve=>window.setTimeout(resolve,0));
        }
-      }
       if(certificateReadFailures)console.warn(`${certificateReadFailures} incomplete training certificate PDF${certificateReadFailures===1?'':'s'} could not be recovered automatically and remain available for operator review.`)
      }
      if(normalizationAudits.length)warnAuditFailure(await appendAudits(normalizationAudits,sourceSystem.id));if(renamedDuringSync){lastReported=0;updateProcessing('Verifying Normalized Evidence',0,undefined,`${renamedDuringSync} renamed file${renamedDuringSync===1?'':'s'} will be checked in one incremental pass.`,'files');scanResult=await scan(h,scanProgress,controller.signal,[],0,new Map<string,EvidenceHandle>(),[],{value:0},[],'',false)}if(normalizationFailures.length){const known=new Set(scanResult.rejected.map(item=>scanPathKey(item.path??item.filename)));for(const failure of normalizationFailures)if(!known.has(scanPathKey(failure.path??failure.filename)))scanResult.rejected.push(failure)}

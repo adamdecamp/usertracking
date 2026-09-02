@@ -321,13 +321,13 @@ export default function Guide() {
           Large legacy repositories are handled in two stages. Files that already
           contain a complete canonical identity, organization, artifact type, and
           date are matched without opening the PDF. Incomplete training-certificate
-          names receive a short first-page classification pass in concurrent
-          batches. Only unresolved certificates receive the slower four-page read
-          and isolated retry. Successful batch renames are applied and audited
-          immediately, so stopping or restarting Sync does not discard the filename
-          normalization already completed. Files with no usable filename metadata
-          remain available in the resumable <b>Document Renamer</b> queue for
-          operator-reviewed migration rather than blocking clean-file Sync.
+          names receive one short first-page classification pass in concurrent
+          batches. Sync does not perform a slower deep-read or retry pass. Successful
+          batch renames are applied and audited immediately, so stopping or
+          restarting Sync does not discard the filename normalization already
+          completed. Unresolved files remain available in the resumable
+          <b>Document Renamer</b> queue for operator-reviewed migration rather than
+          delaying clean-file Sync.
         </p>
         <p>
           Sync accepts direct PDFs and ZIPs containing exactly one PDF. It
@@ -778,18 +778,18 @@ export default function Guide() {
         recover a labeled learner, recipient, participant, candidate, employee,
         student, or user name from the certificate itself. Valid alternate dates
         are normalized later without reading PDF text. Evidence with missing or
-        incomplete filename metadata is opened to recover its user and labeled
-        completion, certification, certificate, or issue date, and each recovery
-        attempt begins with a short first-page pass. Only unresolved files receive
-        the deeper four-page read, with one isolated retry, so a difficult PDF
-        cannot hold the fast batch.
+        incomplete filename metadata receives one short first-page attempt to
+        recover its user and labeled completion, certification, certificate, or
+        issue date. Sync does not run the previous deep four-page recovery or retry
+        phase.
         Recovery matches against both existing
         User Directory records and identities established by validated new-user
         SAARs found earlier in the same Sync. A high-confidence match is renamed
         to the canonical DoD Cyber or Privileged User Training filename with
         DDMMMYYYY and the authoritative organization folder. The app never
         invents a missing month or day. Ambiguous, timed-out, or image-only
-        certificates remain available in Document Renamer for operator review.
+        certificates remain available in Document Renamer for operator review and
+        do not delay the rest of Sync.
       </aside>
       <aside>
         <b>Five-Year Archive Retention:</b> Archived evidence keeps its original
@@ -837,11 +837,9 @@ export default function Guide() {
         is deferred until Sync selects the newest SAAR for a proposed user, so it
         is not performed across every candidate form. Incomplete DoD Cyber and
         Privileged User Training certificates are processed in a separate
-        bounded group of three. Only the first four pages are inspected, because
-        accepted certificates place the recipient and completion date near the
-        beginning. A complete filename bypasses certificate content extraction.
-        Each certificate has a 30-second whole-operation limit and one bounded
-        60-second retry, including file access, parsing, and cleanup. If PDF.js
+        bounded group of six. Only the first page is inspected, and a complete
+        filename bypasses certificate content extraction. Each incomplete
+        certificate has a 10-second whole-operation limit with no deep retry. If PDF.js
         cannot destroy a stalled loading
         task promptly, the tracker terminates that worker and continues the batch.
       </aside>
