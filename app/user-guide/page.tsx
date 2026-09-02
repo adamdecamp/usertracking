@@ -176,8 +176,10 @@ export default function Guide() {
         </aside>
         <p>
           The User Directory can be searched by privileged username and filtered
-          by General or Privileged role, derived Privileged User Type,
-          organization, artifact, and compliance status. Choose{" "}
+          by Active, Disabled, or All users; General or Privileged role; derived
+          Privileged User Type; organization; artifact; and compliance status.
+          When General is selected, the inapplicable Privileged User Type filter
+          and column are hidden. Choose{" "}
           <b>Reset Filters</b> to clear the search and restore every directory
           filter to its default. The directory displays Privileged User Type but
           keeps the full privileged username inside the User Record and CSV
@@ -186,9 +188,19 @@ export default function Guide() {
           Agreement. All Privileged users additionally require the 8140 memo and
           Privileged User Training certificate. Privileged users with DTA type
           also require DTA training. Open a User Record to replace evidence,
-          disable or enable access, or modify privileges. Updated PDF evidence
-          is validated and stored as a ZIP, and newly added roles or Privileged
-          User Types require their additional evidence before submission.
+          disable or enable access, or modify privileges. Access and privilege
+          changes require an updated SAAR by default. Disabling a user moves the
+          user&apos;s prior active evidence into the organization Archive folder. When
+          disabling without an updated SAAR, an operator may select the documented
+          override and must enter a justification. To re-enable a disabled user,
+          select that user through the Disabled Users filter and upload a fresh
+          SAAR plus every artifact required for the user&apos;s role. Reactivation may
+          also use a documented override with a required justification. Overrides,
+          comments, and archive results are preserved in the user history and
+          tamper-evident audit log. Privilege changes still require an updated SAAR.
+          Updated PDF evidence is validated and stored as a ZIP, and newly added
+          roles or Privileged User Types require their additional evidence before
+          submission.
         </p>
       </section>
       <section id="evidence">
@@ -324,9 +336,10 @@ export default function Guide() {
           Sync automatically renames a recognized nonstandard evidence date to
           DDMMMYYYY in the same active folder and records the change in the
           audit log. At the beginning of every Sync, the tracker also checks
-          each organization&apos;s Rework folder. A dated non-SAAR artifact older
-          than one year is moved to that organization&apos;s dated Archive folder
-          without correcting its filename; if it is older than five years, it
+          each organization&apos;s Rework folder. A non-SAAR artifact with either a
+          full evidence date or a recognizable four-digit year that is safely
+          beyond the one-year currency window is moved to that organization&apos;s
+          dated Archive folder without correcting its filename; if it is older than five years, it
           moves directly to <code>ORG Archive / Superseded</code>. SAARs never
           expire, and current or undated Rework files stay in Rework until their
           filenames are corrected. Any file-level retention error is listed at
@@ -349,7 +362,11 @@ export default function Guide() {
           superseded files explicitly approved by the operator are moved into
           that organization&apos;s dated Archive folder, such as{" "}
           <code>GDMS / GDMS Archive / YYYY-MM-DD</code>, for later manual review
-          or deletion. Only loose PDFs matched to a verified User Directory
+          or deletion. A prior SAAR is eligible as a duplicate only when a newer
+          valid SAAR for the same user and organization is already recorded, or
+          the operator approves that newer SAAR in the same Sync review. Evidence
+          from another organization can never justify archiving the user&apos;s SAAR.
+          Only loose PDFs matched to a verified User Directory
           record are eligible for compression. The new ZIP is reopened and
           validated as containing exactly one readable PDF before the original
           PDF is deleted; a creation, validation, or deletion failure leaves no
@@ -741,8 +758,10 @@ export default function Guide() {
         organization&apos;s{" "}
         <code>ORG Archive / Superseded</code> folder instead of the current
         dated Archive folder. SAARs remain in Rework regardless of age because
-        they do not expire. Retention preserves the existing filename and does
-        not delete evidence.
+        they do not expire. A filename containing only a four-digit year uses
+        the end of that year as a conservative retention date, preventing a
+        current or borderline year from being archived prematurely. Retention
+        preserves the existing filename and does not delete evidence.
       </aside>
       <aside>
         <b>Non-Destructive Restore Drill:</b> In <b>Restore Backup</b>, select a

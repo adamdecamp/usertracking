@@ -18,3 +18,8 @@ export function retainUnfinishedCleanup<T extends{id:string}>(items:T[],complete
  const completed=new Set(completedIds);
  return items.filter(item=>!completed.has(item.id));
 }
+
+export function supersedingEvidenceApproval(storedFilename:string,newestFilename:string,updateCandidateId?:string){
+ if(storedFilename&&storedFilename.toUpperCase()===newestFilename.toUpperCase())return{};
+ return updateCandidateId?{requiresCandidateId:updateCandidateId}:undefined;
+}

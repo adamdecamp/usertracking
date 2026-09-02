@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {distinctByPath,retainUnfinishedCleanup,selectLoosePdfCleanupCandidates,selectSupersededEvidence} from '../app/cleanup-utils.ts';
+import {distinctByPath,retainUnfinishedCleanup,selectLoosePdfCleanupCandidates,selectSupersededEvidence,supersedingEvidenceApproval} from '../app/cleanup-utils.ts';
 
 type Item={path:string;date:string;current:boolean};
 const select=(items:Item[])=>selectSupersededEvidence(items,item=>new Date(item.date),item=>item.current,item=>item.path);
@@ -60,4 +60,10 @@ test('reuses first-scan evidence for cleanup immediately after a verified user i
 test('retains deferred and failed cleanup actions after successful actions are removed',()=>{
  const items=[{id:'archive-1'},{id:'zip-1'},{id:'rework-1'}];
  assert.deepEqual(retainUnfinishedCleanup(items,['zip-1']).map(item=>item.id),['archive-1','rework-1']);
+});
+
+test('archives an older file only after the newest replacement is stored or explicitly approved',()=>{
+ assert.deepEqual(supersedingEvidenceApproval('Thomas_Greg_SAAR_01JAN2026.pdf.zip','Thomas_Greg_SAAR_01JAN2026.pdf.zip'),{});
+ assert.deepEqual(supersedingEvidenceApproval('Thomas_Greg_SAAR_01JAN2024.pdf.zip','Thomas_Greg_SAAR_01JAN2026.pdf.zip','thomas:saar'),{requiresCandidateId:'thomas:saar'});
+ assert.equal(supersedingEvidenceApproval('Thomas_Greg_SAAR_01JAN2024.pdf.zip','Thomas_Greg_SAAR_01JAN2026.pdf.zip'),undefined);
 });

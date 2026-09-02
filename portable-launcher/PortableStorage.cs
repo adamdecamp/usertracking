@@ -604,7 +604,13 @@ internal sealed class PortableStorage : IDisposable
         AddEvidenceDates(candidates, value, @"(?<![A-Za-z0-9])(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-_., ]*(0?[1-9]|[12][0-9]|3[01])[-_., ]*((?:19|20)[0-9]{2})(?![A-Za-z0-9])", "MMM-d-yyyy");
         AddEvidenceDates(candidates, value, @"(?<![A-Za-z0-9])((?:19|20)[0-9]{2})[-_., ]*(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12][0-9]|3[01])(?![A-Za-z0-9])", "yyyy-MM-dd");
         AddEvidenceDates(candidates, value, @"(?<![A-Za-z0-9])(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12][0-9]|3[01])[-_., ]*((?:19|20)[0-9]{2})(?![A-Za-z0-9])", "MM-dd-yyyy");
-        if (candidates.Count == 0) return null;
+        if (candidates.Count == 0)
+        {
+            MatchCollection years = Regex.Matches(value, @"(?:^|[^0-9])((?:19|20)[0-9]{2})(?![0-9])", RegexOptions.IgnoreCase);
+            if (years.Count == 0) return null;
+            int year;if (!Int32.TryParse(years[years.Count - 1].Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out year) || year < 1900 || year > 2099) return null;
+            return new DateTime(year, 12, 31, 0, 0, 0, DateTimeKind.Utc);
+        }
         return candidates.OrderByDescending(item => item.Item1).First().Item2.Date;
     }
 
