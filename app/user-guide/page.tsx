@@ -715,12 +715,17 @@ export default function Guide() {
         Responsibilities. A certificate whose filename already contains a usable
         ordered Last-First identity, parenthesized organization, recognized
         artifact wording, and complete valid date is handled entirely from the
-        filename and is never opened for certificate-text recovery. Valid
-        alternate dates are normalized later without reading PDF text. Only a
-        loose PDF with missing or incomplete filename metadata is opened to
-        recover its user and labeled completion, certification, certificate, or
-        issue date, and each recovery attempt has a 30-second safety limit so
-        one file cannot hold the batch. Recovery matches against both existing
+        filename and is never opened for certificate-text recovery. Document
+        title pairs such as <b>Cyber Awareness</b>, <b>Awareness Challenge</b>,
+        and <b>DoD Cyber</b> are never accepted as a person&apos;s Last-First
+        identity. A direct PDF or one-PDF ZIP with a generic title is opened to
+        recover a labeled learner, recipient, participant, candidate, employee,
+        student, or user name from the certificate itself. Valid alternate dates
+        are normalized later without reading PDF text. Evidence with missing or
+        incomplete filename metadata is opened to recover its user and labeled
+        completion, certification, certificate, or issue date, and each recovery
+        attempt has a 30-second safety limit so one file cannot hold the batch.
+        Recovery matches against both existing
         User Directory records and identities established by validated new-user
         SAARs found earlier in the same Sync. A high-confidence match is renamed
         to the canonical DoD Cyber or Privileged User Training filename with

@@ -1,3 +1,5 @@
+import {plausiblePersonIdentity} from './filename-utils.ts';
+
 export type RenamerUser={first:string;last:string;organization:string;roles:string[];privilegedTypes:string[]};
 export type RenamerAnalysis={kind:string;first:string;last:string;organization:string;date:string;role:'GEN'|'PRIV'|'';privilegedType:string;confidence:'High'|'Review'|'Manual';evidence:string[]};
 
@@ -52,13 +54,20 @@ const kindRules:[string,RegExp[]][]=[
 function detectKind(text:string,filename:string){const source=`${text.slice(0,120000)}\n${filename.replace(/[_-]+/g,' ')}`;for(const[kind,rules]of kindRules)if(rules.some(rule=>rule.test(source)))return kind;return''}
 
 function identifyUser(text:string,filename:string,users:RenamerUser[]){
- const haystack=` ${normalized(`${text}\n${filename}`)} `,scored=users.map(user=>{const first=normalized(user.first),last=normalized(user.last);let score=0;if(first&&last){if(haystack.includes(` ${first} ${last} `))score+=5;if(haystack.includes(` ${last} ${first} `))score+=4;if(haystack.includes(` ${last} ${first.charAt(0)} `))score+=2;if(normalized(filename).startsWith(`${last} ${first}`))score+=5}return{user,score}}).filter(item=>item.score>0).sort((a,b)=>b.score-a.score);
+ const haystack=` ${normalized(`${text}\n${filename}`)} `,scored=users.filter(user=>plausiblePersonIdentity(user.last,user.first)).map(user=>{const first=normalized(user.first),last=normalized(user.last);let score=0;if(first&&last){if(haystack.includes(` ${first} ${last} `))score+=5;if(haystack.includes(` ${last} ${first} `))score+=4;if(haystack.includes(` ${last} ${first.charAt(0)} `))score+=2;if(normalized(filename).startsWith(`${last} ${first}`))score+=5}return{user,score}}).filter(item=>item.score>0).sort((a,b)=>b.score-a.score);
  return scored.length&&(scored.length===1||scored[0].score>scored[1].score)?scored[0].user:undefined;
 }
 
 function labeledName(text:string){
- const patterns=[/(?:FULL\s+NAME|NAME\s+OF\s+(?:USER|INDIVIDUAL)|EMPLOYEE\s+NAME|STUDENT\s+NAME|CANDIDATE\s+NAME)\s*[:#-]?\s*([A-Z][A-Z'\-.]+)\s*,\s*([A-Z][A-Z'\-.]+)/i,/(?:FULL\s+NAME|NAME\s+OF\s+(?:USER|INDIVIDUAL)|EMPLOYEE\s+NAME|STUDENT\s+NAME|CANDIDATE\s+NAME)\s*[:#-]?\s*([A-Z][A-Z'\-.]+)\s+([A-Z][A-Z'\-.]+)/i,/CERTIF(?:Y|IES)\s+THAT\s+([A-Z][A-Z'\-.]+)\s+([A-Z][A-Z'\-.]+)/i];
- for(const pattern of patterns){const match=text.match(pattern);if(!match)continue;if(match[0].includes(','))return{last:clean(match[1]),first:clean(match[2])};return{first:clean(match[1]),last:clean(match[2])}}
+ const word="[A-Z][A-Z'’.-]{1,49}",middle="[A-Z]",labels='(?:FULL\\s+NAME|NAME\\s+OF\\s+(?:USER|INDIVIDUAL)|LEARNER\\s+NAME|RECIPIENT\\s+NAME|PARTICIPANT\\s+NAME|EMPLOYEE\\s+NAME|STUDENT\\s+NAME|CANDIDATE\\s+NAME|USER\\s+NAME|(?<!COURSE\\s)(?<!MODULE\\s)(?<!TRAINING\\s)(?<!DOCUMENT\\s)NAME)',candidates:{first:string;last:string}[]=[];
+ const add=(match:RegExpMatchArray|null,order:'last-first'|'first-last')=>{if(!match)return;const candidate=order==='last-first'?{last:clean(match[1]),first:clean(match[2])}:{first:clean(match[1]),last:clean(match[2])};if(plausiblePersonIdentity(candidate.last,candidate.first))candidates.push(candidate)};
+ add(text.match(new RegExp(`${labels}\\s*[:#-]\\s*(${word})\\s*,\\s*(${word})`,'i')),'last-first');
+ add(text.match(new RegExp(`${labels}\\s*[:#-]\\s*(${word})(?:\\s+${middle}\\.?)?\\s+(${word})`,'i')),'first-last');
+ add(text.match(new RegExp(`CERTIF(?:Y|IES)\\s+THAT\\s+(${word})\\s*,\\s*(${word})`,'i')),'last-first');
+ add(text.match(new RegExp(`CERTIF(?:Y|IES)\\s+THAT\\s+(${word})(?:\\s+${middle}\\.?)?\\s+(${word})`,'i')),'first-last');
+ add(text.match(new RegExp(`(?:PRESENTED|AWARDED|ISSUED)\\s+TO\\s+(${word})(?:\\s+${middle}\\.?)?\\s+(${word})`,'i')),'first-last');
+ add(text.match(new RegExp(`(${word})(?:\\s+${middle}\\.?)?\\s+(${word})\\s+HAS\\s+(?:SUCCESSFULLY\\s+)?COMPLETED`,'i')),'first-last');
+ return candidates[0];
 }
 
 function parseCalendarDate(value:string){
@@ -86,7 +95,7 @@ export function analyzeDocumentText(text:string,filename:string,users:RenamerUse
  const kind=detectKind(text,filename),matched=identifyUser(text,filename,users),fallback=!matched?labeledName(text):undefined,date=signedDate(text,kind),upper=normalized(`${text}\n${filename}`),role:RenamerAnalysis['role']=/\bPRIV(?:ILEGED)?\b/.test(upper)&&kind==='SAAR'?'PRIV':/\bGEN(?:ERAL)?\b/.test(upper)&&kind==='SAAR'?'GEN':'',privilegedType=role==='PRIV'?(matched?.privilegedTypes.length===1?matched.privilegedTypes[0]:''):'',evidence:string[]=[];
  if(kind)evidence.push(`Recognized ${kind}`);if(matched)evidence.push(`Matched tracker user ${matched.last}, ${matched.first}`);else if(fallback)evidence.push('Read a labeled name from the document');if(date)evidence.push(`Selected date from: ${date.context}`);
  const result={kind,first:matched?.first??fallback?.first??'',last:matched?.last??fallback?.last??'',organization:matched?.organization??defaultOrganization,date:date?.score&&date.score>=2?date.date:'',role,privilegedType,evidence};
- const complete=!!result.kind&&!!result.first&&!!result.last&&!!result.organization&&!!result.date&&(result.kind!=='SAAR'||!!result.role)&&(result.role!=='PRIV'||!!result.privilegedType),strong=complete&&!!matched&&!!date&&date.score>=8;
+ const complete=!!result.kind&&!!result.first&&!!result.last&&!!result.organization&&!!result.date&&(result.kind!=='SAAR'||!!result.role)&&(result.role!=='PRIV'||!!result.privilegedType),strong=complete&&!!(matched||fallback)&&!!date&&date.score>=8;
  return{...result,confidence:strong?'High':complete?'Review':'Manual'};
 }
 

@@ -4,6 +4,7 @@ const legacyAgreementKinds=new Set(['GEN User Agreement','GEN and PRIV Agreement
 export const canonicalArtifactKind=(kind:string)=>legacyAgreementKinds.has(kind)?agreementArtifactKind:kind;
 const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const clean=(value:string,max=500)=>value.replace(/[\r\n\u0000-\u001f\u007f]/g,' ').trim().slice(0,max);
+const documentTitleIdentityWords=new Set(['ACCESS','AGREEMENT','AWARENESS','CERTIFICATE','CHALLENGE','COMPLETION','COURSE','CYBER','DOD','GENERAL','INFORMATION','NAME','PRIVILEGED','REQUEST','SECURITY','SYSTEM','TRAINING','USER']);
 type DateMatch={date:Date;start:number;end:number;normalized:string;defaultFormat:boolean};
 const filenameCacheLimit=20000,dateCache=new Map<string,DateMatch|null>(),tokenListCache=new Map<string,string[]>(),tokenSetCache=new Map<string,Set<string>>(),compactCache=new Map<string,string>(),organizationCache=new Map<string,string|null>(),identityCache=new Map<string,{last:string;first:string}|null>();
 function remember<K,V>(cache:Map<K,V>,key:K,value:V){if(cache.size>=filenameCacheLimit)cache.clear();cache.set(key,value);return value}
@@ -92,7 +93,12 @@ export function identityFromFilename(filename:string){
  const match=base.match(/^\s*([^_,()\s]+)\s*(?:_\s*|,\s*|\s+)([^_,()\s]+)(?=\s*(?:_|,|\(|\s))/);
  if(!match)return remember(identityCache,filename,null)??undefined;
  const last=clean(match[1]),first=clean(match[2]);
- return remember(identityCache,filename,last&&first?{last,first}:null)??undefined;
+ return remember(identityCache,filename,last&&first&&plausiblePersonIdentity(last,first)?{last,first}:null)??undefined;
+}
+export function plausiblePersonIdentity(last:string,first:string){
+ const lastToken=clean(last,80).toUpperCase().replace(/[^A-Z0-9]+/g,''),firstToken=clean(first,80).toUpperCase().replace(/[^A-Z0-9]+/g,'');
+ if(!lastToken||!firstToken||lastToken==='LAST'&&firstToken==='FIRST')return false;
+ return!(documentTitleIdentityWords.has(lastToken)&&documentTitleIdentityWords.has(firstToken));
 }
 export type NewUserSaarFilenameValidation=
  |{valid:true;identity:{last:string;first:string};organization:string;role:'General'|'Privileged';privilegedTypes:string[]}

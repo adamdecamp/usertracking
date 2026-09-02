@@ -27,6 +27,17 @@ test('recognizes Cyber Awareness filename wording as DoD Cyber evidence',()=>{
  }
 });
 
+test('never treats a certificate title as a Last Name and First Name',()=>{
+ for(const filename of [
+  'Cyber_Awareness_(LM)_DoD_Cyber_Cert_26AUG2026.pdf',
+  'Awareness Challenge (GOV) DoD Cyber Cert 26AUG2026.pdf',
+  'DoD_Cyber_(NGC)_Cyber_Awareness_Challenge_Certificate_26AUG2026.pdf.zip',
+ ]){
+  assert.equal(identityFromFilename(filename),undefined,filename);
+  assert.equal(trainingCertificateRecoveryKind(filename),'DoD Cyber Cert',filename);
+ }
+});
+
 test('opens certificate content only when filename metadata is incomplete',()=>{
  for(const filename of [
   'Brown_Jacob_(LM)_Cyber_Awareness_Challenge_Certificate_26AUG2026.pdf',

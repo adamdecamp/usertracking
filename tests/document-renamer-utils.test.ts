@@ -25,6 +25,17 @@ test('recognizes Cyber Awareness Challenge certificates and canonicalizes their 
  }
 });
 
+test('reads a real recipient from a generic Cyber Awareness certificate instead of using its title',()=>{
+ const analysis=analyzeDocumentText('Cyber Awareness Challenge Certificate Course Name: Cyber Awareness Challenge Recipient Name: Jacob Brown Completion Date: August 26, 2026','Cyber_Awareness_(LM)_DoD_Cyber_Cert_26AUG2026.pdf',[],'LM');
+ assert.equal(analysis.first,'Jacob');assert.equal(analysis.last,'Brown');assert.equal(analysis.confidence,'High');
+ assert.equal(buildTrackerFilename(analysis),'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf');
+});
+
+test('does not derive a person from Cyber Awareness document-title text',()=>{
+ const analysis=analyzeDocumentText('Cyber Awareness Challenge Certificate Course Name: Cyber Awareness Challenge Completion Date: August 26, 2026','Cyber_Awareness_(LM)_DoD_Cyber_Cert_26AUG2026.pdf',[],'LM');
+ assert.equal(analysis.first,'');assert.equal(analysis.last,'');assert.equal(analysis.confidence,'Manual');
+});
+
 test('uses the labeled DoD Cyber completion date instead of print and expiration dates',()=>{
  const analysis=analyzeDocumentText('Cyber Awareness Challenge Certificate This certifies that Jacob Brown. Printed 09/01/2026. Completion Date: 08/26/2026. Expiration Date: 08/26/2027.','Cyber Awareness Certificate.pdf',users);
  assert.equal(analysis.kind,'DoD Cyber Cert');
