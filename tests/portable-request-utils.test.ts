@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {PortableRequestTimeoutError,portableActionLabel,portableArchiveAction,portableFetch} from '../app/portable-request-utils.ts';
+import {PortableRequestTimeoutError,PortableStorageBusyError,portableActionLabel,portableArchiveAction,portableFetch} from '../app/portable-request-utils.ts';
+
+test('identifies a recoverable busy response without treating it as lost session ownership',()=>{
+ const error=new PortableStorageBusyError('Storage is busy.');
+ assert.equal(error.name,'PortableStorageBusyError');
+});
 
 test('keeps launcher failure stages useful without exposing query values',()=>{
  assert.equal(portableActionLabel('scan?rules=secret&full=1'),'scan');

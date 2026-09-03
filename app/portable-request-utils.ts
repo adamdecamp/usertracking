@@ -4,6 +4,10 @@ export class PortableRequestTimeoutError extends Error{
  constructor(message:string){super(message);this.name='PortableRequestTimeoutError'}
 }
 
+export class PortableStorageBusyError extends Error{
+ constructor(message:string){super(message);this.name='PortableStorageBusyError'}
+}
+
 export function portableActionLabel(action:string){
  const value=action.split('?')[0].replace(/[^A-Za-z0-9_-]+/g,' ').replace(/[-_]+/g,' ').trim();
  return (value||'storage request').slice(0,100);

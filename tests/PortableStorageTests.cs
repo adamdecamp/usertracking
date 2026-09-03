@@ -399,6 +399,12 @@ internal static class PortableStorageTests
         Assert(auditView.Contains("\"recent\"") && auditView.IndexOf("SECOND ACTION", StringComparison.Ordinal) < auditView.IndexOf("TEST ACTION", StringComparison.Ordinal), "The read-only audit view should return verified entries newest first.");
 
         Assert(storage.AcquireLease("mapping-key", "session-1"), "The first lease should be acquired.");
+        Assert(!TrackerContext.StorageActionRequiresSerialization("lease-acquire") && !TrackerContext.StorageActionRequiresSerialization("lease-renew") && !TrackerContext.StorageActionRequiresSerialization("lease-release") && TrackerContext.StorageActionRequiresSerialization("scan"), "Session lease operations must remain available while a long storage operation is running.");
+        object storageRootGate = typeof(PortableStorage).GetMethod("RootLock", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(storage, new object[] { "mapping-key" });
+        var rootGateHeld = new ManualResetEvent(false);var releaseRootGate = new ManualResetEvent(false);
+        var rootGateThread = new Thread(new ThreadStart(delegate { lock (storageRootGate) { rootGateHeld.Set();releaseRootGate.WaitOne(); } }));rootGateThread.Start();rootGateHeld.WaitOne();
+        bool renewed = false;var renewDone = new ManualResetEvent(false);var renewThread = new Thread(new ThreadStart(delegate { renewed = storage.RenewLease("mapping-key", "session-1");renewDone.Set(); }));renewThread.Start();bool renewedWhileRootHeld = renewDone.WaitOne(1000);releaseRootGate.Set();rootGateThread.Join();renewThread.Join();
+        Assert(renewedWhileRootHeld && renewed, "Lease renewal must not wait behind a long root storage operation.");
         Assert(!storage.AcquireLease("mapping-key", "session-2"), "A concurrent lease should be rejected.");
         Assert(!competingStorage.AcquireLease("mapping-key", "session-2"), "A second launcher should be blocked by the exclusive file lock.");
         storage.ReleaseLease("mapping-key", "session-1");

@@ -120,15 +120,16 @@ internal sealed class TrackerContext : ApplicationContext
             if (path == "/api/control" && (parts[0] == "GET" || parts[0] == "HEAD")) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(ControlJson()), parts[0] == "HEAD", "no-store"); return; }
             if (path.StartsWith("/api/storage/", StringComparison.Ordinal))
             {
-                bool serializedStorage = !path.EndsWith("/error-report", StringComparison.Ordinal);
-                if (serializedStorage && !await storageOperations.WaitAsync(5000)) { await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("A previous storage operation is still running. Wait for it to finish or use Log Off to terminate and recover the portable launcher before retrying."), false, "no-store"); return; }
+                string tail = path.Substring("/api/storage/".Length); int separator = tail.IndexOf('/');
+                if (separator <= 0) { await Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The storage request is invalid."), false, "no-store"); return; }
+                string systemId = tail.Substring(0, separator), action = tail.Substring(separator + 1);
+                bool serializedStorage = StorageActionRequiresSerialization(action);
+                if (serializedStorage && !await storageOperations.WaitAsync(5000)) { await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Storage is busy completing another verified operation. The exclusive session remains active. Wait for that operation to finish and retry; if progress has stopped, use Log Off to terminate and recover the portable launcher."), false, "no-store"); return; }
                 BeginStorageRequest();
-                string storageAction = "storage request";
+                string storageAction = action;
                 try
                 {
-                    string tail = path.Substring("/api/storage/".Length); int separator = tail.IndexOf('/');
-                    if (separator <= 0) throw new InvalidDataException("The storage request is invalid.");
-                    string systemId = tail.Substring(0, separator), action = tail.Substring(separator + 1), response; storageAction = action;
+                    string response;
                     if (action == "select" && parts[0] == "POST")
                     {
                         string selected = await ChooseFolder();
@@ -181,6 +182,11 @@ internal sealed class TrackerContext : ApplicationContext
             if (path == "/" || path == "/index.html" || !Path.HasExtension(path)) { await Respond(stream, 200, "text/html; charset=utf-8", indexHtml, parts[0] == "HEAD", "no-cache"); return; }
             await Respond(stream, 404, "text/plain", Encoding.UTF8.GetBytes("Not Found"), parts[0] == "HEAD", "no-store");
         }
+    }
+
+    internal static bool StorageActionRequiresSerialization(string action)
+    {
+        return !String.Equals(action, "error-report", StringComparison.Ordinal) && !action.StartsWith("lease-", StringComparison.Ordinal);
     }
 
     private Task<string> ChooseFolder()

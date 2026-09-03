@@ -906,9 +906,10 @@ export default function Guide() {
         <b>Long Sync Sessions:</b> While Sync is active, the tracker suspends
         the browser-session idle disconnect and keeps the portable Windows
         launcher active. Every active launcher storage operation counts as browser
-        presence, including a long directory scan during which ordinary heartbeat
-        requests are delayed. Only one lease-renewal request may be outstanding,
-        preventing long scans from building a queue of redundant requests. The
+        presence, including a long directory scan. Exclusive lease renewal uses a
+        separate launcher path, and automatic manifest or backup saves pause until
+        Sync finishes. Only one lease-renewal request may be outstanding, preventing
+        long scans from building a queue of redundant requests. The
         idle clocks restart from zero only after Sync completes, fails, or is
         stopped by the operator, so a large directory scan cannot log off the
         operator merely because it exceeds an idle limit. If the local connection

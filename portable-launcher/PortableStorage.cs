@@ -36,6 +36,7 @@ internal sealed class PortableStorage : IDisposable
     private readonly Dictionary<string, string> roots = new Dictionary<string, string>(StringComparer.Ordinal);
     private readonly Dictionary<string, string> cachedRoots = new Dictionary<string, string>(StringComparer.Ordinal);
     private readonly Dictionary<string, object> rootLocks = new Dictionary<string, object>(StringComparer.Ordinal);
+    private readonly Dictionary<string, object> leaseLocks = new Dictionary<string, object>(StringComparer.Ordinal);
     private readonly Dictionary<string, HeldLease> heldLeases = new Dictionary<string, HeldLease>(StringComparer.Ordinal);
     private readonly object mapGate = new object();
     private readonly object errorReportGate = new object();
@@ -117,12 +118,15 @@ internal sealed class PortableStorage : IDisposable
         if (!Directory.Exists(full)) throw new DirectoryNotFoundException("The selected system folder is unavailable.");
         ProbeMappedFolder(full);
         MigrateSupportDirectories(full);
-        object gate;
+        object gate, leaseGate;
         lock (mapGate)
         {
             if (!rootLocks.ContainsKey(systemId)) rootLocks[systemId] = new object();
+            if (!leaseLocks.ContainsKey(systemId)) leaseLocks[systemId] = new object();
             gate = rootLocks[systemId];
+            leaseGate = leaseLocks[systemId];
         }
+        lock (leaseGate)
         lock (gate)
         {
             RecoverTransactions(full);
@@ -1130,7 +1134,7 @@ internal sealed class PortableStorage : IDisposable
     public bool AcquireLease(string systemId, string sessionId)
     {
         ValidateSessionId(sessionId);
-        lock (RootLock(systemId))
+        lock (LeaseLock(systemId))
         {
             HeldLease held;
             lock (mapGate) heldLeases.TryGetValue(systemId, out held);
@@ -1161,7 +1165,7 @@ internal sealed class PortableStorage : IDisposable
     public bool RenewLease(string systemId, string sessionId)
     {
         ValidateSessionId(sessionId);
-        lock (RootLock(systemId))
+        lock (LeaseLock(systemId))
         {
             HeldLease held;
             lock (mapGate) heldLeases.TryGetValue(systemId, out held);
@@ -1172,7 +1176,7 @@ internal sealed class PortableStorage : IDisposable
     public void ReleaseLease(string systemId, string sessionId)
     {
         ValidateSessionId(sessionId);
-        lock (RootLock(systemId))
+        lock (LeaseLock(systemId))
         {
             HeldLease held;
             lock (mapGate)
@@ -1197,7 +1201,7 @@ internal sealed class PortableStorage : IDisposable
         lock (mapGate) ids = heldLeases.Keys.ToArray();
         foreach (string id in ids)
         {
-            lock (RootLock(id))
+            lock (LeaseLock(id))
             {
                 HeldLease expired = null;
                 lock (mapGate)
@@ -1471,6 +1475,7 @@ internal sealed class PortableStorage : IDisposable
     }
 
     private object RootLock(string systemId) { lock (mapGate) { Root(systemId); return rootLocks[systemId]; } }
+    private object LeaseLock(string systemId) { lock (mapGate) { Root(systemId); object gate;if (!leaseLocks.TryGetValue(systemId, out gate)) { gate = new object();leaseLocks[systemId] = gate; }return gate; } }
 
     private static string SafeBackupPath(string directory, string filename)
     {
