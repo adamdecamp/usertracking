@@ -18,7 +18,7 @@
     "verify:build": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-BuildGate.ps1"
   },
   "dependencies": {
-    "fflate": "0.8.2",
+    "fflate": "0.8.3",
     "next": "16.2.11",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "6.3.289",
