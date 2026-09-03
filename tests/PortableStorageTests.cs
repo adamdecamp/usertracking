@@ -236,6 +236,11 @@ internal static class PortableStorageTests
         File.WriteAllBytes(alternateDatePath, alternateDateBytes);
         var collisionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.NormalizeEvidenceFilename("mapping-key", alternateDateRelative, normalizedDateName));
         Assert(Convert.ToBoolean(collisionResponse["collision"]) && File.Exists(alternateDatePath) && File.Exists(normalizedDatePath), "A normalization collision should preserve both files and return it for duplicate review instead of aborting Sync.");
+        string conflictArchiveName = "Shaw_Vivian_(GOV)_GEN_User_Agreement_26AUG2026_CONFLICT_ABCDEF12.pdf.zip", conflictArchiveResult = storage.ArchiveEvidence("mapping-key", alternateDateRelative, conflictArchiveName), conflictArchiveRelative = Convert.ToString(((Dictionary<string, object>)Json.DeserializeObject(conflictArchiveResult))["archived"]);
+        Assert(conflictArchiveRelative.EndsWith(conflictArchiveName, StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(root, conflictArchiveRelative.Replace('/', Path.DirectorySeparatorChar))), "A non-authoritative same-name conflict should retain its traceable hash identifier in the organization Archive.");
+        bool rejectedArchiveExtension = false;
+        try { storage.ArchiveEvidence("mapping-key", Path.Combine("User Evidence", "GOV", "Shaw_Vivian", normalizedDateName), "unsafe-conflict.exe"); } catch (InvalidDataException) { rejectedArchiveExtension = true; }
+        Assert(rejectedArchiveExtension && File.Exists(normalizedDatePath), "A requested collision archive name must preserve the PDF or ZIP evidence extension and leave the source unchanged when rejected.");
         bool rejectedUnsafeRename = false;
         try { storage.NormalizeEvidenceFilename("mapping-key", Path.Combine("User Evidence", "GOV", "Shaw_Vivian", normalizedDateName), "..\\escape.zip"); } catch (InvalidDataException) { rejectedUnsafeRename = true; }
         Assert(rejectedUnsafeRename, "Date normalization should reject an unsafe target filename.");

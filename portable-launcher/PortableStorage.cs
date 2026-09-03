@@ -575,7 +575,7 @@ internal sealed class PortableStorage : IDisposable
         return "{\"cleared\":true}";
     }
 
-    public string ArchiveEvidence(string systemId, string relative)
+    public string ArchiveEvidence(string systemId, string relative, string requestedFilename = null)
     {
         lock (RootLock(systemId))
         {
@@ -585,10 +585,10 @@ internal sealed class PortableStorage : IDisposable
             string validationError;
             if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
             Tuple<string, string> organization = OrganizationStorageLocation(root, source);
-            string filename = SafePart(Path.GetFileName(source), 180);bool permanentSaar = IsSaarFilename(filename);
+            string filename = SafePart(Path.GetFileName(source), 180), sourceExtension = filename.EndsWith(".pdf.zip", StringComparison.OrdinalIgnoreCase) ? ".pdf.zip" : Path.GetExtension(filename), archiveFilename = String.IsNullOrWhiteSpace(requestedFilename) ? filename : SafePart(requestedFilename, 180);if (String.IsNullOrWhiteSpace(sourceExtension) || !archiveFilename.EndsWith(sourceExtension, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The archive filename must preserve the PDF or ZIP evidence extension.");bool permanentSaar = IsSaarFilename(filename);
             string bucket = permanentSaar ? "Permanent SAAR" : EvidenceOlderThanYears(filename, 5) ? "Superseded" : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), directory = permanentSaar ? Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " SAAR Archive") : Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Archive", bucket);
             Directory.CreateDirectory(directory);
-            string extension = Path.GetExtension(filename), stem = Path.GetFileNameWithoutExtension(filename), destination = Path.Combine(directory, filename);
+            string extension = archiveFilename.EndsWith(".pdf.zip", StringComparison.OrdinalIgnoreCase) ? archiveFilename.Substring(archiveFilename.Length - 8) : Path.GetExtension(archiveFilename), stem = archiveFilename.Substring(0, archiveFilename.Length - extension.Length), destination = Path.Combine(directory, archiveFilename);
             for (int index = 1; File.Exists(destination); index++) destination = Path.Combine(directory, stem + "_" + index.ToString(CultureInfo.InvariantCulture) + extension);
             string transaction = BeginTransaction(root, "archive", source, destination, Sha256Bytes(File.ReadAllBytes(source)), "");
             File.Move(source, destination);FailAfter("archive-move");

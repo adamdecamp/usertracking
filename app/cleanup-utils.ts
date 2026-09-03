@@ -19,6 +19,19 @@ export function retainUnfinishedCleanup<T extends{id:string}>(items:T[],complete
  return items.filter(item=>!completed.has(item.id));
 }
 
+export type EvidenceCollisionClassification='Exact Duplicate'|'Same-Name Conflict'|'Hash Unavailable';
+
+export function classifyEvidenceCollision(incomingSha256?:string,existingSha256?:string):EvidenceCollisionClassification{
+ const incoming=incomingSha256?.trim().toLowerCase(),existing=existingSha256?.trim().toLowerCase();
+ if(!incoming||!existing)return'Hash Unavailable';
+ return incoming===existing?'Exact Duplicate':'Same-Name Conflict';
+}
+
+export function collisionArchiveFilename(filename:string,sha256?:string){
+ const lower=filename.toLowerCase(),dot=filename.lastIndexOf('.'),extension=lower.endsWith('.pdf.zip')?filename.slice(-8):dot>=0?filename.slice(dot):'',stem=filename.slice(0,filename.length-extension.length),identifier=sha256?.trim().slice(0,8).toUpperCase()||'REVIEW',suffix=`_CONFLICT_${identifier}`,safeStem=stem.slice(0,Math.max(1,180-extension.length-suffix.length));
+ return`${safeStem}${suffix}${extension}`;
+}
+
 export function supersedingEvidenceApproval(storedFilename:string,newestFilename:string,updateCandidateId?:string){
  if(storedFilename&&storedFilename.toUpperCase()===newestFilename.toUpperCase())return{};
  return updateCandidateId?{requiresCandidateId:updateCandidateId}:undefined;

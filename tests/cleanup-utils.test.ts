@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {distinctByPath,retainUnfinishedCleanup,selectLoosePdfCleanupCandidates,selectSupersededEvidence,supersedingEvidenceApproval} from '../app/cleanup-utils.ts';
+import {classifyEvidenceCollision,collisionArchiveFilename,distinctByPath,retainUnfinishedCleanup,selectLoosePdfCleanupCandidates,selectSupersededEvidence,supersedingEvidenceApproval} from '../app/cleanup-utils.ts';
 
 type Item={path:string;date:string;current:boolean};
 const select=(items:Item[])=>selectSupersededEvidence(items,item=>new Date(item.date),item=>item.current,item=>item.path);
@@ -60,6 +60,19 @@ test('reuses first-scan evidence for cleanup immediately after a verified user i
 test('retains deferred and failed cleanup actions after successful actions are removed',()=>{
  const items=[{id:'archive-1'},{id:'zip-1'},{id:'rework-1'}];
  assert.deepEqual(retainUnfinishedCleanup(items,['zip-1']).map(item=>item.id),['archive-1','rework-1']);
+});
+
+test('classifies canonical destination collisions by validated PDF hashes',()=>{
+ assert.equal(classifyEvidenceCollision('A'.repeat(64),'a'.repeat(64)),'Exact Duplicate');
+ assert.equal(classifyEvidenceCollision('a'.repeat(64),'b'.repeat(64)),'Same-Name Conflict');
+ assert.equal(classifyEvidenceCollision(undefined,'b'.repeat(64)),'Hash Unavailable');
+ assert.equal(classifyEvidenceCollision('',''),'Hash Unavailable');
+});
+
+test('gives a non-authoritative conflicting copy a traceable archive filename',()=>{
+ assert.equal(collisionArchiveFilename('Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf','abcdef123456'),'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026_CONFLICT_ABCDEF12.pdf');
+ assert.equal(collisionArchiveFilename('Brown_Jacob_(LM)_SAAR_26AUG2026.pdf.zip'),'Brown_Jacob_(LM)_SAAR_26AUG2026_CONFLICT_REVIEW.pdf.zip');
+ assert.ok(collisionArchiveFilename(`${'A'.repeat(180)}.pdf`,'1'.repeat(64)).length<=180);
 });
 
 test('archives an older file only after the newest replacement is stored or explicitly approved',()=>{

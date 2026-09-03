@@ -403,8 +403,8 @@ export default function Guide() {
           against the new User Directory. Any newly eligible duplicate,
           superseded, Rework, or loose-PDF actions open directly in Clean Up, so
           a second Sync is not required. Clean Up opens a compact action menu
-          for <b>Rework Corrections</b>, <b>Duplicate or Superseded</b>, and{" "}
-          <b>ZIP Loose PDFs</b>. Only the selected action is displayed, 20
+          for <b>File Collisions</b>, <b>Rework Corrections</b>,{" "}
+          <b>Duplicate or Superseded</b>, and <b>ZIP Loose PDFs</b>. Only the selected action is displayed, 20
           records at a time. Use <b>Previous</b> and <b>Next</b> to move between
           pages, <b>Select All on Page</b> for only the visible 20 records, or{" "}
           <b>Select All Files</b> for every eligible record in that action
@@ -427,6 +427,24 @@ export default function Guide() {
           Rework, ordinary Archive, and Superseded folders and generated reports
           are excluded from later Sync scans. Permanent SAAR Archive folders are
           limited to the historical account-status check.
+        </p>
+        <p>
+          A filename or document-type organization collision is a review item,
+          not a rejected-file error. Sync preserves both files, validates the
+          contained PDFs, and compares their SHA-256 hashes. When the hashes
+          match, Clean Up labels the pair <b>Exact Duplicate</b> and preselects
+          the redundant incoming copy for Archive while retaining the already
+          organized copy. When the hashes differ—or a hash cannot be read—the
+          pair requires an operator decision. Use <b>Open Incoming PDF</b> and{" "}
+          <b>Open Organized PDF</b>, then select which copy is authoritative or
+          defer the decision. The selected copy remains active; the other copy
+          moves to the organization Archive. Non-selected SAAR copies move to
+          the permanent organization SAAR Archive. The audit log records both
+          paths, available hashes, the selected copy, operator, and UTC time.
+          No collision resolution overwrites or discards either file. If the
+          identity is not already in the User Directory, resolve the collision
+          first and run Sync again; this prevents a new record from being
+          populated from one PDF while the operator selects the other PDF.
         </p>
         <p>
           For an existing user, Sync proposes matching artifact and organization
@@ -777,9 +795,10 @@ export default function Guide() {
         the audit batch, continues through every remaining organization and
         file, and lists the failure in Sync Review when processing finishes. If
         the normalized filename already exists, neither file is overwritten or
-        deleted; Sync continues, prefers the already normalized file for
-        matching, and offers the other eligible copy under <b>Clean Up</b> for
-        movement into that organization&apos;s Archive folder.
+        deleted; Sync continues and lists the pair under <b>File Collisions</b>
+        in Clean Up. Matching SHA-256 hashes identify an Exact Duplicate.
+        Different or unavailable hashes require the operator to preview both
+        files and select the authoritative copy.
       </aside>
       <aside>
         <b>New-User Ingestion:</b> A validated General or Privileged SAAR is

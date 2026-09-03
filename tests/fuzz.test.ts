@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {verifyAuditText} from '../app/audit-utils.ts';
+import {classifyEvidenceCollision} from '../app/cleanup-utils.ts';
 import {normalizeFilenameOrganization,organizationFromFolderPath} from '../app/document-renamer-utils.ts';
 import {inspectEvidenceBytes} from '../app/evidence-validation.ts';
 import {artifactKinds,canonicalEvidenceFilename,disabledSaarFilename,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,validateNewUserSaarFilename} from '../app/filename-utils.ts';
@@ -60,6 +61,15 @@ test('fuzzes corrupted audit text with controlled integrity errors',async()=>{
 
 test('fuzzes malformed Sync indexes without parser failures',()=>{
  for(let index=0;index<1500;index++)assert.doesNotThrow(()=>readSyncIndex(index%3===0?randomText(3000):{version:pick([0,1,2]),ruleSetVersion:randomText(40),generatedAtUtc:randomText(60),files:[{path:randomText(),name:randomText(),size:Math.floor((random()-.25)*100000),lastModifiedUnixMs:Math.floor((random()-.25)*2e12),accepted:pick([true,false,'yes']),error:randomText(400)}]},'rules-1'));
+});
+
+test('fuzzes collision hashes without misclassifying unavailable or unequal values',()=>{
+ for(let index=0;index<2500;index++){
+  const left=index%4===0?undefined:randomText(80),right=index%5===0?undefined:index%3===0?left:randomText(80),result=classifyEvidenceCollision(left,right);
+  assert.ok(['Exact Duplicate','Same-Name Conflict','Hash Unavailable'].includes(result));
+  if(!left?.trim()||!right?.trim())assert.equal(result,'Hash Unavailable');
+  else assert.equal(result,left.trim().toLowerCase()===right.trim().toLowerCase()?'Exact Duplicate':'Same-Name Conflict');
+ }
 });
 
 test('fuzzes DD2875 XFA dataset values without parser failures or markup leakage',async()=>{
