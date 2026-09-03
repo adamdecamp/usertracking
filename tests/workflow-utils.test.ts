@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {activeComplianceException,applySyncArtifactProvenance,certificateRecoveryUsers,committedRecordWithExceptions,duplicateContentGroups,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,reworkRetentionDisposition} from '../app/workflow-utils.ts';
+import {verifySyncProvenance} from '../app/provenance-utils.ts';
+
+test('records stale provenance references per file while completing the rest of the batch',async()=>{
+ const targets=[{user:{last:'Brown',first:'Jacob'},artifact:{filename:'Brown_Jacob_(GOV)_GEN_SAAR_26AUG2026.pdf.zip'}},{user:{last:'Shaw',first:'Vivian'},artifact:{filename:'Shaw_Vivian_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip'}}],evidence=targets.map((target,index)=>({filename:target.artifact.filename,path:`current/${index}.zip`,stale:index===0}));
+ const result=await verifySyncProvenance(targets,evidence,async item=>{if(item.stale)throw new Error('The selected evidence file no longer exists.');return'b'.repeat(64)}, {concurrency:2});
+ assert.equal(result.failures.length,1);assert.match(result.failures[0].error,/no longer exists/i);assert.equal(result.verified.length,1);assert.equal(result.verified[0].evidence.path,'current/1.zip');
+ const retry=await verifySyncProvenance(result.failures.map(item=>item.target),[{...evidence[0],path:'refreshed/0.zip',stale:false}],async()=> 'a'.repeat(64));
+ assert.equal(retry.failures.length,0);assert.equal(retry.verified[0].evidence.path,'refreshed/0.zip');
+});
 
 test('groups exact duplicate PDF content hashes without trusting filenames',()=>{
  const same='a'.repeat(64),groups=duplicateContentGroups([{filename:'one.pdf',path:'GOV/one.pdf',sha256:same},{filename:'different-name.pdf.zip',path:'GOV/different-name.pdf.zip',sha256:same.toUpperCase()},{filename:'unique.pdf',path:'GOV/unique.pdf',sha256:'b'.repeat(64)},{filename:'invalid.pdf',path:'GOV/invalid.pdf',sha256:'not-a-hash'}]);

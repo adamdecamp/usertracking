@@ -448,7 +448,13 @@ export default function Guide() {
           User Type. Verify or correct the permitted fields and deselect any
           user or artifact that should not be applied. Only approved matches and
           proposed users are written when you choose{" "}
-          <b>Apply Verified Updates</b>. In the manual <b>Add User</b> workflow
+          <b>Apply Verified Updates</b>. Before provenance hashes are saved, the
+          app refreshes current file locations so a preceding rename, compression,
+          Rework, Archive, or document-type move cannot leave an obsolete file
+          reference. A failed reference is rescanned once. If it still cannot be
+          verified, the database remains unchanged, the stale Sync Review is
+          cleared, and the operator can run Sync again without restarting the app.
+          In the manual <b>Add User</b> workflow
           only, the operator may enter a valid <b>Official Email</b> when the
           uploaded SAAR&apos;s email field and labeled-text fallback are blank;
           Sync never substitutes a manually entered value.
@@ -884,7 +890,9 @@ export default function Guide() {
         for operator review after processing finishes. Errors before mapping
         identify that no audit destination exists. Storage-verification and
         audit-chain-verification failures are shown but are not appended because
-        an unverified chain must not be extended.
+        an unverified chain must not be extended. A missing evidence path is
+        identified as a stale move, rename, or deletion rather than automatically
+        being described as a network-share outage.
       </aside>
       <footer>
         This application supports NIST SP 800-53-aligned recordkeeping. Formal
