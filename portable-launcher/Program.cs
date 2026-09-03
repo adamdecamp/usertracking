@@ -34,6 +34,7 @@ internal sealed class TrackerContext : ApplicationContext
     private string shutdownReason;
     private bool backupClean = true;
     private bool shutdownReady;
+    private int activeStorageRequests;
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr windowHandle);
@@ -118,7 +119,7 @@ internal sealed class TrackerContext : ApplicationContext
             if (path == "/api/control" && (parts[0] == "GET" || parts[0] == "HEAD")) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(ControlJson()), parts[0] == "HEAD", "no-store"); return; }
             if (path.StartsWith("/api/storage/", StringComparison.Ordinal))
             {
-                RecordActivity();
+                BeginStorageRequest();
                 string storageAction = "storage request";
                 try
                 {
@@ -169,6 +170,7 @@ internal sealed class TrackerContext : ApplicationContext
                     string message = StorageError(ex, storageAction);
                     Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(message)), false, "no-store").GetAwaiter().GetResult(); return;
                 }
+                finally { EndStorageRequest(); }
             }
             WebAsset asset;
             if (assets.TryGetValue(path, out asset)) { await Respond(stream, 200, asset.ContentType, asset.Bytes, parts[0] == "HEAD", "public, max-age=31536000, immutable", "gzip"); return; }
@@ -269,6 +271,32 @@ internal sealed class TrackerContext : ApplicationContext
 
     private void RecordPresence() { lock (lifecycleGate) { lastPresenceUtc = DateTime.UtcNow; } }
 
+    private void BeginStorageRequest()
+    {
+        lock (lifecycleGate)
+        {
+            activeStorageRequests++;
+            lastActivityUtc = DateTime.UtcNow;
+            lastPresenceUtc = lastActivityUtc;
+            if (shutdownReason == "browser-closed")
+            {
+                shutdownRequestedUtc = null;
+                shutdownReason = null;
+                shutdownReady = false;
+            }
+        }
+    }
+
+    private void EndStorageRequest()
+    {
+        lock (lifecycleGate)
+        {
+            if (activeStorageRequests > 0) activeStorageRequests--;
+            lastActivityUtc = DateTime.UtcNow;
+            lastPresenceUtc = lastActivityUtc;
+        }
+    }
+
     private void SetBackupClean(bool clean) { lock (lifecycleGate) { backupClean = clean; } }
 
     private void RequestShutdown(string reason)
@@ -302,25 +330,32 @@ internal sealed class TrackerContext : ApplicationContext
     {
         lock (lifecycleGate)
         {
-            return "{\"shutdownRequested\":" + (shutdownRequestedUtc.HasValue ? "true" : "false") + ",\"reason\":\"" + Json(shutdownReason ?? "") + "\",\"backupClean\":" + (backupClean ? "true" : "false") + "}";
+            return "{\"shutdownRequested\":" + (shutdownRequestedUtc.HasValue ? "true" : "false") + ",\"reason\":\"" + Json(shutdownReason ?? "") + "\",\"backupClean\":" + (backupClean ? "true" : "false") + ",\"activeStorageRequests\":" + activeStorageRequests.ToString() + "}";
         }
     }
 
     private void EvaluateLifecycle()
     {
-        storage.ExpireLeases(TimeSpan.FromMinutes(3));
+        bool storageBusy;
+        lock (lifecycleGate) storageBusy = activeStorageRequests > 0;
+        if (!storageBusy) storage.ExpireLeases(TimeSpan.FromMinutes(3));
         bool shouldExit = false, finalize = false;
         lock (lifecycleGate)
         {
             DateTime now = DateTime.UtcNow;
-            if (!shutdownRequestedUtc.HasValue && now - lastPresenceUtc >= TimeSpan.FromSeconds(90))
+            if (activeStorageRequests > 0)
+            {
+                lastPresenceUtc = now;
+                lastActivityUtc = now;
+            }
+            if (activeStorageRequests == 0 && !shutdownRequestedUtc.HasValue && now - lastPresenceUtc >= TimeSpan.FromSeconds(90))
             {
                 shutdownRequestedUtc = now;
                 shutdownReason = "browser-closed";
                 shutdownReady = false;
                 finalize = true;
             }
-            else if (!shutdownRequestedUtc.HasValue && now - lastActivityUtc >= TimeSpan.FromMinutes(60))
+            else if (activeStorageRequests == 0 && !shutdownRequestedUtc.HasValue && now - lastActivityUtc >= TimeSpan.FromMinutes(60))
             {
                 shutdownRequestedUtc = now;
                 shutdownReason = "idle";

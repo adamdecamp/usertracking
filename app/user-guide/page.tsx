@@ -348,6 +348,21 @@ export default function Guide() {
           Review with the reason and are never used to populate compliance
           status.
         </p>
+        <aside>
+          <b>Disabled SAAR History:</b> Sync also performs a narrow filename-only
+          status check inside each organization&apos;s permanent{" "}
+          <code>ORG SAAR Archive</code>. It considers only PDF or ZIP filenames
+          recognized as SAARs and does not scan unrelated Archive, Rework, or
+          Superseded folders. For each Last Name and First Name identity, the
+          newest dated SAAR across the active organization folders and permanent
+          SAAR Archive controls the check. If that newest filename contains the
+          standalone word <b>DISABLED</b>, Sync proposes the user as Disabled,
+          creating a historical User Directory record when necessary. An older
+          disabled SAAR cannot override a newer active SAAR. A newer active SAAR
+          does not automatically re-enable a disabled user; use the controlled
+          re-enable workflow instead. Archived SAAR files remain archive history
+          and are never attached as current compliance evidence.
+        </aside>
         <p>
           Sync automatically renames a recognized nonstandard evidence date to
           DDMMMYYYY in the same active folder and records the change in the
@@ -360,7 +375,7 @@ export default function Guide() {
           moves directly to <code>ORG Archive / Superseded</code>. A SAAR whose
           filename contains the standalone word <b>DISABLED</b> moves into the
           permanent <code>ORG SAAR Archive</code> during this preflight and is
-          never attached to or used to create a User Directory profile. No SAAR
+          used only for the disabled-account history check described above. No SAAR
           is ever placed in Superseded or selected for deletion. The preflight
           also repairs prior storage mistakes: archived SAARs are recovered into
           the permanent SAAR Archive, and non-SAAR evidence less than five years
@@ -378,7 +393,9 @@ export default function Guide() {
           <code>DoD Cyber Cert</code>, <code>8140 Certification Memo</code>,{" "}
           <code>Privileged User Training</code>, and <code>DTA Training</code>.
           Archive, SAAR Archive, Rework, and Superseded trees remain separate
-          managed locations. Other correction, duplicate, superseded, and
+          managed locations; only SAAR filenames inside SAAR Archive participate
+          in the narrow account-status check. Other correction, duplicate,
+          superseded, and
           active loose-PDF actions remain
           operator controlled. When the first Sync discovers
           valid users, choosing <b>Apply Verified Updates</b> ingests those
@@ -407,8 +424,9 @@ export default function Guide() {
           validated as containing exactly one readable PDF before the original
           PDF is deleted; a creation, validation, or deletion failure leaves no
           incomplete replacement and preserves the original PDF. Organization
-          Rework and Archive folders and generated reports are excluded from
-          later Sync scans.
+          Rework, ordinary Archive, and Superseded folders and generated reports
+          are excluded from later Sync scans. Permanent SAAR Archive folders are
+          limited to the historical account-status check.
         </p>
         <p>
           For an existing user, Sync proposes matching artifact and organization
@@ -795,7 +813,9 @@ export default function Guide() {
         because they do not expire. A SAAR with a standalone DISABLED marker, or
         a SAAR approved for archival after replacement, moves to the permanent
         <code>ORG SAAR Archive</code>; it never enters Superseded and is never
-        automatically deleted. Sync repairs any SAAR previously left in a dated
+        automatically deleted. Its filename remains available to determine
+        whether the newest dated SAAR marks the historical account Disabled. Sync
+        repairs any SAAR previously left in a dated
         or Superseded archive. It also moves evidence that is not yet five years
         old out of Superseded and into the current dated Archive bucket. A filename containing only a four-digit year uses
         the end of that year as a conservative retention date, preventing a
@@ -816,10 +836,16 @@ export default function Guide() {
       <aside>
         <b>Long Sync Sessions:</b> While Sync is active, the tracker suspends
         the browser-session idle disconnect and keeps the portable Windows
-        launcher active. The idle clocks restart from zero only after Sync
-        completes, fails, or is stopped by the operator, so a large directory
-        scan cannot log off the operator merely because it exceeds an idle
-        limit. During new-user ingestion, a complete filename is accepted
+        launcher active. Every active launcher storage operation counts as browser
+        presence, including a long directory scan during which ordinary heartbeat
+        requests are delayed. Only one lease-renewal request may be outstanding,
+        preventing long scans from building a queue of redundant requests. The
+        idle clocks restart from zero only after Sync completes, fails, or is
+        stopped by the operator, so a large directory scan cannot log off the
+        operator merely because it exceeds an idle limit. If the local connection
+        is interrupted, resumable scans and idempotent manifest or CSV saves receive
+        one safe retry. Other file-changing actions are never automatically
+        repeated. During new-user ingestion, a complete filename is accepted
         without opening the PDF, and the containing organization folder supplies
         a missing filename organization without a PDF read. Only SAARs that need
         recoverable identity or requester-date fields are opened. Those form-field

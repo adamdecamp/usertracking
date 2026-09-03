@@ -244,7 +244,7 @@ internal static class PortableStorageTests
         var archiveResponse = (Dictionary<string, object>)Json.DeserializeObject(archiveResult);
         string archivedRelative = Convert.ToString(archiveResponse["archived"]), archivedPath = Path.Combine(root, archivedRelative.Replace('/', Path.DirectorySeparatorChar));
         Assert(!File.Exists(Path.Combine(root, olderRelative)) && File.Exists(archivedPath) && archivedRelative.StartsWith("User Evidence/GOV/GOV SAAR Archive/", StringComparison.OrdinalIgnoreCase), "Approved SAAR cleanup should move the access-request record into the permanent organization SAAR Archive without deleting it.");
-        Assert(!storage.Scan("mapping-key").Contains("Shaw_Vivian_SAAR_24AUG2025.pdf.zip"), "Archived evidence should be excluded from later Sync scans.");
+        Assert(storage.Scan("mapping-key").Contains("Shaw_Vivian_SAAR_24AUG2025.pdf.zip"), "Permanent organization SAAR Archive records should remain visible to later account-status Sync scans.");
         string nestedOrganizationDirectory = Path.Combine(root, "GDMS", "General", "Brown_Jacob");
         Directory.CreateDirectory(nestedOrganizationDirectory);
         string nestedArchiveName = "Brown_Jacob_(GDMS)_GEN_User_Agreement_24AUG2025.pdf.zip", nestedArchivePath = Path.Combine(nestedOrganizationDirectory, nestedArchiveName);
@@ -320,7 +320,7 @@ internal static class PortableStorageTests
         File.WriteAllBytes(Path.Combine(existingSupersededDirectory, misplacedAgreementName), Encoding.ASCII.GetBytes("incorrectly superseded agreement"));
         File.WriteAllBytes(Path.Combine(existingSupersededDirectory, misplacedDisabledSaarName), Encoding.ASCII.GetBytes("incorrectly superseded SAAR"));
         string looseArchiveDirectory = Path.Combine(root, "NGC", "NGC Archive", DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), looseArchivePdf = "Miller_Ava_(NGC)_User_Agreement_24AUG2025.pdf";Directory.CreateDirectory(looseArchiveDirectory);File.WriteAllBytes(Path.Combine(looseArchiveDirectory, looseArchivePdf), PdfBytes());
-        string permanentSaarDirectory = Path.Combine(root, "NGC", "NGC SAAR Archive"), loosePermanentSaar = "Miller_Ava_(NGC)_GEN_SAAR_24AUG2020.pdf";Directory.CreateDirectory(permanentSaarDirectory);File.WriteAllBytes(Path.Combine(permanentSaarDirectory, loosePermanentSaar), PdfBytes());
+        string permanentSaarDirectory = Path.Combine(root, "NGC", "NGC SAAR Archive"), loosePermanentSaar = "Miller_Ava_(NGC)_GEN_SAAR_24AUG2020.pdf", unrelatedPermanentArchiveFile = "Miller_Ava_(NGC)_User_Agreement_24AUG2020.pdf";Directory.CreateDirectory(permanentSaarDirectory);File.WriteAllBytes(Path.Combine(permanentSaarDirectory, loosePermanentSaar), PdfBytes());File.WriteAllBytes(Path.Combine(permanentSaarDirectory, unrelatedPermanentArchiveFile), PdfBytes());
         string rejectedExtension = Path.Combine(nestedReworkDirectory, "Miller_Ava_(NGC)_unsupported.docx");File.WriteAllText(rejectedExtension, "unsupported evidence format", Encoding.UTF8);
         var retentionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessReworkRetention("mapping-key"));object[] retentionMoves = (object[])retentionResponse["moved"];
         object[] retentionCompressed = (object[])retentionResponse["compressed"];
@@ -338,7 +338,8 @@ internal static class PortableStorageTests
         string organizedSourceRelative = Path.Combine("User Evidence", "GOV", "Shaw_Vivian", evidence), organizedResponseText = storage.OrganizeEvidence("mapping-key", organizedSourceRelative, "SAAR");var organizedResponse = (Dictionary<string, object>)Json.DeserializeObject(organizedResponseText);string organizedRelative = Convert.ToString(organizedResponse["organized"]);
         Assert(organizedRelative.StartsWith("User Evidence/GOV/SAAR/", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(root, organizedRelative.Replace('/', Path.DirectorySeparatorChar))), "Accepted active evidence should move into its canonical document-type folder inside the organization with content integrity preserved.");
         string postCleanupScan = storage.Scan("mapping-key");
-        Assert(!postCleanupScan.Contains(nestedArchiveName) && !postCleanupScan.Contains(nestedReworkName), "Organization Archive and Rework folders must be excluded from every later Sync scan.");
+        Assert(!postCleanupScan.Contains(nestedArchiveName) && !postCleanupScan.Contains(nestedReworkName), "Unrelated organization Archive and Rework folders must be excluded from every later Sync scan.");
+        Assert(postCleanupScan.Contains(loosePermanentSaar + ".zip") && !postCleanupScan.Contains(unrelatedPermanentArchiveFile), "Sync should inspect SAAR records in the permanent organization SAAR Archive while ignoring unrelated files stored there.");
         bool rejectedInvalidCompression = false;
         try { storage.CompressEvidence("mapping-key", "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf"); } catch (InvalidDataException) { rejectedInvalidCompression = true; }
         Assert(rejectedInvalidCompression && File.Exists(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf")) && !File.Exists(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf.zip")), "Failed ZIP validation should preserve the original loose PDF and remove any incomplete ZIP.");

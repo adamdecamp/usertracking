@@ -176,6 +176,7 @@ test('treats a standalone DISABLED marker on a SAAR as archive-only evidence',()
  const disabled='Brown_Jacob_(LM)_GEN_SAAR_DISABLED_26AUG2026.pdf';
  assert.equal(disabledSaarFilename(disabled),true);
  assert.equal(validateNewUserSaarFilename(disabled).valid,false);
+ assert.equal(validateNewUserSaarFilename(disabled,{allowDisabled:true}).valid,true);
  assert.equal(canRecoverNewUserSaarFromForm(disabled,{organization:'LM'}),false);
  assert.equal(disabledSaarFilename('Disabledson_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf'),false);
  assert.equal(disabledSaarFilename('Brown_Jacob_(LM)_GEN_SAAR_NOTDISABLED_26AUG2026.pdf'),false);

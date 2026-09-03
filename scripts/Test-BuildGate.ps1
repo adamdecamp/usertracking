@@ -29,6 +29,7 @@ $regressionTests = @(
     "tests/saar-form-utils.test.ts",
     "tests/manual-saar-utils.test.ts",
     "tests/operation-timeout.test.ts",
+    "tests/portable-request-utils.test.ts",
     "tests/pagination-utils.test.ts",
     "tests/pdf-worker-utils.test.ts",
     "tests/user-update-utils.test.ts",

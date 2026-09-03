@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,reworkRetentionDisposition} from '../app/workflow-utils.ts';
+import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,reworkRetentionDisposition} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -71,6 +71,18 @@ test('seeds a new user from the SAAR before matching supporting evidence',()=>{
 test('never attaches an archive-only disabled SAAR to a new user',()=>{
  const saar='Brown_Jacob_(GDMS)_GEN_SAAR_DISABLED_26AUG2026.pdf';
  assert.deepEqual(proposedNewUserArtifacts([saar],{last:'Brown',first:'Jacob',organization:'GDMS'},['SAAR'],saar),[]);
+});
+
+test('uses the newest dated SAAR to determine a disabled account state',()=>{
+ const olderDisabled='Brown_Jacob_(GDMS)_GEN_SAAR_25AUG2026_DISABLED.pdf.zip',newerActive='Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf.zip',newerDisabled='Brown_Jacob_(GDMS)_GEN_SAAR_27AUG2026_DISABLED.pdf.zip';
+ assert.deepEqual(newestSaarAccountState([olderDisabled,newerActive]),{filename:newerActive,date:new Date('2026-08-26T00:00:00.000Z'),disabled:false});
+ assert.deepEqual(newestSaarAccountState([newerActive,newerDisabled]),{filename:newerDisabled,date:new Date('2026-08-27T00:00:00.000Z'),disabled:true});
+ assert.equal(newestSaarAccountState(['Brown_Jacob_(GDMS)_User_Agreement_28AUG2026.pdf.zip']),undefined);
+});
+
+test('gives a same-day disabled SAAR precedence over an active copy',()=>{
+ const active='Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf.zip',disabled='Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026_DISABLED.pdf.zip';
+ assert.equal(newestSaarAccountState([active,disabled])?.filename,disabled);
 });
 
 test('scopes supporting evidence for a new SAAR user to the same organization',()=>{

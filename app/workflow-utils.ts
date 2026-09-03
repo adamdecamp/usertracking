@@ -9,10 +9,16 @@ export type SyncProvenanceArtifact={kind:string;filename:string;sha256?:string;p
 export type SyncProvenanceUser={id:string;last:string;first:string;artifacts:SyncProvenanceArtifact[]};
 export type HashedEvidence={filename:string;path:string;sha256:string};
 export type DuplicateContentGroup={sha256:string;files:{filename:string;path:string}[]};
+export type SaarAccountState={filename:string;date:Date;disabled:boolean};
 export function duplicateContentGroups(items:HashedEvidence[]):DuplicateContentGroup[]{
  const groups=new Map<string,{filename:string;path:string}[]>();
  for(const item of items){const hash=item.sha256.trim().toLowerCase();if(!/^[a-f0-9]{64}$/.test(hash))continue;const files=groups.get(hash)??[];if(!files.some(file=>file.path.toUpperCase()===item.path.toUpperCase()))files.push({filename:item.filename,path:item.path});groups.set(hash,files)}
  return Array.from(groups.entries()).filter(([,files])=>files.length>1).map(([sha256,files])=>({sha256,files:files.sort((left,right)=>left.path.localeCompare(right.path))})).sort((left,right)=>left.files[0].path.localeCompare(right.files[0].path));
+}
+
+export function newestSaarAccountState(filenames:string[]):SaarAccountState|undefined{
+ const candidates=filenames.filter(filename=>filenameMatchesKind(filename,'SAAR')).map(filename=>{const date=parseDate(filename);return date?{filename,date,disabled:disabledSaarFilename(filename)}:undefined}).filter((candidate):candidate is SaarAccountState=>!!candidate);
+ return candidates.sort((left,right)=>right.date.getTime()-left.date.getTime()||Number(right.disabled)-Number(left.disabled)||left.filename.localeCompare(right.filename))[0];
 }
 
 export function proposedNewUserArtifacts(filenames:string[],user:{last:string;first:string;organization?:string},kinds:string[],saarSource:string){

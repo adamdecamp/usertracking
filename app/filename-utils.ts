@@ -103,9 +103,9 @@ export type NewUserSaarFilenameValidation=
  |{valid:true;identity:{last:string;first:string};organization:string;role:'General'|'Privileged';privilegedTypes:string[]}
  |{valid:false;reason:string};
 const verifiedRequestDate=(date?:Date)=>date&&!Number.isNaN(date.getTime())&&date.getUTCFullYear()>=1900&&date.getUTCFullYear()<=2099?date:undefined;
-export function validateNewUserSaarFilename(filename:string,fallback?:{identity?:{last:string;first:string};organization?:string;requestDate?:Date}):NewUserSaarFilenameValidation{
+export function validateNewUserSaarFilename(filename:string,fallback?:{identity?:{last:string;first:string};organization?:string;requestDate?:Date;allowDisabled?:boolean}):NewUserSaarFilenameValidation{
  if(!filenameMatchesKind(filename,'SAAR'))return{valid:false,reason:'The filename is not recognized as a SAAR.'};
- if(disabledSaarFilename(filename))return{valid:false,reason:'A SAAR marked DISABLED is an archive record and cannot create or update an active user profile.'};
+ if(disabledSaarFilename(filename)&&!fallback?.allowDisabled)return{valid:false,reason:'A SAAR marked DISABLED is an archive record and cannot create or update an active user profile.'};
  const filenameIdentity=identityFromFilename(filename),reservedIdentityTokens=new Set(['LAST','FIRST','ORG','ORGANIZATION','GEN','PRIV','SAAR','DOD','CYBER','CERT','USER','AGREEMENT','TRAINING','MEMO','TYPE']),filenameIdentityUsable=filenameIdentity&&!reservedIdentityTokens.has(filenameIdentity.last.toUpperCase())&&!reservedIdentityTokens.has(filenameIdentity.first.toUpperCase()),identity=filenameIdentityUsable?filenameIdentity:fallback?.identity;
  if(!identity)return{valid:false,reason:'The SAAR filename must begin with Last Name followed by First Name.'};
  if(identity.last.toUpperCase()==='LAST'&&identity.first.toUpperCase()==='FIRST')return{valid:false,reason:'The SAAR filename still contains the Last_First template placeholders and the form identity could not be read.'};

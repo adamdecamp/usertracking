@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {portableActionLabel,portableFetch} from '../app/portable-request-utils.ts';
+
+test('keeps launcher failure stages useful without exposing query values',()=>{
+ assert.equal(portableActionLabel('scan?rules=secret&full=1'),'scan');
+ assert.equal(portableActionLabel('normalize-date?path=Sensitive%20Name.pdf'),'normalize date');
+});
+
+test('retries a resumable or idempotent launcher request once',async()=>{
+ let calls=0;
+ const response=await portableFetch(async()=>{
+  calls++;
+  if(calls===1)throw new TypeError('Failed to fetch');
+  return new Response('ok',{status:200});
+ },'/api/storage/system/scan','scan?rules=1',undefined,true,0);
+ assert.equal(response.status,200);
+ assert.equal(calls,2);
+});
+
+test('does not retry an unsafe launcher write',async()=>{
+ let calls=0;
+ await assert.rejects(()=>portableFetch(async()=>{calls++;throw new TypeError('Failed to fetch')},'/api/storage/system/archive','archive?path=private',undefined,false,0),/during archive/);
+ assert.equal(calls,1);
+});
+
+test('preserves cancellation without converting it to a launcher failure',async()=>{
+ const controller=new AbortController();
+ controller.abort();
+ const cancellation=new DOMException('Stopped','AbortError');
+ await assert.rejects(()=>portableFetch(async()=>{throw cancellation},'/api/storage/system/scan','scan',{signal:controller.signal},true,0),error=>error===cancellation);
+});

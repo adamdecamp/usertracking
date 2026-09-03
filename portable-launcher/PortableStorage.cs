@@ -337,18 +337,20 @@ internal sealed class PortableStorage : IDisposable
             Dictionary<string, Dictionary<string, object>> previous = fullRescan ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : LoadSyncIndex(root, cleanRuleSet);
             var result = new List<Dictionary<string, object>>();
             var next = new List<Dictionary<string, object>>();
-            var pending = new Stack<Tuple<string, int>>();
-            pending.Push(Tuple.Create(root, 0));
+            var pending = new Stack<Tuple<string, int, bool>>();
+            pending.Push(Tuple.Create(root, 0, false));
             while (pending.Count > 0)
             {
-                Tuple<string, int> current = pending.Pop();
+                Tuple<string, int, bool> current = pending.Pop();
                 if (current.Item2 > 25) throw new InvalidDataException("Folder nesting limit exceeded.");
                 foreach (string file in EnumerateScanFiles(root, current.Item1))
                 {
                     if (result.Count >= 100000) throw new InvalidDataException("File scan limit exceeded.");
                     string filename = Path.GetFileName(file), relative = Relative(root, file).Replace(Path.DirectorySeparatorChar, '/');
                     if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase))) continue;
-                    bool supportedExtension = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);long journalSize = 0L, journalModified = 0L;
+                    bool supportedExtension = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase), historicalSaar = current.Item3 && supportedExtension && LooksLikeSaarFilename(filename);
+                    if (current.Item3 && !historicalSaar) continue;
+                    long journalSize = 0L, journalModified = 0L;
                     if (supportedExtension) try { var journalInfo = new FileInfo(file);journalSize = journalInfo.Length;journalModified = new DateTimeOffset(journalInfo.LastWriteTimeUtc).ToUnixTimeMilliseconds(); } catch { }
                     Dictionary<string, object> resumed;
                     if (journal.Completed.TryGetValue(relative, out resumed) && resumed.ContainsKey("cacheable") && Convert.ToBoolean(resumed["cacheable"], CultureInfo.InvariantCulture) && JournalItemMatches(resumed, filename, journalSize, journalModified))
@@ -380,7 +382,7 @@ internal sealed class PortableStorage : IDisposable
                     Dictionary<string, object> cached;
                     bool unchanged = previous.TryGetValue(relative, out cached) && String.Equals(Convert.ToString(cached["name"], CultureInfo.InvariantCulture), filename, StringComparison.OrdinalIgnoreCase) && Convert.ToInt64(cached["size"], CultureInfo.InvariantCulture) == size && Convert.ToInt64(cached["lastModifiedUnixMs"], CultureInfo.InvariantCulture) == lastModifiedUnixMs;
                     string validationError = unchanged ? Convert.ToString(cached["error"], CultureInfo.InvariantCulture) : "";
-                    bool cacheable = true, accepted = unchanged ? Convert.ToBoolean(cached["accepted"], CultureInfo.InvariantCulture) : TryValidateEvidenceFile(file, out validationError, out cacheable);
+                    bool cacheable = true, accepted = unchanged ? Convert.ToBoolean(cached["accepted"], CultureInfo.InvariantCulture) : historicalSaar || TryValidateEvidenceFile(file, out validationError, out cacheable);
                     if (!unchanged)
                     {
                         try { info.Refresh();if (!info.Exists || info.Length != size || new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds() != lastModifiedUnixMs) { accepted = false; validationError = "The evidence file changed during Sync. Run Sync again."; cacheable = false; } }
@@ -395,9 +397,10 @@ internal sealed class PortableStorage : IDisposable
                 foreach (string directory in EnumerateScanDirectories(root, current.Item1))
                 {
                     string name = Path.GetFileName(directory);
-                    if (IsManagedStorageDirectory(name)) continue;
+                    bool permanentSaarArchive = IsPermanentSaarArchiveDirectory(name);
+                    if (current.Item3 || IsManagedStorageDirectory(name) && !permanentSaarArchive) continue;
                     if (IsScanReparsePoint(root, directory)) continue;
-                    pending.Push(Tuple.Create(directory, current.Item2 + 1));
+                    pending.Push(Tuple.Create(directory, current.Item2 + 1, permanentSaarArchive));
                 }
             }
             SaveSyncIndex(root, cleanRuleSet, next);
@@ -1442,6 +1445,18 @@ internal sealed class PortableStorage : IDisposable
     {
         string value = (name ?? "").Trim();
         return String.Equals(value, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Reports", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Sync Journals", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Storage Transactions", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsPermanentSaarArchiveDirectory(string name)
+    {
+        string value = (name ?? "").Trim();
+        return String.Equals(value, "SAAR Archive", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" SAAR Archive", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool LooksLikeSaarFilename(string filename)
+    {
+        string value = Path.GetFileName(filename ?? "");
+        return value.IndexOf("SAAR", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     private static bool ContainsManagedStorageDirectory(string relative)
