@@ -84,12 +84,6 @@ export function canonicalEvidenceFilename(filename:string,organizationOverride?:
  return target.length<=180?target:undefined;
 }
 
-export function trainingCertificateRecoveryKind(filename:string){
- const compact=compactFilename(filename),kind=compact.includes('CYBERAWARENESS')||compact.includes('AWARENESSCHALLENGE')?'DoD Cyber Cert':compact.includes('PRIVUSERTRAINING')||compact.includes('PRIVILEGEDUSERTRAINING')||compact.includes('PRIVILEGEDACCESSTRAINING')||compact.includes('PRIVILEGEDUSERCYBERSECURITYRESPONSIBILITIES')?'Privileged User Training Cert':'';
- if(!kind)return;
- const identity=identityFromFilename(filename),organization=organizationFrom(filename),identityComplete=!!identity&&!['LAST','FIRST'].includes(identity.last.toUpperCase())&&!['LAST','FIRST'].includes(identity.first.toUpperCase()),organizationComplete=!!organization&&!['ORG','ORGANIZATION'].includes(organization.toUpperCase());
- return identityComplete&&organizationComplete&&filenameMatchesKind(filename,kind)&&!!parseDate(filename)?undefined:kind;
-}
 export function looksLikeEvidenceFilename(filename:string){return !!parseDate(filename)&&artifactKinds.some(kind=>filenameMatchesKind(filename,kind))}
 
 export function identityFromFilename(filename:string){

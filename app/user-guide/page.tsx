@@ -318,16 +318,13 @@ export default function Guide() {
           until the launcher knows how many files are present.
         </p>
         <p>
-          Large legacy repositories are handled in two stages. Files that already
-          contain a complete canonical identity, organization, artifact type, and
-          date are matched without opening the PDF. Incomplete training-certificate
-          names receive one short first-page classification pass in concurrent
-          batches. Sync does not perform a slower deep-read or retry pass. Successful
-          batch renames are applied and audited immediately, so stopping or
-          restarting Sync does not discard the filename normalization already
-          completed. Unresolved files remain available in the resumable
-          <b>Document Renamer</b> queue for operator-reviewed migration rather than
-          delaying clean-file Sync.
+          Large legacy repositories use filename-first processing. Files that contain
+          a recognizable identity, organization, artifact type, and date are matched
+          without opening the PDF. System Sync does not open incomplete training
+          certificates or attempt to recover their names or dates from PDF content.
+          Unresolved certificates remain available in the resumable{" "}
+          <b>Document Renamer</b> queue for operator-reviewed migration and do not
+          delay clean-file Sync.
         </p>
         <p>
           Sync accepts direct PDFs and ZIPs containing exactly one PDF. It
@@ -675,6 +672,12 @@ export default function Guide() {
             audit entry in each affected system.
           </li>
           <li>
+            Missing-document drafts include the selected artifact&apos;s required
+            filename format. The message warns that incorrectly formatted or
+            incorrectly named files will be rejected and explains that consistent
+            names support accurate user matching and due-date tracking.
+          </li>
+          <li>
             Review every Outlook draft, make any required organizational edits,
             and send it manually.
           </li>
@@ -771,31 +774,15 @@ export default function Guide() {
         attached in the same update.
       </aside>
       <aside>
-        <b>Training Certificate Date Recovery:</b> Sync recognizes filenames
-        containing Cyber Awareness, Awareness Challenge, Privileged User
-        Training, Privileged Access Training, or Privileged User Cybersecurity
-        Responsibilities. A certificate whose filename already contains a usable
-        ordered Last-First identity, parenthesized organization, recognized
-        artifact wording, and complete valid date is handled entirely from the
-        filename and is never opened for certificate-text recovery. Document
-        title pairs such as <b>Cyber Awareness</b>, <b>Awareness Challenge</b>,
-        and <b>DoD Cyber</b> are never accepted as a person&apos;s Last-First
-        identity. A direct PDF or one-PDF ZIP with a generic title is opened to
-        recover a labeled learner, recipient, participant, candidate, employee,
-        student, or user name from the certificate itself. Valid alternate dates
-        are normalized later without reading PDF text. Evidence with missing or
-        incomplete filename metadata receives one short first-page attempt to
-        recover its user and labeled completion, certification, certificate, or
-        issue date. Sync does not run the previous deep four-page recovery or retry
-        phase.
-        Recovery matches against both existing
-        User Directory records and identities established by validated new-user
-        SAARs found earlier in the same Sync. A high-confidence match is renamed
-        to the canonical DoD Cyber or Privileged User Training filename with
-        DDMMMYYYY and the authoritative organization folder. The app never
-        invents a missing month or day. Ambiguous, timed-out, or image-only
-        certificates remain available in Document Renamer for operator review and
-        do not delay the rest of Sync.
+        <b>Training Certificate Handling:</b> System Sync relies on filename
+        metadata for DoD Cyber and Privileged User Training certificates. A
+        recognizable ordered Last-First identity, organization, artifact type, and
+        valid date can be normalized and matched without opening the PDF. Valid
+        alternate filename dates are converted to DDMMMYYYY. System Sync does not
+        inspect certificate PDF content to recover missing names or dates. Generic,
+        incomplete, ambiguous, or image-only certificate names remain unresolved
+        and available in <b>Document Renamer</b> for operator review. The app never
+        invents a missing month or day.
       </aside>
       <aside>
         <b>Five-Year Archive Retention:</b> Archived evidence keeps its original
@@ -841,13 +828,10 @@ export default function Guide() {
         with a 60-second limit while the other readers continue. A second timeout
         is listed for correction without stopping the batch. Selectable-text Official Email recovery
         is deferred until Sync selects the newest SAAR for a proposed user, so it
-        is not performed across every candidate form. Incomplete DoD Cyber and
-        Privileged User Training certificates are processed in a separate
-        bounded group of six. Only the first page is inspected, and a complete
-        filename bypasses certificate content extraction. Each incomplete
-        certificate has a 10-second whole-operation limit with no deep retry. If PDF.js
-        cannot destroy a stalled loading
-        task promptly, the tracker terminates that worker and continues the batch.
+        is not performed across every candidate form. System Sync performs no
+        training-certificate PDF extraction; incomplete certificate filenames are
+        left for the operator-initiated Document Renamer instead of extending the
+        Sync session.
       </aside>
       <aside>
         <b>Batch Processing Resilience:</b> High-volume read-only work uses

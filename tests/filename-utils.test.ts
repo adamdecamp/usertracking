@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,trainingCertificateRecoveryKind,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,validateNewUserSaarFilename} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -44,20 +44,7 @@ test('never treats a certificate title as a Last Name and First Name',()=>{
   'DoD_Cyber_(NGC)_Cyber_Awareness_Challenge_Certificate_26AUG2026.pdf.zip',
  ]){
   assert.equal(identityFromFilename(filename),undefined,filename);
-  assert.equal(trainingCertificateRecoveryKind(filename),'DoD Cyber Cert',filename);
  }
-});
-
-test('opens certificate content only when filename metadata is incomplete',()=>{
- for(const filename of [
-  'Brown_Jacob_(LM)_Cyber_Awareness_Challenge_Certificate_26AUG2026.pdf',
-  'Brown, Jacob (LM) Cyber Awareness Certificate AUG262026.pdf',
-  'Brown_Jacob_(LM)_PRIV_User_Training_20260826.pdf',
-  'Brown Jacob (LM) Privileged User Training 26 AUG 26.pdf',
- ])assert.equal(trainingCertificateRecoveryKind(filename),undefined,filename);
- assert.equal(trainingCertificateRecoveryKind('Brown_Jacob_(LM)_Cyber_Awareness_Challenge_Certificate_2026.pdf'),'DoD Cyber Cert');
- assert.equal(trainingCertificateRecoveryKind('Privileged_User_Cybersecurity_Responsibilities_Training_2023.pdf'),'Privileged User Training Cert');
- assert.equal(trainingCertificateRecoveryKind('Last_First_(ORG)_Cyber_Awareness_Challenge_Certificate_26AUG2026.pdf'),'DoD Cyber Cert');
 });
 
 test('canonicalizes every recognized evidence filename from parsed metadata',()=>{

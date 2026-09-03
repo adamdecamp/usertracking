@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,applySyncArtifactProvenance,certificateRecoveryUsers,committedRecordWithExceptions,duplicateContentGroups,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,reworkRetentionDisposition} from '../app/workflow-utils.ts';
+import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,reworkRetentionDisposition} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -71,17 +71,6 @@ test('seeds a new user from the SAAR before matching supporting evidence',()=>{
 test('never attaches an archive-only disabled SAAR to a new user',()=>{
  const saar='Brown_Jacob_(GDMS)_GEN_SAAR_DISABLED_26AUG2026.pdf';
  assert.deepEqual(proposedNewUserArtifacts([saar],{last:'Brown',first:'Jacob',organization:'GDMS'},['SAAR'],saar),[]);
- assert.deepEqual(certificateRecoveryUsers([],[saar]),[]);
-});
-
-test('uses validated new-user SAAR identities to recover loose training certificates',()=>{
- const existing=[{last:'Existing',first:'User',organization:'LM',roles:['General'],privilegedTypes:[]}],files=['Brown_Jacob_(GOV)_GEN_SAAR_26AUG2026.pdf','Shaw_Vivian_(Boeing)_PRIV_DTA_SAAR_26AUG2026.pdf'];
- assert.deepEqual(certificateRecoveryUsers(existing,files),[
-  existing[0],
-  {last:'Brown',first:'Jacob',organization:'GOV',roles:['General'],privilegedTypes:[]},
-  {last:'Shaw',first:'Vivian',organization:'Boeing',roles:['Privileged'],privilegedTypes:['DTA']},
- ]);
- assert.deepEqual(certificateRecoveryUsers([],['Brown_Jacob_(GOV)_GEN_SAAR_26AUG2026.pdf','Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf']),[]);
 });
 
 test('scopes supporting evidence for a new SAAR user to the same organization',()=>{

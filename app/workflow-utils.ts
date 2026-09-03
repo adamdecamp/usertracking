@@ -1,4 +1,4 @@
-import {disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom,parseDate,validateNewUserSaarFilename} from './filename-utils.ts';
+import {disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom,parseDate} from './filename-utils.ts';
 
 export type ComplianceException={id:string;artifact:string;reason:string;approvedBy:string;createdAt:string;createdBy:string;expiresOn:string;revokedAt?:string;revokedBy?:string};
 export type ReconciliationUser={id:string;last:string;first:string;email:string;organization:string;artifacts:{kind:string;filename:string;sha256?:string}[]};
@@ -9,16 +9,6 @@ export type SyncProvenanceArtifact={kind:string;filename:string;sha256?:string;p
 export type SyncProvenanceUser={id:string;last:string;first:string;artifacts:SyncProvenanceArtifact[]};
 export type HashedEvidence={filename:string;path:string;sha256:string};
 export type DuplicateContentGroup={sha256:string;files:{filename:string;path:string}[]};
-export type CertificateRecoveryUser={last:string;first:string;organization:string;roles:string[];privilegedTypes:string[]};
-
-export function certificateRecoveryUsers(existing:CertificateRecoveryUser[],filenames:string[]){
- const byIdentity=new Map<string,CertificateRecoveryUser>(existing.map(user=>[identityKey(user.last,user.first),user] as const));
- const groups=new Map<string,{last:string;first:string;organization:string;role:'General'|'Privileged';privilegedTypes:string[]}[]>();
- for(const filename of filenames){const validation=validateNewUserSaarFilename(filename);if(!validation.valid)continue;const key=identityKey(validation.identity.last,validation.identity.first),items=groups.get(key)??[];items.push({last:validation.identity.last,first:validation.identity.first,organization:validation.organization,role:validation.role,privilegedTypes:validation.privilegedTypes});groups.set(key,items)}
- for(const[key,items]of groups){if(byIdentity.has(key))continue;const signatures=new Set(items.map(item=>`${item.organization.toUpperCase()}\0${item.role}\0${item.privilegedTypes.map(type=>type.toUpperCase()).sort().join(',')}`));if(signatures.size!==1)continue;const item=items[0];byIdentity.set(key,{last:item.last,first:item.first,organization:item.organization,roles:[item.role],privilegedTypes:item.privilegedTypes})}
- return Array.from(byIdentity.values());
-}
-
 export function duplicateContentGroups(items:HashedEvidence[]):DuplicateContentGroup[]{
  const groups=new Map<string,{filename:string;path:string}[]>();
  for(const item of items){const hash=item.sha256.trim().toLowerCase();if(!/^[a-f0-9]{64}$/.test(hash))continue;const files=groups.get(hash)??[];if(!files.some(file=>file.path.toUpperCase()===item.path.toUpperCase()))files.push({filename:item.filename,path:item.path});groups.set(hash,files)}

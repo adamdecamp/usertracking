@@ -1,7 +1,6 @@
 export const syncIndexVersion=1;
 export const syncIndexFilename='tracker-sync-index.json';
 export const syncIndexChecksumFilename=`${syncIndexFilename}.sha256`;
-export const trainingCertificateSyncPolicy={maxPages:1,timeoutMs:10000,concurrency:6,batchSize:48,deepRecovery:false} as const;
 
 export type SyncIndexEntry={
  path:string;
