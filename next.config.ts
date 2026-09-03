@@ -8,6 +8,7 @@ const contentSecurityPolicy = [
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   `connect-src 'self'${isDevelopment ? ' ws: wss:' : ''}`,
+  "frame-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

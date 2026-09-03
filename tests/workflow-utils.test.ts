@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,requiresSaarFormClassification,reworkRetentionDisposition} from '../app/workflow-utils.ts';
+import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,requiresSaarFormClassification,reworkRetentionDisposition,type SyncProvenanceUser} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -9,6 +9,23 @@ test('records stale provenance references per file while completing the rest of 
  assert.equal(result.failures.length,1);assert.match(result.failures[0].error,/no longer exists/i);assert.equal(result.verified.length,1);assert.equal(result.verified[0].evidence.path,'current/1.zip');
  const retry=await verifySyncProvenance(result.failures.map(item=>item.target),[{...evidence[0],path:'refreshed/0.zip',stale:false}],async()=> 'a'.repeat(64));
  assert.equal(retry.failures.length,0);assert.equal(retry.verified[0].evidence.path,'refreshed/0.zip');
+});
+
+test('resolves a bulk loose-PDF to verified-ZIP transition and records the refreshed path',async()=>{
+ const users:(SyncProvenanceUser&{organization:string})[]=Array.from({length:51},(_,index)=>({id:`u${index}`,last:`Last${index}`,first:`First${index}`,organization:'GDMS',artifacts:[{kind:'DoD Cyber Cert',filename:`Last${index}_First${index}_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf`}]})),targets=users.map(user=>({user,artifact:user.artifacts[0]!})),evidence=users.map(user=>({filename:`${user.artifacts[0]!.filename}.zip`,path:`GDMS/DoD Cyber Cert/${user.artifacts[0]!.filename}.zip`,folderOrganization:'GDMS',sha256:'a'.repeat(64)}));
+ const verified=await verifySyncProvenance(targets,evidence,async item=>item.sha256,{concurrency:4});
+ assert.equal(verified.failures.length,0);assert.equal(verified.verified.length,51);
+ const applied=applySyncArtifactProvenance(users,new Set(users.map(user=>`${user.id}:DoD Cyber Cert`)),verified.verified.map(item=>item.evidence),'2026-09-03T12:00:00.000Z','DOMAIN\\operator');
+ assert.ok(applied.every((user,index)=>user.artifacts[0]!.filename===evidence[index]!.filename&&user.artifacts[0]!.path===evidence[index]!.path&&user.artifacts[0]!.sha256==='a'.repeat(64)));
+});
+
+test('does not guess provenance when more than one current file matches the same user and artifact',async()=>{
+ const target={user:{last:'Brown',first:'Jacob',organization:'LM'},artifact:{kind:'DoD Cyber Cert',filename:'Brown_Jacob_(LM)_old-name.pdf'}},evidence=[
+  {filename:'Brown_Jacob_(LM)_DoD_Cyber_Cert_25AUG2026.pdf.zip',path:'LM/DoD Cyber Cert/one.zip',folderOrganization:'LM'},
+  {filename:'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip',path:'LM/DoD Cyber Cert/two.zip',folderOrganization:'LM'},
+ ];
+ const result=await verifySyncProvenance([target],evidence,async()=> 'a'.repeat(64));
+ assert.equal(result.verified.length,0);assert.match(result.failures[0].error,/Multiple current DoD Cyber Cert files/);
 });
 
 test('groups exact duplicate PDF content hashes without trusting filenames',()=>{

@@ -1,4 +1,5 @@
 import {disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom,parseDate} from './filename-utils.ts';
+import {resolveSyncProvenanceEvidence} from './provenance-utils.ts';
 
 export type ComplianceException={id:string;artifact:string;reason:string;approvedBy:string;createdAt:string;createdBy:string;expiresOn:string;revokedAt?:string;revokedBy?:string};
 export type ReconciliationUser={id:string;last:string;first:string;email:string;organization:string;artifacts:{kind:string;filename:string;sha256?:string}[]};
@@ -6,7 +7,7 @@ export type ReconciliationEvidence={filename:string;path:string;sha256?:string;f
 export type ReconciliationRejection={filename:string;reason:string;path?:string};
 export type ReconciliationIssue={id:string;category:'Missing File'|'Content Changed'|'Orphan Evidence'|'Duplicate Identity'|'Duplicate Email'|'Organization Conflict'|'Rejected Evidence';severity:'High'|'Medium';summary:string;detail:string;path?:string;userId?:string};
 export type SyncProvenanceArtifact={kind:string;filename:string;sha256?:string;path?:string;storedAt?:string;storedBy?:string;source?:string};
-export type SyncProvenanceUser={id:string;last:string;first:string;artifacts:SyncProvenanceArtifact[]};
+export type SyncProvenanceUser={id:string;last:string;first:string;organization?:string;artifacts:SyncProvenanceArtifact[]};
 export type HashedEvidence={filename:string;path:string;sha256:string};
 export type DuplicateContentGroup={sha256:string;files:{filename:string;path:string}[]};
 export type SaarAccountState={filename:string;date:Date;disabled:boolean};
@@ -55,7 +56,7 @@ export function notificationRecipientBatches(values:string[],maxRecipients=40,ma
 export function committedRecordWithExceptions<T extends{exceptions?:ComplianceException[]}>(record:T,exceptions:ComplianceException[]){return{...record,exceptions}}
 
 export function applySyncArtifactProvenance<T extends SyncProvenanceUser>(users:T[],touchedKeys:Set<string>,evidence:ReconciliationEvidence[],storedAt:string,storedBy:string){
- return users.map(user=>({...user,artifacts:user.artifacts.map(artifact=>{if(!touchedKeys.has(`${user.id}:${artifact.kind}`))return artifact;const match=evidence.find(item=>item.filename.toUpperCase()===artifact.filename.toUpperCase()&&filenameIdentityMatches(item.filename,user));if(!match?.sha256)throw new Error(`Provenance could not be recorded for ${artifact.filename}.`);return{...artifact,sha256:match.sha256,path:match.path,storedAt,storedBy,source:'Sync'}})})) as T[];
+ return users.map(user=>({...user,artifacts:user.artifacts.map(artifact=>{if(!touchedKeys.has(`${user.id}:${artifact.kind}`))return artifact;const resolution=resolveSyncProvenanceEvidence({user,artifact},evidence),match='evidence'in resolution?resolution.evidence:undefined;if(!match?.sha256)throw new Error(`Provenance could not be recorded for ${artifact.filename}. ${'error'in resolution?resolution.error:''}`.trim());return{...artifact,filename:match.filename,sha256:match.sha256,path:match.path,storedAt,storedBy,source:'Sync'}})})) as T[];
 }
 
 export function reconcileEvidence(users:ReconciliationUser[],evidence:ReconciliationEvidence[],rejected:ReconciliationRejection[]){

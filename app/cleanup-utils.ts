@@ -20,11 +20,16 @@ export function retainUnfinishedCleanup<T extends{id:string}>(items:T[],complete
 }
 
 export type EvidenceCollisionClassification='Exact Duplicate'|'Same-Name Conflict'|'Hash Unavailable';
+export type EvidenceCollisionChoice='existing'|'incoming'|'defer';
 
 export function classifyEvidenceCollision(incomingSha256?:string,existingSha256?:string):EvidenceCollisionClassification{
  const incoming=incomingSha256?.trim().toLowerCase(),existing=existingSha256?.trim().toLowerCase();
  if(!incoming||!existing)return'Hash Unavailable';
  return incoming===existing?'Exact Duplicate':'Same-Name Conflict';
+}
+
+export function defaultEvidenceCollisionChoice(classification:EvidenceCollisionClassification):EvidenceCollisionChoice{
+ return classification==='Exact Duplicate'?'existing':'defer';
 }
 
 export function collisionArchiveFilename(filename:string,sha256?:string){

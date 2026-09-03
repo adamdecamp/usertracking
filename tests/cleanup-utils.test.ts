@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {classifyEvidenceCollision,collisionArchiveFilename,distinctByPath,retainUnfinishedCleanup,selectLoosePdfCleanupCandidates,selectSupersededEvidence,supersedingEvidenceApproval} from '../app/cleanup-utils.ts';
+import {classifyEvidenceCollision,collisionArchiveFilename,defaultEvidenceCollisionChoice,distinctByPath,retainUnfinishedCleanup,selectLoosePdfCleanupCandidates,selectSupersededEvidence,supersedingEvidenceApproval} from '../app/cleanup-utils.ts';
 
 type Item={path:string;date:string;current:boolean};
 const select=(items:Item[])=>selectSupersededEvidence(items,item=>new Date(item.date),item=>item.current,item=>item.path);
@@ -67,6 +67,12 @@ test('classifies canonical destination collisions by validated PDF hashes',()=>{
  assert.equal(classifyEvidenceCollision('a'.repeat(64),'b'.repeat(64)),'Same-Name Conflict');
  assert.equal(classifyEvidenceCollision(undefined,'b'.repeat(64)),'Hash Unavailable');
  assert.equal(classifyEvidenceCollision('',''),'Hash Unavailable');
+});
+
+test('defaults unresolved file collisions to a deferred operator decision',()=>{
+ assert.equal(defaultEvidenceCollisionChoice('Same-Name Conflict'),'defer');
+ assert.equal(defaultEvidenceCollisionChoice('Hash Unavailable'),'defer');
+ assert.equal(defaultEvidenceCollisionChoice('Exact Duplicate'),'existing');
 });
 
 test('gives a non-authoritative conflicting copy a traceable archive filename',()=>{

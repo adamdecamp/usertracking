@@ -438,9 +438,10 @@ export default function Guide() {
           match, Clean Up labels the pair <b>Exact Duplicate</b> and preselects
           the redundant incoming copy for Archive while retaining the already
           organized copy. When the hashes differ—or a hash cannot be read—the
-          pair requires an operator decision. Use <b>Open Incoming PDF</b> and{" "}
-          <b>Open Organized PDF</b>, then select which copy is authoritative or
-          defer the decision. The selected copy remains active; the other copy
+          pair requires an operator decision. It defaults to <b>Defer Decision</b>.
+          Use <b>Open Incoming PDF</b> and <b>Open Organized PDF</b> to open an
+          immediate preview over the review screen, then select which copy is
+          authoritative when ready. The selected copy remains active; the other copy
           moves to the organization Archive. Non-selected SAAR copies move to
           the permanent organization SAAR Archive. The audit log records both
           paths, available hashes, the selected copy, operator, and UTC time.
@@ -487,7 +488,12 @@ export default function Guide() {
           <b>Apply Verified Updates</b>. Before provenance hashes are saved, the
           app refreshes current file locations so a preceding rename, compression,
           Rework, Archive, or document-type move cannot leave an obsolete file
-          reference. A failed reference is rescanned once. If it still cannot be
+          reference. A verified <code>.pdf</code> to <code>.pdf.zip</code>
+          conversion is treated as the same evidence, and the record is updated
+          with the ZIP&apos;s actual filename and current path. If an exact container
+          name is unavailable, Sync uses user identity, authoritative organization,
+          and artifact type only when exactly one current file matches. It never
+          guesses between duplicates. A failed reference is rescanned once. If it still cannot be
           verified, the database remains unchanged, the stale Sync Review is
           cleared, and the operator can run Sync again without restarting the app.
           In the manual <b>Add User</b> workflow
