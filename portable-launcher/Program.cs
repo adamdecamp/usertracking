@@ -146,7 +146,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "renamer-queue" && parts[0] == "POST") response = storage.SaveRenamerQueue(systemId, requestBody);
                     else if (action == "renamer-queue" && parts[0] == "DELETE") response = storage.ClearRenamerQueue(systemId);
                     else if (action == "file" && parts[0] == "GET") { byte[] fileBytes = storage.ReadRelativeFile(systemId, QueryValue(target, "path")); await Respond(stream, 200, "application/octet-stream", fileBytes, false, "no-store"); return; }
-                    else if (action == "archive" && parts[0] == "POST") response = storage.ArchiveEvidence(systemId, QueryValue(target, "path"), QueryValue(target, "filename"));
+                    else if (action == "archive" && parts[0] == "POST") response = storage.ArchiveEvidence(systemId, QueryValue(target, "path"), OptionalQueryValue(target, "filename"));
                     else if (action == "rework" && parts[0] == "POST") response = storage.MoveEvidenceToRework(systemId, QueryValue(target, "path"));
                     else if (action == "rework-retention" && parts[0] == "POST") response = storage.ProcessReworkRetention(systemId);
                     else if (action == "compress" && parts[0] == "POST") response = storage.CompressEvidence(systemId, QueryValue(target, "path"));
@@ -236,6 +236,13 @@ internal sealed class TrackerContext : ApplicationContext
         int question = target.IndexOf('?'); if (question < 0) throw new InvalidDataException("A required request value is missing.");
         foreach (string pair in target.Substring(question + 1).Split('&')) { int equals = pair.IndexOf('='); if (equals >= 0 && Uri.UnescapeDataString(pair.Substring(0, equals)) == name) return Uri.UnescapeDataString(pair.Substring(equals + 1)); }
         throw new InvalidDataException("A required request value is missing.");
+    }
+
+    private static string OptionalQueryValue(string target, string name)
+    {
+        int question = target.IndexOf('?'); if (question < 0) return null;
+        foreach (string pair in target.Substring(question + 1).Split('&')) { int equals = pair.IndexOf('='); if (equals >= 0 && Uri.UnescapeDataString(pair.Substring(0, equals)) == name) return Uri.UnescapeDataString(pair.Substring(equals + 1)); }
+        return null;
     }
 
     private static string CleanError(string value) { if (String.IsNullOrWhiteSpace(value)) return "The storage request failed."; string clean = value.Replace("\r", " ").Replace("\n", " ").Replace("\0", " ").Trim(); return clean.Length > 1200 ? clean.Substring(0, 1200) : clean; }

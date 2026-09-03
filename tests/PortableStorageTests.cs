@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
@@ -125,6 +126,10 @@ internal static class PortableStorageTests
     public static int Main(string[] args)
     {
         if (args.Length != 1) throw new ArgumentException("A test directory is required.");
+        MethodInfo optionalQueryValue = typeof(TrackerContext).GetMethod("OptionalQueryValue", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert(optionalQueryValue != null, "The launcher must expose its optional archive request-value parser.");
+        Assert(Convert.ToString(optionalQueryValue.Invoke(null, new object[] { "/api/storage/system/archive?path=file.pdf&filename=", "filename" })) == "", "An explicitly empty optional archive filename should use the source filename.");
+        Assert(optionalQueryValue.Invoke(null, new object[] { "/api/storage/system/archive?path=file.pdf", "filename" }) == null, "A missing optional archive filename must not reject an otherwise valid archive request.");
         string root = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(root);
         RunStorageEnumerationFuzz(Path.GetDirectoryName(root));

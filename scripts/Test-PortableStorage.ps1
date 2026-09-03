@@ -16,7 +16,7 @@ if (-not $resolvedTestRoot.StartsWith($temporaryBase, [System.StringComparison]:
 New-Item -ItemType Directory -Path $resolvedTestRoot | Out-Null
 try {
     $testExecutable = Join-Path $resolvedTestRoot "PortableStorageTests.exe"
-    & $compiler /nologo /target:exe "/out:$testExecutable" "/win32manifest:$(Join-Path $projectRoot 'portable-launcher\app.manifest')" /reference:System.Web.Extensions.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll (Join-Path $projectRoot "portable-launcher\PortableStorage.cs") (Join-Path $projectRoot "tests\PortableStorageTests.cs")
+    & $compiler /nologo /target:exe /main:PortableStorageTests "/out:$testExecutable" "/win32manifest:$(Join-Path $projectRoot 'portable-launcher\app.manifest')" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll (Join-Path $projectRoot "portable-launcher\Program.cs") (Join-Path $projectRoot "portable-launcher\PortableStorage.cs") (Join-Path $projectRoot "tests\PortableStorageTests.cs")
     if ($LASTEXITCODE -ne 0) { throw "Portable storage test compilation failed." }
     & $testExecutable (Join-Path $resolvedTestRoot "data")
     if ($LASTEXITCODE -ne 0) { throw "Portable storage integration tests failed." }

@@ -1,10 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {portableActionLabel,portableFetch} from '../app/portable-request-utils.ts';
+import {portableActionLabel,portableArchiveAction,portableFetch} from '../app/portable-request-utils.ts';
 
 test('keeps launcher failure stages useful without exposing query values',()=>{
  assert.equal(portableActionLabel('scan?rules=secret&full=1'),'scan');
  assert.equal(portableActionLabel('normalize-date?path=Sensitive%20Name.pdf'),'normalize date');
+});
+
+test('always supplies the optional archive filename request value',()=>{
+ const defaultName=new URLSearchParams(portableArchiveAction('GDMS/User Evidence/file.pdf.zip').split('?')[1]);
+ assert.equal(defaultName.get('path'),'GDMS/User Evidence/file.pdf.zip');
+ assert.equal(defaultName.get('filename'),'');
+ const collision=new URLSearchParams(portableArchiveAction('GDMS/source.pdf','target conflict.pdf').split('?')[1]);
+ assert.equal(collision.get('filename'),'target conflict.pdf');
 });
 
 test('retries a resumable or idempotent launcher request once',async()=>{

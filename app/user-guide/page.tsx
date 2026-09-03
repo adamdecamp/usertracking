@@ -335,7 +335,10 @@ export default function Guide() {
           readability. Renamed non-PDFs, unreadable PDFs, unsafe archive paths,
           encrypted or unsupported ZIPs, mixed-content archives, multi-document
           archives, files over 100 MB, and suspiciously high ZIP expansion
-          ratios are rejected. An active file with any extension other than PDF
+          ratios are rejected. Once a valid SAAR is stored as a ZIP, later Syncs
+          use its verified container and formatted filename without sending it
+          back through loose-PDF form classification or attempting to archive it
+          again. An active file with any extension other than PDF
           or ZIP is automatically moved to that organization&apos;s Rework folder
           and flagged as <b>Unaccepted File Format</b>. Scanned or flattened SAAR
           copies are not accepted for automatic user discovery because the
@@ -505,6 +508,16 @@ export default function Guide() {
           identity, invalid dates, conflicting authoritative organization
           folders, or unrecognized document types remain unmatched or are sent
           to Rework and never create a record automatically.
+        </p>
+        <p>
+          Any non-SAAR evidence filename containing the standalone{" "}
+          <code>8140</code> marker is treated as an 8140 Certification Memo.
+          When its Last Name, First Name, authoritative organization folder, and
+          date are available, Sync normalizes it to{" "}
+          <code>Last_First_(ORG)_8140_Cert_Memo_DDMMMYYYY</code> while preserving
+          whether the evidence is a PDF or one-PDF ZIP. Missing or ambiguous
+          identity or date values are sent for operator review instead of being
+          guessed.
         </p>
         <p>
           In the portable Windows app, the launcher—not the browser tab—performs

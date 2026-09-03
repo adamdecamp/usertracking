@@ -60,6 +60,18 @@ test('canonicalizes every recognized evidence filename from parsed metadata',()=
  for(const[filename,expected]of cases)assert.equal(canonicalEvidenceFilename(filename,'GDMS'),expected,filename);
 });
 
+test('normalizes any non-SAAR 8140 evidence marker to the required memo filename',()=>{
+ const cases:[string,string][]=[
+  ['Brown Jacob draft 8140 08-26-2026.pdf','Brown_Jacob_(GDMS)_8140_Cert_Memo_26AUG2026.pdf'],
+  ['Brown_Jacob_old_8140_document_20260826.zip','Brown_Jacob_(GDMS)_8140_Cert_Memo_26AUG2026.pdf.zip'],
+  ['Brown, Jacob (WRONG) 8140 qualification 26 AUG 26.PDF','Brown_Jacob_(GDMS)_8140_Cert_Memo_26AUG2026.pdf'],
+ ];
+ for(const[filename,expected]of cases){
+  assert.equal(filenameMatchesKind(filename,'8140 Cert Memo'),true,filename);
+  assert.equal(canonicalEvidenceFilename(filename,'GDMS'),expected,filename);
+ }
+});
+
 test('recognizes the reported General User Agreement filename',()=>{
  assert.equal(looksLikeEvidenceFilename(general),true);
  assert.equal(filenameMatchesKind(general,'User Agreement'),true);

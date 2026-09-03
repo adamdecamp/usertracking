@@ -10,6 +10,7 @@ export type SyncProvenanceUser={id:string;last:string;first:string;artifacts:Syn
 export type HashedEvidence={filename:string;path:string;sha256:string};
 export type DuplicateContentGroup={sha256:string;files:{filename:string;path:string}[]};
 export type SaarAccountState={filename:string;date:Date;disabled:boolean};
+export function requiresSaarFormClassification(filename:string){return /\.pdf$/i.test(filename)&&filenameMatchesKind(filename,'SAAR')}
 export function duplicateContentGroups(items:HashedEvidence[]):DuplicateContentGroup[]{
  const groups=new Map<string,{filename:string;path:string}[]>();
  for(const item of items){const hash=item.sha256.trim().toLowerCase();if(!/^[a-f0-9]{64}$/.test(hash))continue;const files=groups.get(hash)??[];if(!files.some(file=>file.path.toUpperCase()===item.path.toUpperCase()))files.push({filename:item.filename,path:item.path});groups.set(hash,files)}

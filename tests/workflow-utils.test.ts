@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,reworkRetentionDisposition} from '../app/workflow-utils.ts';
+import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,requiresSaarFormClassification,reworkRetentionDisposition} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -14,6 +14,14 @@ test('records stale provenance references per file while completing the rest of 
 test('groups exact duplicate PDF content hashes without trusting filenames',()=>{
  const same='a'.repeat(64),groups=duplicateContentGroups([{filename:'one.pdf',path:'GOV/one.pdf',sha256:same},{filename:'different-name.pdf.zip',path:'GOV/different-name.pdf.zip',sha256:same.toUpperCase()},{filename:'unique.pdf',path:'GOV/unique.pdf',sha256:'b'.repeat(64)},{filename:'invalid.pdf',path:'GOV/invalid.pdf',sha256:'not-a-hash'}]);
  assert.deepEqual(groups,[{sha256:same,files:[{filename:'different-name.pdf.zip',path:'GOV/different-name.pdf.zip'},{filename:'one.pdf',path:'GOV/one.pdf'}]}]);
+});
+
+test('classifies only loose SAAR PDFs and never reopens accepted ZIP evidence',()=>{
+ assert.equal(requiresSaarFormClassification('Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf'),true);
+ assert.equal(requiresSaarFormClassification('Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.PDF'),true);
+ assert.equal(requiresSaarFormClassification('Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf.zip'),false);
+ assert.equal(requiresSaarFormClassification('Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.ZIP'),false);
+ assert.equal(requiresSaarFormClassification('Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf'),false);
 });
 
 test('returns only an active, unrevoked compliance exception',()=>{

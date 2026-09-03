@@ -5,6 +5,10 @@ export function portableActionLabel(action:string){
  return (value||'storage request').slice(0,100);
 }
 
+export function portableArchiveAction(path:string,requestedFilename?:string){
+ return `archive?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(requestedFilename??'')}`;
+}
+
 function aborted(error:unknown,signal?:AbortSignal|null){
  return signal?.aborted===true||error instanceof DOMException&&error.name==='AbortError'||error instanceof Error&&error.name==='AbortError';
 }
