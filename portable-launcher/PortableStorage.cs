@@ -26,6 +26,9 @@ internal sealed class PortableStorage : IDisposable
     private const int SyncJournalVersion = 1;
     private const int StorageTransactionVersion = 1;
     private const int MappingCacheVersion = 2;
+    private const string SystemDirectoryName = "System";
+    private const string ErrorReportsDirectoryName = "Error Reports";
+    private static readonly string[] SupportDirectoryNames = new[] { "Audit Logs", "backup", "Archive Review", "Reports", "Sync Journals", "Storage Transactions" };
     private const string SyncIndexFilename = "tracker-sync-index.json";
     private const string SyncIndexChecksumFilename = "tracker-sync-index.json.sha256";
     private const string RenamerQueueFilename = "tracker-document-renamer-queue.json";
@@ -35,6 +38,7 @@ internal sealed class PortableStorage : IDisposable
     private readonly Dictionary<string, object> rootLocks = new Dictionary<string, object>(StringComparer.Ordinal);
     private readonly Dictionary<string, HeldLease> heldLeases = new Dictionary<string, HeldLease>(StringComparer.Ordinal);
     private readonly object mapGate = new object();
+    private readonly object errorReportGate = new object();
     private readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 100 * 1024 * 1024, RecursionLimit = 256 };
     private readonly string actor;
     private readonly string mappingCachePath;
@@ -112,6 +116,7 @@ internal sealed class PortableStorage : IDisposable
         string full = NormalizeRootPath(path);
         if (!Directory.Exists(full)) throw new DirectoryNotFoundException("The selected system folder is unavailable.");
         ProbeMappedFolder(full);
+        MigrateSupportDirectories(full);
         object gate;
         lock (mapGate)
         {
@@ -195,8 +200,7 @@ internal sealed class PortableStorage : IDisposable
             string destinationHash = Sha256Bytes(manifestBytes), transaction = BeginTransaction(root, "manifest-write", manifest, manifest, TryFileHash(manifest), destinationHash);
             try { AtomicWrite(manifest, manifestBytes);FailAfter("manifest-write");CompleteTransaction(transaction); }
             catch { if (!String.Equals(TryFileHash(manifest), destinationHash, StringComparison.OrdinalIgnoreCase)) CompleteTransaction(transaction);throw; }
-            string backupDirectory = Path.Combine(root, "backup");
-            Directory.CreateDirectory(backupDirectory);
+            string backupDirectory = SupportDirectory(root, "backup");
             string backupCreated = CreateSnapshot(backupDirectory, database, false);
             return json.Serialize(new Dictionary<string, object> { { "saved", now }, { "backup", backupCreated ?? LatestCreated(backupDirectory) }, { "snapshotCreated", backupCreated != null } });
         }
@@ -207,8 +211,7 @@ internal sealed class PortableStorage : IDisposable
         if (bytes.Length > ManifestLimit) throw new InvalidDataException("The CSV backup exceeds the 50 MB safety limit.");
         lock (RootLock(systemId))
         {
-            string directory = Path.Combine(Root(systemId), "backup");
-            Directory.CreateDirectory(directory);
+            string directory = SupportDirectory(Root(systemId), "backup");
             string path = Path.Combine(directory, "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv");
             AtomicWrite(path, bytes);
             return DateTime.UtcNow.ToString("o");
@@ -218,7 +221,7 @@ internal sealed class PortableStorage : IDisposable
     public string ListBackups(string systemId, string logicalSystemId)
     {
         ValidateSystemId(logicalSystemId);
-        string directory = Path.Combine(Root(systemId), "backup");
+        string directory = SupportDirectory(Root(systemId), "backup");
         var output = new List<Dictionary<string, object>>();
         if (!Directory.Exists(directory)) return "[]";
         foreach (string path in SnapshotPaths(directory).Take(SnapshotLimit))
@@ -243,7 +246,7 @@ internal sealed class PortableStorage : IDisposable
     public string Restore(string systemId, string logicalSystemId, string filename)
     {
         ValidateSystemId(logicalSystemId);
-        string directory = Path.Combine(Root(systemId), "backup"), path = SafeBackupPath(directory, filename);
+        string directory = SupportDirectory(Root(systemId), "backup"), path = SafeBackupPath(directory, filename);
         lock (RootLock(systemId))
         {
             Dictionary<string, object> envelope = VerifySnapshot(path), restored = ObjectDictionary(envelope["database"]);
@@ -268,7 +271,7 @@ internal sealed class PortableStorage : IDisposable
     public string RestoreDrill(string systemId, string logicalSystemId, string filename)
     {
         ValidateSystemId(logicalSystemId);
-        string directory = Path.Combine(Root(systemId), "backup"), path = SafeBackupPath(directory, filename);
+        string directory = SupportDirectory(Root(systemId), "backup"), path = SafeBackupPath(directory, filename);
         lock (RootLock(systemId))
         {
             Dictionary<string, object> envelope = VerifySnapshot(path), database = ObjectDictionary(envelope["database"]);
@@ -286,7 +289,7 @@ internal sealed class PortableStorage : IDisposable
     public string VerifyLatest(string systemId, string logicalSystemId)
     {
         ValidateSystemId(logicalSystemId);
-        string manifestPath = Path.Combine(Root(systemId), "information-system-user-tracker.json"), directory = Path.Combine(Root(systemId), "backup");
+        string manifestPath = Path.Combine(Root(systemId), "information-system-user-tracker.json"), directory = SupportDirectory(Root(systemId), "backup");
         if (!File.Exists(manifestPath)) throw new FileNotFoundException("The current database manifest is missing.");
         ValidateDatabase(ReadText(manifestPath, ManifestLimit));
         string latest = SnapshotPaths(directory).FirstOrDefault();
@@ -294,7 +297,7 @@ internal sealed class PortableStorage : IDisposable
         Dictionary<string, object> envelope = VerifySnapshot(latest), database = ObjectDictionary(envelope["database"]);
         object[] systems = ObjectArray(database["systems"]);
         if (systems.Length != 1 || !String.Equals(Convert.ToString(ObjectDictionary(systems[0])["id"]), logicalSystemId, StringComparison.Ordinal)) throw new InvalidDataException("The latest backup belongs to a different information system.");
-        AuditState audit = VerifyAuditChain(Path.Combine(Root(systemId), "Audit Logs"));
+        AuditState audit = VerifyAuditChain(SupportDirectory(Root(systemId), "Audit Logs"));
         return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "saved", File.GetLastWriteTimeUtc(manifestPath).ToString("o") }, { "backup", Convert.ToString(envelope["created"]) }, { "filename", Path.GetFileName(latest) }, { "auditHealthy", true }, { "auditEntries", audit.Entries }, { "auditHeadHash", audit.HeadHash } });
     }
 
@@ -309,8 +312,7 @@ internal sealed class PortableStorage : IDisposable
                 string root = Root(id), manifest = Path.Combine(root, "information-system-user-tracker.json");
                 if (!File.Exists(manifest)) continue;
                 Dictionary<string, object> database = ValidateDatabase(ReadText(manifest, ManifestLimit));
-                string backupDirectory = Path.Combine(root, "backup");
-                Directory.CreateDirectory(backupDirectory);
+                string backupDirectory = SupportDirectory(root, "backup");
                 CreateSnapshot(backupDirectory, database, false);
             }
         }
@@ -414,7 +416,7 @@ internal sealed class PortableStorage : IDisposable
         ValidateSessionId(runId);
         lock (RootLock(systemId))
         {
-            string directory = Path.Combine(Root(systemId), "Sync Journals"), path = Path.Combine(directory, "sync-" + runId + ".jsonl");
+            string directory = SupportDirectory(Root(systemId), "Sync Journals"), path = Path.Combine(directory, "sync-" + runId + ".jsonl");
             if (!File.Exists(path)) throw new FileNotFoundException("The Sync journal no longer exists.");
             AppendSyncJournal(path, new Dictionary<string, object> { { "type", "run-state" }, { "state", "committed" }, { "timestampUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) } });
             PruneSyncJournals(directory);
@@ -424,7 +426,7 @@ internal sealed class PortableStorage : IDisposable
 
     private SyncJournalState StartOrResumeSyncJournal(string root, string ruleSetVersion, bool fullRescan)
     {
-        string directory = Path.Combine(root, "Sync Journals");Directory.CreateDirectory(directory);
+        string directory = SupportDirectory(root, "Sync Journals");
         if (!fullRescan)
         {
             foreach (string candidate in Directory.EnumerateFiles(directory, "sync-*.jsonl", SearchOption.TopDirectoryOnly).OrderByDescending(Path.GetFileName))
@@ -894,12 +896,24 @@ internal sealed class PortableStorage : IDisposable
         using (var memory = new MemoryStream(bytes, false)) ValidatePdfStream(memory, safeName, bytes.Length);
         lock (RootLock(systemId))
         {
-            string directory = Path.Combine(Root(systemId), "Reports"), path = Path.Combine(directory, safeName), hash = Sha256Bytes(bytes), saved = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
-            Directory.CreateDirectory(directory);
+            string directory = SupportDirectory(Root(systemId), "Reports"), path = Path.Combine(directory, safeName), hash = Sha256Bytes(bytes), saved = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             AtomicWrite(path, bytes);
             try { AtomicWrite(path + ".sha256", Encoding.ASCII.GetBytes(hash + "  " + safeName + "\n")); }
             catch { TryDelete(path); throw; }
             return json.Serialize(new Dictionary<string, object> { { "filename", safeName }, { "saved", saved }, { "sha256", hash } });
+        }
+    }
+
+    public string StoreErrorReport(string systemId, string filename, string text)
+    {
+        string safeName = SafePart(filename, 180);if (!safeName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Error reports must use the TXT format.");
+        byte[] bytes = Encoding.UTF8.GetBytes(text ?? "");if (bytes.Length == 0 || bytes.Length > 1024 * 1024) throw new InvalidDataException("The error report is empty or exceeds the 1 MB limit.");
+        lock (errorReportGate)
+        {
+            string directory = Path.Combine(Root(systemId), ErrorReportsDirectoryName);Directory.CreateDirectory(directory);string path = Path.Combine(directory, safeName);
+            if (File.Exists(path)) path = Path.Combine(directory, Path.GetFileNameWithoutExtension(safeName) + "_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
+            AtomicWrite(path, bytes);
+            return json.Serialize(new Dictionary<string, object> { { "saved", Relative(Root(systemId), path).Replace(Path.DirectorySeparatorChar, '/') } });
         }
     }
 
@@ -922,7 +936,7 @@ internal sealed class PortableStorage : IDisposable
         }
         lock (RootLock(systemId))
         {
-            string directory = Path.Combine(Root(systemId), "Reports"), path = Path.Combine(directory, safeName), hash = Sha256Bytes(bytes), saved = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);Directory.CreateDirectory(directory);
+            string directory = SupportDirectory(Root(systemId), "Reports"), path = Path.Combine(directory, safeName), hash = Sha256Bytes(bytes), saved = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             AtomicWrite(path, bytes);try { AtomicWrite(path + ".sha256", Encoding.ASCII.GetBytes(hash + "  " + safeName + "\n")); } catch { TryDelete(path);throw; }
             return json.Serialize(new Dictionary<string, object> { { "filename", safeName }, { "saved", saved }, { "sha256", hash } });
         }
@@ -932,7 +946,7 @@ internal sealed class PortableStorage : IDisposable
     {
         lock (RootLock(systemId))
         {
-            string directory = Path.Combine(Root(systemId), "Audit Logs");
+            string directory = SupportDirectory(Root(systemId), "Audit Logs");
             AuditState state = VerifyAuditChainWithRetry(directory);
             return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "entries", state.Entries }, { "files", state.Files }, { "legacyFiles", state.LegacyFiles }, { "firstTimestamp", state.FirstTimestamp }, { "lastTimestamp", state.LastTimestamp }, { "headHash", state.HeadHash } });
         }
@@ -942,7 +956,7 @@ internal sealed class PortableStorage : IDisposable
     {
         lock (RootLock(systemId))
         {
-            string directory = Path.Combine(Root(systemId), "Audit Logs");
+            string directory = SupportDirectory(Root(systemId), "Audit Logs");
             AuditState state = VerifyAuditChain(directory);
             state.Recent.Reverse();
             return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "entries", state.Entries }, { "files", state.Files }, { "legacyFiles", state.LegacyFiles }, { "firstTimestamp", state.FirstTimestamp }, { "lastTimestamp", state.LastTimestamp }, { "headHash", state.HeadHash }, { "recent", state.Recent } });
@@ -974,8 +988,7 @@ internal sealed class PortableStorage : IDisposable
         if (actions == null || actions.Length == 0 || actions.Length > 10000) throw new InvalidDataException("The audit batch must contain between 1 and 10,000 actions.");
         lock (RootLock(systemId))
         {
-            string directory = Path.Combine(Root(systemId), "Audit Logs");
-            Directory.CreateDirectory(directory);
+            string directory = SupportDirectory(Root(systemId), "Audit Logs");
             AuditState state = VerifyAuditChainWithRetry(directory);
             DateTimeOffset now = DateTimeOffset.UtcNow;
             if (state.LastInstant.HasValue && now < state.LastInstant.Value.Subtract(TimeSpan.FromSeconds(1))) throw new InvalidDataException("The system clock is earlier than the most recent audit entry.");
@@ -1319,9 +1332,49 @@ internal sealed class PortableStorage : IDisposable
         throw new InvalidOperationException("Map the selected information system folder first.");
     }
 
+    private static string SupportDirectory(string root, string name)
+    {
+        string system = Path.Combine(root, SystemDirectoryName), directory = Path.Combine(system, name);
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
+    private static void MigrateSupportDirectories(string root)
+    {
+        string system = Path.Combine(root, SystemDirectoryName);Directory.CreateDirectory(system);
+        foreach (string name in SupportDirectoryNames)
+        {
+            string legacy = Path.Combine(root, name);if (!Directory.Exists(legacy)) continue;
+            string destination = Path.Combine(system, name);Directory.CreateDirectory(destination);
+            MergeSupportDirectory(legacy, destination);
+            try { if (!Directory.EnumerateFileSystemEntries(legacy).Any()) Directory.Delete(legacy); } catch { }
+        }
+    }
+
+    private static void MergeSupportDirectory(string source, string destination)
+    {
+        foreach (string directory in Directory.EnumerateDirectories(source))
+        {
+            string target = Path.Combine(destination, Path.GetFileName(directory));Directory.CreateDirectory(target);MergeSupportDirectory(directory, target);
+            try { if (!Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory); } catch { }
+        }
+        foreach (string file in Directory.EnumerateFiles(source))
+        {
+            string target = Path.Combine(destination, Path.GetFileName(file));
+            if (File.Exists(target))
+            {
+                if (String.Equals(Sha256Bytes(File.ReadAllBytes(file)), Sha256Bytes(File.ReadAllBytes(target)), StringComparison.OrdinalIgnoreCase)) { File.Delete(file);continue; }
+                string stem = Path.GetFileNameWithoutExtension(file), extension = Path.GetExtension(file);target = Path.Combine(destination, stem + "_Legacy_" + Guid.NewGuid().ToString("N").Substring(0, 8) + extension);
+            }
+            File.Copy(file, target, false);
+            if (!String.Equals(Sha256Bytes(File.ReadAllBytes(file)), Sha256Bytes(File.ReadAllBytes(target)), StringComparison.OrdinalIgnoreCase)) { TryDelete(target);throw new IOException("A support-folder migration copy failed its SHA-256 verification."); }
+            File.Delete(file);
+        }
+    }
+
     private string BeginTransaction(string root, string operation, string source, string destination, string sourceHash, string destinationHash)
     {
-        string directory = Path.Combine(root, "Storage Transactions");Directory.CreateDirectory(directory);
+        string directory = SupportDirectory(root, "Storage Transactions");
         string id = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N"), path = Path.Combine(directory, "transaction-" + id + ".json");
         var value = new Dictionary<string, object> { { "version", StorageTransactionVersion }, { "id", id }, { "operation", operation }, { "createdAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "source", RelativeOrSelf(root, source) }, { "destination", RelativeOrSelf(root, destination) }, { "sourceHash", sourceHash ?? "" }, { "destinationHash", destinationHash ?? "" }, { "state", "prepared" } };
         AtomicWrite(path, Encoding.UTF8.GetBytes(json.Serialize(value)));return path;
@@ -1329,7 +1382,7 @@ internal sealed class PortableStorage : IDisposable
 
     private void RecoverTransactions(string root)
     {
-        string directory = Path.Combine(root, "Storage Transactions");if (!Directory.Exists(directory)) return;
+        string directory = SupportDirectory(root, "Storage Transactions");
         string[] paths = Directory.EnumerateFiles(directory, "transaction-*.json", SearchOption.TopDirectoryOnly).OrderBy(path => path, StringComparer.Ordinal).Take(1001).ToArray();
         if (paths.Length > 1000) throw new InvalidDataException("The recoverable storage transaction count exceeds the safety limit.");
         foreach (string path in paths)
@@ -1444,7 +1497,7 @@ internal sealed class PortableStorage : IDisposable
     private static bool IsManagedStorageDirectory(string name)
     {
         string value = (name ?? "").Trim();
-        return String.Equals(value, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Reports", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Sync Journals", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Storage Transactions", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase);
+        return String.Equals(value, SystemDirectoryName, StringComparison.OrdinalIgnoreCase) || String.Equals(value, ErrorReportsDirectoryName, StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Reports", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Sync Journals", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Storage Transactions", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsPermanentSaarArchiveDirectory(string name)

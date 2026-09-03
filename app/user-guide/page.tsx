@@ -188,8 +188,11 @@ export default function Guide() {
           Agreement. All Privileged users additionally require the 8140 memo and
           Privileged User Training certificate. Privileged users with DTA type
           also require DTA training. Open a User Record to replace evidence,
-          disable or enable access, or modify privileges. Access and privilege
-          changes require an updated SAAR by default. Disabling a user moves the
+          disable or enable access, modify privileges, or delete the database
+          record under controlled conditions. Access and privilege changes
+          require an updated SAAR by default. The date recorded for a SAAR is the
+          date the account was created or disabled; it is never an expiration date,
+          and SAARs are never classified as Overdue. Disabling a user moves the
           user&apos;s prior active evidence into the organization Archive folder. When
           disabling without an updated SAAR, an operator may select the documented
           override and must enter a justification. To re-enable a disabled user,
@@ -200,7 +203,23 @@ export default function Guide() {
           tamper-evident audit log. Privilege changes still require an updated SAAR.
           Updated PDF evidence is validated and stored as a ZIP, and newly added
           roles or Privileged User Types require their additional evidence before
-          submission.
+          submission. Manual validation and storage has a two-minute safety limit,
+          so a damaged file or interrupted launcher request returns an actionable
+          error instead of leaving Submit running indefinitely. If the exact
+          evidence is associated with another profile, the app uses its SHA-256,
+          stored path, or identity-matching filename to release that association,
+          archive the prior location, associate it with the selected profile, and
+          record the transfer on both profiles and in the audit log. Deleting a
+          user requires a written justification and a
+          second confirmation. The app first scans the mapped system for active
+          PDF and ZIP evidence matching the user&apos;s Last Name, First Name, and
+          authoritative organization folder. Every matching SAAR moves to the
+          organization&apos;s permanent SAAR Archive, while all other matching evidence
+          moves to the organization Archive. The user is removed from the active
+          database only after every file move and the verified manifest and backup
+          save succeed. If any archive operation fails, the user record is retained.
+          The request, justification, Windows operator, completion result, and
+          archive destinations are recorded in the tamper-evident audit log.
         </p>
       </section>
       <section id="evidence">
@@ -244,9 +263,10 @@ export default function Guide() {
           investigation date or an unrelated official&apos;s date. A DoD Cyber
           certificate must contain the separate <code>DoD</code> token;{" "}
           <code>_cyber</code> in a privileged SAAR is only an account type and
-          does not count as the certificate. A SAAR is either Current or Missing
-          and never becomes Overdue. Other valid evidence becomes Overdue after
-          one year.
+          does not count as the certificate. A SAAR filename date records the
+          account creation or disable action; it is not an expiration date. A SAAR
+          is therefore either Current or Missing and never becomes Overdue. Other
+          valid evidence becomes Overdue after one year.
         </p>
         <h3>Rename Existing Documents</h3>
         <p>
@@ -535,8 +555,19 @@ export default function Guide() {
           window closes unexpectedly.
         </p>
         <p>
+          Tracker-owned support folders are grouped beneath the mapped
+          system&apos;s top-level <code>System</code> folder: Audit Logs,
+          backup, Reports, Sync Journals, Storage Transactions, and Archive
+          Review. Existing top-level copies are migrated into this structure
+          when the portable launcher maps the folder. The top-level{" "}
+          <code>Error Reports</code> folder remains separate so operators can
+          quickly open its plain-text reports in Notepad. Organization evidence,
+          Rework, Archive, Superseded, and permanent SAAR Archive folders remain
+          with their organization records.
+        </p>
+        <p>
           Every portable Sync writes a per-run journal under{" "}
-          <code>Sync Journals</code>. Each discovered file advances through
+          <code>System/Sync Journals</code>. Each discovered file advances through
           Pending, Validated or Rejected, Indexed, and Committed states. If the
           launcher, computer, or network share is interrupted, the next Sync
           resumes unchanged completed files from the latest compatible journal
@@ -546,7 +577,7 @@ export default function Guide() {
         <p>
           Rename, compression, Rework, Archive, and manifest replacement use
           recoverable transactions recorded under{" "}
-          <code>Storage Transactions</code>. On the next mapping, the launcher
+          <code>System/Storage Transactions</code>. On the next mapping, the launcher
           verifies source and destination hashes and either completes or rolls
           back an interrupted operation before accepting new changes. Operators
           should still review any exception reported after recovery; the app
@@ -582,7 +613,7 @@ export default function Guide() {
         </p>
         <p>
           Each meaningful database state creates a full-fidelity, timestamped
-          JSON snapshot in the selected system&apos;s <code>backup</code>{" "}
+          JSON snapshot in the selected system&apos;s <code>System/backup</code>{" "}
           folder, alongside the daily CSV report. Every JSON snapshot has a
           matching <code>.sha256</code> file and includes the system, users,
           artifact references, and administrative change histories. Unchanged
@@ -613,7 +644,7 @@ export default function Guide() {
           privilege changes, evidence storage, exports, report generation,
           filename-date normalization, and synchronization—are written to one
           UTF-8 JSON Lines text file per UTC day in that system&apos;s{" "}
-          <code>Audit Logs</code> folder. Every entry contains an ISO 8601 UTC
+          <code>System/Audit Logs</code> folder. Every entry contains an ISO 8601 UTC
           timestamp, the Windows operator, a continuous sequence, the previous
           entry&apos;s SHA-256, and its own SHA-256. The chain continues across
           daily files. Before appending, and whenever storage is verified, the
@@ -673,7 +704,7 @@ export default function Guide() {
         </p>
         <p>
           The PDF downloads to the computer and a matching copy is written to
-          each selected system&apos;s <code>Reports</code> folder with a{" "}
+          each selected system&apos;s <code>System/Reports</code> folder with a{" "}
           <code>.sha256</code> file. Report ID, scope, filename, and hash are
           recorded in each system&apos;s audit chain. The report is
           administrative evidence and does not independently establish control
@@ -686,7 +717,7 @@ export default function Guide() {
           the Compliance Snapshot PDF, filtered CSV, evidence inventory with
           mapped paths and SHA-256 hashes, audit-chain verification receipt,
           application and rule-set metadata, and active-exceptions CSV. A copy is
-          stored in the selected system&apos;s <code>Reports</code> folder with a
+          stored in the selected system&apos;s <code>System/Reports</code> folder with a
           SHA-256 sidecar, the action is added to the audit chain, and the same ZIP
           is downloaded for inspection handoff.
         </p>
@@ -913,7 +944,12 @@ export default function Guide() {
         so concurrency cannot produce partial or conflicting writes. Browser-mode
         audit files are verified in chronological order with a 30-second read
         limit per daily file; verification fails closed instead of hanging or
-        extending an unverified chain.
+        extending an unverified chain. Launcher storage requests use bounded
+        safety limits: two minutes for ordinary reads or writes and 30 minutes
+        for resumable directory scans and Archive preflight. File-changing
+        Clean Up and Document Renamer actions have a two-minute per-file
+        watchdog, continue with later files after a failure, and list the
+        affected item in the final review.
       </aside>
       <aside>
         <b>Extension Safety:</b> Every automated rename preserves the source
@@ -931,9 +967,15 @@ export default function Guide() {
         for every file.
       </aside>
       <aside>
-        <b>Error records:</b> Operational failures show bounded diagnostic
-        details and write an <code>ERROR:</code> entry to the affected mapped
-        system&apos;s audit chain. File-level rename, PDF-read, and validation
+        <b>Error Records:</b> Operational failures show bounded diagnostic
+        details, create a Notepad-readable report in the mapped system&apos;s
+        top-level <code>Error Reports</code> folder, and write an{" "}
+        <code>ERROR:</code> entry to the affected system&apos;s audit chain. Each
+        report includes a report ID, UTC time, Windows operator, application
+        and rule-set versions, context, and the bounded error details. Error
+        reporting has its own short safety limit, so an unavailable audit chain
+        cannot prevent the operator from seeing the original failure.
+        File-level rename, PDF-read, and validation
         errors do not stop the rest of a large Sync; they are audited and listed
         for operator review after processing finishes. Errors before mapping
         identify that no audit destination exists. Storage-verification and

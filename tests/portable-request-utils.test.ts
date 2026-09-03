@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {portableActionLabel,portableArchiveAction,portableFetch} from '../app/portable-request-utils.ts';
+import {PortableRequestTimeoutError,portableActionLabel,portableArchiveAction,portableFetch} from '../app/portable-request-utils.ts';
 
 test('keeps launcher failure stages useful without exposing query values',()=>{
  assert.equal(portableActionLabel('scan?rules=secret&full=1'),'scan');
@@ -35,6 +35,11 @@ test('does not retry an unsafe launcher write',async()=>{
 test('preserves cancellation without converting it to a launcher failure',async()=>{
  const controller=new AbortController();
  controller.abort();
- const cancellation=new DOMException('Stopped','AbortError');
- await assert.rejects(()=>portableFetch(async()=>{throw cancellation},'/api/storage/system/scan','scan',{signal:controller.signal},true,0),error=>error===cancellation);
+ await assert.rejects(()=>portableFetch(async()=>new Response('unused'),'/api/storage/system/scan','scan',{signal:controller.signal},true,0),error=>error instanceof Error&&error.name==='AbortError'&&!/launcher stopped responding/i.test(error.message));
+});
+
+test('times out an unresponsive launcher request and aborts its fetch signal',async()=>{
+ let fetchSignal:AbortSignal|null|undefined;
+ await assert.rejects(()=>portableFetch(async(_url,init)=>{fetchSignal=init?.signal;return new Promise<Response>(()=>undefined)},'/api/storage/system/archive','archive',undefined,false,0,10),error=>error instanceof PortableRequestTimeoutError&&/within 1 seconds/.test(error.message));
+ assert.equal(fetchSignal?.aborted,true);
 });

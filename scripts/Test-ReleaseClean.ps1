@@ -23,7 +23,7 @@ $runtimeFileNames = @(
     "tracker-active-session.json",
     "tracker-exclusive-session.lock"
 )
-$runtimeDirectoryNames = @("User Evidence", "Audit Logs", "backup", "Reports", "Archive Review")
+$runtimeDirectoryNames = @("User Evidence", "System", "Error Reports", "Audit Logs", "backup", "Reports", "Archive Review")
 $testPackageDirectoryNames = @("test-data", "test-evidence-package")
 $trackedFiles = @(& git -C $projectRoot ls-files)
 if ($LASTEXITCODE -ne 0) { throw "Unable to inspect tracked files." }

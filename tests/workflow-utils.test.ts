@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,requiresSaarFormClassification,reworkRetentionDisposition,type SyncProvenanceUser} from '../app/workflow-utils.ts';
+import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,requiresSaarFormClassification,reworkRetentionDisposition,type SyncProvenanceUser} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -71,6 +71,21 @@ test('commits exception changes without leaking unrelated draft edits',()=>{
  const committed={id:'u1',roles:['General'],exceptions:[]},draft={...committed,roles:['Privileged']},exception={id:'e1',artifact:'DoD Cyber Cert',reason:'temporary',approvedBy:'AO',createdAt:'2026-08-28T12:00:00Z',createdBy:'operator',expiresOn:'2026-09-30'};
  const updated=committedRecordWithExceptions(committed,[exception]);
  assert.deepEqual(updated.roles,['General']);assert.deepEqual(updated.exceptions,[exception]);assert.deepEqual(draft.roles,['Privileged']);
+});
+
+test('scopes delete-user archiving to the matching identity and authoritative organization',()=>{
+ const user={last:'Brown',first:'Jacob',organization:'GDMS'};
+ assert.equal(evidenceBelongsToUserArchiveScope({filename:'Brown_Jacob_(WRONG)_DoD_Cyber_Cert_26AUG2026.pdf.zip',folderOrganization:'GDMS'},user),true);
+ assert.equal(evidenceBelongsToUserArchiveScope({filename:'Brown_Jacob_(GDMS)_User_Agreement_26AUG2026.pdf.zip',folderOrganization:'NGC'},user),false);
+ assert.equal(evidenceBelongsToUserArchiveScope({filename:'Brown_Jane_(GDMS)_User_Agreement_26AUG2026.pdf.zip',folderOrganization:'GDMS'},user),false);
+});
+
+test('transfers only the same evidence association to the selected profile',()=>{
+ const target={last:'Brown',first:'Jacob'},hash='a'.repeat(64),incoming={kind:'DoD Cyber Cert',filename:'Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf.zip',sha256:hash,path:'User Evidence/GDMS/Brown_Jacob/current.zip'};
+ assert.equal(evidenceAssociationMatchesTransfer({kind:'DoD Cyber Cert',filename:'incorrect-owner-file.zip',sha256:hash},incoming,target),true);
+ assert.equal(evidenceAssociationMatchesTransfer({kind:'DoD Cyber Cert',filename:incoming.filename},incoming,target),true);
+ assert.equal(evidenceAssociationMatchesTransfer({kind:'User Agreement',filename:incoming.filename,sha256:hash},incoming,target),false);
+ assert.equal(evidenceAssociationMatchesTransfer({kind:'DoD Cyber Cert',filename:'Smith_Jane_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf.zip'},incoming,target),false);
 });
 
 test('adds provenance only to Sync-touched artifacts',()=>{

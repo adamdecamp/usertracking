@@ -144,13 +144,15 @@ internal static class PortableStorageTests
             compatibilityStorage.AppendAudit("compatibility-key", "COMPATIBILITY WRITE TEST");
             compatibilityStorage.ReleaseLease("compatibility-key", "compatibility-session");
         }
-        Assert(File.Exists(Path.Combine(compatibilityRoot, "information-system-user-tracker.json")) && File.Exists(Path.Combine(compatibilityRoot, "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv")) && Directory.EnumerateFiles(Path.Combine(compatibilityRoot, "Audit Logs"), "audit-*.jsonl").Any(), "Compatible buffered I/O should preserve manifest, backup, and audit writes.");
+        Assert(File.Exists(Path.Combine(compatibilityRoot, "information-system-user-tracker.json")) && File.Exists(Path.Combine(compatibilityRoot, "System", "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv")) && Directory.EnumerateFiles(Path.Combine(compatibilityRoot, "System", "Audit Logs"), "audit-*.jsonl").Any(), "Compatible buffered I/O should preserve manifest, backup, and audit writes beneath the System support folder.");
         string legacyCache = Path.Combine(root, "legacy-folder-mappings.json");
         File.WriteAllText(legacyCache, "{\"version\":1,\"lastSystemId\":\"legacy\",\"mappings\":[{\"systemId\":\"legacy\",\"path\":\"" + compatibilityRoot.Replace("\\", "\\\\") + "\"}]}", Encoding.UTF8);
         using (var legacyStorage = new PortableStorage("DOMAIN\\operator", legacyCache)) Assert(!legacyStorage.CachedMappings().Contains("legacy"), "Version-1 development mapping caches should be ignored so a clean update cannot restore stale test systems.");
         string mappingCache = Path.Combine(root, "local-folder-mappings.json");
+        string legacyAuditDirectory = Path.Combine(root, "Audit Logs");Directory.CreateDirectory(legacyAuditDirectory);File.WriteAllText(Path.Combine(legacyAuditDirectory, "audit-2020-01-01.txt"), "legacy audit record", Encoding.UTF8);
         var storage = new PortableStorage("DOMAIN\\operator", mappingCache);
         storage.Map("mapping-key", root);
+        Assert(!Directory.Exists(legacyAuditDirectory) && File.Exists(Path.Combine(root, "System", "Audit Logs", "audit-2020-01-01.txt")), "Mapping should migrate legacy support folders beneath the top-level System folder without losing their contents.");
         Assert(!Directory.EnumerateFiles(root, ".isut-map-probe-*", SearchOption.TopDirectoryOnly).Any(), "A successful mapping compatibility probe should remove its temporary file.");
         var competingStorage = new PortableStorage("DOMAIN\\second-operator", mappingCache);
         competingStorage.Map("mapping-key", root);
@@ -359,9 +361,11 @@ internal static class PortableStorageTests
         Assert(rejectedFakeZip, "Launcher storage should reject bytes that are not a ZIP.");
         Assert(rejectedNonPdfEntry, "Launcher storage should reject a ZIP containing a non-PDF file.");
         string reportResult = storage.StoreReport("mapping-key", "Compliance-Snapshot_TEST.pdf", PdfBytes());
-        Assert(reportResult.Contains("\"sha256\"") && File.Exists(Path.Combine(root, "Reports", "Compliance-Snapshot_TEST.pdf")) && File.Exists(Path.Combine(root, "Reports", "Compliance-Snapshot_TEST.pdf.sha256")), "Compliance reports should be stored with a matching SHA-256 file.");
+        Assert(reportResult.Contains("\"sha256\"") && File.Exists(Path.Combine(root, "System", "Reports", "Compliance-Snapshot_TEST.pdf")) && File.Exists(Path.Combine(root, "System", "Reports", "Compliance-Snapshot_TEST.pdf.sha256")), "Compliance reports should be stored with a matching SHA-256 file.");
         string packageResult = storage.StoreInspectionPackage("mapping-key", "Inspection-Package_TEST.zip", InspectionZip());
-        Assert(packageResult.Contains("\"sha256\"") && File.Exists(Path.Combine(root, "Reports", "Inspection-Package_TEST.zip")) && File.Exists(Path.Combine(root, "Reports", "Inspection-Package_TEST.zip.sha256")), "Inspection packages should contain the required files and be stored with a matching SHA-256 file.");
+        Assert(packageResult.Contains("\"sha256\"") && File.Exists(Path.Combine(root, "System", "Reports", "Inspection-Package_TEST.zip")) && File.Exists(Path.Combine(root, "System", "Reports", "Inspection-Package_TEST.zip.sha256")), "Inspection packages should contain the required files and be stored with a matching SHA-256 file.");
+        string errorReportResult = storage.StoreErrorReport("mapping-key", "ERR-TEST.txt", "Information System User Tracker Error Report\r\nDetails: simulated failure");
+        Assert(errorReportResult.Contains("Error Reports/ERR-TEST.txt") && File.ReadAllText(Path.Combine(root, "Error Reports", "ERR-TEST.txt"), Encoding.UTF8).Contains("simulated failure"), "A plain-text error report should be stored in the top-level Error Reports folder for Notepad review.");
 
         string journalFirst = storage.ScanWithJournal("mapping-key", "journal-rules", true);var journalFirstObject = (Dictionary<string, object>)Json.DeserializeObject(journalFirst);string journalRun = Convert.ToString(journalFirstObject["runId"]);
         string journalResumed = storage.ScanWithJournal("mapping-key", "journal-rules", false);var journalResumedObject = (Dictionary<string, object>)Json.DeserializeObject(journalResumed);
@@ -369,13 +373,13 @@ internal static class PortableStorageTests
         storage.CommitSyncJournal("mapping-key", journalRun);Assert(storage.CommitSyncJournal("mapping-key", journalRun).Contains("\"committed\":true"), "Sync journal commit should be safely repeatable.");
         string interruptedRelative = Path.Combine("GOV", "Transaction_User_(GOV)_User_Agreement_24AUG2026.pdf"), interruptedPath = Path.Combine(root, interruptedRelative), interruptedTarget = "Transaction_User_(GOV)_User_Agreement_25AUG2026.pdf";Directory.CreateDirectory(Path.GetDirectoryName(interruptedPath));File.WriteAllBytes(interruptedPath, PdfBytes());
         bool interruptionObserved = false;try { PortableStorage.FailAfterStageForTests = "rename-move";storage.NormalizeEvidenceFilename("mapping-key", interruptedRelative, interruptedTarget); } catch (IOException) { interruptionObserved = true; } finally { PortableStorage.FailAfterStageForTests = null; }
-        Assert(interruptionObserved, "The transaction recovery test must simulate a crash after a completed move.");storage.Map("mapping-key", root);Assert(!File.Exists(interruptedPath) && File.Exists(Path.Combine(Path.GetDirectoryName(interruptedPath), interruptedTarget)) && !Directory.EnumerateFiles(Path.Combine(root, "Storage Transactions"), "transaction-*.json").Any(), "Mapping after an interrupted rename should reconcile the durable transaction without duplicating or losing the file.");
+        Assert(interruptionObserved, "The transaction recovery test must simulate a crash after a completed move.");storage.Map("mapping-key", root);Assert(!File.Exists(interruptedPath) && File.Exists(Path.Combine(Path.GetDirectoryName(interruptedPath), interruptedTarget)) && !Directory.EnumerateFiles(Path.Combine(root, "System", "Storage Transactions"), "transaction-*.json").Any(), "Mapping after an interrupted rename should reconcile the durable transaction without duplicating or losing the file.");
         string pendingRelative = Path.Combine("GOV", "Pending_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf"), pendingPath = Path.Combine(root, pendingRelative);File.WriteAllBytes(pendingPath, PdfBytes());bool pendingInterrupted = false;try { PortableStorage.FailAfterStageForTests = "scan-file-pending";storage.ScanWithJournal("mapping-key", "pending-rules", true); } catch (IOException) { pendingInterrupted = true; } finally { PortableStorage.FailAfterStageForTests = null; }
         Assert(pendingInterrupted && storage.ScanWithJournal("mapping-key", "pending-rules", false).Contains("Pending_User"), "A crash after a pending Sync journal entry should resume and validate that file on the next run.");
         storage.AppendAudit("mapping-key", "TEST ACTION");
         storage.AppendAudit("mapping-key", "SECOND ACTION");
         storage.AppendAuditBatch("mapping-key", new[] { "BATCH ACTION ONE", "BATCH ACTION TWO", "BATCH ACTION THREE" });
-        string auditDirectory = Path.Combine(root, "Audit Logs"), auditPath = Directory.EnumerateFiles(auditDirectory, "audit-*.jsonl").Single();
+        string auditDirectory = Path.Combine(root, "System", "Audit Logs"), auditPath = Directory.EnumerateFiles(auditDirectory, "audit-*.jsonl").Single();
         var auditBlocker = new FileStream(auditPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         var releaseAuditBlocker = new Thread(new ThreadStart(delegate { Thread.Sleep(100); auditBlocker.Dispose(); }));
         releaseAuditBlocker.Start();
@@ -409,7 +413,7 @@ internal static class PortableStorageTests
         Assert(verification.Contains("\"healthy\":true"), "The latest database and backup should verify.");
         object[] items = (object[])Json.DeserializeObject(storage.ListBackups("mapping-key", "system-1"));
         string latest = Convert.ToString(((Dictionary<string, object>)items[0])["filename"]);
-        File.AppendAllText(Path.Combine(root, "backup", latest), "tampered");
+        File.AppendAllText(Path.Combine(root, "System", "backup", latest), "tampered");
         object[] tampered = (object[])Json.DeserializeObject(storage.ListBackups("mapping-key", "system-1"));
         Assert(!Convert.ToBoolean(((Dictionary<string, object>)tampered[0])["valid"]), "A modified snapshot should fail integrity verification.");
         storage.FinalizeMappedBackups();
