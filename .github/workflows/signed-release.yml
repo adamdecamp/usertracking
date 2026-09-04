@@ -23,16 +23,13 @@ jobs:
         shell: pwsh
         run: ./scripts/Test-ReleaseClean.ps1 -SourceOnly
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+      - name: Install pnpm and Node.js
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2
         with:
           version: 11.19.0
-
-      - name: Install Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
-        with:
-          node-version: 22.13.0
-          cache: pnpm
+          runtime: node@22.13.0
+          install: false
+          cache: true
 
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
