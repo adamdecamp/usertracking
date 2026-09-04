@@ -1,7 +1,7 @@
 import {mapWithConcurrency} from './concurrency-utils.ts';
 import {canonicalArtifactKind,filenameIdentityMatches,filenameMatchesKind,organizationFrom} from './filename-utils.ts';
 
-type ProvenanceTarget={user:{last:string;first:string;organization?:string};artifact:{filename:string;kind?:string}};
+type ProvenanceTarget={user:{last:string;first:string;organization?:string};artifact:{filename:string;kind?:string;path?:string}};
 type ProvenanceEvidence={filename:string;path:string;folderOrganization?:string};
 type ProvenanceResolution<TEvidence>={evidence:TEvidence}|{error:string};
 
@@ -18,6 +18,9 @@ function sameOrganization(target:ProvenanceTarget,item:ProvenanceEvidence){
 
 export function resolveSyncProvenanceEvidence<TEvidence extends ProvenanceEvidence>(target:ProvenanceTarget,evidence:TEvidence[]):ProvenanceResolution<TEvidence>{
  const identityMatches=evidence.filter(item=>filenameIdentityMatches(item.filename,target.user)&&sameOrganization(target,item));
+ const expectedPath=target.artifact.path?.replaceAll('\\','/').toUpperCase(),pathMatches=expectedPath?identityMatches.filter(item=>item.path.replaceAll('\\','/').toUpperCase()===expectedPath):[];
+ if(pathMatches.length===1)return{evidence:pathMatches[0]!} as const;
+ if(pathMatches.length>1)return{error:`Multiple current evidence files occupy the selected path for ${target.artifact.filename}; run Reconciliation before applying this update.`} as const;
  const containerKey=evidenceContainerKey(target.artifact.filename),exact=identityMatches.filter(item=>evidenceContainerKey(item.filename)===containerKey);
  if(exact.length===1)return{evidence:exact[0]!} as const;
  if(exact.length>1)return{error:`Multiple current evidence files match ${target.artifact.filename}; resolve the duplicate before applying this update.`} as const;

@@ -295,9 +295,10 @@ export default function Guide() {
         <p>
           Within a User Record, choose <b>Preview &amp; Provenance</b> to open
           the validated embedded PDF without changing it. The preview shows its
-          mapped path, filename date, current SHA-256, and the available
-          administrative or ingestion history. Manually stored evidence records
-          a baseline SHA-256 for later reconciliation.
+          PDF in a nearly full-window viewer. Document details and provenance
+          remain available in a collapsible section, and <b>Open Full-Size PDF</b>
+          opens the browser&apos;s dedicated PDF viewer. Manually stored evidence
+          records a baseline SHA-256 for later reconciliation.
         </p>
         <div className="formats">
           {formats.map(([label, format]) => (
@@ -508,7 +509,10 @@ export default function Guide() {
           <b>Apply Verified Updates</b>. Before provenance hashes are saved, the
           app refreshes current file locations so a preceding rename, compression,
           Rework, Archive, or document-type move cannot leave an obsolete file
-          reference. A verified <code>.pdf</code> to <code>.pdf.zip</code>
+          reference. For a collision decision, the exact operator-selected
+          destination path is verified first, so another current file of the same
+          artifact type cannot make the completed selection appear ambiguous. A
+          verified <code>.pdf</code> to <code>.pdf.zip</code>
           conversion is treated as the same evidence, and the record is updated
           with the ZIP&apos;s actual filename and current path. If an exact container
           name is unavailable, Sync uses user identity, authoritative organization,
@@ -523,14 +527,16 @@ export default function Guide() {
         </p>
         <p>
           A correctly named supporting artifact may create a proposed minimal
-          user record even when no SAAR exists. Sync reads the ordered{" "}
+          user record even when no usable SAAR exists. Sync reads the ordered{" "}
           <code>Last_First</code> identity, authoritative organization folder,
           document type, and valid date from the filename. The proposed record
           keeps Official Email blank, marks SAAR as Missing, and includes the
           recognized supporting evidence. Evidence that indicates 8140,
           Privileged User Training, or DTA requirements proposes a Privileged
           role; other supporting evidence proposes General. The operator must
-          review and approve the record in Sync Review. Files with ambiguous
+          review and approve the record in Sync Review. Organization is part of
+          the match, so the same Last Name and First Name in different
+          organizations do not block one another. Files with ambiguous
           identity, invalid dates, conflicting authoritative organization
           folders, or unrecognized document types remain unmatched or are sent
           to Rework and never create a record automatically.

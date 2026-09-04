@@ -28,6 +28,15 @@ test('does not guess provenance when more than one current file matches the same
  assert.equal(result.verified.length,0);assert.match(result.failures[0].error,/Multiple current DoD Cyber Cert files/);
 });
 
+test('verifies the operator-selected collision winner by its refreshed exact path',async()=>{
+ const target={user:{last:'Evan',first:'Avery',organization:'LM'},artifact:{kind:'DoD Cyber Cert',filename:'Evan_Avery_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip',path:'LM/DoD Cyber Cert/selected.pdf.zip'}},evidence=[
+  {filename:'Evan_Avery_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip',path:'LM/DoD Cyber Cert/selected.pdf.zip',folderOrganization:'LM'},
+  {filename:'Evan_Avery_(LM)_DoD_Cyber_Cert_25AUG2026.pdf.zip',path:'LM/DoD Cyber Cert/other.pdf.zip',folderOrganization:'LM'},
+ ];
+ const result=await verifySyncProvenance([target],evidence,async()=> 'c'.repeat(64));
+ assert.equal(result.failures.length,0);assert.equal(result.verified[0].evidence.path,'LM/DoD Cyber Cert/selected.pdf.zip');
+});
+
 test('groups exact duplicate PDF content hashes without trusting filenames',()=>{
  const same='a'.repeat(64),groups=duplicateContentGroups([{filename:'one.pdf',path:'GOV/one.pdf',sha256:same},{filename:'different-name.pdf.zip',path:'GOV/different-name.pdf.zip',sha256:same.toUpperCase()},{filename:'unique.pdf',path:'GOV/unique.pdf',sha256:'b'.repeat(64)},{filename:'invalid.pdf',path:'GOV/invalid.pdf',sha256:'not-a-hash'}]);
  assert.deepEqual(groups,[{sha256:same,files:[{filename:'different-name.pdf.zip',path:'GOV/different-name.pdf.zip'},{filename:'one.pdf',path:'GOV/one.pdf'}]}]);
