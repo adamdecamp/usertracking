@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {classifyEvidenceCollision,collisionArchiveFilename,defaultEvidenceCollisionChoice,distinctByPath,retainUnfinishedCleanup,selectLoosePdfCleanupCandidates,selectSupersededEvidence,supersedingEvidenceApproval} from '../app/cleanup-utils.ts';
+import {classifyEvidenceCollision,collisionArchiveFilename,defaultEvidenceCollisionChoice,distinctByPath,findLoosePdfZipCollisions,retainUnfinishedCleanup,selectLoosePdfCleanupCandidates,selectSupersededEvidence,supersedingEvidenceApproval} from '../app/cleanup-utils.ts';
 
 type Item={path:string;date:string;current:boolean};
 const select=(items:Item[])=>selectSupersededEvidence(items,item=>new Date(item.date),item=>item.current,item=>item.path);
@@ -49,6 +49,18 @@ test('offers loose PDF compression only for an existing matching directory user'
  ];
  const result=selectLoosePdfCleanupCandidates(items,[{identity:'Brown/Jacob'}],(item,user)=>item.identity===user.identity,['Incoming/Brown_Jacob_Old.pdf']);
  assert.deepEqual(result.map(item=>item.filename),['Brown_Jacob_DoD.pdf']);
+});
+
+test('detects a loose PDF whose compression destination already exists',()=>{
+ const items=[
+  {path:'GDMS/DoD Cyber Cert/Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf',filename:'Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf'},
+  {path:'GDMS/DoD Cyber Cert/Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf.zip',filename:'Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf.zip'},
+  {path:'GDMS/User Agreement/Shaw_Vivian_(GDMS)_User_Agreement_26AUG2026.pdf',filename:'Shaw_Vivian_(GDMS)_User_Agreement_26AUG2026.pdf'},
+ ];
+ const collisions=findLoosePdfZipCollisions(items);
+ assert.equal(collisions.length,1);
+ assert.equal(collisions[0].pdf.filename,'Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf');
+ assert.equal(collisions[0].zip.filename,'Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf.zip');
 });
 
 test('reuses first-scan evidence for cleanup immediately after a verified user is ingested',()=>{

@@ -850,7 +850,15 @@ internal sealed class PortableStorage : IDisposable
         }
         string validationError;
         if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected PDF is invalid." : validationError);
-        if (File.Exists(destination)) throw new IOException("A ZIP with the same filename already exists. Review the duplicate before compressing this PDF.");
+        string sourcePdfHash = EvidencePdfSha256(source);
+        if (File.Exists(destination))
+        {
+            string existingError;
+            if (!TryValidateEvidenceFile(destination, out existingError)) throw new IOException("A ZIP with the same filename already exists but is not valid evidence. Both files were preserved for collision review.");
+            if (!String.Equals(sourcePdfHash, EvidencePdfSha256(destination), StringComparison.OrdinalIgnoreCase)) throw new IOException("A different PDF already occupies the ZIP compression destination. Both files were preserved for collision review.");
+            string existingTransaction = BeginTransaction(root, "compression", source, destination, sourcePdfHash, "");
+            File.Delete(source);CompleteTransaction(existingTransaction);alreadyCompleted = true;return destination;
+        }
         string temporary = Path.Combine(Path.GetDirectoryName(destination), ".isut-" + Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
@@ -866,7 +874,7 @@ internal sealed class PortableStorage : IDisposable
                 ValidateEvidenceZip(output, Path.GetFileName(destination));
                 FlushCompatible(output);
             }
-            string transaction = BeginTransaction(root, "compression", source, destination, Sha256Bytes(File.ReadAllBytes(source)), "");
+            string transaction = BeginTransaction(root, "compression", source, destination, sourcePdfHash, "");
             File.Move(temporary, destination);FailAfter("compression-move");
             try { File.Delete(source);CompleteTransaction(transaction); }
             catch { TryDelete(destination);throw; }
@@ -1401,7 +1409,12 @@ internal sealed class PortableStorage : IDisposable
                 if (File.Exists(destination))
                 {
                     string validationError;if (!TryValidateEvidenceFile(destination, out validationError)) { if (File.Exists(source)) { TryDelete(destination);CompleteTransaction(path);continue; } throw new InvalidDataException("An interrupted evidence compression left an invalid ZIP without its source PDF."); }
-                    if (File.Exists(source)) File.Delete(source);
+                    if (!String.IsNullOrEmpty(sourceHash) && !String.Equals(sourceHash, EvidencePdfSha256(destination), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("An interrupted evidence compression found different PDF content at the ZIP destination. Both files were preserved for collision review.");
+                    if (File.Exists(source))
+                    {
+                        if (!String.IsNullOrEmpty(sourceHash) && !String.Equals(sourceHash, EvidencePdfSha256(source), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("An interrupted evidence compression source changed after the transaction began. Both files were preserved for collision review.");
+                        File.Delete(source);
+                    }
                     CompleteTransaction(path);continue;
                 }
                 if (File.Exists(source)) { CompleteTransaction(path);continue; }
@@ -1835,6 +1848,22 @@ internal sealed class PortableStorage : IDisposable
     private static object[] ObjectArray(object value) { var result = value as object[]; if (result == null) throw new InvalidDataException("The JSON array is invalid."); return result; }
     private static string CleanLine(string value, int max) { if (value == null) return ""; var builder = new StringBuilder(); foreach (char c in value) builder.Append(Char.IsControl(c) ? ' ' : c); string clean = builder.ToString().Trim(); return clean.Length > max ? clean.Substring(0, max) : clean; }
     private static string ReadText(string path, long limit) { var info = new FileInfo(path); if (!info.Exists) throw new FileNotFoundException("The requested file is missing."); if (info.Length > limit) throw new InvalidDataException("The requested file exceeds its size limit."); return File.ReadAllText(path, Encoding.UTF8); }
+    private static string EvidencePdfSha256(string path)
+    {
+        if (path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) using (Stream input = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) return Sha256Stream(input);
+        if (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            using (Stream input = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var archive = new ZipArchive(input, ZipArchiveMode.Read, false))
+            {
+                ZipArchiveEntry entry = archive.Entries.Single(item => !item.FullName.EndsWith("/", StringComparison.Ordinal) && item.FullName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase));
+                using (Stream pdf = entry.Open()) return Sha256Stream(pdf);
+            }
+        }
+        throw new InvalidDataException("Evidence content hashing accepts only PDF or ZIP evidence.");
+    }
+
+    private static string Sha256Stream(Stream value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(value)).Replace("-", "").ToLowerInvariant(); } }
     private static string Sha256(string value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(value))).Replace("-", "").ToLowerInvariant(); } }
     private static string Sha256Bytes(byte[] value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(value)).Replace("-", "").ToLowerInvariant(); } }
     private static string TryFileHash(string path) { try { return File.Exists(path) ? Sha256Bytes(File.ReadAllBytes(path)) : ""; } catch { return ""; } }

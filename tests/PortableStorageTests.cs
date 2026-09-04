@@ -280,6 +280,14 @@ internal static class PortableStorageTests
         using (var compressedArchive = new ZipArchive(compressedStream, ZipArchiveMode.Read))
             Assert(compressedArchive.Entries.Count == 1 && compressedArchive.Entries[0].FullName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase), "Cleanup compression should create a ZIP containing exactly one PDF.");
         Assert(storage.Scan("mapping-key").Contains("Shaw_Vivian_GEN_User_Agreement_24AUG2026.pdf.zip"), "The compressed evidence should remain available to later Sync scans.");
+        string exactCoexistRelative = Path.Combine("GOV", "Exact_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf"), exactCoexistPath = Path.Combine(root, exactCoexistRelative), exactZipPath = exactCoexistPath + ".zip";
+        Directory.CreateDirectory(Path.GetDirectoryName(exactCoexistPath));File.WriteAllBytes(exactCoexistPath, PdfBytes());File.WriteAllBytes(exactZipPath, EvidenceZip(Path.GetFileName(exactCoexistPath), PdfBytes()));
+        string exactCoexistResult = storage.CompressEvidence("mapping-key", exactCoexistRelative);
+        Assert(exactCoexistResult.Contains("\"alreadyCompleted\":true") && !File.Exists(exactCoexistPath) && File.Exists(exactZipPath), "A matching loose PDF and existing ZIP should complete idempotently by retaining the validated ZIP and removing only the redundant PDF.");
+        string conflictRelative = Path.Combine("GOV", "Conflict_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf"), conflictPath = Path.Combine(root, conflictRelative), conflictZipPath = conflictPath + ".zip";
+        byte[] alternatePdf = Encoding.ASCII.GetBytes("%PDF-1.4\n% alternate evidence\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n");File.WriteAllBytes(conflictPath, PdfBytes());File.WriteAllBytes(conflictZipPath, EvidenceZip(Path.GetFileName(conflictPath), alternatePdf));bool compressionCollisionObserved = false;
+        try { storage.CompressEvidence("mapping-key", conflictRelative); } catch (IOException error) { compressionCollisionObserved = error.Message.Contains("collision review"); }
+        Assert(compressionCollisionObserved && File.Exists(conflictPath) && File.Exists(conflictZipPath), "Different PDFs sharing one compression destination must both remain intact for collision review.");
         string longCompressionDirectory = Path.Combine(root, "Long Path Compression");
         Directory.CreateDirectory(longCompressionDirectory);
         string longCompressionPrefix = "Shaw_Vivian_GEN_User_Agreement_", longCompressionSuffix = "_24AUG2026.pdf";

@@ -14,6 +14,11 @@ export function selectLoosePdfCleanupCandidates<T extends{filename:string;path:s
  return distinctByPath(items.filter(item=>item.filename.toLowerCase().endsWith('.pdf')&&!excluded.has(item.path.replaceAll('\\','/').toUpperCase())&&existingUsers.some(user=>matchesUser(item,user))));
 }
 
+export function findLoosePdfZipCollisions<T extends{filename:string;path:string}>(items:T[]){
+ const pathKey=(path:string)=>path.replaceAll('\\','/').toUpperCase(),byPath=new Map(items.map(item=>[pathKey(item.path),item]));
+ return distinctByPath(items.filter(item=>item.filename.toLowerCase().endsWith('.pdf')).map(pdf=>{const zip=byPath.get(pathKey(`${pdf.path}.zip`));return zip?{pdf,zip}:undefined}).filter((item):item is{pdf:T;zip:T}=>!!item).map(item=>({path:item.pdf.path,filename:item.pdf.filename,pdf:item.pdf,zip:item.zip})));
+}
+
 export function retainUnfinishedCleanup<T extends{id:string}>(items:T[],completedIds:Iterable<string>){
  const completed=new Set(completedIds);
  return items.filter(item=>!completed.has(item.id));

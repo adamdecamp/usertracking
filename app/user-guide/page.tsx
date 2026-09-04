@@ -295,10 +295,15 @@ export default function Guide() {
         <p>
           Within a User Record, choose <b>Preview &amp; Provenance</b> to open
           the validated embedded PDF without changing it. The preview shows its
-          PDF in a nearly full-window viewer. Document details and provenance
+          PDF in a full-window viewer. Document details and provenance
           remain available in a collapsible section, and <b>Open Full-Size PDF</b>
           opens the browser&apos;s dedicated PDF viewer. Manually stored evidence
           records a baseline SHA-256 for later reconciliation.
+        </p>
+        <p>
+          Collision review uses the same full-window PDF layout for both the
+          incoming and organized copies, leaving only a compact filename header
+          above the document.
         </p>
         <div className="formats">
           {formats.map(([label, format]) => (
@@ -453,7 +458,8 @@ export default function Guide() {
           limited to the historical account-status check.
         </p>
         <p>
-          A filename or document-type organization collision is a review item,
+          A filename, document-type organization, or loose-PDF compression
+          collision is a review item,
           not a rejected-file error. Sync preserves both files, validates the
           contained PDFs, and compares their SHA-256 hashes. When the hashes
           match, Clean Up labels the pair <b>Exact Duplicate</b> and preselects
@@ -470,6 +476,13 @@ export default function Guide() {
           identity is not already in the User Directory, resolve the collision
           first and run Sync again; this prevents a new record from being
           populated from one PDF while the operator selects the other PDF.
+        </p>
+        <p>
+          If a loose PDF and its expected <code>.pdf.zip</code> destination both
+          exist, the app compares the PDF content inside each container. Identical
+          content completes compression idempotently by retaining the validated
+          ZIP and removing only the redundant loose container. Different content
+          remains preserved and is sent to File Collisions for operator review.
         </p>
         <p>
           For an existing user, Sync proposes matching artifact and organization
