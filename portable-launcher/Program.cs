@@ -156,6 +156,8 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "compress" && parts[0] == "POST") response = storage.CompressEvidence(systemId, QueryValue(target, "path"));
                     else if (action == "organize" && parts[0] == "POST") response = storage.OrganizeEvidence(systemId, QueryValue(target, "path"), QueryValue(target, "folder"));
                     else if (action == "normalize-date" && parts[0] == "POST") response = storage.NormalizeEvidenceFilename(systemId, QueryValue(target, "path"), QueryValue(target, "filename"));
+                    else if (action == "organizations" && parts[0] == "GET") response = storage.ListOrganizations(systemId);
+                    else if (action == "organizations" && parts[0] == "POST") response = storage.CreateOrganization(systemId, QueryValue(target, "name"));
                     else if (action == "evidence" && parts[0] == "POST") response = "{\"filename\":\"" + Json(storage.StoreEvidence(systemId, QueryValue(target, "organization"), QueryValue(target, "last"), QueryValue(target, "first"), QueryValue(target, "filename"), requestBody)) + "\"}";
                     else if (action == "report" && parts[0] == "POST") response = storage.StoreReport(systemId, QueryValue(target, "filename"), requestBody);
                     else if (action == "error-report" && parts[0] == "POST") response = storage.StoreErrorReport(systemId, QueryValue(target, "filename"), Encoding.UTF8.GetString(requestBody));

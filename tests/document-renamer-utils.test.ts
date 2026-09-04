@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {analyzeDocumentText,buildTrackerFilename,folderOrganizationDiffers,normalizeFilenameOrganization,organizationCleanupDirectory,organizationFromFolderPath,organizationStorageLocation} from '../app/document-renamer-utils.ts';
+import {analyzeDocumentText,buildTrackerFilename,folderOrganizationDiffers,normalizeFilenameOrganization,organizationCleanupDirectory,organizationFromFolderPath,organizationStorageLocation,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
 import {canonicalEvidenceFilename} from '../app/filename-utils.ts';
 
 const users=[{first:'Jacob',last:'Brown',organization:'LM',roles:['General'],privilegedTypes:[]}];
@@ -76,6 +76,9 @@ test('builds privileged SAAR names with the account type',()=>{
 test('uses the organization folder while skipping the managed user-evidence identity folder',()=>{
  assert.equal(organizationFromFolderPath('Intelligence Group/certificate.pdf','DEFAULT'),'Intelligence Group');
  assert.equal(organizationFromFolderPath('User Evidence/LM/Brown_Jacob/certificate.pdf','DEFAULT'),'LM');
+ assert.equal(organizationFromFolderPath('Organizations/GDMS/SAAR/Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf','DEFAULT'),'GDMS');
+ assert.equal(organizationFromFolderPath('Organizations/GOV/DoD Cyber Cert/Brown_Jacob_(GOV)_DoD_Cyber_Cert_26AUG2026.pdf','DEFAULT'),'GOV');
+ assert.equal(organizationFromFolderPath('SAAR/Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf','DEFAULT'),'DEFAULT');
  assert.equal(organizationFromFolderPath('GDMS/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf','DEFAULT'),'GDMS');
  assert.equal(organizationFromFolderPath('LM/Brown_Jacob/Brown_Jacob_(GOV)_SAAR_26AUG2026.pdf','DEFAULT'),'LM');
  assert.equal(organizationFromFolderPath('GDMS/Privileged/Brown_Jacob/Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','DEFAULT'),'GDMS');
@@ -90,8 +93,15 @@ test('uses the organization folder while skipping the managed user-evidence iden
  assert.equal(folderOrganizationDiffers('GOV/certificate.pdf','gov','DEFAULT'),false);
 });
 
+test('reserves document-type folders so they cannot become organizations',()=>{
+ assert.equal(validOrganizationFolderName('GDMS'),true);
+ assert.equal(validOrganizationFolderName('Boeing Defense'),true);
+ for(const reserved of['Organizations','User Evidence','SAAR','DoD Cyber Cert','User Agreement','8140 Certification Memo','Privileged User Training','DTA Training','System','Error Reports','Audit Logs','backup','Reports','Sync Journals','Storage Transactions','GOV Rework','LM Archive','CON','LPT1.txt'])assert.equal(validOrganizationFolderName(reserved),false,reserved);
+});
+
 test('places Rework and Archive inside the authoritative organization folder',()=>{
  assert.deepEqual(organizationStorageLocation('User Evidence/GDMS/Brown_Jacob/file.pdf','SYSTEM'),{organization:'GDMS',relativeDirectory:'User Evidence/GDMS'});
+ assert.deepEqual(organizationStorageLocation('Organizations/GDMS/SAAR/file.pdf','SYSTEM'),{organization:'GDMS',relativeDirectory:'Organizations/GDMS'});
  assert.deepEqual(organizationCleanupDirectory('User Evidence/GDMS/Brown_Jacob/file.pdf','SYSTEM','Rework'),{organization:'GDMS',relativeDirectory:'User Evidence/GDMS',folder:'GDMS Rework',path:'User Evidence/GDMS/GDMS Rework'});
  assert.equal(organizationCleanupDirectory('NGC/Brown_Jacob/Brown_Jacob_(NGC)_SAAR_26AUG2026.pdf','SYSTEM','Archive').path,'NGC/NGC Archive');
  assert.equal(organizationCleanupDirectory('Brown_Jacob/Brown_Jacob_(GDMS)_SAAR_26AUG2026.pdf','GDMS','Rework').path,'GDMS Rework');

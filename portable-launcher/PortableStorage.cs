@@ -118,6 +118,7 @@ internal sealed class PortableStorage : IDisposable
         if (!Directory.Exists(full)) throw new DirectoryNotFoundException("The selected system folder is unavailable.");
         ProbeMappedFolder(full);
         MigrateSupportDirectories(full);
+        Directory.CreateDirectory(Path.Combine(full, "Organizations"));
         object gate, leaseGate;
         lock (mapGate)
         {
@@ -919,11 +920,31 @@ internal sealed class PortableStorage : IDisposable
         catch (Exception) { throw new InvalidDataException("The evidence ZIP is invalid or unreadable."); }
         lock (RootLock(systemId))
         {
-            string directory = Path.Combine(Root(systemId), "User Evidence", SafePart(organization, 80), SafePart(last, 80) + "_" + SafePart(first, 80));
+            string directory = Path.Combine(Root(systemId), "Organizations", ValidOrganizationName(organization), SafePart(last, 80) + "_" + SafePart(first, 80));
             Directory.CreateDirectory(directory);
             AtomicWrite(Path.Combine(directory, zipName), bytes);
         }
         return zipName;
+    }
+
+    public string ListOrganizations(string systemId)
+    {
+        lock (RootLock(systemId))
+        {
+            string root = Root(systemId), directory = Path.Combine(root, "Organizations");Directory.CreateDirectory(directory);
+            string[] names = EnumerateScanDirectories(root, directory).Select(path => new DirectoryInfo(path).Name).Where(name => !ReservedOrganizationName(name)).OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+            return json.Serialize(names);
+        }
+    }
+
+    public string CreateOrganization(string systemId, string requested)
+    {
+        string organization = ValidOrganizationName(requested);
+        lock (RootLock(systemId))
+        {
+            string directory = Path.Combine(Root(systemId), "Organizations", organization);Directory.CreateDirectory(directory);
+            return json.Serialize(new Dictionary<string, object> { { "organization", organization } });
+        }
     }
 
     public string StoreReport(string systemId, string filename, byte[] bytes)
@@ -1587,6 +1608,20 @@ internal sealed class PortableStorage : IDisposable
         return result.ToString();
     }
 
+    private static bool ReservedOrganizationName(string value)
+    {
+        string comparable = ComparableStorageName(value), upper = (value ?? "").Trim().ToUpperInvariant();
+        string[] reserved = { "ORGANIZATIONS", "USEREVIDENCE", "ACTIVE", "ACTIVEEVIDENCE", "EVIDENCE", "GENERAL", "GENERALUSERS", "PRIVILEGED", "PRIVILEGEDUSERS", "USERS", "USERRECORDS", "USERACCOUNTS", "SAAR", "DODCYBERCERT", "USERAGREEMENT", "8140CERTIFICATIONMEMO", "PRIVILEGEDUSERTRAINING", "DTATRAINING", "SYSTEM", "ERRORREPORTS", "AUDITLOGS", "BACKUP", "ARCHIVEREVIEW", "REPORTS", "SYNCJOURNALS", "STORAGETRANSACTIONS" };
+        return reserved.Contains(comparable, StringComparer.OrdinalIgnoreCase) || Regex.IsMatch(value ?? "", @"^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant) || upper.EndsWith(" REWORK", StringComparison.OrdinalIgnoreCase) || upper.EndsWith(" ARCHIVE", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ValidOrganizationName(string value)
+    {
+        string raw = (value ?? "").Trim(), safe = SafePart(raw, 80);
+        if (String.IsNullOrWhiteSpace(raw) || raw.Length > 80 || !String.Equals(raw, safe, StringComparison.Ordinal) || ReservedOrganizationName(raw)) throw new InvalidDataException("The organization name is invalid or reserved for application storage.");
+        return raw;
+    }
+
     private static Tuple<string, string> OrganizationStorageLocation(string root, string source)
     {
         string relative = Relative(root, source);
@@ -1596,12 +1631,14 @@ internal sealed class PortableStorage : IDisposable
         int directoryCount = parts.Length - 1;
         for (int index = 0; index < directoryCount - 1; index++)
         {
-            if (!String.Equals(parts[index], "User Evidence", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!String.Equals(parts[index], "User Evidence", StringComparison.OrdinalIgnoreCase) && !String.Equals(parts[index], "Organizations", StringComparison.OrdinalIgnoreCase)) continue;
             string organization = parts[index + 1], directory = root;
+            if (ReservedOrganizationName(organization)) continue;
             for (int part = 0; part <= index + 1; part++) directory = Path.Combine(directory, parts[part]);
             return Tuple.Create(directory, organization);
         }
         string filenameIdentity = ComparableStorageName(Path.GetFileNameWithoutExtension(parts[parts.Length - 1])), topLevel = ComparableStorageName(parts[0]);
+        if (ReservedOrganizationName(parts[0])) return Tuple.Create(root, rootOrganization);
         if (!String.IsNullOrEmpty(topLevel) && filenameIdentity.StartsWith(topLevel, StringComparison.OrdinalIgnoreCase)) return Tuple.Create(root, rootOrganization);
         return Tuple.Create(Path.Combine(root, parts[0]), parts[0]);
     }

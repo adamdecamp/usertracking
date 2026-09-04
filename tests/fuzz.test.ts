@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {verifyAuditText} from '../app/audit-utils.ts';
 import {classifyEvidenceCollision} from '../app/cleanup-utils.ts';
-import {normalizeFilenameOrganization,organizationFromFolderPath} from '../app/document-renamer-utils.ts';
+import {normalizeFilenameOrganization,organizationFromFolderPath,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
 import {inspectEvidenceBytes} from '../app/evidence-validation.ts';
 import {auditEvidenceContent} from '../app/evidence-audit-utils.ts';
 import {artifactKinds,canonicalEvidenceFilename,disabledSaarFilename,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
@@ -21,7 +21,7 @@ test('fuzzes filename parsing without uncaught parser failures',()=>{
   const filename=randomText();
   assert.doesNotThrow(()=>{
    fileTokenList(filename);fileTokens(filename);parseDate(filename);normalizeFilenameDate(filename);organizationFrom(filename);identityFromFilename(filename);looksLikeEvidenceFilename(filename);canonicalEvidenceFilename(filename,'Fuzz Organization');validateNewUserSaarFilename(filename);disabledSaarFilename(filename);filenameIdentityMatches(filename,{last:'Brown',first:'Jacob'});preserveEvidenceExtension(filename,randomText(500));zipFilenameNeedsRework(filename,'Fuzz Organization');
-   const folder=organizationFromFolderPath(`${randomText(100)}/${filename}`,'Fallback');normalizeFilenameOrganization(filename,folder);
+   const folder=organizationFromFolderPath(`${randomText(100)}/${filename}`,'Fallback');normalizeFilenameOrganization(filename,folder);validOrganizationFolderName(randomText(100));
    for(const kind of artifactKinds)filenameMatchesKind(filename,kind);
   });
  }

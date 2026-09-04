@@ -112,6 +112,16 @@ export default function Guide() {
           changes or becomes unavailable. Archiving locks the system and its
           users while preserving all records.
         </p>
+        <p>
+          Mapping creates a top-level <code>Organizations</code> folder. Choose{" "}
+          <b>Manage Organizations</b> to create each organization beneath it,
+          then place that organization&apos;s evidence in the corresponding folder.
+          Document-type folders such as <code>SAAR</code>,{" "}
+          <code>DoD Cyber Cert</code>, and <code>User Agreement</code> belong
+          inside an organization and are never listed as organizations. Existing
+          legacy organization layouts remain readable, but all new organization
+          and manual-evidence storage uses the managed Organizations hierarchy.
+        </p>
       </section>
       <section id="users">
         <h2>3. Add and Update Users</h2>
@@ -165,7 +175,7 @@ export default function Guide() {
           </li>
           <li>
             The files are saved under{" "}
-            <code>User Evidence / Organization / Last_First</code> inside that
+            <code>Organizations / Organization / Last_First</code> inside that
             information system&apos;s mapped shared folder.
           </li>
         </ol>
@@ -904,7 +914,7 @@ export default function Guide() {
         Information System name or its stored organization value. A file in a
         mapped folder named <code>NGC</code> is therefore renamed to contain{" "}
         <code>(NGC)</code>. For files stored under{" "}
-        <code>User Evidence / Organization / Last_First</code>, the Organization
+        <code>Organizations / Organization / Last_First</code>, the Organization
         folder is used rather than the Last_First folder. Every active PDF and
         one-PDF ZIP is evaluated for organization correction, including files
         whose other filename sections are imperfect and files whose contents
