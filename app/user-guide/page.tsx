@@ -222,10 +222,12 @@ export default function Guide() {
           archive destinations are recorded in the tamper-evident audit log.
         </p>
         <p>
-          For responsive display with very large user populations, the User
-          Directory renders 100 filtered records per page. Filters, totals, CSV
-          exports, reports, and notification recipient selection continue to use
-          the complete matching result rather than only the visible page.
+          For responsive display with very large user populations, identical
+          controls above and below the User Directory show the current user range
+          and page. Choose 20, 40, 50, or 100 records per page; 100 is the maximum.
+          Filters, totals, CSV exports, reports, and notification recipient
+          selection continue to use the complete matching result rather than only
+          the visible page.
         </p>
       </section>
       <section id="evidence">

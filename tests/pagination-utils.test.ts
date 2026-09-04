@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {cleanupPageSize,directoryPageSize,paginateItems} from '../app/pagination-utils.ts';
+import {cleanupPageSize,defaultDirectoryPageSize,directoryPageSize,directoryPageSizes,paginateItems} from '../app/pagination-utils.ts';
 
 test('shows cleanup records in pages of 20',()=>{
  const records=Array.from({length:45},(_,index)=>index+1);
@@ -18,6 +18,12 @@ test('clamps cleanup pages after switching to a shorter action list',()=>{
 
 test('limits large User Directory renders to 100 rows without changing the filtered result',()=>{
  const records=Array.from({length:251},(_,index)=>index+1);
- assert.equal(directoryPageSize,100);
- assert.deepEqual(paginateItems(records,2,directoryPageSize),{items:records.slice(200),page:2,pageCount:3,start:200,end:251,total:251});
+ assert.deepEqual(directoryPageSizes,[20,40,50,100]);
+ assert.equal(defaultDirectoryPageSize,100);
+ assert.equal(directoryPageSize(20),20);
+ assert.equal(directoryPageSize(40),40);
+ assert.equal(directoryPageSize(50),50);
+ assert.equal(directoryPageSize(100),100);
+ assert.equal(directoryPageSize(500),100);
+ assert.deepEqual(paginateItems(records,2,directoryPageSize(100)),{items:records.slice(200),page:2,pageCount:3,start:200,end:251,total:251});
 });
