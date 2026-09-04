@@ -68,7 +68,7 @@ export function filenameMatchesKind(filename:string,kind:string){
  if(canonical==='DoD Cyber Cert')return tokens.has('DOD')||(compact.includes('DOD')&&compact.includes('CYBER'))||(compact.includes('CYBER')&&compact.includes('AWARENESS'))||compact.includes('AWARENESSCHALLENGE');
  if(canonical===agreementArtifactKind)return tokens.has('AGREEMENT')||tokens.has('AGREEMENTS')||compact.includes('AGREEMENT');
  if(canonical==='8140 Cert Memo')return tokens.has('8140')||compact.includes('8140');
- if(canonical==='Privileged User Training Cert')return (tokens.has('PRIV')&&tokens.has('TRAINING'))||(compact.includes('PRIV')&&compact.includes('TRAINING'));
+ if(canonical==='Privileged User Training Cert')return (tokens.has('PRIV')&&tokens.has('TRAINING'))||(compact.includes('PRIV')&&compact.includes('TRAINING'))||(!tokens.has('DTA')&&(tokens.has('RESPONSIBILITIES')||tokens.has('COURSE')));
  return (tokens.has('DTA')&&tokens.has('TRAINING'))||(compact.includes('DTA')&&compact.includes('TRAINING'));
 }
 export function disabledSaarFilename(filename:string){return filenameMatchesKind(filename,'SAAR')&&fileTokens(filename).has('DISABLED')}
@@ -82,6 +82,11 @@ export function canonicalEvidenceFilename(filename:string,organizationOverride?:
  if(kind==='SAAR'){const markers=saarMarkers(filename);if(markers.general===!!markers.privilegedType)return;artifact=markers.general?'GEN_SAAR':`PRIV_${canonicalFilePart(markers.privilegedType??'')}_SAAR`;if(artifact.includes('__'))return}
  const extension=/\.zip$/i.test(filename)?'.pdf.zip':'.pdf',target=`${last}_${first}_(${org})_${artifact}_${dateToken}${extension}`;
  return target.length<=180?target:undefined;
+}
+
+export function pdfFilenameNeedsRework(filename:string,organizationOverride?:string){
+ if(!filename.toLowerCase().endsWith('.pdf')||filenameMatchesKind(filename,'SAAR'))return false;
+ return !canonicalEvidenceFilename(filename,organizationOverride);
 }
 
 export function looksLikeEvidenceFilename(filename:string){return !!parseDate(filename)&&artifactKinds.some(kind=>filenameMatchesKind(filename,kind))}

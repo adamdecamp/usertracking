@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {cleanupPageSize,paginateItems} from '../app/pagination-utils.ts';
+import {cleanupPageSize,directoryPageSize,paginateItems} from '../app/pagination-utils.ts';
 
 test('shows cleanup records in pages of 20',()=>{
  const records=Array.from({length:45},(_,index)=>index+1);
@@ -14,4 +14,10 @@ test('clamps cleanup pages after switching to a shorter action list',()=>{
  const records=Array.from({length:7},(_,index)=>index);
  assert.deepEqual(paginateItems(records,99),{items:records,page:0,pageCount:1,start:0,end:7,total:7});
  assert.deepEqual(paginateItems([],4),{items:[],page:0,pageCount:1,start:0,end:0,total:0});
+});
+
+test('limits large User Directory renders to 100 rows without changing the filtered result',()=>{
+ const records=Array.from({length:251},(_,index)=>index+1);
+ assert.equal(directoryPageSize,100);
+ assert.deepEqual(paginateItems(records,2,directoryPageSize),{items:records.slice(200),page:2,pageCount:3,start:200,end:251,total:251});
 });

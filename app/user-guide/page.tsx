@@ -221,6 +221,12 @@ export default function Guide() {
           The request, justification, Windows operator, completion result, and
           archive destinations are recorded in the tamper-evident audit log.
         </p>
+        <p>
+          For responsive display with very large user populations, the User
+          Directory renders 100 filtered records per page. Filters, totals, CSV
+          exports, reports, and notification recipient selection continue to use
+          the complete matching result rather than only the visible page.
+        </p>
       </section>
       <section id="evidence">
         <h2>4. Filename Rules</h2>
@@ -267,6 +273,16 @@ export default function Guide() {
           account creation or disable action; it is not an expiration date. A SAAR
           is therefore either Current or Missing and never becomes Overdue. Other
           valid evidence becomes Overdue after one year.
+        </p>
+        <p>
+          A non-DTA filename containing <code>Responsibilities</code> or{" "}
+          <code>Course</code> is treated as Privileged User Training. When the
+          identity, authoritative organization, and date are available, Sync
+          normalizes it to{" "}
+          <code>Last_First_(ORG)_Privileged_User_Training_Cert_DDMMMYYYY.pdf</code>.
+          Readable loose PDFs that remain incomplete or cannot be identified are
+          preselected for the organization&apos;s Rework folder instead of remaining
+          unhandled in an active evidence folder.
         </p>
         <h3>Rename Existing Documents</h3>
         <p>
@@ -456,6 +472,14 @@ export default function Guide() {
           Rework, ordinary Archive, and Superseded folders and generated reports
           are excluded from later Sync scans. Permanent SAAR Archive folders are
           limited to the historical account-status check.
+        </p>
+        <p>
+          Choose <b>Finish Review</b> when no additional action is selected. The
+          completed review closes automatically. Any deferred cleanup remains
+          available from the main <b>Clean Up</b> button for later review.
+          Readable loose PDFs that cannot be identified, or that are missing the
+          metadata needed for a canonical filename, are preselected for Rework so
+          they are not left unhandled in an active organization folder.
         </p>
         <p>
           A filename, document-type organization, or loose-PDF compression

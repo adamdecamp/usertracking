@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {classifyEvidenceCollision,collisionArchiveFilename,defaultEvidenceCollisionChoice,distinctByPath,findLoosePdfZipCollisions,retainUnfinishedCleanup,selectLoosePdfCleanupCandidates,selectSupersededEvidence,supersedingEvidenceApproval} from '../app/cleanup-utils.ts';
+import {classifyEvidenceCollision,collisionArchiveFilename,defaultEvidenceCollisionChoice,distinctByPath,findLoosePdfZipCollisions,retainUnfinishedCleanup,selectLoosePdfCleanupCandidates,selectSupersededEvidence,shouldPreselectRework,shouldReopenCleanupReview,supersedingEvidenceApproval} from '../app/cleanup-utils.ts';
 
 type Item={path:string;date:string;current:boolean};
 const select=(items:Item[])=>selectSupersededEvidence(items,item=>new Date(item.date),item=>item.current,item=>item.path);
@@ -72,6 +72,18 @@ test('reuses first-scan evidence for cleanup immediately after a verified user i
 test('retains deferred and failed cleanup actions after successful actions are removed',()=>{
  const items=[{id:'archive-1'},{id:'zip-1'},{id:'rework-1'}];
  assert.deepEqual(retainUnfinishedCleanup(items,['zip-1']).map(item=>item.id),['archive-1','rework-1']);
+});
+
+test('closes Finish Review while retaining deferred cleanup for the main Clean Up button',()=>{
+ assert.equal(shouldReopenCleanupReview(0,12),false);
+ assert.equal(shouldReopenCleanupReview(1,12),true);
+ assert.equal(shouldReopenCleanupReview(3,0),false);
+});
+
+test('preselects unidentified and incomplete readable PDFs for Rework',()=>{
+ assert.equal(shouldPreselectRework('Unidentified PDF: no supported artifact type could be determined from the filename.'),true);
+ assert.equal(shouldPreselectRework('Recognized as Privileged User Training Cert, but the filename is incomplete.'),true);
+ assert.equal(shouldPreselectRework('The PDF is encrypted or unreadable.'),false);
 });
 
 test('classifies canonical destination collisions by validated PDF hashes',()=>{

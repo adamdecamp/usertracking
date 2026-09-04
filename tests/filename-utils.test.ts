@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -109,6 +109,23 @@ test('tolerates omitted separators inside artifact and SAAR role markers',()=>{
  assert.equal(filenameMatchesKind('Brown_Jacob_(GDMS)_PRIVUserTrainingCert_26AUG2026.pdf','Privileged User Training Cert'),true);
  assert.equal(filenameMatchesKind('Brown_Jacob_(GDMS)_DTAUserTrainingCert_26AUG2026.pdf','DTA Training Cert'),true);
  assert.deepEqual(validateNewUserSaarFilename('Brown_Jacob_(GDMS)_PRIVadminSAAR_26AUG2026.pdf'),{valid:true,identity:{last:'Brown',first:'Jacob'},organization:'GDMS',role:'Privileged',privilegedTypes:['ADMIN']});
+});
+
+test('recognizes Responsibilities and Course filenames as Privileged User Training',()=>{
+ const responsibilities='Brown_Jacob_(GDMS)_Responsibilities_26AUG2026.pdf',course='Shaw_Vivian_(LM)_Course_Completion_26AUG2026.pdf',dta='Jones_Alex_(GOV)_DTA_Course_26AUG2026.pdf';
+ assert.equal(filenameMatchesKind(responsibilities,'Privileged User Training Cert'),true);
+ assert.equal(filenameMatchesKind(course,'Privileged User Training Cert'),true);
+ assert.equal(canonicalEvidenceFilename(responsibilities,'GDMS'),'Brown_Jacob_(GDMS)_Privileged_User_Training_Cert_26AUG2026.pdf');
+ assert.equal(canonicalEvidenceFilename(course,'LM'),'Shaw_Vivian_(LM)_Privileged_User_Training_Cert_26AUG2026.pdf');
+ assert.equal(filenameMatchesKind(dta,'Privileged User Training Cert'),false);
+});
+
+test('routes unidentified or incomplete loose PDFs to Rework',()=>{
+ assert.equal(pdfFilenameNeedsRework('mystery-document.pdf','GDMS'),true);
+ assert.equal(pdfFilenameNeedsRework('Brown_Jacob_(GDMS)_Responsibilities.pdf','GDMS'),true);
+ assert.equal(pdfFilenameNeedsRework('Brown_Jacob_(GDMS)_Responsibilities_26AUG2026.pdf','GDMS'),false);
+ assert.equal(pdfFilenameNeedsRework('Brown_Jacob_(GDMS)_Responsibilities_26AUG2026.pdf.zip','GDMS'),false);
+ assert.equal(pdfFilenameNeedsRework('Brown_Jacob_(GDMS)_GEN_SAAR.pdf','GDMS'),false);
 });
 
 test('consolidates legacy agreement filenames into one User Agreement requirement',()=>{

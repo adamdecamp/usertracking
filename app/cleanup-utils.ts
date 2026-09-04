@@ -24,6 +24,14 @@ export function retainUnfinishedCleanup<T extends{id:string}>(items:T[],complete
  return items.filter(item=>!completed.has(item.id));
 }
 
+export function shouldReopenCleanupReview(requestedActionCount:number,remainingCleanupCount:number){
+ return requestedActionCount>0&&remainingCleanupCount>0;
+}
+
+export function shouldPreselectRework(reason:string){
+ return reason.startsWith('Unidentified PDF:')||reason.startsWith('Recognized as ');
+}
+
 export type EvidenceCollisionClassification='Exact Duplicate'|'Same-Name Conflict'|'Hash Unavailable';
 export type EvidenceCollisionChoice='existing'|'incoming'|'defer';
 
