@@ -83,6 +83,7 @@ test('closes Finish Review while retaining deferred cleanup for the main Clean U
 test('preselects unidentified and incomplete readable PDFs for Rework',()=>{
  assert.equal(shouldPreselectRework('Unidentified PDF: no supported artifact type could be determined from the filename.'),true);
  assert.equal(shouldPreselectRework('Recognized as Privileged User Training Cert, but the filename is incomplete.'),true);
+ assert.equal(shouldPreselectRework('Invalid ZIP filename: extract its PDF for correction.'),true);
  assert.equal(shouldPreselectRework('The PDF is encrypted or unreadable.'),false);
 });
 

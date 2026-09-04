@@ -11,10 +11,10 @@ test('reads a signed general user agreement and builds the ingest filename',()=>
  assert.equal(buildTrackerFilename(analysis),'Brown_Jacob_(LM)_User_Agreement_26AUG2026.pdf');
 });
 
-test('prefers certification date over expiration date for Security+',()=>{
+test('does not misclassify third-party Security+ credentials as DoD Cyber Awareness',()=>{
  const analysis=analyzeDocumentText('CompTIA Security+ This is to certify that Jacob Brown Date Certified: August 26, 2026 Expiration Date: August 26, 2029','certificate.pdf',users);
- assert.equal(analysis.kind,'DoD Cyber Cert');assert.equal(analysis.date,'2026-08-26');
- assert.equal(buildTrackerFilename(analysis),'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf');
+ assert.equal(analysis.kind,'');
+ assert.equal(buildTrackerFilename(analysis),undefined);
 });
 
 test('recognizes Cyber Awareness Challenge certificates and canonicalizes their filename',()=>{

@@ -4,7 +4,8 @@ import {verifyAuditText} from '../app/audit-utils.ts';
 import {classifyEvidenceCollision} from '../app/cleanup-utils.ts';
 import {normalizeFilenameOrganization,organizationFromFolderPath} from '../app/document-renamer-utils.ts';
 import {inspectEvidenceBytes} from '../app/evidence-validation.ts';
-import {artifactKinds,canonicalEvidenceFilename,disabledSaarFilename,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {auditEvidenceContent} from '../app/evidence-audit-utils.ts';
+import {artifactKinds,canonicalEvidenceFilename,disabledSaarFilename,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
 import {officialEmailFromText,readSaarFormFields} from '../app/saar-form-utils.ts';
 import {readSyncIndex} from '../app/sync-utils.ts';
 import {PDFDocument,PDFName,PDFString} from 'pdf-lib';
@@ -19,11 +20,15 @@ test('fuzzes filename parsing without uncaught parser failures',()=>{
  for(let index=0;index<5000;index++){
   const filename=randomText();
   assert.doesNotThrow(()=>{
-   fileTokenList(filename);fileTokens(filename);parseDate(filename);normalizeFilenameDate(filename);organizationFrom(filename);identityFromFilename(filename);looksLikeEvidenceFilename(filename);canonicalEvidenceFilename(filename,'Fuzz Organization');validateNewUserSaarFilename(filename);disabledSaarFilename(filename);filenameIdentityMatches(filename,{last:'Brown',first:'Jacob'});preserveEvidenceExtension(filename,randomText(500));
+   fileTokenList(filename);fileTokens(filename);parseDate(filename);normalizeFilenameDate(filename);organizationFrom(filename);identityFromFilename(filename);looksLikeEvidenceFilename(filename);canonicalEvidenceFilename(filename,'Fuzz Organization');validateNewUserSaarFilename(filename);disabledSaarFilename(filename);filenameIdentityMatches(filename,{last:'Brown',first:'Jacob'});preserveEvidenceExtension(filename,randomText(500));zipFilenameNeedsRework(filename,'Fuzz Organization');
    const folder=organizationFromFolderPath(`${randomText(100)}/${filename}`,'Fallback');normalizeFilenameOrganization(filename,folder);
    for(const kind of artifactKinds)filenameMatchesKind(filename,kind);
   });
  }
+});
+
+test('fuzzes selected evidence content-audit inputs without parser failures',()=>{
+ for(let index=0;index<3000;index++)assert.doesNotThrow(()=>auditEvidenceContent({kind:pick([...artifactKinds,randomText(50)]),text:randomText(2000),signedFieldNames:index%3===0?[randomText(100)]:[],createdBySigned:index%5===0,disabledBySigned:index%7===0,createdDate:index%5===0?'2026-08-26':randomText(20),disabledDate:index%7===0?'2026-09-01':randomText(20)}));
 });
 
 test('fuzzes Official Email selectable-text recovery without accepting unlabeled addresses',()=>{

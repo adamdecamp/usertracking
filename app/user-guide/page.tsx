@@ -266,9 +266,11 @@ export default function Guide() {
           becomes Boeing. The validator checks the ordered Last-First identity,
           required artifact key words, and a valid calendar date without
           requiring one exact separator style. For a completed fillable SAAR
-          whose filename date is missing, Sync may use the requester-signed date
-          from supported DD2875 or derived-SAAR fields; it never uses an
-          investigation date or an unrelated official&apos;s date. A DoD Cyber
+          whose filename date is missing, Sync may use the signed Part IV
+          <b> Created By</b> or <b>Disabled By</b> account-action date from a
+          supported DD2875 or derived SAAR; it never uses the requester,
+          investigation, print, or unrelated official&apos;s date. A populated
+          Disabled By signature also supplies the Disabled account state. A DoD Cyber
           certificate must contain the separate <code>DoD</code> token;{" "}
           <code>_cyber</code> in a privileged SAAR is only an account type and
           does not count as the certificate. A SAAR filename date records the
@@ -284,7 +286,29 @@ export default function Guide() {
           <code>Last_First_(ORG)_Privileged_User_Training_Cert_DDMMMYYYY.pdf</code>.
           Readable loose PDFs that remain incomplete or cannot be identified are
           preselected for the organization&apos;s Rework folder instead of remaining
-          unhandled in an active evidence folder.
+          unhandled in an active evidence folder. A ZIP filename must already
+          match the complete canonical <code>.pdf.zip</code> convention. If it
+          does not, Clean Up extracts its single PDF to the organization Rework
+          folder, verifies the extracted content, and removes the ZIP only after
+          that verification succeeds.
+        </p>
+        <h3>Audit Evidence Content</h3>
+        <p>
+          Choose <b>Audit Evidence</b> only when a deeper inspection is needed.
+          Select the organizations and document-type folders to inspect. This
+          operator-initiated workflow opens only evidence in that scope, applies
+          two bounded PDF readers at a time, and moves failed evidence to the
+          organization&apos;s Rework folder. A failed ZIP is extracted to a loose PDF
+          for correction. SAARs must contain a dated Part IV Created By or
+          Disabled By digital signature. User Agreements and 8140 certification
+          memoranda must contain their expected content and a populated PDF
+          digital-signature field. DoD Cyber evidence must identify Cyber
+          Awareness or Cyber Awareness Challenge; CompTIA, 8570, Security+, CySA+,
+          CASP+, CISSP, and similar third-party credentials are not relabeled as
+          DoD Cyber Awareness. Privileged and DTA training use their own content
+          rules. A verified Disabled By signature marks the matching account
+          Disabled and archives its active evidence. Unselected organizations and
+          document types are not opened or changed.
         </p>
         <h3>Rename Existing Documents</h3>
         <p>
@@ -455,7 +479,11 @@ export default function Guide() {
           records at a time. Use <b>Previous</b> and <b>Next</b> to move between
           pages, <b>Select All on Page</b> for only the visible 20 records, or{" "}
           <b>Select All Files</b> for every eligible record in that action
-          category. PDFs that require correction are moved into an
+          category. Sync issues and warnings use a separate
+          button menu for Identity Conflicts, Duplicate Content, SAAR
+          Corrections, Unmatched Evidence, and Rejected Files. Only the selected
+          issue category appears, with no more than 20 entries on each page.
+          PDFs that require correction are moved into an
           organization-named folder inside the authoritative organization
           folder, such as <code>GDMS / GDMS Rework</code>. Duplicate and
           superseded files explicitly approved by the operator are moved into
@@ -516,7 +544,7 @@ export default function Guide() {
           a proposed new-user record before supporting evidence is matched. The
           filename is always the primary source for Last Name, First Name, and
           Organization. If those filename values are missing or still contain
-          template placeholders, Sync reads the requester name and organization
+          template placeholders, Sync reads the user name and organization
           from either a standard DD Form 2875 XFA dataset or the derived
           SAAR&apos;s AcroForm fields. Official Email is read from the
           corresponding form field first; if that stored value is blank or
@@ -963,7 +991,7 @@ export default function Guide() {
         repeated. During new-user ingestion, a complete filename is accepted
         without opening the PDF, and the containing organization folder supplies
         a missing filename organization without a PDF read. Only SAARs that need
-        recoverable identity or requester-date fields are opened. Those form-field
+        recoverable identity or signed Part IV account-action date fields are opened. Those form-field
         reads run in a bounded group of four with visible completed-file progress;
         a read that does not finish within 30 seconds receives one fresh retry
         with a 60-second limit while the other readers continue. A second timeout

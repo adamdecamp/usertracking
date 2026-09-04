@@ -29,7 +29,7 @@ export function shouldReopenCleanupReview(requestedActionCount:number,remainingC
 }
 
 export function shouldPreselectRework(reason:string){
- return reason.startsWith('Unidentified PDF:')||reason.startsWith('Recognized as ');
+ return reason.startsWith('Unidentified PDF:')||reason.startsWith('Recognized as ')||reason.startsWith('Invalid ZIP filename:');
 }
 
 export type EvidenceCollisionClassification='Exact Duplicate'|'Same-Name Conflict'|'Hash Unavailable';

@@ -14,6 +14,7 @@ if (-not (Test-Path -LiteralPath $tsc) -or -not (Test-Path -LiteralPath $eslint)
 $regressionTests = @(
     "tests/backup-utils.test.ts",
     "tests/evidence-validation.test.ts",
+    "tests/evidence-audit-utils.test.ts",
     "tests/audit-utils.test.ts",
     "tests/compliance-report.test.ts",
     "tests/executive-summary.test.ts",

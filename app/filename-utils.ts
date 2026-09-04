@@ -89,6 +89,12 @@ export function pdfFilenameNeedsRework(filename:string,organizationOverride?:str
  return !canonicalEvidenceFilename(filename,organizationOverride);
 }
 
+export function zipFilenameNeedsRework(filename:string,organizationOverride?:string){
+ if(!filename.toLowerCase().endsWith('.zip'))return false;
+ const canonical=canonicalEvidenceFilename(filename,organizationOverride);
+ return !canonical||canonical.toUpperCase()!==filename.toUpperCase();
+}
+
 export function looksLikeEvidenceFilename(filename:string){return !!parseDate(filename)&&artifactKinds.some(kind=>filenameMatchesKind(filename,kind))}
 
 export function identityFromFilename(filename:string){
@@ -107,8 +113,8 @@ export function plausiblePersonIdentity(last:string,first:string){
 export type NewUserSaarFilenameValidation=
  |{valid:true;identity:{last:string;first:string};organization:string;role:'General'|'Privileged';privilegedTypes:string[]}
  |{valid:false;reason:string};
-const verifiedRequestDate=(date?:Date)=>date&&!Number.isNaN(date.getTime())&&date.getUTCFullYear()>=1900&&date.getUTCFullYear()<=2099?date:undefined;
-export function validateNewUserSaarFilename(filename:string,fallback?:{identity?:{last:string;first:string};organization?:string;requestDate?:Date;allowDisabled?:boolean}):NewUserSaarFilenameValidation{
+const verifiedAccountDate=(date?:Date)=>date&&!Number.isNaN(date.getTime())&&date.getUTCFullYear()>=1900&&date.getUTCFullYear()<=2099?date:undefined;
+export function validateNewUserSaarFilename(filename:string,fallback?:{identity?:{last:string;first:string};organization?:string;accountActionDate?:Date;requestDate?:Date;allowDisabled?:boolean}):NewUserSaarFilenameValidation{
  if(!filenameMatchesKind(filename,'SAAR'))return{valid:false,reason:'The filename is not recognized as a SAAR.'};
  if(disabledSaarFilename(filename)&&!fallback?.allowDisabled)return{valid:false,reason:'A SAAR marked DISABLED is an archive record and cannot create or update an active user profile.'};
  const filenameIdentity=identityFromFilename(filename),reservedIdentityTokens=new Set(['LAST','FIRST','ORG','ORGANIZATION','GEN','PRIV','SAAR','DOD','CYBER','CERT','USER','AGREEMENT','TRAINING','MEMO','TYPE']),filenameIdentityUsable=filenameIdentity&&!reservedIdentityTokens.has(filenameIdentity.last.toUpperCase())&&!reservedIdentityTokens.has(filenameIdentity.first.toUpperCase()),identity=filenameIdentityUsable?filenameIdentity:fallback?.identity;
@@ -117,7 +123,7 @@ export function validateNewUserSaarFilename(filename:string,fallback?:{identity?
  const filenameOrganization=organizationFrom(filename),organization=filenameOrganization&&!['ORG','ORGANIZATION'].includes(filenameOrganization.toUpperCase())?filenameOrganization:fallback?.organization;
  if(!organization)return{valid:false,reason:'The SAAR filename is missing its parenthesized organization.'};
  if(['ORG','ORGANIZATION'].includes(organization.toUpperCase()))return{valid:false,reason:'The SAAR filename still contains the organization template placeholder and the form organization could not be read.'};
- if(!parseDate(filename)&&!verifiedRequestDate(fallback?.requestDate))return{valid:false,reason:'The SAAR filename is missing a valid recognized date, and no requester-signed date could be read from the fillable form.'};
+ if(!parseDate(filename)&&!verifiedAccountDate(fallback?.accountActionDate??fallback?.requestDate))return{valid:false,reason:'The SAAR filename is missing a valid recognized date, and no signed Part IV Created By or Disabled By account-action date could be read from the fillable form.'};
  const markers=saarMarkers(filename),hasGeneral=markers.general,hasPrivileged=!!markers.privilegedType;
  if(hasGeneral===hasPrivileged)return{valid:false,reason:'The SAAR filename must identify exactly one role: GEN or PRIV.'};
  if(hasGeneral)return{valid:true,identity,organization,role:'General',privilegedTypes:[]};
@@ -127,12 +133,12 @@ export function validateNewUserSaarFilename(filename:string,fallback?:{identity?
 }
 export function canRecoverNewUserSaarFromForm(filename:string,fallback?:{organization?:string}){
  if(validateNewUserSaarFilename(filename,fallback).valid)return false;
- return validateNewUserSaarFilename(filename,{identity:{last:'RecoveredLast',first:'RecoveredFirst'},organization:fallback?.organization||'RecoveredOrganization',requestDate:new Date('2000-01-01T00:00:00.000Z')}).valid;
+ return validateNewUserSaarFilename(filename,{identity:{last:'RecoveredLast',first:'RecoveredFirst'},organization:fallback?.organization||'RecoveredOrganization',accountActionDate:new Date('2000-01-01T00:00:00.000Z')}).valid;
 }
-export function canonicalValidatedSaarFilename(filename:string,validation:Extract<NewUserSaarFilenameValidation,{valid:true}>,requestDate?:Date){
- const date=parseDate(filename)??verifiedRequestDate(requestDate),last=canonicalFilePart(validation.identity.last),first=canonicalFilePart(validation.identity.first),organization=canonicalFilePart(validation.organization),type=validation.role==='Privileged'?canonicalFilePart(validation.privilegedTypes[0]??''):'';
+export function canonicalValidatedSaarFilename(filename:string,validation:Extract<NewUserSaarFilenameValidation,{valid:true}>,accountActionDate?:Date,disabled=false){
+ const date=parseDate(filename)??verifiedAccountDate(accountActionDate),last=canonicalFilePart(validation.identity.last),first=canonicalFilePart(validation.identity.first),organization=canonicalFilePart(validation.organization),type=validation.role==='Privileged'?canonicalFilePart(validation.privilegedTypes[0]??''):'';
  if(!date||!last||!first||!organization||(validation.role==='Privileged'&&!type))return;
- const dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`,artifact=validation.role==='General'?'GEN_SAAR':`PRIV_${type}_SAAR`,extension=/\.zip$/i.test(filename)?'.pdf.zip':'.pdf',target=`${last}_${first}_(${organization})_${artifact}_${dateToken}${extension}`;
+ const dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`,artifact=validation.role==='General'?'GEN_SAAR':`PRIV_${type}_SAAR`,state=disabled?'_DISABLED':'',extension=/\.zip$/i.test(filename)?'.pdf.zip':'.pdf',target=`${last}_${first}_(${organization})_${artifact}${state}_${dateToken}${extension}`;
  return target.length<=180?target:undefined;
 }
 export const identityKey=(last:string,first:string)=>`${clean(last).toUpperCase()}\u0000${clean(first).toUpperCase()}`;

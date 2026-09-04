@@ -11,7 +11,7 @@ test('reads name, organization, and official email from the derived SAAR AcroFor
   ['4 OFFICIAL EMAIL ADDRESS','jacob.brown@example.mil',600],
  ]as const){const field=form.createTextField(name);field.setText(value);field.addToPage(page,{x:20,y,width:300,height:20})}
  const result=await readSaarFormFields(await pdf.save());
- assert.deepEqual(result,{fillable:true,format:'AcroForm',identity:{last:'Brown',first:'Jacob',middle:'A'},organization:'LM',email:'jacob.brown@example.mil'});
+ assert.deepEqual(result,{fillable:true,format:'AcroForm',identity:{last:'Brown',first:'Jacob',middle:'A'},organization:'LM',email:'jacob.brown@example.mil',signedFieldNames:[],createdBySigned:false,disabledBySigned:false,createdDate:undefined,disabledDate:undefined});
 });
 
 test('accepts a simplified Official Email AcroForm field name',async()=>{
@@ -26,7 +26,17 @@ test('reads equivalent fields from an official DD2875-style XFA datasets packet'
  const datasets=pdf.context.register(pdf.context.flateStream(xml)),xfa=pdf.context.obj([PDFString.of('datasets'),datasets]),acro=pdf.context.obj({Fields:[],XFA:xfa});
  pdf.catalog.set(PDFName.of('AcroForm'),pdf.context.register(acro));
  const result=await readSaarFormFields(await pdf.save({useObjectStreams:false}));
- assert.deepEqual(result,{fillable:true,format:'XFA',identity:{last:'Shaw',first:'Vivian',middle:'R'},organization:'Boeing',email:'vivian.shaw@example.mil',requestDate:'2026-08-26'});
+ assert.deepEqual(result,{fillable:true,format:'XFA',identity:{last:'Shaw',first:'Vivian',middle:'R'},organization:'Boeing',email:'vivian.shaw@example.mil',requestDate:'2026-08-26',createdBySigned:false,disabledBySigned:false,signedFieldNames:[]});
+});
+
+test('reads Part IV XFA processing and disabling account-action dates',async()=>{
+ const pdf=await PDFDocument.create();pdf.addPage([612,792]);
+ const xml='<?xml version="1.0"?><xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><name1>Brown, Jacob</name1><Organization2>LM</Organization2><NameProcessed>Administrator</NameProcessed><ProcessedsignedDate>08/26/2026</ProcessedsignedDate><NameDisabled>Administrator</NameDisabled><DisabledsignedDate>09/01/2026</DisabledsignedDate></form1></xfa:data></xfa:datasets>';
+ const datasets=pdf.context.register(pdf.context.flateStream(xml)),xfa=pdf.context.obj([PDFString.of('datasets'),datasets]),acro=pdf.context.obj({Fields:[],XFA:xfa});
+ pdf.catalog.set(PDFName.of('AcroForm'),pdf.context.register(acro));
+ const result=await readSaarFormFields(await pdf.save({useObjectStreams:false}));
+ assert.equal(result.createdBySigned,true);assert.equal(result.createdDate,'2026-08-26');
+ assert.equal(result.disabledBySigned,true);assert.equal(result.disabledDate,'2026-09-01');
 });
 
 test('parses supported requester signature dates and rejects impossible dates',()=>{

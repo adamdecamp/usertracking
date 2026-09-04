@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename} from '../app/filename-utils.ts';
+import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -128,6 +128,20 @@ test('routes unidentified or incomplete loose PDFs to Rework',()=>{
  assert.equal(pdfFilenameNeedsRework('Brown_Jacob_(GDMS)_GEN_SAAR.pdf','GDMS'),false);
 });
 
+test('extracts noncanonical ZIP evidence to Rework instead of normalizing or ingesting it',()=>{
+ assert.equal(zipFilenameNeedsRework('Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf.zip','GDMS'),false);
+ assert.equal(zipFilenameNeedsRework('Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf.zip','GDMS'),false);
+ assert.equal(zipFilenameNeedsRework('Brown_Jacob_(GDMS)_User_Agreement_26AUG2026.pdf.zip','GDMS'),false);
+ for(const filename of [
+  'Brown_Jacob_(GDMS)_GEN_SAAR_20260826.pdf.zip',
+  'Brown Jacob (GDMS) GEN SAAR 26AUG2026.zip',
+  'Brown_Jacob_(WRONG)_DoD_Cyber_Cert_26AUG2026.pdf.zip',
+  'Brown_Jacob_(GDMS)_User_Agreement.pdf.zip',
+  'unidentified.zip',
+ ])assert.equal(zipFilenameNeedsRework(filename,'GDMS'),true,filename);
+ assert.equal(zipFilenameNeedsRework('Brown_Jacob_(GDMS)_GEN_SAAR_20260826.pdf','GDMS'),false);
+});
+
 test('consolidates legacy agreement filenames into one User Agreement requirement',()=>{
  for(const filename of [
   'Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf',
@@ -183,14 +197,20 @@ test('canonicalizes a fallback-matched SAAR before it seeds a new user',()=>{
  if(privileged.valid)assert.equal(canonicalValidatedSaarFilename('PRIV_dta_SAAR_20260826.pdf',privileged),'Brown_Jacob_(LM)_PRIV_DTA_SAAR_26AUG2026.pdf');
 });
 
-test('uses a verified requester signature date to canonicalize an otherwise complete SAAR',()=>{
+test('uses a verified Part IV account-action date to canonicalize an otherwise complete SAAR',()=>{
  const requestDate=new Date('2026-08-26T00:00:00.000Z'),filename='Brown_Jacob_(LM)_GEN_SAAR.pdf',validation=validateNewUserSaarFilename(filename,{requestDate});
  assert.equal(validation.valid,true);
  if(validation.valid)assert.equal(canonicalValidatedSaarFilename(filename,validation,requestDate),'Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf');
 });
 
 test('rejects an invalid requester signature date fallback',()=>{
- assert.equal(validateNewUserSaarFilename('Brown_Jacob_(LM)_GEN_SAAR.pdf',{requestDate:new Date(Number.NaN)}).valid,false);
+ assert.equal(validateNewUserSaarFilename('Brown_Jacob_(LM)_GEN_SAAR.pdf',{accountActionDate:new Date(Number.NaN)}).valid,false);
+});
+
+test('adds the disabled state when a signed Part IV Disabled By action supplies the date',()=>{
+ const validation=validateNewUserSaarFilename('Brown_Jacob_(LM)_GEN_SAAR.pdf',{accountActionDate:new Date('2026-09-01T00:00:00.000Z')});
+ assert.equal(validation.valid,true);
+ if(validation.valid)assert.equal(canonicalValidatedSaarFilename('Brown_Jacob_(LM)_GEN_SAAR.pdf',validation,new Date('2026-09-01T00:00:00.000Z'),true),'Brown_Jacob_(LM)_GEN_SAAR_DISABLED_01SEP2026.pdf');
 });
 
 test('opens only SAARs whose missing filename fields can be recovered from the form',()=>{

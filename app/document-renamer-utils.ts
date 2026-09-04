@@ -48,7 +48,7 @@ const kindRules:[string,RegExp[]][]=[
  ['8140 Cert Memo',[/\b8140(?:\.0+)?\b.{0,180}\b(?:MEMO|MEMORANDUM|CERTIFICATION|QUALIFICATION)\b/i,/\b(?:MEMO|MEMORANDUM)\b.{0,180}\b8140(?:\.0+)?\b/i]],
  ['SAAR',[/\bDD\s*FORM\s*2875\b/i,/\bSYSTEM AUTHORIZATION ACCESS REQUEST\b/i,/\bSAAR\b/i]],
  ['User Agreement',[/\bAGREEMENTS?\b/i,/\bACCEPTABLE USE POLICY\b/i]],
- ['DoD Cyber Cert',[/\b(?:DOD\s+)?CYBER\s+AWARENESS(?:\s+CHALLENGE)?(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bAWARENESS\s+CHALLENGE(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bCOMPTIA\b/i,/\bSECURITY\s*\+/i,/\bCYSA\s*\+/i,/\bCASP\s*\+/i,/\bCISSP\b/i,/\bCERTIFIED ETHICAL HACKER\b/i,/\bCYBER(?:SECURITY)? (?:CERTIFICATE|CERTIFICATION)\b/i]],
+ ['DoD Cyber Cert',[/\b(?:DOD\s+)?CYBER\s+AWARENESS(?:\s+CHALLENGE)?(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bAWARENESS\s+CHALLENGE(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i]],
 ];
 
 function detectKind(text:string,filename:string){const source=`${text.slice(0,120000)}\n${filename.replace(/[_-]+/g,' ')}`;for(const[kind,rules]of kindRules)if(rules.some(rule=>rule.test(source)))return kind;return''}

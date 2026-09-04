@@ -751,12 +751,38 @@ internal sealed class PortableStorage : IDisposable
         lock (RootLock(systemId))
         {
             string root = Root(systemId);RecoverTransactions(root);string source = SafeRelativePath(root, relative), normalized = Relative(root, source);
-            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active correction PDFs can be moved to an organization Rework folder.");
-            if (!source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only a PDF requiring correction can be moved to Rework.");
-            if (!File.Exists(source)) throw new FileNotFoundException("The selected correction PDF no longer exists.");
+            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active correction evidence can be moved to an organization Rework folder.");
+            bool sourceIsPdf = source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase), sourceIsZip = source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+            if (!sourceIsPdf && !sourceIsZip) throw new InvalidDataException("Only a PDF or a ZIP containing one PDF can be moved to Rework.");
+            if (!File.Exists(source)) throw new FileNotFoundException("The selected correction evidence no longer exists.");
             Tuple<string, string> organization = OrganizationStorageLocation(root, source);
             string directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Rework"), filename = SafePart(Path.GetFileName(source), 180);
             Directory.CreateDirectory(directory);
+            if (sourceIsZip)
+            {
+                string validationError;if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected correction ZIP is invalid." : validationError);
+                string embeddedName;
+                using (Stream input = File.Open(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var archive = new ZipArchive(input, ZipArchiveMode.Read, false)) embeddedName = Path.GetFileName(archive.Entries.Single(entry => !entry.FullName.EndsWith("/", StringComparison.Ordinal)).FullName);
+                if (filename.EndsWith(".pdf.zip", StringComparison.OrdinalIgnoreCase)) filename = filename.Substring(0, filename.Length - 4);
+                else filename = SafePart(embeddedName, 180);
+                if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) filename = SafePart(Path.GetFileNameWithoutExtension(filename), 175) + ".pdf";
+                string extractedDestination = UniqueDestination(directory, filename), temporary = Path.Combine(directory, ".isut-" + Guid.NewGuid().ToString("N") + ".tmp"), zipHash = Sha256Bytes(File.ReadAllBytes(source)), extractedHash = "", extractTransaction = null;
+                try
+                {
+                    using (Stream input = File.Open(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (var archive = new ZipArchive(input, ZipArchiveMode.Read, false))
+                    using (Stream entry = archive.Entries.Single(item => !item.FullName.EndsWith("/", StringComparison.Ordinal)).Open())
+                    using (var output = OpenCompatibleFileStream(temporary, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920)) { entry.CopyTo(output);FlushCompatible(output);output.Position = 0;ValidatePdfStream(output, filename, output.Length); }
+                    extractedHash = Sha256Bytes(File.ReadAllBytes(temporary));extractTransaction = BeginTransaction(root, "rework-extract", source, extractedDestination, zipHash, extractedHash);
+                    File.Move(temporary, extractedDestination);FailAfter("rework-extract-move");
+                    if (!String.Equals(extractedHash, Sha256Bytes(File.ReadAllBytes(extractedDestination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The extracted Rework PDF failed its SHA-256 integrity check.");
+                    File.Delete(source);CompleteTransaction(extractTransaction);
+                }
+                catch { TryDelete(temporary);throw; }
+                string extracted = Relative(root, extractedDestination).Replace(Path.DirectorySeparatorChar, '/');
+                return json.Serialize(new Dictionary<string, object> { { "reworked", extracted }, { "extracted", true }, { "sourceRemoved", true } });
+            }
             string extension = Path.GetExtension(filename), stem = Path.GetFileNameWithoutExtension(filename), destination = Path.Combine(directory, filename);
             for (int index = 1; File.Exists(destination); index++) destination = Path.Combine(directory, stem + "_" + index.ToString(CultureInfo.InvariantCulture) + extension);
             string sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "rework", source, destination, sourceHash, "");
@@ -764,7 +790,7 @@ internal sealed class PortableStorage : IDisposable
             if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The Rework move failed its SHA-256 integrity check.");
             CompleteTransaction(transaction);
             string reworked = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
-            return json.Serialize(new Dictionary<string, object> { { "reworked", reworked } });
+            return json.Serialize(new Dictionary<string, object> { { "reworked", reworked }, { "extracted", false }, { "sourceRemoved", true } });
         }
     }
 
@@ -1419,6 +1445,23 @@ internal sealed class PortableStorage : IDisposable
                 }
                 if (File.Exists(source)) { CompleteTransaction(path);continue; }
                 throw new InvalidDataException("An interrupted evidence compression lost both source and destination files.");
+            }
+            if (operation == "rework-extract")
+            {
+                bool extractSourceExists = File.Exists(source), extractDestinationExists = File.Exists(destination);
+                if (extractDestinationExists)
+                {
+                    string validationError;if (!TryValidateEvidenceFile(destination, out validationError) || !destination.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("An interrupted Rework extraction left an invalid destination PDF.");
+                    if (!String.IsNullOrEmpty(destinationHash) && !String.Equals(destinationHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("An interrupted Rework extraction found different PDF content at the destination.");
+                    if (extractSourceExists)
+                    {
+                        if (!String.IsNullOrEmpty(sourceHash) && !String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(source)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("An interrupted Rework extraction source ZIP changed after the transaction began. Both files were preserved for review.");
+                        File.Delete(source);
+                    }
+                    CompleteTransaction(path);continue;
+                }
+                if (extractSourceExists) { CompleteTransaction(path);continue; }
+                throw new InvalidDataException("An interrupted Rework extraction lost both source and destination files.");
             }
             if (operation == "manifest-write")
             {
