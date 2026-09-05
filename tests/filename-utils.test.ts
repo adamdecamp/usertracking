@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
+import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -123,9 +123,29 @@ test('recognizes Responsibilities and Course filenames as Privileged User Traini
 test('routes unidentified or incomplete loose PDFs to Rework',()=>{
  assert.equal(pdfFilenameNeedsRework('mystery-document.pdf','GDMS'),true);
  assert.equal(pdfFilenameNeedsRework('Brown_Jacob_(GDMS)_Responsibilities.pdf','GDMS'),true);
- assert.equal(pdfFilenameNeedsRework('Brown_Jacob_(GDMS)_Responsibilities_26AUG2026.pdf','GDMS'),false);
+ assert.equal(pdfFilenameNeedsRework('Brown_Jacob_(GDMS)_Responsibilities_26AUG2026.pdf','GDMS'),true);
  assert.equal(pdfFilenameNeedsRework('Brown_Jacob_(GDMS)_Responsibilities_26AUG2026.pdf.zip','GDMS'),false);
- assert.equal(pdfFilenameNeedsRework('Brown_Jacob_(GDMS)_GEN_SAAR.pdf','GDMS'),false);
+ assert.equal(pdfFilenameNeedsRework('Brown_Jacob_(GDMS)_GEN_SAAR.pdf','GDMS'),true);
+ assert.equal(evidenceFilenamePassesStorageGate('Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf','GDMS'),true);
+ assert.equal(evidenceFilenamePassesStorageGate('Brown_Jacob_(GDMS)_GEN_SAAR.pdf','GDMS'),false);
+ assert.equal(evidenceFilenamePassesStorageGate('Brown Jacob (GDMS) DoD Cyber Cert 26AUG2026.pdf','GDMS'),false);
+ assert.equal(evidenceFilenamePassesStorageGate('Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf','GDMS'),true);
+});
+
+test('strictly gates every managed document type before folder organization',()=>{
+ const accepted=[
+  'Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf',
+  'Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf',
+  'Brown_Jacob_(GDMS)_User_Agreement_26AUG2026.pdf',
+  'Brown_Jacob_(GDMS)_8140_Cert_Memo_26AUG2026.pdf',
+  'Brown_Jacob_(GDMS)_Privileged_User_Training_Cert_26AUG2026.pdf',
+  'Brown_Jacob_(GDMS)_DTA_Training_Cert_26AUG2026.pdf',
+ ];
+ for(const filename of accepted)assert.equal(evidenceFilenamePassesStorageGate(filename,'GDMS'),true,filename);
+ for(const filename of accepted){
+  assert.equal(evidenceFilenamePassesStorageGate(filename.replace('_(GDMS)_','_(WRONG)_'),'GDMS'),false,filename);
+  assert.equal(evidenceFilenamePassesStorageGate(filename.replace('_26AUG2026',''),'GDMS'),false,filename);
+ }
 });
 
 test('extracts noncanonical ZIP evidence to Rework instead of normalizing or ingesting it',()=>{

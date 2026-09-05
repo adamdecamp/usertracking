@@ -250,7 +250,7 @@ export default function Guide() {
           between the other sections, and additional spaces. For example, both{" "}
           <code>Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf</code> and{" "}
           <code>Brown, Jacob (LM) DoD Cyber Cert 26AUG2026.pdf</code> are
-          accepted. When enough metadata is present, Sync renames every
+          recognized as fault-tolerant input. When enough metadata is present, Sync renames every
           recognized active evidence file to the complete canonical structure
           shown below. A file accepted as Cyber Awareness evidence is therefore
           stored as <code>Last_First_(ORG)_DoD_Cyber_Cert_DDMMMYYYY.pdf</code>,
@@ -275,7 +275,16 @@ export default function Guide() {
           <b>(LM)</b> becomes LM, <b>(GOV)</b> becomes GOV, and <b>(Boeing)</b>{" "}
           becomes Boeing. The validator checks the ordered Last-First identity,
           required artifact key words, and a valid calendar date without
-          requiring one exact separator style. For a completed fillable SAAR
+          requiring one exact separator style during intake. The final storage
+          gate is strict: every file must exactly match its complete canonical
+          filename after normalization before it can enter a managed SAAR, User
+          Agreement, DoD Cyber Cert, 8140 Certification Memo, Privileged User
+          Training, or DTA Training folder. A SAAR that still lacks any required
+          Last Name, First Name, parenthesized organization, GEN or PRIV role,
+          privileged type when applicable, DDMMMYYYY date, or PDF/ZIP extension
+          is sent to the organization Rework folder and is never organized into
+          SAAR. The same fail-closed rule applies to every other document type.
+          For a completed fillable SAAR
           whose filename date is missing, Sync may use the signed Part IV
           <b> Created By</b> or <b>Disabled By</b> account-action date from a
           supported DD2875 or derived SAAR; it never uses the requester,
@@ -319,6 +328,24 @@ export default function Guide() {
           rules. A verified Disabled By signature marks the matching account
           Disabled and archives its active evidence. Unselected organizations and
           document types are not opened or changed.
+        </p>
+        <h3>Unarchive Evidence for Correction</h3>
+        <p>
+          In the portable Windows app, choose <b>Unarchive</b> from the main
+          toolbar. <b>Choose Folder</b> opens a topmost Windows folder picker and
+          finds ZIP evidence throughout that folder and its subfolders.{" "}
+          <b>Choose ZIP Files</b> opens a multi-file picker for individual
+          evidence packages. Review 20 results at a time, then select individual
+          files, all files on the current page, or all discovered files. Each
+          selected ZIP is extracted in its current folder without overwriting an
+          existing PDF. The source ZIP is deleted only after the package is
+          confirmed to contain exactly one readable PDF and the extracted bytes
+          pass SHA-256 verification. Failures leave the ZIP unchanged, appear in
+          the result, and are written to the daily error report while remaining
+          files continue. Make the needed correction to the loose PDF, then run
+          Sync. Any ZIP moved into an organization Rework folder is automatically
+          extracted under these same safeguards so Rework always provides a
+          loose PDF that can be edited.
         </p>
         <h3>Rename Existing Documents</h3>
         <p>
@@ -444,6 +471,17 @@ export default function Guide() {
           re-enable workflow instead. Archived SAAR files remain archive history
           and are never attached as current compliance evidence.
         </aside>
+        <p>
+          Account status is mutually exclusive: one User Directory record cannot
+          be both Active and Disabled. Sync may move an Active record to Disabled
+          when the newest authoritative SAAR is marked DISABLED, but it never
+          automatically re-enables a Disabled record. A later active SAAR for a
+          Disabled record is an identity conflict that requires the controlled
+          Re-enable User workflow. Official Email is the primary deconfliction
+          value after SAAR extraction. The same Official Email on different
+          identities—or on both Active and Disabled records—blocks automatic
+          evidence matching or user creation and is shown for operator review.
+        </p>
         <p>
           Sync automatically renames a recognized nonstandard evidence date to
           DDMMMYYYY in the same active folder and records the change in the

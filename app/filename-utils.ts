@@ -85,14 +85,25 @@ export function canonicalEvidenceFilename(filename:string,organizationOverride?:
 }
 
 export function pdfFilenameNeedsRework(filename:string,organizationOverride?:string){
- if(!filename.toLowerCase().endsWith('.pdf')||filenameMatchesKind(filename,'SAAR'))return false;
- return !canonicalEvidenceFilename(filename,organizationOverride);
+ if(!filename.toLowerCase().endsWith('.pdf'))return false;
+ return !evidenceFilenamePassesStorageGate(filename,organizationOverride);
 }
 
 export function zipFilenameNeedsRework(filename:string,organizationOverride?:string){
  if(!filename.toLowerCase().endsWith('.zip'))return false;
+ return !evidenceFilenamePassesStorageGate(filename,organizationOverride);
+}
+
+/**
+ * The document-type organizer is intentionally fail-closed. Fault-tolerant input
+ * names are normalized before this gate; only the resulting complete canonical
+ * name may enter a managed document-type folder.
+ */
+export function evidenceFilenamePassesStorageGate(filename:string,organizationOverride?:string){
+ if(!/\.pdf(?:\.zip)?$/i.test(filename))return false;
+ if(filenameMatchesKind(filename,'SAAR')&&!validateNewUserSaarFilename(filename,{organization:organizationOverride,allowDisabled:true}).valid)return false;
  const canonical=canonicalEvidenceFilename(filename,organizationOverride);
- return !canonical||canonical.toUpperCase()!==filename.toUpperCase();
+ return !!canonical&&canonical.toUpperCase()===filename.toUpperCase();
 }
 
 export function looksLikeEvidenceFilename(filename:string){return !!parseDate(filename)&&artifactKinds.some(kind=>filenameMatchesKind(filename,kind))}

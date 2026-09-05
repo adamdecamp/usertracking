@@ -137,6 +137,17 @@ internal sealed class TrackerContext : ApplicationContext
                         storage.Map(systemId, selected); string manifest = storage.ReadManifest(systemId);
                         response = "{\"cancelled\":false,\"folderName\":\"" + Json(storage.FolderName(systemId)) + "\",\"manifest\":" + (manifest ?? "null") + "}";
                     }
+                    else if (action == "unarchive-select-folder" && parts[0] == "POST")
+                    {
+                        string selected = await ChooseFolder("Select a Folder of ZIP Evidence to Unarchive", storage.FolderPath(systemId), false);
+                        response = selected == null ? "{\"cancelled\":true,\"items\":[]}" : storage.ListUnarchiveCandidates(systemId, new[] { selected }, true);
+                    }
+                    else if (action == "unarchive-select-files" && parts[0] == "POST")
+                    {
+                        string[] selected = await ChooseZipFiles(storage.FolderPath(systemId));
+                        response = selected == null || selected.Length == 0 ? "{\"cancelled\":true,\"items\":[]}" : storage.ListUnarchiveCandidates(systemId, selected, false);
+                    }
+                    else if (action == "unarchive" && parts[0] == "POST") response = storage.UnarchiveEvidence(systemId, QueryValue(target, "path"));
                     else if (action == "manifest" && parts[0] == "GET") response = storage.ReadManifest(systemId) ?? "null";
                     else if (action == "manifest" && parts[0] == "POST") response = storage.SaveManifest(systemId, Encoding.UTF8.GetString(requestBody));
                     else if (action == "csv" && parts[0] == "POST") response = "{\"saved\":\"" + Json(storage.SaveCsv(systemId, requestBody)) + "\"}";
@@ -191,7 +202,9 @@ internal sealed class TrackerContext : ApplicationContext
         return !String.Equals(action, "error-report", StringComparison.Ordinal) && !action.StartsWith("lease-", StringComparison.Ordinal);
     }
 
-    private Task<string> ChooseFolder()
+    private Task<string> ChooseFolder() { return ChooseFolder("Select the Shared Folder for This Information System", null, true); }
+
+    private Task<string> ChooseFolder(string description, string initialPath, bool allowCreate)
     {
         var result = new TaskCompletionSource<string>();
         dispatcher.BeginInvoke(new Action(delegate
@@ -208,7 +221,7 @@ internal sealed class TrackerContext : ApplicationContext
                     StartPosition = FormStartPosition.Manual,
                     TopMost = true
                 })
-                using (var dialog = new FolderBrowserDialog { Description = "Select the Shared Folder for This Information System", ShowNewFolderButton = true })
+                using (var dialog = new FolderBrowserDialog { Description = description, SelectedPath = initialPath ?? "", ShowNewFolderButton = allowCreate })
                 {
                     owner.Show();
                     owner.Activate();
@@ -216,6 +229,42 @@ internal sealed class TrackerContext : ApplicationContext
                     SetForegroundWindow(owner.Handle);
                     DialogResult selected = dialog.ShowDialog(owner);
                     result.SetResult(selected == DialogResult.OK ? dialog.SelectedPath : null);
+                }
+            }
+            catch (Exception ex) { result.SetException(ex); }
+        }));
+        return result.Task;
+    }
+
+    private Task<string[]> ChooseZipFiles(string initialPath)
+    {
+        var result = new TaskCompletionSource<string[]>();
+        dispatcher.BeginInvoke(new Action(delegate
+        {
+            try
+            {
+                using (var owner = new Form
+                {
+                    FormBorderStyle = FormBorderStyle.None,
+                    Location = new Point(-32000, -32000),
+                    Opacity = 0,
+                    ShowInTaskbar = false,
+                    Size = new Size(1, 1),
+                    StartPosition = FormStartPosition.Manual,
+                    TopMost = true
+                })
+                using (var dialog = new OpenFileDialog
+                {
+                    Title = "Select Evidence ZIP Files to Unarchive",
+                    InitialDirectory = initialPath,
+                    Filter = "Evidence ZIP Files (*.zip)|*.zip",
+                    CheckFileExists = true,
+                    Multiselect = true
+                })
+                {
+                    owner.Show();owner.Activate();owner.BringToFront();SetForegroundWindow(owner.Handle);
+                    DialogResult selected = dialog.ShowDialog(owner);
+                    result.SetResult(selected == DialogResult.OK ? dialog.FileNames : null);
                 }
             }
             catch (Exception ex) { result.SetException(ex); }
