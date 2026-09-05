@@ -639,12 +639,13 @@ export default function Guide() {
         </p>
         <p>
           Tracker-owned support folders are grouped beneath the mapped
-          system&apos;s top-level <code>System</code> folder: Audit Logs,
-          backup, Reports, Sync Journals, Storage Transactions, and Archive
+          system&apos;s top-level <code>System</code> folder: Audit Logs, Error
+          Reports, backup, Reports, Sync Journals, Storage Transactions, and Archive
           Review. Existing top-level copies are migrated into this structure
-          when the portable launcher maps the folder. The top-level{" "}
-          <code>Error Reports</code> folder remains separate so operators can
-          quickly open its plain-text reports in Notepad. Organization evidence,
+          when the portable launcher maps the folder. Error entries append to
+          one UTC-daily plain-text file under <code>System/Error Reports</code>
+          so operators can keep that day&apos;s report open in Notepad without a
+          new file being created for every error. Organization evidence,
           Rework, Archive, Superseded, and permanent SAAR Archive folders remain
           with their organization records.
         </p>
@@ -1052,12 +1053,14 @@ export default function Guide() {
       </aside>
       <aside>
         <b>Error Records:</b> Operational failures show bounded diagnostic
-        details, create a Notepad-readable report in the mapped system&apos;s
-        top-level <code>Error Reports</code> folder, and write an{" "}
+        details, append an entry to the UTC-daily Notepad-readable file in{" "}
+        <code>System/Error Reports</code>, and write an{" "}
         <code>ERROR:</code> entry to the affected system&apos;s audit chain. Each
-        report includes a report ID, UTC time, Windows operator, application
+        entry includes a report ID, UTC time, Windows operator, application
         and rule-set versions, context, and the bounded error details. Error
-        reporting has its own short safety limit, so an unavailable audit chain
+        entries from the same UTC day share one file; a new UTC day creates a
+        new file automatically. Error reporting has its own short safety limit,
+        so an unavailable audit chain
         cannot prevent the operator from seeing the original failure.
         File-level rename, PDF-read, and validation
         errors do not stop the rest of a large Sync; they are audited and listed

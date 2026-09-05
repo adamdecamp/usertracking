@@ -21,6 +21,7 @@ internal sealed class PortableStorage : IDisposable
     private const long AuditFileLimit = 100L * 1024 * 1024;
     private const long RenamerQueueLimit = 20L * 1024 * 1024;
     private const long JournalLimit = 100L * 1024 * 1024;
+    private const long ErrorReportFileLimit = 100L * 1024 * 1024;
     private const int AuditVersion = 1;
     private const int SyncIndexVersion = 1;
     private const int SyncJournalVersion = 1;
@@ -28,7 +29,7 @@ internal sealed class PortableStorage : IDisposable
     private const int MappingCacheVersion = 2;
     private const string SystemDirectoryName = "System";
     private const string ErrorReportsDirectoryName = "Error Reports";
-    private static readonly string[] SupportDirectoryNames = new[] { "Audit Logs", "backup", "Archive Review", "Reports", "Sync Journals", "Storage Transactions" };
+    private static readonly string[] SupportDirectoryNames = new[] { "Audit Logs", "backup", "Archive Review", "Reports", "Sync Journals", "Storage Transactions", ErrorReportsDirectoryName };
     private const string SyncIndexFilename = "tracker-sync-index.json";
     private const string SyncIndexChecksumFilename = "tracker-sync-index.json.sha256";
     private const string RenamerQueueFilename = "tracker-document-renamer-queue.json";
@@ -966,13 +967,36 @@ internal sealed class PortableStorage : IDisposable
     public string StoreErrorReport(string systemId, string filename, string text)
     {
         string safeName = SafePart(filename, 180);if (!safeName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Error reports must use the TXT format.");
-        byte[] bytes = Encoding.UTF8.GetBytes(text ?? "");if (bytes.Length == 0 || bytes.Length > 1024 * 1024) throw new InvalidDataException("The error report is empty or exceeds the 1 MB limit.");
+        string entry = (text ?? "").TrimEnd('\r', '\n') + "\r\n";byte[] bytes = Encoding.UTF8.GetBytes(entry);if (bytes.Length <= 2 || bytes.Length > 1024 * 1024) throw new InvalidDataException("The error report entry is empty or exceeds the 1 MB limit.");
         lock (errorReportGate)
         {
-            string directory = Path.Combine(Root(systemId), ErrorReportsDirectoryName);Directory.CreateDirectory(directory);string path = Path.Combine(directory, safeName);
-            if (File.Exists(path)) path = Path.Combine(directory, Path.GetFileNameWithoutExtension(safeName) + "_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
-            AtomicWrite(path, bytes);
+            string root = Root(systemId), directory = SupportDirectory(root, ErrorReportsDirectoryName), dailyName = "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".txt", path = Path.Combine(directory, dailyName);
+            AppendErrorReportBytes(path, bytes);
             return json.Serialize(new Dictionary<string, object> { { "saved", Relative(Root(systemId), path).Replace(Path.DirectorySeparatorChar, '/') } });
+        }
+    }
+
+    private static void AppendErrorReportBytes(string path, byte[] entry)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                long existingLength = File.Exists(path) ? new FileInfo(path).Length : 0L;
+                byte[] separator = existingLength > 0 ? Encoding.UTF8.GetBytes("\r\n") : new byte[0];
+                if (existingLength + separator.Length + entry.Length > ErrorReportFileLimit) throw new InvalidDataException(Path.GetFileName(path) + " exceeds the daily error-report size limit.");
+                using (var stream = OpenCompatibleFileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, 4096))
+                {
+                    if (separator.Length > 0) stream.Write(separator, 0, separator.Length);
+                    stream.Write(entry, 0, entry.Length);FlushCompatible(stream);
+                }
+                return;
+            }
+            catch (IOException)
+            {
+                if (attempt >= 2) throw;
+                Thread.Sleep(75 * (attempt + 1));
+            }
         }
     }
 

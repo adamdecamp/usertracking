@@ -150,6 +150,7 @@ internal static class PortableStorageTests
         using (var legacyStorage = new PortableStorage("DOMAIN\\operator", legacyCache)) Assert(!legacyStorage.CachedMappings().Contains("legacy"), "Version-1 development mapping caches should be ignored so a clean update cannot restore stale test systems.");
         string mappingCache = Path.Combine(root, "local-folder-mappings.json");
         string legacyAuditDirectory = Path.Combine(root, "Audit Logs");Directory.CreateDirectory(legacyAuditDirectory);File.WriteAllText(Path.Combine(legacyAuditDirectory, "audit-2020-01-01.txt"), "legacy audit record", Encoding.UTF8);
+        string legacyErrorDirectory = Path.Combine(root, "Error Reports");Directory.CreateDirectory(legacyErrorDirectory);File.WriteAllText(Path.Combine(legacyErrorDirectory, "legacy-error.txt"), "legacy error record", Encoding.UTF8);
         var storage = new PortableStorage("DOMAIN\\operator", mappingCache);
         storage.Map("mapping-key", root);
         Assert(Directory.Exists(Path.Combine(root, "Organizations")), "Mapping should create the top-level Organizations folder.");
@@ -159,6 +160,7 @@ internal static class PortableStorageTests
         bool rejectedDeviceOrganization = false;try { storage.CreateOrganization("mapping-key", "CON"); } catch (InvalidDataException) { rejectedDeviceOrganization = true; }
         Assert(rejectedDeviceOrganization, "Reserved Windows device names must not be accepted as organizations.");
         Assert(!Directory.Exists(legacyAuditDirectory) && File.Exists(Path.Combine(root, "System", "Audit Logs", "audit-2020-01-01.txt")), "Mapping should migrate legacy support folders beneath the top-level System folder without losing their contents.");
+        Assert(!Directory.Exists(legacyErrorDirectory) && File.Exists(Path.Combine(root, "System", "Error Reports", "legacy-error.txt")), "Mapping should migrate legacy error reports beneath the top-level System folder without losing them.");
         Assert(!Directory.EnumerateFiles(root, ".isut-map-probe-*", SearchOption.TopDirectoryOnly).Any(), "A successful mapping compatibility probe should remove its temporary file.");
         var competingStorage = new PortableStorage("DOMAIN\\second-operator", mappingCache);
         competingStorage.Map("mapping-key", root);
@@ -389,8 +391,10 @@ internal static class PortableStorageTests
         Assert(reportResult.Contains("\"sha256\"") && File.Exists(Path.Combine(root, "System", "Reports", "Compliance-Snapshot_TEST.pdf")) && File.Exists(Path.Combine(root, "System", "Reports", "Compliance-Snapshot_TEST.pdf.sha256")), "Compliance reports should be stored with a matching SHA-256 file.");
         string packageResult = storage.StoreInspectionPackage("mapping-key", "Inspection-Package_TEST.zip", InspectionZip());
         Assert(packageResult.Contains("\"sha256\"") && File.Exists(Path.Combine(root, "System", "Reports", "Inspection-Package_TEST.zip")) && File.Exists(Path.Combine(root, "System", "Reports", "Inspection-Package_TEST.zip.sha256")), "Inspection packages should contain the required files and be stored with a matching SHA-256 file.");
-        string errorReportResult = storage.StoreErrorReport("mapping-key", "ERR-TEST.txt", "Information System User Tracker Error Report\r\nDetails: simulated failure");
-        Assert(errorReportResult.Contains("Error Reports/ERR-TEST.txt") && File.ReadAllText(Path.Combine(root, "Error Reports", "ERR-TEST.txt"), Encoding.UTF8).Contains("simulated failure"), "A plain-text error report should be stored in the top-level Error Reports folder for Notepad review.");
+        string errorReportResult = storage.StoreErrorReport("mapping-key", "ERR-TEST.txt", "Information System User Tracker Error Entry\r\nDetails: simulated failure");
+        string secondErrorReportResult = storage.StoreErrorReport("mapping-key", "ERR-SECOND.txt", "Information System User Tracker Error Entry\r\nDetails: second simulated failure");
+        string dailyErrorName = "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".txt", dailyErrorPath = Path.Combine(root, "System", "Error Reports", dailyErrorName), dailyErrorText = File.ReadAllText(dailyErrorPath, Encoding.UTF8);
+        Assert(errorReportResult.Contains("System/Error Reports/" + dailyErrorName) && secondErrorReportResult.Contains("System/Error Reports/" + dailyErrorName) && dailyErrorText.Contains("simulated failure") && dailyErrorText.Contains("second simulated failure") && Directory.EnumerateFiles(Path.Combine(root, "System", "Error Reports"), "error-report-*.txt").Count() == 1, "Plain-text error entries should append to one UTC-daily Notepad file beneath System/Error Reports.");
 
         string journalFirst = storage.ScanWithJournal("mapping-key", "journal-rules", true);var journalFirstObject = (Dictionary<string, object>)Json.DeserializeObject(journalFirst);string journalRun = Convert.ToString(journalFirstObject["runId"]);
         string journalResumed = storage.ScanWithJournal("mapping-key", "journal-rules", false);var journalResumedObject = (Dictionary<string, object>)Json.DeserializeObject(journalResumed);
