@@ -11,33 +11,6 @@ if (-not (Test-Path -LiteralPath $tsc) -or -not (Test-Path -LiteralPath $eslint)
     throw "Build dependencies are missing. Run pnpm install --frozen-lockfile first."
 }
 
-$regressionTests = @(
-    "tests/backup-utils.test.ts",
-    "tests/evidence-validation.test.ts",
-    "tests/evidence-audit-utils.test.ts",
-    "tests/audit-utils.test.ts",
-    "tests/compliance-report.test.ts",
-    "tests/executive-summary.test.ts",
-    "tests/cleanup-utils.test.ts",
-    "tests/concurrency-utils.test.ts",
-    "tests/notification-utils.test.ts",
-    "tests/sync-utils.test.ts",
-    "tests/session-utils.test.ts",
-    "tests/filename-utils.test.ts",
-    "tests/document-renamer-utils.test.ts",
-    "tests/error-utils.test.ts",
-    "tests/manifest-validation.test.ts",
-    "tests/saar-form-utils.test.ts",
-    "tests/manual-saar-utils.test.ts",
-    "tests/operation-timeout.test.ts",
-    "tests/portable-request-utils.test.ts",
-    "tests/pagination-utils.test.ts",
-    "tests/pdf-worker-utils.test.ts",
-    "tests/user-update-utils.test.ts",
-    "tests/workflow-utils.test.ts",
-    "tests/data-migrations.test.ts"
-)
-
 Push-Location $projectRoot
 try {
     Write-Host "Running TypeScript checks..."
@@ -48,8 +21,9 @@ try {
     & $eslint . --ignore-pattern dist --ignore-pattern .next
     if ($LASTEXITCODE -ne 0) { throw "Lint checks failed." }
 
+    # Single source of truth: scripts/regression-tests.txt via scripts/run-regression.mjs
     Write-Host "Running the full regression suite..."
-    & $node --experimental-strip-types --test $regressionTests
+    & $node ./scripts/run-regression.mjs
     if ($LASTEXITCODE -ne 0) { throw "Regression tests failed." }
 
     Write-Host "Running deterministic fuzz tests..."
