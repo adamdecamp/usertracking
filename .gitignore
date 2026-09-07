@@ -68,7 +68,11 @@ next-env.d.ts
 # local runtime data must never enter source control or release packages
 information-system-user-tracker.json
 tracker-active-session.json
+tracker-exclusive-session.lock
+Organizations/
 User Evidence/
+System/
+Error Reports/
 Audit Logs/
 backup/
 Reports/
