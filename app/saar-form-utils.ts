@@ -23,6 +23,11 @@ export function officialEmailFromText(text:string){
  for(const label of labels){const start=(label.index??0)+label[0].length,window=source.slice(start,start+400),match=Array.from(window.matchAll(emailPattern))[0];if(!match)continue;const before=window.slice(0,match.index??0);if(/\b(?:SUPERVISOR|SPONSOR|SECURITY\s+MANAGER|APPROVING\s+OFFICIAL)\b.{0,60}\bE[\s-]*MAIL\b/i.test(before))continue;return match[0].toLowerCase()}
 }
 
+export function firstEmailFromText(text:string){
+ const source=text.replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\u00ad/g,'-').replace(/\s+/g,' ').slice(0,500000),match=Array.from(source.matchAll(emailPattern))[0];
+ return match?.[0].toLowerCase()
+}
+
 export function parseSaarName(value:string):SaarIdentity|undefined{
  const source=clean(value,300);if(!source)return;
  let last='',first='',middle='';
@@ -42,6 +47,14 @@ function fieldKind(name:string):'name'|'organization'|'email'|'requestDate'|unde
  if(normalized==='2 ORGANIZATION'||normalized==='ORGANIZATION2')return'organization';
  if(normalized==='4 OFFICIAL EMAIL ADDRESS'||normalized==='5 OFFICIAL E MAIL ADDRESS'||normalized==='EMAIL ADDRESS5'||/^(?:\d+ )?OFFICIAL(?: ORGANIZATION)? E ?MAIL(?: ADDRESS)?$/.test(normalized))return'email';
  if(/^(?:12A? )?(?:USER|REQUESTER)(?: SIGNATURE)? (?:SIGNED )?DATE$/.test(normalized)||normalized==='SIGNEDDATE12'||normalized==='TYPE REQUEST DATE')return'requestDate';
+}
+
+function emailFieldPriority(name:string){
+ const normalized=normalizedName(name);
+ if(normalized==='4 OFFICIAL ORGANIZATION E MAIL ADDRESS')return 0;
+ if(normalized==='OFFICIAL ORGANIZATION E MAIL ADDRESS')return 1;
+ if(fieldKind(name)==='email')return 2;
+ return 3
 }
 
 function signatureRequestDate(field:PDFSignature){
@@ -108,17 +121,19 @@ export async function readSaarFormFields(pdfBytes:Uint8Array):Promise<SaarFormFi
  const xfa=xfaDatasets(pdf);
  if(xfa.present){
   if(!xfa.xml)return{fillable:false};
-  const name=xmlValue(xfa.xml,['name1']),organization=xmlValue(xfa.xml,['Organization2']),email=xmlValue(xfa.xml,['Email_Address5','Official_Email','OfficialEmail','Official_Email_Address','OfficialEmailAddress']),requestDate=parseSaarRequestDate(xmlValue(xfa.xml,['signedDate12','SignedDate12','typeReqDate'])),processedBy=xmlValue(xfa.xml,['NameProcessed','ProcessedByName','CreatedBy']),createdDate=parseSaarRequestDate(xmlValue(xfa.xml,['ProcessedsignedDate','ProcessedSignedDate','CreatedBySignedDate'])),disabledBy=xmlValue(xfa.xml,['NameDisabled','DisabledByName','DisabledBy']),disabledDate=parseSaarRequestDate(xmlValue(xfa.xml,['DisabledsignedDate','DisabledSignedDate','DisabledBySignedDate'])),createdBySigned=!!processedBy&&!!createdDate,disabledBySigned=!!disabledBy&&!!disabledDate;
+  const name=xmlValue(xfa.xml,['name1']),organization=xmlValue(xfa.xml,['Organization2']),email=xmlValue(xfa.xml,['Email_Address4','Official_Organization_Email_Address','OfficialOrganizationEmailAddress','Email_Address5','Official_Email','OfficialEmail','Official_Email_Address','OfficialEmailAddress']),requestDate=parseSaarRequestDate(xmlValue(xfa.xml,['signedDate12','SignedDate12','typeReqDate'])),processedBy=xmlValue(xfa.xml,['NameProcessed','ProcessedByName','CreatedBy']),createdDate=parseSaarRequestDate(xmlValue(xfa.xml,['ProcessedsignedDate','ProcessedSignedDate','CreatedBySignedDate'])),disabledBy=xmlValue(xfa.xml,['NameDisabled','DisabledByName','DisabledBy']),disabledDate=parseSaarRequestDate(xmlValue(xfa.xml,['DisabledsignedDate','DisabledSignedDate','DisabledBySignedDate'])),createdBySigned=!!processedBy&&!!createdDate,disabledBySigned=!!disabledBy&&!!disabledDate;
   return{fillable:true,format:'XFA',identity:name?parseSaarName(name):undefined,organization:organization?clean(organization,200):undefined,email:email?clean(email,254):undefined,...(requestDate?{requestDate}:{}),...(createdDate?{createdDate}:{}),...(disabledDate?{disabledDate}:{}),createdBySigned,disabledBySigned,signedFieldNames:[]}
  }
- const values:Partial<Record<'name'|'organization'|'email'|'requestDate',string>>={};let signedRequestDate:string|undefined;
+ const values:Partial<Record<'name'|'organization'|'email'|'requestDate',string>>={},emailCandidates:{priority:number;order:number;value:string}[]=[];let signedRequestDate:string|undefined;
  try{
   const fields=pdf.getForm().getFields(),signatures=signatureSummary(fields);
-  for(const field of fields){
+  for(const[order,field]of fields.entries()){
    if(field instanceof PDFSignature){signedRequestDate=signedRequestDate??signatureRequestDate(field);continue}if(!(field instanceof PDFTextField))continue;
-   const kind=fieldKind(field.getName());if(!kind||values[kind])continue;
-   const value=clean(field.getText()??'',500);if(value)values[kind]=value
+   const value=clean(field.getText()??'',500),emailMatch=Array.from(value.matchAll(emailPattern))[0];if(emailMatch)emailCandidates.push({priority:emailFieldPriority(field.getName()),order,value:emailMatch[0].toLowerCase()});
+   const kind=fieldKind(field.getName());if(!kind||kind==='email'||values[kind])continue;
+   if(value)values[kind]=value
   }
+  values.email=emailCandidates.sort((left,right)=>left.priority-right.priority||left.order-right.order)[0]?.value;
   const requestDate=parseSaarRequestDate(values.requestDate)??signedRequestDate;if(fields.length>0)return{fillable:true,format:'AcroForm',identity:values.name?parseSaarName(values.name):undefined,organization:values.organization?clean(values.organization,200):undefined,email:values.email?clean(values.email,254):undefined,...(requestDate?{requestDate}:{}),...signatures}
  }catch{}
  return{fillable:false}

@@ -594,11 +594,12 @@ export default function Guide() {
           Organization. If those filename values are missing or still contain
           template placeholders, Sync reads the user name and organization
           from either a standard DD Form 2875 XFA dataset or the derived
-          SAAR&apos;s AcroForm fields. Official Email is read from the
-          corresponding form field first; if that stored value is blank or
-          invalid, Sync searches selectable PDF text immediately after the{" "}
-          <b>Official Email</b> label for a valid address while rejecting
-          unrelated sponsor, supervisor, or security-manager addresses. A
+          SAAR&apos;s AcroForm fields. Official Email is read first from the
+          <b> OFFICIAL/ORGANIZATION E-MAIL ADDRESS</b> field. That exact field
+          takes priority even when other email fields appear earlier in the PDF
+          field collection. If it is blank or invalid, Sync searches selectable
+          PDF text immediately after that label and then uses the first valid
+          email address appearing from the top of the form. A
           successful field fallback immediately renames that SAAR to the
           canonical Last_First_(ORG) structure, rescans it, and uses the
           corrected SAAR as the user-creation seed. Filename role, privileged
@@ -607,8 +608,13 @@ export default function Guide() {
           presented as ordinary unmatched evidence; Sync Review lists the exact
           admission failure under <b>New-User SAARs Requiring Correction</b> and
           offers it only for movement to the organization&apos;s Rework folder.
-          Return a corrected fillable SAAR to an active evidence folder before
-          running Sync again.
+          Correct the loose PDF inside the organization&apos;s Rework folder and run
+          Sync again. Sync revalidates Rework, and a corrected file that passes
+          every strict filename and file-integrity rule is moved automatically to
+          its canonical document-type folder and included in the same database
+          review. A failed correction stays in Rework with the reason shown in
+          Sync Review. A destination collision preserves both files for an
+          operator decision.
         </p>
         <p>
           The Sync Review window displays separate editable Last Name, First
@@ -1014,6 +1020,17 @@ export default function Guide() {
         preserves the existing evidence filename. Archive compression replaces
         only a loose PDF container with a verified one-PDF ZIP; it does not
         discard the PDF evidence content.
+      </aside>
+      <aside>
+        <b>Rework Correction Promotion:</b> Every Sync inspects each organization&apos;s
+        Rework folder after Archive Preflight. Sync does not automatically repair a
+        partially corrected Rework filename. A readable PDF or one-PDF ZIP must
+        already pass the complete canonical filename gate, including identity,
+        parent-folder organization, artifact type, role details when applicable,
+        date, and extension. Passing evidence is moved into the corresponding
+        document-type folder before user and artifact matching, so its database
+        update is available in that same Sync Review. Failed files remain isolated
+        in Rework and are never ingested.
       </aside>
       <aside>
         <b>Non-Destructive Restore Drill:</b> In <b>Restore Backup</b>, select a

@@ -407,7 +407,8 @@ internal sealed class PortableStorage : IDisposable
                 {
                     string name = Path.GetFileName(directory);
                     bool permanentSaarArchive = IsPermanentSaarArchiveDirectory(name);
-                    if (current.Item3 || IsManagedStorageDirectory(name) && !permanentSaarArchive) continue;
+                    bool rework = IsReworkStorageDirectory(name);
+                    if (current.Item3 || IsManagedStorageDirectory(name) && !permanentSaarArchive && !rework) continue;
                     if (IsScanReparsePoint(root, directory)) continue;
                     pending.Push(Tuple.Create(directory, current.Item2 + 1, permanentSaarArchive));
                 }
@@ -874,7 +875,7 @@ internal sealed class PortableStorage : IDisposable
             string root = Root(systemId);RecoverTransactions(root);string source = SafeRelativePath(root, relative), normalized = Relative(root, source), safeFolder = SafePart(folder, 60);
             string[] allowed = { "SAAR", "User Agreement", "DoD Cyber Cert", "8140 Certification Memo", "Privileged User Training", "DTA Training" };
             if (!allowed.Any(item => String.Equals(item, safeFolder, StringComparison.OrdinalIgnoreCase)) || !String.Equals(safeFolder, folder, StringComparison.Ordinal)) throw new InvalidDataException("The evidence document-type folder is invalid.");
-            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active evidence files can be organized by document type.");
+            if (ContainsManagedStorageDirectory(normalized) && !IsOrganizationReworkEvidencePath(normalized)) throw new InvalidDataException("Only active evidence or corrected evidence in an organization Rework folder can be organized by document type.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string validationError;if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
             Tuple<string, string> organization = OrganizationStorageLocation(root, source);string directory = Path.Combine(organization.Item1, safeFolder);Directory.CreateDirectory(directory);
@@ -1704,6 +1705,18 @@ internal sealed class PortableStorage : IDisposable
         string[] parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
         for (int index = 0; index < parts.Length - 1; index++) if (IsManagedStorageDirectory(parts[index])) return true;
         return false;
+    }
+
+    private static bool IsOrganizationReworkEvidencePath(string relative)
+    {
+        string[] parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+        bool foundRework = false;
+        for (int index = 0; index < parts.Length - 1; index++)
+        {
+            if (IsReworkStorageDirectory(parts[index])) { foundRework = true;continue; }
+            if (IsManagedStorageDirectory(parts[index])) return false;
+        }
+        return foundRework;
     }
 
     private static string ComparableStorageName(string value)

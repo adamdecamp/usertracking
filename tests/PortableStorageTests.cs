@@ -326,7 +326,9 @@ internal static class PortableStorageTests
         string reworkedRelative = Convert.ToString(reworkResponse["reworked"]), reworkedPath = Path.Combine(root, reworkedRelative.Replace('/', Path.DirectorySeparatorChar));
         string rootOrganization = new DirectoryInfo(root).Name;
         Assert(!File.Exists(correctionPath) && File.Exists(reworkedPath) && reworkedRelative.StartsWith(rootOrganization + " Rework/", StringComparison.OrdinalIgnoreCase), "A correction PDF at the organization root should move into that organization's named Rework folder even when its PDF bytes are invalid.");
-        Assert(!storage.Scan("mapping-key").Contains("Shaw_Vivian_GEN_SAAR_24AUG2026.pdf"), "Rework files should be excluded from later Sync scans.");
+        object[] correctionScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key"));
+        Dictionary<string, object> rejectedCorrection = correctionScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_GEN_SAAR_24AUG2026.pdf");
+        Assert(!Convert.ToBoolean(rejectedCorrection["accepted"]) && Convert.ToString(rejectedCorrection["path"]).IndexOf(" Rework", StringComparison.OrdinalIgnoreCase) >= 0, "Sync should inspect Rework corrections and retain unreadable corrections there with a validation failure.");
         string nestedReworkDirectory = Path.Combine(root, "NGC", "Privileged", "Miller_Ava");
         Directory.CreateDirectory(nestedReworkDirectory);
         string nestedReworkName = "Miller_Ava_(NGC)_GEN_SAAR_24AUG2026.pdf", nestedReworkPath = Path.Combine(nestedReworkDirectory, nestedReworkName);
@@ -334,6 +336,14 @@ internal static class PortableStorageTests
         var nestedReworkResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.MoveEvidenceToRework("mapping-key", Path.Combine("NGC", "Privileged", "Miller_Ava", nestedReworkName)));
         string nestedReworkedRelative = Convert.ToString(nestedReworkResponse["reworked"]);
         Assert(nestedReworkedRelative.StartsWith("NGC/NGC Rework/", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(root, nestedReworkedRelative.Replace('/', Path.DirectorySeparatorChar))), "A nested organization should receive its own organization-named Rework folder.");
+        string promotableCorrectionName = "Miller_Ava_(NGC)_User_Agreement_24AUG2026.pdf", promotableCorrectionPath = Path.Combine(Path.GetDirectoryName(Path.Combine(root, nestedReworkedRelative.Replace('/', Path.DirectorySeparatorChar))), promotableCorrectionName);
+        File.WriteAllBytes(promotableCorrectionPath, PdfBytes());
+        object[] promotableScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key"));
+        Dictionary<string, object> promotableCorrection = promotableScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == promotableCorrectionName);
+        Assert(Convert.ToBoolean(promotableCorrection["accepted"]) && Convert.ToString(promotableCorrection["path"]).IndexOf("NGC Rework", StringComparison.OrdinalIgnoreCase) >= 0, "Sync should validate a readable corrected PDF inside an organization Rework folder.");
+        var promotionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.OrganizeEvidence("mapping-key", Convert.ToString(promotableCorrection["path"]), "User Agreement"));
+        string promotedRelative = Convert.ToString(promotionResponse["organized"]), promotedPath = Path.Combine(root, promotedRelative.Replace('/', Path.DirectorySeparatorChar));
+        Assert(promotedRelative.StartsWith("NGC/User Agreement/", StringComparison.OrdinalIgnoreCase) && File.Exists(promotedPath) && !File.Exists(promotableCorrectionPath), "A validated Rework correction should move into its canonical document-type folder with its source removed only after verification.");
         string invalidZipName = "Miller Ava (NGC) GEN SAAR 20260826.zip", invalidZipRelative = Path.Combine("NGC", "Privileged", "Miller_Ava", invalidZipName), invalidZipPath = Path.Combine(root, invalidZipRelative), embeddedPdfName = "Miller_Ava_(NGC)_GEN_SAAR_20260826.pdf";
         File.WriteAllBytes(invalidZipPath, EvidenceZip(embeddedPdfName, PdfBytes()));
         var extractedReworkResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.MoveEvidenceToRework("mapping-key", invalidZipRelative));
@@ -383,7 +393,7 @@ internal static class PortableStorageTests
         string organizedSourceRelative = Path.Combine("Organizations", "GOV", "Shaw_Vivian", evidence), organizedResponseText = storage.OrganizeEvidence("mapping-key", organizedSourceRelative, "SAAR");var organizedResponse = (Dictionary<string, object>)Json.DeserializeObject(organizedResponseText);string organizedRelative = Convert.ToString(organizedResponse["organized"]);
         Assert(organizedRelative.StartsWith("Organizations/GOV/SAAR/", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(root, organizedRelative.Replace('/', Path.DirectorySeparatorChar))), "Accepted active evidence should move into its canonical document-type folder inside the organization with content integrity preserved.");
         string postCleanupScan = storage.Scan("mapping-key");
-        Assert(!postCleanupScan.Contains(nestedArchiveName) && !postCleanupScan.Contains(nestedReworkName), "Unrelated organization Archive and Rework folders must be excluded from every later Sync scan.");
+        Assert(!postCleanupScan.Contains(nestedArchiveName) && postCleanupScan.Contains(nestedReworkName), "Organization Archive folders must remain excluded while Rework corrections remain visible to later Sync validation.");
         Assert(postCleanupScan.Contains(loosePermanentSaar + ".zip") && !postCleanupScan.Contains(unrelatedPermanentArchiveFile), "Sync should inspect SAAR records in the permanent organization SAAR Archive while ignoring unrelated files stored there.");
         bool rejectedInvalidCompression = false;
         try { storage.CompressEvidence("mapping-key", "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf"); } catch (InvalidDataException) { rejectedInvalidCompression = true; }

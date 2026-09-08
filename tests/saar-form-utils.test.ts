@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PDFDocument,PDFName,PDFString} from 'pdf-lib';
-import {officialEmailFromText,parseSaarName,parseSaarRequestDate,readSaarFormFields} from '../app/saar-form-utils.ts';
+import {firstEmailFromText,officialEmailFromText,parseSaarName,parseSaarRequestDate,readSaarFormFields} from '../app/saar-form-utils.ts';
 
 test('reads name, organization, and official email from the derived SAAR AcroForm',async()=>{
  const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm();
@@ -18,6 +18,12 @@ test('accepts a simplified Official Email AcroForm field name',async()=>{
  const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm(),field=form.createTextField('Official Email');field.setText('alternate.user@example.com');field.addToPage(page,{x:20,y:600,width:300,height:20});
  const result=await readSaarFormFields(await pdf.save());
  assert.equal(result.email,'alternate.user@example.com');
+});
+
+test('prioritizes OFFICIAL/ORGANIZATION E-MAIL ADDRESS over other email fields',async()=>{
+ const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm(),sponsor=form.createTextField('Sponsor E-mail');sponsor.setText('sponsor@example.mil');sponsor.addToPage(page,{x:20,y:500,width:300,height:20});const official=form.createTextField('4. OFFICIAL/ORGANIZATION E-MAIL ADDRESS');official.setText('user.official@example.mil');official.addToPage(page,{x:20,y:650,width:300,height:20});
+ const result=await readSaarFormFields(await pdf.save());
+ assert.equal(result.email,'user.official@example.mil');
 });
 
 test('reads equivalent fields from an official DD2875-style XFA datasets packet',async()=>{
@@ -62,6 +68,10 @@ test('finds a valid email immediately after the Official Email label',()=>{
  assert.equal(officialEmailFromText('Official E-mail: vivian.shaw@example.com'),'vivian.shaw@example.com');
  assert.equal(officialEmailFromText('4. OFFICIAL/ORGANIZATION E\u00adMAIL ADDRESS user.name@example.mil 5. JOB TITLE'),'user.name@example.mil');
  assert.equal(officialEmailFromText('Email jacob@example.mil without the required label'),undefined);
+});
+
+test('uses the first email in selectable top-to-bottom text as the final fallback',()=>{
+ assert.equal(firstEmailFromText('NAME Brown, Jacob user.official@example.mil SUPERVISOR sponsor@example.mil'),'user.official@example.mil');
 });
 
 test('does not substitute another official\'s email for the user email',()=>{
