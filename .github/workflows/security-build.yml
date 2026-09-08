@@ -88,3 +88,15 @@ jobs:
             release/Information-System-User-Tracker-Executive-Summary.pdf
             release/SHA256SUMS.txt
 
+      - name: Upload unsigned validation build
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: unsigned-validation-build
+          path: |
+            release/InformationSystemUserTracker.exe
+            release/Information-System-User-Tracker-Executive-Summary.pdf
+            release/SHA256SUMS.txt
+            artifacts/information-system-user-tracker.spdx.json
+          if-no-files-found: error
+          retention-days: 7
+
