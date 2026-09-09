@@ -106,6 +106,16 @@ export function evidenceFilenamePassesStorageGate(filename:string,organizationOv
  return !!canonical&&canonical.toUpperCase()===filename.toUpperCase();
 }
 
+/**
+ * INCOMPLETE is an operator-applied disposition, not an evidence type. Match it
+ * only as a standalone filename token so words such as "incompleteness" do not
+ * trigger an irreversible cleanup action.
+ */
+export function operatorMarkedIncomplete(filename:string){
+ const base=filename.split(/[\\/]/).pop()??filename;
+ return/(?:^|[^A-Z0-9])INCOMPLETE(?:[^A-Z0-9]|$)/i.test(base);
+}
+
 export function looksLikeEvidenceFilename(filename:string){return !!parseDate(filename)&&artifactKinds.some(kind=>filenameMatchesKind(filename,kind))}
 
 export function identityFromFilename(filename:string){

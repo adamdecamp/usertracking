@@ -648,6 +648,7 @@ internal sealed class PortableStorage : IDisposable
             var errors = new List<Dictionary<string, object>>();
             var moved = new List<Dictionary<string, object>>();
             var compressed = new List<Dictionary<string, object>>();
+            var deleted = new List<Dictionary<string, object>>();
             var pending = new Stack<Tuple<string, int, bool, bool, bool>>();
             pending.Push(Tuple.Create(root, 0, false, false, false));
             int scanned = 0, skippedSaar = 0, currentFiles = 0, undated = 0;
@@ -662,6 +663,22 @@ internal sealed class PortableStorage : IDisposable
                 {
                     if (scanned >= 100000) { errors.Add(RetentionError(root, current.Item1, "Archive preflight file limit exceeded."));break; }
                     string filename = Path.GetFileName(source);
+                    if (IsOperatorMarkedIncomplete(filename))
+                    {
+                        scanned++;
+                        try
+                        {
+                            string relative = Relative(root, source).Replace(Path.DirectorySeparatorChar, '/'), hash = Sha256Bytes(File.ReadAllBytes(source));
+                            VerifyAuditChainWithRetry(SupportDirectory(root, "Audit Logs"));
+                            File.Delete(source);
+                            bool auditRecorded = false;
+                            try { AppendAudit(systemId, "DELETE OPERATOR-MARKED INCOMPLETE EVIDENCE: " + relative + "; SHA-256 " + hash + "; reason Operator-marked Incomplete evidence");auditRecorded = true; }
+                            catch (Exception auditError) { errors.Add(RetentionError(root, source, "Incomplete evidence was deleted, but its tamper-evident audit entry failed: " + CleanLine(auditError.Message, 220))); }
+                            deleted.Add(new Dictionary<string, object> { { "source", relative }, { "sha256", hash }, { "reason", "Operator-marked Incomplete evidence" }, { "auditRecorded", auditRecorded } });
+                        }
+                        catch (Exception error) { errors.Add(RetentionError(root, source, "Operator-marked Incomplete deletion failed: " + CleanLine(error.Message, 240))); }
+                        continue;
+                    }
                     bool supported = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
                     if (!supported)
                     {
@@ -739,7 +756,7 @@ internal sealed class PortableStorage : IDisposable
                     pending.Push(Tuple.Create(directory, current.Item2 + 1, false, false, false));
                 }
             }
-            return json.Serialize(new Dictionary<string, object> { { "moved", moved.ToArray() }, { "compressed", compressed.ToArray() }, { "errors", errors.ToArray() }, { "scanned", scanned }, { "skippedSaar", skippedSaar }, { "current", currentFiles }, { "undated", undated } });
+            return json.Serialize(new Dictionary<string, object> { { "moved", moved.ToArray() }, { "compressed", compressed.ToArray() }, { "deleted", deleted.ToArray() }, { "errors", errors.ToArray() }, { "scanned", scanned }, { "skippedSaar", skippedSaar }, { "current", currentFiles }, { "undated", undated } });
         }
     }
 
@@ -747,6 +764,7 @@ internal sealed class PortableStorage : IDisposable
     private static bool IsSupersededDirectory(string root, string directory) { return Relative(root, directory).Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries).Any(part => String.Equals(part, "Superseded", StringComparison.OrdinalIgnoreCase)); }
     private static bool IsSaarFilename(string filename) { return (filename ?? "").IndexOf("SAAR", StringComparison.OrdinalIgnoreCase) >= 0; }
     private static bool IsDisabledSaarFilename(string filename) { return IsSaarFilename(filename) && Regex.IsMatch(filename ?? "", @"(?:^|[^A-Za-z0-9])DISABLED(?:[^A-Za-z0-9]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant); }
+    private static bool IsOperatorMarkedIncomplete(string filename) { return Regex.IsMatch(filename ?? "", @"(?:^|[^A-Za-z0-9])INCOMPLETE(?:[^A-Za-z0-9]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant); }
     private static bool IsRootControlFile(string root, string path)
     {
         if (!String.Equals(Path.GetDirectoryName(path).TrimEnd(Path.DirectorySeparatorChar), root.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)) return false;

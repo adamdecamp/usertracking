@@ -311,6 +311,14 @@ export default function Guide() {
           folder, verifies the extracted content, and removes the ZIP only after
           that verification succeeds.
         </p>
+        <p>
+          <b>Incomplete</b> is a final operator disposition. During Archive
+          Preflight, a file whose name contains <code>Incomplete</code> as a
+          standalone word is permanently deleted before validation or matching.
+          The deletion is recorded in the tamper-evident audit log with the
+          original relative path and SHA-256 hash. Do not add that word unless
+          the file has been manually verified as invalid and should be deleted.
+        </p>
         <h3>Audit Evidence Content</h3>
         <p>
           Choose <b>Audit Evidence</b> only when a deeper inspection is needed.
@@ -599,7 +607,10 @@ export default function Guide() {
           takes priority even when other email fields appear earlier in the PDF
           field collection. If it is blank or invalid, Sync searches selectable
           PDF text immediately after that label and then uses the first valid
-          email address appearing from the top of the form. A
+          email address appearing from the top of the form. Standard UTF-8 and
+          UTF-16 XFA datasets are supported. If a completed XFA form uses an
+          unfamiliar field name, the first non-supervisor, non-sponsor email
+          value in dataset order is used as the final form-data fallback. A
           successful field fallback immediately renames that SAAR to the
           canonical Last_First_(ORG) structure, rescans it, and uses the
           corrected SAAR as the user-creation seed. Filename role, privileged
@@ -611,8 +622,8 @@ export default function Guide() {
           Correct the loose PDF inside the organization&apos;s Rework folder and run
           Sync again. Sync revalidates Rework, and a corrected file that passes
           every strict filename and file-integrity rule is moved automatically to
-          its canonical document-type folder and included in the same database
-          review. A failed correction stays in Rework with the reason shown in
+          its canonical document-type folder, rediscovered at that destination,
+          and included in the same database review. A failed correction stays in Rework with the reason shown in
           Sync Review. A destination collision preserves both files for an
           operator decision.
         </p>

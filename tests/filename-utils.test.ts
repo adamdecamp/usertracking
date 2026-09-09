@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
+import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,operatorMarkedIncomplete,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -130,6 +130,12 @@ test('routes unidentified or incomplete loose PDFs to Rework',()=>{
  assert.equal(evidenceFilenamePassesStorageGate('Brown_Jacob_(GDMS)_GEN_SAAR.pdf','GDMS'),false);
  assert.equal(evidenceFilenamePassesStorageGate('Brown Jacob (GDMS) DoD Cyber Cert 26AUG2026.pdf','GDMS'),false);
  assert.equal(evidenceFilenamePassesStorageGate('Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf','GDMS'),true);
+});
+
+test('recognizes only a standalone operator Incomplete disposition',()=>{
+ assert.equal(operatorMarkedIncomplete('Brown_Jacob_(GDMS)_User_Agreement_INCOMPLETE.pdf'),true);
+ assert.equal(operatorMarkedIncomplete('Incomplete.pdf'),true);
+ assert.equal(operatorMarkedIncomplete('Brown_Jacob_(GDMS)_User_Agreement_Incompleteness.pdf'),false);
 });
 
 test('strictly gates every managed document type before folder organization',()=>{

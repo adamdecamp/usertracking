@@ -35,6 +35,28 @@ test('reads equivalent fields from an official DD2875-style XFA datasets packet'
  assert.deepEqual(result,{fillable:true,format:'XFA',identity:{last:'Shaw',first:'Vivian',middle:'R'},organization:'Boeing',email:'vivian.shaw@example.mil',requestDate:'2026-08-26',createdBySigned:false,disabledBySigned:false,signedFieldNames:[]});
 });
 
+test('does not substitute a sponsor field when the official AcroForm email is blank',async()=>{
+ const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm(),official=form.createTextField('4. OFFICIAL/ORGANIZATION E-MAIL ADDRESS');official.addToPage(page,{x:20,y:650,width:300,height:20});const sponsor=form.createTextField('Sponsor E-mail');sponsor.setText('sponsor@example.mil');sponsor.addToPage(page,{x:20,y:500,width:300,height:20});
+ const result=await readSaarFormFields(await pdf.save());
+ assert.equal(result.email,undefined);
+});
+
+test('reads the official email from UTF-16 XFA datasets',async()=>{
+ const pdf=await PDFDocument.create();pdf.addPage([612,792]);
+ const xml='<?xml version="1.0" encoding="UTF-16"?><xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><name1>Shaw, Vivian</name1><Organization2>LM</Organization2><Email_Address5>vivian.shaw@example.mil</Email_Address5></form1></xfa:data></xfa:datasets>',bytes=new Uint8Array(2+xml.length*2);bytes[0]=0xff;bytes[1]=0xfe;for(let index=0;index<xml.length;index++){const value=xml.charCodeAt(index);bytes[2+index*2]=value&0xff;bytes[3+index*2]=value>>8}
+ const datasets=pdf.context.register(pdf.context.flateStream(bytes)),xfa=pdf.context.obj([PDFString.of('datasets'),datasets]),acro=pdf.context.obj({Fields:[],XFA:xfa});pdf.catalog.set(PDFName.of('AcroForm'),pdf.context.register(acro));
+ const result=await readSaarFormFields(await pdf.save({useObjectStreams:false}));
+ assert.equal(result.email,'vivian.shaw@example.mil');
+});
+
+test('uses the first non-official email-valued XFA field before later supervisor fields',async()=>{
+ const pdf=await PDFDocument.create();pdf.addPage([612,792]);
+ const xml='<?xml version="1.0"?><xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><UserContact>jacob.brown@example.mil</UserContact><SupervisorEmail>supervisor@example.mil</SupervisorEmail></form1></xfa:data></xfa:datasets>';
+ const datasets=pdf.context.register(pdf.context.flateStream(xml)),xfa=pdf.context.obj([PDFString.of('datasets'),datasets]),acro=pdf.context.obj({Fields:[],XFA:xfa});pdf.catalog.set(PDFName.of('AcroForm'),pdf.context.register(acro));
+ const result=await readSaarFormFields(await pdf.save({useObjectStreams:false}));
+ assert.equal(result.email,'jacob.brown@example.mil');
+});
+
 test('reads Part IV XFA processing and disabling account-action dates',async()=>{
  const pdf=await PDFDocument.create();pdf.addPage([612,792]);
  const xml='<?xml version="1.0"?><xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><name1>Brown, Jacob</name1><Organization2>LM</Organization2><NameProcessed>Administrator</NameProcessed><ProcessedsignedDate>08/26/2026</ProcessedsignedDate><NameDisabled>Administrator</NameDisabled><DisabledsignedDate>09/01/2026</DisabledsignedDate></form1></xfa:data></xfa:datasets>';

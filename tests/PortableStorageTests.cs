@@ -377,11 +377,14 @@ internal static class PortableStorageTests
         string looseArchiveDirectory = Path.Combine(root, "NGC", "NGC Archive", DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), looseArchivePdf = "Miller_Ava_(NGC)_User_Agreement_24AUG2025.pdf";Directory.CreateDirectory(looseArchiveDirectory);File.WriteAllBytes(Path.Combine(looseArchiveDirectory, looseArchivePdf), PdfBytes());
         string permanentSaarDirectory = Path.Combine(root, "NGC", "NGC SAAR Archive"), loosePermanentSaar = "Miller_Ava_(NGC)_GEN_SAAR_24AUG2020.pdf", unrelatedPermanentArchiveFile = "Miller_Ava_(NGC)_User_Agreement_24AUG2020.pdf";Directory.CreateDirectory(permanentSaarDirectory);File.WriteAllBytes(Path.Combine(permanentSaarDirectory, loosePermanentSaar), PdfBytes());File.WriteAllBytes(Path.Combine(permanentSaarDirectory, unrelatedPermanentArchiveFile), PdfBytes());
         string rejectedExtension = Path.Combine(nestedReworkDirectory, "Miller_Ava_(NGC)_unsupported.docx");File.WriteAllText(rejectedExtension, "unsupported evidence format", Encoding.UTF8);
+        string incompleteEvidence = Path.Combine(nestedReworkDirectory, "Miller_Ava_(NGC)_User_Agreement_INCOMPLETE.pdf");File.WriteAllBytes(incompleteEvidence, PdfBytes());
         var retentionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessReworkRetention("mapping-key"));object[] retentionMoves = (object[])retentionResponse["moved"];
         object[] retentionCompressed = (object[])retentionResponse["compressed"];
+        object[] retentionDeleted = (object[])retentionResponse["deleted"];
         Assert(retentionMoves.Length >= 8, "Archive preflight should move disabled SAARs, repair misplaced archives, move outdated evidence, and reject unsupported active files before the main scan.");
         Assert(retentionMoves.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["bucket"]) == "Unaccepted File Format"), "An unsupported active file should be moved to the organization Rework folder and explicitly classified as an unaccepted format.");
         Assert(retentionCompressed.Length >= 2 && !File.Exists(Path.Combine(looseArchiveDirectory, looseArchivePdf)) && File.Exists(Path.Combine(looseArchiveDirectory, looseArchivePdf + ".zip")) && !File.Exists(Path.Combine(permanentSaarDirectory, loosePermanentSaar)) && File.Exists(Path.Combine(permanentSaarDirectory, loosePermanentSaar + ".zip")), "Every loose PDF already in a dated Archive or permanent SAAR Archive should become a validated one-PDF ZIP before its source PDF is removed.");
+        Assert(retentionDeleted.Length == 1 && !File.Exists(incompleteEvidence) && Convert.ToString(((Dictionary<string, object>)retentionDeleted[0])["sha256"]).Length == 64 && Convert.ToBoolean(((Dictionary<string, object>)retentionDeleted[0])["auditRecorded"]), "Operator-marked Incomplete evidence should be deleted before validation and recorded immediately with its SHA-256 audit evidence.");
         Assert(File.Exists(Path.Combine(root, "NGC", "NGC Archive", DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), oldReworkName)), "A one-to-five-year-old Rework file should move to the organization's dated Archive without changing its filename.");
         Assert(File.Exists(Path.Combine(root, "NGC", "NGC Archive", "Superseded", supersededReworkName)), "A Rework file older than five years should move directly to the organization's Superseded folder without changing its filename.");
         Assert(File.Exists(Path.Combine(root, "NGC", "NGC Archive", DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), oldYearOnlyName)), "A year-only filename that is safely beyond the one-year currency window should move to Archive without filename rework.");
@@ -431,7 +434,7 @@ internal static class PortableStorageTests
         storage.AppendAudit("mapping-key", "ACTION AFTER TRANSIENT FILE LOCK");
         releaseAuditBlocker.Join();
         string[] auditLines = File.ReadAllLines(auditPath, Encoding.UTF8);
-        Assert(auditLines.Length == 6, "Audit batching and a later append should preserve every action after a brief shared-folder file lock clears.");
+        Assert(auditLines.Length == 7, "The Incomplete-file deletion, audit batching, and a later append should preserve every action after a brief shared-folder file lock clears.");
         var firstAudit = (Dictionary<string, object>)Json.DeserializeObject(auditLines[0]);
         var secondAudit = (Dictionary<string, object>)Json.DeserializeObject(auditLines[1]);
         DateTimeOffset auditInstant;
@@ -439,7 +442,7 @@ internal static class PortableStorageTests
         Assert(Convert.ToInt64(firstAudit["sequence"]) == 1 && Convert.ToInt64(secondAudit["sequence"]) == 2, "Audit entries should use a continuous sequence.");
         Assert(Convert.ToString(secondAudit["previousHash"]) == Convert.ToString(firstAudit["entryHash"]), "Each audit entry should reference the previous entry hash.");
         string auditVerification = storage.VerifyAuditLogs("mapping-key");
-        Assert(auditVerification.Contains("\"healthy\":true") && auditVerification.Contains("\"entries\":6"), "The intact batched audit hash chain should verify.");
+        Assert(auditVerification.Contains("\"healthy\":true") && auditVerification.Contains("\"entries\":7"), "The intact batched audit hash chain should verify.");
         string auditView = storage.ReadAuditLogs("mapping-key");
         Assert(auditView.Contains("\"recent\"") && auditView.IndexOf("SECOND ACTION", StringComparison.Ordinal) < auditView.IndexOf("TEST ACTION", StringComparison.Ordinal), "The read-only audit view should return verified entries newest first.");
 
