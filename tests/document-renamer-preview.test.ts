@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const styles=readFileSync(new URL('../app/globals.css',import.meta.url),'utf8');
+const versions=readFileSync(new URL('../app/version.ts',import.meta.url),'utf8');
 
 test('Document Renamer preview opens immediately as a full-window read-only dialog',()=>{
  assert.match(page,/setPreview\(\{loading:true,filename:item\.filename,path:item\.path\}\)/);
@@ -49,4 +50,13 @@ test('disabled users do not expose actionable supporting-artifact status',()=>{
  assert.match(page,/const status=u\.disabled\?'':statusFor\(u,k\)/);
  assert.match(page,/const filterStatus=user\.disabled\?'':directoryStatusFor\(user,kind,asOf\)/);
  assert.match(page,/if\(u\.disabled\)return <td key=\{kind\} aria-label=\{`\$\{kind\} status not applicable`\}>—<\/td>/);
+});
+
+test('incremental Sync uses a validation-only cache version and reports fast-path counts',()=>{
+ assert.match(versions,/export const evidenceValidationCacheVersion=/);
+ assert.match(page,/readSyncIndex\(JSON\.parse\(text\),evidenceValidationCacheVersion\)/);
+ assert.match(page,/createSyncIndex\(evidenceValidationCacheVersion,files\)/);
+ assert.match(page,/scan\?rules=\$\{encodeURIComponent\(evidenceValidationCacheVersion\)\}/);
+ assert.match(page,/\$\{scanResult\.scanned\} discovered; \$\{scanResult\.unchanged\}/);
+ assert.match(page,/Daily retention already completed;/);
 });

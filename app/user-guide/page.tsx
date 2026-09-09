@@ -454,6 +454,17 @@ export default function Guide() {
           <b>Document Renamer</b> queue for operator-reviewed migration and do not
           delay clean-file Sync.
         </p>
+        <aside>
+          <b>Incremental Startup Sync:</b> The launcher still performs a fast metadata
+          discovery pass so files added while the app was closed are found. It compares
+          path, filename, byte size, and modified time with the checksum-protected Sync
+          index, then opens and validates only new or changed evidence. Unchanged files
+          are not written into the per-file recovery journal. Rework remains deliberately
+          uncached so operator corrections are checked on every Sync. The evidence-cache
+          version is independent from interface and reporting releases; it changes only
+          when evidence-validation semantics change. Use <b>Full Rescan</b> to deliberately
+          ignore this cache.
+        </aside>
         <p>
           Sync accepts direct PDFs and ZIPs containing exactly one PDF. It
           checks actual PDF and ZIP structure instead of trusting the extension.
@@ -508,9 +519,12 @@ export default function Guide() {
         <p>
           Sync automatically renames a recognized nonstandard evidence date to
           DDMMMYYYY in the same active folder and records the change in the
-          audit log. At the beginning of every Sync, a lightweight Archive
-          preflight checks every active organization folder and Rework folder
-          before any PDF content or form-field extraction. A non-SAAR artifact with either a
+          audit log. The first Sync of each UTC day performs a complete Archive
+          preflight. Later Syncs that day use the prior Sync index to skip unchanged
+          active evidence, skip the already-swept Archive tree, and still check all
+          Rework plus every new or changed file before PDF content or form-field
+          extraction. Full Rescan forces the complete preflight regardless of the
+          daily marker. A non-SAAR artifact with either a
           full evidence date or a recognizable four-digit year that is safely
           beyond the one-year currency window is moved to that organization&apos;s
           dated Archive folder without correcting its filename; if it is older than five years, it
@@ -528,8 +542,8 @@ export default function Guide() {
           existing ZIP evidence is not recompressed. Other SAARs never expire,
           and current or undated Rework files stay in Rework until their
           filenames are corrected. Any file-level retention error is listed at
-          the end of Sync without stopping the remaining files. Other
-          After filename normalization, accepted active files are placed into a
+          the end of Sync without stopping the remaining files. After filename
+          normalization, accepted active files are placed into a
           canonical document-type folder inside the authoritative organization,
           including <code>SAAR</code>, <code>User Agreement</code>,{" "}
           <code>DoD Cyber Cert</code>, <code>8140 Certification Memo</code>,{" "}

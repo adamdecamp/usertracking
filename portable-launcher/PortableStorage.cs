@@ -32,6 +32,7 @@ internal sealed class PortableStorage : IDisposable
     private static readonly string[] SupportDirectoryNames = new[] { "Audit Logs", "backup", "Archive Review", "Reports", "Sync Journals", "Storage Transactions", ErrorReportsDirectoryName };
     private const string SyncIndexFilename = "tracker-sync-index.json";
     private const string SyncIndexChecksumFilename = "tracker-sync-index.json.sha256";
+    private const string RetentionMarkerFilename = "retention-preflight-date.txt";
     private const string RenamerQueueFilename = "tracker-document-renamer-queue.json";
     private static readonly string AuditGenesisHash = new string('0', 64);
     private readonly Dictionary<string, string> roots = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -372,6 +373,14 @@ internal sealed class PortableStorage : IDisposable
                         if (resumedCacheable) next.Add(IndexItem(resumedItem));
                         continue;
                     }
+                    Dictionary<string, object> indexedItem = null;
+                    bool indexedUnchanged = !reworkEvidence && supportedExtension && previous.TryGetValue(relative, out indexedItem) && JournalItemMatches(indexedItem, filename, journalSize, journalModified);
+                    if (indexedUnchanged)
+                    {
+                        var unchangedItem = new Dictionary<string, object>(indexedItem);unchangedItem["unchanged"] = true;
+                        result.Add(unchangedItem);next.Add(IndexItem(unchangedItem));
+                        continue;
+                    }
                     AppendSyncJournal(journal.Path, new Dictionary<string, object> { { "type", "file" }, { "state", "pending" }, { "path", relative }, { "name", CleanLine(filename, 500) }, { "size", journalSize }, { "lastModifiedUnixMs", journalModified }, { "timestampUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) } });
                     FailAfter("scan-file-pending");
                     if (!supportedExtension)
@@ -641,18 +650,24 @@ internal sealed class PortableStorage : IDisposable
 
     private static bool EvidenceOlderThanYears(string filename, int years) { DateTime? date = EvidenceDate(filename);return date.HasValue && date.Value < DateTime.UtcNow.Date.AddYears(-years); }
 
-    public string ProcessReworkRetention(string systemId)
+    public string ProcessReworkRetention(string systemId) { return ProcessReworkRetention(systemId, "legacy", true); }
+
+    public string ProcessReworkRetention(string systemId, string ruleSetVersion, bool forceFull)
     {
         lock (RootLock(systemId))
         {
             string root = Root(systemId);RecoverTransactions(root);
+            string cleanRuleSet = CleanLine(ruleSetVersion, 100);if (String.IsNullOrWhiteSpace(cleanRuleSet)) cleanRuleSet = "legacy";
+            string today = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), systemDirectory = Path.Combine(root, SystemDirectoryName), markerPath = Path.Combine(systemDirectory, RetentionMarkerFilename);
+            bool dailyFullSweep = forceFull;try { dailyFullSweep = dailyFullSweep || !File.Exists(markerPath) || !String.Equals(ReadText(markerPath, 128).Trim(), today, StringComparison.Ordinal); } catch { dailyFullSweep = true; }
+            Dictionary<string, Dictionary<string, object>> previous = dailyFullSweep ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : LoadSyncIndex(root, cleanRuleSet);
             var errors = new List<Dictionary<string, object>>();
             var moved = new List<Dictionary<string, object>>();
             var compressed = new List<Dictionary<string, object>>();
             var deleted = new List<Dictionary<string, object>>();
             var pending = new Stack<Tuple<string, int, bool, bool, bool>>();
             pending.Push(Tuple.Create(root, 0, false, false, false));
-            int scanned = 0, skippedSaar = 0, currentFiles = 0, undated = 0;
+            int scanned = 0, skippedSaar = 0, currentFiles = 0, undated = 0, unchangedSkipped = 0;
             while (pending.Count > 0)
             {
                 Tuple<string, int, bool, bool, bool> current = pending.Pop();
@@ -664,6 +679,13 @@ internal sealed class PortableStorage : IDisposable
                 {
                     if (scanned >= 100000) { errors.Add(RetentionError(root, current.Item1, "Archive preflight file limit exceeded."));break; }
                     string filename = Path.GetFileName(source);
+                    if (!dailyFullSweep && current.Item3) { unchangedSkipped++;continue; }
+                    if (!dailyFullSweep && !current.Item5)
+                    {
+                        string relative = Relative(root, source).Replace(Path.DirectorySeparatorChar, '/');Dictionary<string, object> cached;long size = 0L, modified = 0L;
+                        try { var metadata = new FileInfo(source);size = metadata.Length;modified = new DateTimeOffset(metadata.LastWriteTimeUtc).ToUnixTimeMilliseconds(); } catch { }
+                        if (previous.TryGetValue(relative, out cached) && JournalItemMatches(cached, filename, size, modified)) { unchangedSkipped++;continue; }
+                    }
                     if (IsOperatorMarkedIncomplete(filename))
                     {
                         scanned++;
@@ -757,7 +779,8 @@ internal sealed class PortableStorage : IDisposable
                     pending.Push(Tuple.Create(directory, current.Item2 + 1, false, false, false));
                 }
             }
-            return json.Serialize(new Dictionary<string, object> { { "moved", moved.ToArray() }, { "compressed", compressed.ToArray() }, { "deleted", deleted.ToArray() }, { "errors", errors.ToArray() }, { "scanned", scanned }, { "skippedSaar", skippedSaar }, { "current", currentFiles }, { "undated", undated } });
+            Directory.CreateDirectory(systemDirectory);AtomicWrite(markerPath, Encoding.ASCII.GetBytes(today + Environment.NewLine));
+            return json.Serialize(new Dictionary<string, object> { { "moved", moved.ToArray() }, { "compressed", compressed.ToArray() }, { "deleted", deleted.ToArray() }, { "errors", errors.ToArray() }, { "scanned", scanned }, { "skippedSaar", skippedSaar }, { "current", currentFiles }, { "undated", undated }, { "dailyFullSweep", dailyFullSweep }, { "unchangedSkipped", unchangedSkipped } });
         }
     }
 
