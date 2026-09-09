@@ -203,7 +203,9 @@ export default function Guide() {
           require an updated SAAR by default. The date recorded for a SAAR is the
           date the account was created or disabled; it is never an expiration date,
           and SAARs are never classified as Overdue. Disabling a user moves the
-          user&apos;s prior active evidence into the organization Archive folder. When
+          user&apos;s prior active evidence into the organization Archive folder. Supporting
+          artifact statuses are not applicable while the account is disabled, so the
+          User Directory and CSV exports leave those statuses blank. When
           disabling without an updated SAAR, an operator may select the documented
           override and must enter a justification. To re-enable a disabled user,
           select that user through the Disabled Users filter and upload a fresh
@@ -1051,14 +1053,15 @@ export default function Guide() {
       </aside>
       <aside>
         <b>Rework Correction Promotion:</b> Every Sync inspects each organization&apos;s
-        Rework folder after Archive Preflight. Sync does not automatically repair a
-        partially corrected Rework filename. A readable PDF or one-PDF ZIP must
-        already pass the complete canonical filename gate, including identity,
-        parent-folder organization, artifact type, role details when applicable,
-        date, and extension. Passing evidence is moved into the corresponding
-        document-type folder before user and artifact matching, so its database
-        update is available in that same Sync Review. Failed files remain isolated
-        in Rework and are never ingested.
+        Rework folder after Archive Preflight and bypasses the unchanged-file cache.
+        A recognizable corrected filename may first be normalized to the canonical
+        format. The resulting readable PDF or one-PDF ZIP must then pass the complete
+        filename gate, including identity, parent-folder organization, artifact type,
+        role details when applicable, date, and extension. Passing evidence is moved
+        into the corresponding document-type folder before user and artifact matching,
+        so its database update is available in that same Sync Review and its obsolete
+        Rework rejection is cleared. Failed files remain isolated in Rework and are
+        never ingested.
       </aside>
       <aside>
         <b>Non-Destructive Restore Drill:</b> In <b>Restore Backup</b>, select a

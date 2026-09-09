@@ -31,3 +31,22 @@ test('SAAR form identity is fallback-only in Document Renamer and Evidence Audit
 test('browser Sync bypasses the unchanged-file cache for every Rework file',()=>{
  assert.match(page,/reworkEvidence=insideOrganizationRework\(path\),cached=!reworkEvidence&&!!previous/);
 });
+
+test('corrected Rework evidence is normalized, promoted, and clears stale source rejections',()=>{
+ const normalizable=page.match(/const normalizableByPath=[\s\S]*?const filenameRenames=/)?.[0]??'';
+ const saarPreparation=page.match(/saarPreparations=[\s\S]*?formSaarPreparations=/)?.[0]??'';
+ assert.ok(normalizable,'Sync normalization wiring was not found.');
+ assert.ok(saarPreparation,'SAAR preparation wiring was not found.');
+ assert.doesNotMatch(normalizable,/!insideOrganizationRework/);
+ assert.doesNotMatch(saarPreparation,/!insideOrganizationRework/);
+ assert.match(page,/normalizedSourcePaths\.add\(scanPathKey\(previousPath\)\)/);
+ assert.match(page,/promotedSourcePaths\.add\(scanPathKey\(source\)\)/);
+ assert.match(page,/if\(!normalizedSourcePaths\.has\(key\)&&!known\.has\(key\)\)scanResult\.rejected\.push\(rejection\)/);
+ assert.match(page,/if\(!promotedSourcePaths\.has\(key\)&&!known\.has\(key\)\)scanResult\.rejected\.push\(rejection\)/);
+});
+
+test('disabled users do not expose actionable supporting-artifact status',()=>{
+ assert.match(page,/const status=u\.disabled\?'':statusFor\(u,k\)/);
+ assert.match(page,/const filterStatus=user\.disabled\?'':directoryStatusFor\(user,kind,asOf\)/);
+ assert.match(page,/if\(u\.disabled\)return <td key=\{kind\} aria-label=\{`\$\{kind\} status not applicable`\}>—<\/td>/);
+});
