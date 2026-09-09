@@ -1,7 +1,7 @@
 export const agreementArtifactKind='User Agreement';
 export const artifactKinds=['SAAR','DoD Cyber Cert',agreementArtifactKind,'8140 Cert Memo','Privileged User Training Cert','DTA Training Cert'];
-const legacyAgreementKinds=new Set(['GEN User Agreement','GEN and PRIV Agreement','DTA Agreement']);
-export const canonicalArtifactKind=(kind:string)=>legacyAgreementKinds.has(kind)?agreementArtifactKind:kind;
+const legacyAgreementKinds=new Set(['GEN USER AGREEMENT','GEN AND PRIV AGREEMENT','DTA AGREEMENT']);
+export const canonicalArtifactKind=(kind:string)=>{const normalized=kind.trim().toUpperCase();if(legacyAgreementKinds.has(normalized))return agreementArtifactKind;return artifactKinds.find(value=>value.toUpperCase()===normalized)??kind};
 export function artifactStorageFolder(kind:string){
  const canonical=canonicalArtifactKind(kind);
  return canonical==='SAAR'?'SAAR':canonical==='DoD Cyber Cert'?'DoD Cyber Cert':canonical===agreementArtifactKind?'User Agreement':canonical==='8140 Cert Memo'?'8140 Certification Memo':canonical==='Privileged User Training Cert'?'Privileged User Training':canonical==='DTA Training Cert'?'DTA Training':undefined

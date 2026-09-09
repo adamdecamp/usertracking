@@ -18,7 +18,7 @@ test('supports an explicit timeout for boundary testing',()=>{
  assert.equal(sessionIdleExpired(10_000,5_000,false,5_000),true);
 });
 
-test('defers the automatic save until startup Sync has finished',()=>{
+test('defers the automatic save until an operator-initiated Sync has finished',()=>{
  assert.equal(automaticSaveAllowed(true,'active',true),false);
  assert.equal(automaticSaveAllowed(true,'active',false),true);
  assert.equal(automaticSaveAllowed(true,'blocked',false),false);

@@ -88,6 +88,26 @@ test('recognizes the reported General User Agreement filename',()=>{
  assert.equal(filenameMatchesKind(general,'DoD Cyber Cert'),false);
 });
 
+test('applies every filename rule without regard to letter case',()=>{
+ const cases:[string,string][]=[
+  ['brown_jacob_(gdms)_gen_saar_26aug2026.PDF','saar'],
+  ['BROWN_JACOB_(GDMS)_dod_CyBeR_cert_26Aug2026.pdf','dod cyber cert'],
+  ['Brown_Jacob_(GdMs)_uSeR_aGrEeMeNt_26aUg2026.PdF','USER AGREEMENT'],
+  ['brown_jacob_(gdms)_8140_cErT_mEmO_26aug2026.pdf','8140 CERT MEMO'],
+  ['brown_jacob_(gdms)_pRiViLeGeD_uSeR_tRaInInG_cErT_26aug2026.pdf','privileged user training cert'],
+  ['brown_jacob_(gdms)_dTa_tRaInInG_cErT_26aug2026.pdf','DTA TRAINING CERT'],
+ ];
+ for(const[filename,kind]of cases){
+  assert.equal(filenameMatchesKind(filename,kind),true,filename);
+  assert.equal(evidenceFilenamePassesStorageGate(filename,'GDMS'),true,filename);
+ }
+ assert.equal(canonicalArtifactKind('gen and priv agreement'),'User Agreement');
+ assert.equal(disabledSaarFilename('brown_jacob_(gdms)_gen_saar_disabled_26aug2026.pdf'),true);
+ const privileged=validateNewUserSaarFilename('brown_jacob_(gdms)_priv_cyber_saar_26aug2026.pdf');
+ assert.equal(privileged.valid,true);
+ if(privileged.valid)assert.deepEqual(privileged.privilegedTypes,['CYBER']);
+});
+
 test('recognizes the stored one-PDF ZIP form of both filenames',()=>{
  assert.equal(filenameMatchesKind(`${dod}.zip`,'DoD Cyber Cert'),true);
  assert.equal(filenameMatchesKind(`${general}.zip`,'User Agreement'),true);

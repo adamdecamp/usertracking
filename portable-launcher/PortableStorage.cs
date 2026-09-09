@@ -330,25 +330,28 @@ internal sealed class PortableStorage : IDisposable
 
     public string Scan(string systemId, string ruleSetVersion, bool fullRescan)
     {
-        Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(ScanWithJournal(systemId, ruleSetVersion, fullRescan)));
+        Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(ScanWithJournal(systemId, ruleSetVersion, fullRescan, null)));
         return json.Serialize(ObjectArray(envelope["items"]));
     }
 
-    public string ScanWithJournal(string systemId, string ruleSetVersion, bool fullRescan)
+    public string ScanWithJournal(string systemId, string ruleSetVersion, bool fullRescan) { return ScanWithJournal(systemId, ruleSetVersion, fullRescan, null); }
+
+    public string ScanWithJournal(string systemId, string ruleSetVersion, bool fullRescan, string organization)
     {
         string cleanRuleSet = CleanLine(ruleSetVersion, 100);
         if (String.IsNullOrWhiteSpace(cleanRuleSet)) throw new InvalidDataException("The Sync rule-set version is missing.");
         lock (RootLock(systemId))
         {
-            string root = Root(systemId);
+            string root = Root(systemId), cleanOrganization = String.IsNullOrWhiteSpace(organization) ? null : ValidOrganizationName(organization), scanRoot = OrganizationScopeRoot(root, cleanOrganization), journalRuleSet = cleanRuleSet + "|scope=" + (cleanOrganization ?? "system");
             RecoverTransactions(root);
-            SyncJournalState journal = StartOrResumeSyncJournal(root, cleanRuleSet, fullRescan);
+            SyncJournalState journal = StartOrResumeSyncJournal(root, journalRuleSet, fullRescan);
             FailAfter("scan-start");
-            Dictionary<string, Dictionary<string, object>> previous = fullRescan ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : LoadSyncIndex(root, cleanRuleSet);
+            Dictionary<string, Dictionary<string, object>> allPrevious = LoadSyncIndex(root, cleanRuleSet), previous = fullRescan ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : allPrevious;
             var result = new List<Dictionary<string, object>>();
             var next = new List<Dictionary<string, object>>();
+            if (cleanOrganization != null) foreach (KeyValuePair<string, Dictionary<string, object>> item in allPrevious) if (!PathInOrganizationScope(item.Key, cleanOrganization)) next.Add(IndexItem(item.Value));
             var pending = new Stack<Tuple<string, int, bool>>();
-            pending.Push(Tuple.Create(root, 0, false));
+            pending.Push(Tuple.Create(scanRoot, 0, false));
             while (pending.Count > 0)
             {
                 Tuple<string, int, bool> current = pending.Pop();
@@ -429,13 +432,15 @@ internal sealed class PortableStorage : IDisposable
         }
     }
 
-    public string ListEvidenceLocations(string systemId)
+    public string ListEvidenceLocations(string systemId) { return ListEvidenceLocations(systemId, null); }
+
+    public string ListEvidenceLocations(string systemId, string organization)
     {
         lock (RootLock(systemId))
         {
-            string root = Root(systemId);RecoverTransactions(root);
+            string root = Root(systemId), cleanOrganization = String.IsNullOrWhiteSpace(organization) ? null : ValidOrganizationName(organization), scanRoot = OrganizationScopeRoot(root, cleanOrganization);RecoverTransactions(root);
             var result = new List<Dictionary<string, object>>();
-            var pending = new Stack<Tuple<string, int>>();pending.Push(Tuple.Create(root, 0));
+            var pending = new Stack<Tuple<string, int>>();pending.Push(Tuple.Create(scanRoot, 0));
             while (pending.Count > 0)
             {
                 Tuple<string, int> current = pending.Pop();
@@ -683,15 +688,17 @@ internal sealed class PortableStorage : IDisposable
 
     private static bool EvidenceOlderThanYears(string filename, int years) { DateTime? date = EvidenceDate(filename);return date.HasValue && date.Value < DateTime.UtcNow.Date.AddYears(-years); }
 
-    public string ProcessReworkRetention(string systemId) { return ProcessReworkRetention(systemId, "legacy", true); }
+    public string ProcessReworkRetention(string systemId) { return ProcessReworkRetention(systemId, "legacy", true, null); }
 
-    public string ProcessReworkRetention(string systemId, string ruleSetVersion, bool forceFull)
+    public string ProcessReworkRetention(string systemId, string ruleSetVersion, bool forceFull) { return ProcessReworkRetention(systemId, ruleSetVersion, forceFull, null); }
+
+    public string ProcessReworkRetention(string systemId, string ruleSetVersion, bool forceFull, string organization)
     {
         lock (RootLock(systemId))
         {
-            string root = Root(systemId);RecoverTransactions(root);
+            string root = Root(systemId), cleanOrganization = String.IsNullOrWhiteSpace(organization) ? null : ValidOrganizationName(organization), scanRoot = OrganizationScopeRoot(root, cleanOrganization);RecoverTransactions(root);
             string cleanRuleSet = CleanLine(ruleSetVersion, 100);if (String.IsNullOrWhiteSpace(cleanRuleSet)) cleanRuleSet = "legacy";
-            string today = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), systemDirectory = Path.Combine(root, SystemDirectoryName), markerPath = Path.Combine(systemDirectory, RetentionMarkerFilename);
+            string today = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), systemDirectory = Path.Combine(root, SystemDirectoryName), markerName = cleanOrganization == null ? RetentionMarkerFilename : ".retention-sweep-" + SafePart(cleanOrganization, 60) + ".txt", markerPath = Path.Combine(systemDirectory, markerName);
             bool dailyFullSweep = forceFull;try { dailyFullSweep = dailyFullSweep || !File.Exists(markerPath) || !String.Equals(ReadText(markerPath, 128).Trim(), today, StringComparison.Ordinal); } catch { dailyFullSweep = true; }
             Dictionary<string, Dictionary<string, object>> previous = dailyFullSweep ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : LoadSyncIndex(root, cleanRuleSet);
             var errors = new List<Dictionary<string, object>>();
@@ -699,7 +706,7 @@ internal sealed class PortableStorage : IDisposable
             var compressed = new List<Dictionary<string, object>>();
             var deleted = new List<Dictionary<string, object>>();
             var pending = new Stack<Tuple<string, int, bool, bool, bool>>();
-            pending.Push(Tuple.Create(root, 0, false, false, false));
+            pending.Push(Tuple.Create(scanRoot, 0, false, false, false));
             int scanned = 0, skippedSaar = 0, currentFiles = 0, undated = 0, unchangedSkipped = 0;
             while (pending.Count > 0)
             {
@@ -742,7 +749,7 @@ internal sealed class PortableStorage : IDisposable
                         scanned++;
                         try
                         {
-                            Tuple<string, string> organization = OrganizationStorageLocation(root, source);string directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Rework");Directory.CreateDirectory(directory);
+                            Tuple<string, string> orgLocation = OrganizationStorageLocation(root, source);string directory = Path.Combine(orgLocation.Item1, SafePart(orgLocation.Item2, 60) + " Rework");Directory.CreateDirectory(directory);
                             string destination = UniqueDestination(directory, Path.GetFileName(source)), sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "rework", source, destination, sourceHash, "");
                             File.Move(source, destination);FailAfter("rework-retention-move");
                             if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The unaccepted-file Rework move failed its SHA-256 integrity check.");
@@ -787,9 +794,9 @@ internal sealed class PortableStorage : IDisposable
                             try { string compressedPath = CompressEvidenceFile(root, effectiveSource, true);compressed.Add(new Dictionary<string, object> { { "source", Relative(root, effectiveSource).Replace(Path.DirectorySeparatorChar, '/') }, { "compressed", Relative(root, compressedPath).Replace(Path.DirectorySeparatorChar, '/') } });effectiveSource = compressedPath;filename = Path.GetFileName(compressedPath); }
                             catch (Exception compressionError) { errors.Add(RetentionError(root, effectiveSource, "Archive compression failed; the source file was preserved for archival: " + CleanLine(compressionError.Message, 220))); }
                         }
-                        Tuple<string, string> organization = OrganizationStorageLocation(root, effectiveSource);
+                        Tuple<string, string> orgLocation = OrganizationStorageLocation(root, effectiveSource);
                         bool permanentSaar = disabledSaar || archivedSaar;string bucket = permanentSaar ? "Permanent SAAR" : evidenceDate.HasValue && evidenceDate.Value < DateTime.UtcNow.Date.AddYears(-5) ? "Superseded" : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-                        string directory = permanentSaar ? Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " SAAR Archive") : Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Archive", bucket), destination;
+                        string directory = permanentSaar ? Path.Combine(orgLocation.Item1, SafePart(orgLocation.Item2, 60) + " SAAR Archive") : Path.Combine(orgLocation.Item1, SafePart(orgLocation.Item2, 60) + " Archive", bucket), destination;
                         Directory.CreateDirectory(directory);destination = UniqueDestination(directory, filename);
                         string sourceHash = Sha256Bytes(File.ReadAllBytes(effectiveSource)), transaction = BeginTransaction(root, "retention-preflight", effectiveSource, destination, sourceHash, "");
                         File.Move(effectiveSource, destination);FailAfter("rework-retention-move");
@@ -1813,6 +1820,21 @@ internal sealed class PortableStorage : IDisposable
         string raw = (value ?? "").Trim(), safe = SafePart(raw, 80);
         if (String.IsNullOrWhiteSpace(raw) || raw.Length > 80 || !String.Equals(raw, safe, StringComparison.Ordinal) || ReservedOrganizationName(raw)) throw new InvalidDataException("The organization name is invalid or reserved for application storage.");
         return raw;
+    }
+
+    private static string OrganizationScopeRoot(string root, string organization)
+    {
+        if (String.IsNullOrWhiteSpace(organization)) return root;
+        string scoped = Path.Combine(root, "Organizations", ValidOrganizationName(organization));
+        if (!Directory.Exists(scoped)) throw new DirectoryNotFoundException("The selected organization folder no longer exists beneath Organizations.");
+        return scoped;
+    }
+
+    private static bool PathInOrganizationScope(string relative, string organization)
+    {
+        if (String.IsNullOrWhiteSpace(organization)) return true;
+        string normalized = (relative ?? "").Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/'), prefix = "Organizations/" + organization.Trim() + "/";
+        return normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
     private static Tuple<string, string> OrganizationStorageLocation(string root, string source)

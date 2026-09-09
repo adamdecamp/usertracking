@@ -57,12 +57,12 @@ test('incremental Sync uses a validation-only cache version and reports fast-pat
  assert.match(page,/readSyncIndex\(JSON\.parse\(text\),evidenceValidationCacheVersion\)/);
  assert.match(page,/createSyncIndex\(evidenceValidationCacheVersion,files\)/);
  assert.match(page,/scan\?rules=\$\{encodeURIComponent\(evidenceValidationCacheVersion\)\}/);
- assert.match(page,/\$\{scanResult\.scanned\} discovered; \$\{scanResult\.unchanged\}/);
+ assert.match(page,/\$\{scanResult\.scanned\} discovered in \$\{scopeLabel\}; \$\{scanResult\.unchanged\}/);
  assert.match(page,/Daily retention already completed;/);
 });
 
 test('location refresh and discovery workflows use metadata without reopening every PDF',()=>{
- assert.match(page,/portableRequest\(root,'locations'/);
+ assert.match(page,/portableRequest\(root,`locations\$\{organization\?/);
  assert.match(page,/Refreshing Current Evidence Locations[\s\S]*?refreshEvidenceLocations\(pendingSync\.handle/);
  assert.match(page,/Refreshing Stale Evidence References[\s\S]*?refreshEvidenceLocations\(pendingSync\.handle/);
  assert.match(page,/async function discoverRenamerPdfs[\s\S]*?refreshEvidenceLocations\(root\)/);

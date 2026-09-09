@@ -55,14 +55,13 @@ export default function Guide() {
             load an existing one.
           </li>
           <li>
-            Map that system&apos;s shared folder and approve folder access. Sync
-            starts automatically after mapping.
+            Map that system&apos;s shared folder and approve folder access. Mapping
+            loads the saved records but does not start Sync.
           </li>
           <li>
-            Review Sync Review and the Current, Missing, and Overdue totals. On
-            later portable-app launches, the last active mapped system is
-            restored and synced automatically. Selecting another mapped system
-            also syncs that system automatically.
+            Choose <b>Sync</b>, then select either the entire information system
+            or one immediate folder beneath <b>Organizations</b>. Review Sync
+            Review and the Current, Missing, and Overdue totals afterward.
           </li>
           <li>
             Choose <b>Stop Sync</b> while a scan is running if you need to
@@ -95,9 +94,10 @@ export default function Guide() {
           without bundled systems or users. The portable launcher remembers only
           each mapped folder path in the signed-in Windows user&apos;s Local
           AppData. On the next launch it revalidates those paths, reloads
-          operational records from the shared folders, reacquires the selected
-          system&apos;s lock, and starts Sync. User records are not copied into
-          browser storage or the mapping cache.
+          operational records from the shared folders, and reacquires the
+          selected system&apos;s lock. Sync does not start until the operator chooses
+          a scope. User records are not copied into browser storage or the mapping
+          cache.
         </aside>
       </section>
       <section id="systems">
@@ -433,12 +433,19 @@ export default function Guide() {
           verifies replacement bytes before reporting success. If a replacement
           cannot be verified, the previous file is preserved or restored. If
           that folder already contains a single-system tracker manifest, its
-          system and users are loaded before anything is written. <b>Sync</b>{" "}
-          reloads that system&apos;s manifest and scans every subfolder. The
+          system and users are loaded before anything is written. Mapping,
+          application launch, and information-system selection never start Sync
+          automatically. <b>Sync</b> opens a scope chooser. Select the entire
+          information system or exactly one immediate organization folder. A
+          targeted organization scan includes the evidence folders beneath that
+          organization, but document-type and deeper subfolders cannot be chosen
+          as independent scopes. The
           filename parser treats the first recognized identity value as{" "}
           <b>Last Name</b> and the second as <b>First Name</b>, accepting
           underscores, a comma, ordinary spaces, and additional surrounding
-          spaces. When multiple valid files match the same user and artifact
+          spaces. All filename rules are case-insensitive; upper-, lower-, and
+          mixed-case identity, organization, artifact, extension, and month text
+          are evaluated the same way. When multiple valid files match the same user and artifact
           type, the tracker uses the file with the newest normalized filename
           date for compliance status, display, notifications, and exports.
         </p>
@@ -460,15 +467,16 @@ export default function Guide() {
           delay clean-file Sync.
         </p>
         <aside>
-          <b>Incremental Startup Sync:</b> The launcher still performs a fast metadata
-          discovery pass so files added while the app was closed are found. It compares
+          <b>Incremental Operator Sync:</b> When the operator starts Sync, the launcher
+          performs a fast metadata discovery pass so files added while the app was closed
+          are found. It compares
           path, filename, byte size, and modified time with the checksum-protected Sync
           index, then opens and validates only new or changed evidence. Unchanged files
           are not written into the per-file recovery journal. Rework remains deliberately
           uncached so operator corrections are checked on every Sync. The evidence-cache
           version is independent from interface and reporting releases; it changes only
-          when evidence-validation semantics change. Use <b>Full Rescan</b> to deliberately
-          ignore this cache.
+          when evidence-validation semantics change. Select <b>Full Rescan</b> in the Sync
+          scope window to deliberately ignore this cache for the selected scope.
         </aside>
         <p>
           Sync accepts direct PDFs and ZIPs containing exactly one PDF. It
@@ -980,8 +988,9 @@ export default function Guide() {
         cached during large runs instead of being reparsed for every rule.
         Filename corrections use the evolving in-memory catalog and, when any
         rename occurs, one final incremental verification pass replaces multiple
-        full rescans. Choose <b>Full Rescan</b> to ignore the index and validate
-        every active evidence file; a missing, damaged, or outdated index also
+        full rescans. Choose <b>Full Rescan</b> in the Sync scope window to ignore
+        the index and validate every active evidence file in the selected system
+        or organization scope; a missing, damaged, or outdated index also
         causes safe full validation automatically. Processing Status reports
         unchanged evidence skipped, new or changed evidence validated, and
         non-evidence files ignored.

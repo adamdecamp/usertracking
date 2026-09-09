@@ -13,6 +13,7 @@ import {PDFDocument,PDFName,PDFString} from 'pdf-lib';
 let seed=0x53a91f27;
 function random(){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return(seed>>>0)/0x100000000}
 function pick<T>(values:T[]){return values[Math.floor(random()*values.length)]}
+function randomCase(value:string){return Array.from(value,character=>/[A-Za-z]/.test(character)?random()<.5?character.toLowerCase():character.toUpperCase():character).join('')}
 const fuzzCharacters=['A','z','0','_','-',',',' ','(',')','.','/','\\','\0','\n','\r','\t','é','中','😀','%','?','*',String.fromCharCode(0x7f)];
 function randomText(maxLength=700){const length=Math.floor(random()*maxLength);let value='';for(let index=0;index<length;index++)value+=pick(fuzzCharacters);return value}
 
@@ -44,8 +45,8 @@ test('fuzzes accepted separator variations while preserving ordered identity and
  const nameSeparators=['_','_   ',', ','   '],tokenSeparators=['_',' ','   ','__',''];
  for(let index=0;index<1000;index++){
   const nameSeparator=pick(nameSeparators),tokenSeparator=pick(tokenSeparators),leading=pick(['',' ','   ']),extension=pick(['.pdf','.PDF','.pdf.zip']);
-  const cyber=`${leading}Brown${nameSeparator}Jacob${tokenSeparator}(LM)${tokenSeparator}DoD${tokenSeparator}Cyber${tokenSeparator}Cert${tokenSeparator}26AUG2026${extension}`;
-  const agreement=`${leading}Brown${nameSeparator}Jacob${tokenSeparator}(LM)${tokenSeparator}GEN${tokenSeparator}User${tokenSeparator}Agreement${tokenSeparator}26AUG2026${extension}`;
+  const cyber=randomCase(`${leading}Brown${nameSeparator}Jacob${tokenSeparator}(LM)${tokenSeparator}DoD${tokenSeparator}Cyber${tokenSeparator}Cert${tokenSeparator}26AUG2026${extension}`);
+  const agreement=randomCase(`${leading}Brown${nameSeparator}Jacob${tokenSeparator}(LM)${tokenSeparator}GEN${tokenSeparator}User${tokenSeparator}Agreement${tokenSeparator}26AUG2026${extension}`);
   assert.equal(filenameIdentityMatches(cyber,{last:'Brown',first:'Jacob'}),true,cyber);
   assert.equal(filenameMatchesKind(cyber,'DoD Cyber Cert'),true,cyber);
   assert.equal(filenameIdentityMatches(agreement,{last:'Brown',first:'Jacob'}),true,agreement);
