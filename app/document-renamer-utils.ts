@@ -1,4 +1,4 @@
-import {evidenceFilenamePassesStorageGate,identityFromFilename,plausiblePersonIdentity} from './filename-utils.ts';
+import {artifactKinds,evidenceFilenamePassesStorageGate,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,plausiblePersonIdentity} from './filename-utils.ts';
 
 export type RenamerUser={first:string;last:string;organization:string;roles:string[];privilegedTypes:string[]};
 export type RenamerAnalysis={kind:string;first:string;last:string;organization:string;date:string;role:'GEN'|'PRIV'|'';privilegedType:string;confidence:'High'|'Review'|'Manual';evidence:string[]};
@@ -38,6 +38,7 @@ export function folderOrganizationDiffers(path:string,filenameOrganization:strin
 
 export function documentNeedsFilenameNormalization(filename:string,path:string,rootFallback=''){
  if(!/\.pdf$/i.test(filename))return false;
+ if(legacy8570MemoFilename(filename))return false;
  const organization=organizationFromFolderPath(path,rootFallback,identityFromFilename(filename));
  return !evidenceFilenamePassesStorageGate(filename,organization);
 }
@@ -59,7 +60,7 @@ const kindRules:[string,RegExp[]][]=[
  ['DoD Cyber Cert',[/\b(?:DOD\s+)?CYBER\s+AWARENESS(?:\s+CHALLENGE)?(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bAWARENESS\s+CHALLENGE(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i]],
 ];
 
-function detectKind(text:string,filename:string){const source=`${text.slice(0,120000)}\n${filename.replace(/[_-]+/g,' ')}`;for(const[kind,rules]of kindRules)if(rules.some(rule=>rule.test(source)))return kind;return''}
+function detectKind(text:string,filename:string){const filenameKind=artifactKinds.find(kind=>filenameMatchesKind(filename,kind));if(filenameKind)return filenameKind;const source=text.slice(0,120000);for(const[kind,rules]of kindRules)if(rules.some(rule=>rule.test(source)))return kind;return''}
 
 function identifyUser(text:string,filename:string,users:RenamerUser[]){
  const haystack=` ${normalized(`${text}\n${filename}`)} `,scored=users.filter(user=>plausiblePersonIdentity(user.last,user.first)).map(user=>{const first=normalized(user.first),last=normalized(user.last);let score=0;if(first&&last){if(haystack.includes(` ${first} ${last} `))score+=5;if(haystack.includes(` ${last} ${first} `))score+=4;if(haystack.includes(` ${last} ${first.charAt(0)} `))score+=2;if(normalized(filename).startsWith(`${last} ${first}`))score+=5}return{user,score}}).filter(item=>item.score>0).sort((a,b)=>b.score-a.score);
@@ -100,11 +101,15 @@ function signedDate(text:string,kind:string){
 }
 
 export function analyzeDocumentText(text:string,filename:string,users:RenamerUser[],defaultOrganization=''):RenamerAnalysis{
- const kind=detectKind(text,filename),matched=identifyUser(text,filename,users),fallback=!matched?labeledName(text):undefined,date=signedDate(text,kind),upper=normalized(`${text}\n${filename}`),role:RenamerAnalysis['role']=/\bPRIV(?:ILEGED)?\b/.test(upper)&&kind==='SAAR'?'PRIV':/\bGEN(?:ERAL)?\b/.test(upper)&&kind==='SAAR'?'GEN':'',privilegedType=role==='PRIV'?(matched?.privilegedTypes.length===1?matched.privilegedTypes[0]:''):'',evidence:string[]=[];
- if(kind)evidence.push(`Recognized ${kind}`);if(matched)evidence.push(`Matched tracker user ${matched.last}, ${matched.first}`);else if(fallback)evidence.push('Read a labeled name from the document');if(date)evidence.push(`Selected date from: ${date.context}`);
- const result={kind,first:matched?.first??fallback?.first??'',last:matched?.last??fallback?.last??'',organization:matched?.organization??defaultOrganization,date:date?.score&&date.score>=2?date.date:'',role,privilegedType,evidence};
- const complete=!!result.kind&&!!result.first&&!!result.last&&!!result.organization&&!!result.date&&(result.kind!=='SAAR'||!!result.role)&&(result.role!=='PRIV'||!!result.privilegedType),strong=complete&&!!(matched||fallback)&&!!date&&date.score>=8;
+ const kind=detectKind(text,filename),filenameIdentity=identityFromFilename(filename),filenameMatch=filenameIdentity?users.find(user=>normalized(user.last)===normalized(filenameIdentity.last)&&normalized(user.first)===normalized(filenameIdentity.first)):undefined,matched=filenameMatch??(!filenameIdentity?identifyUser(text,filename,users):undefined),fallback=!filenameIdentity&&!matched?labeledName(text):undefined,date=signedDate(text,kind),upper=normalized(`${text}\n${filename}`),role:RenamerAnalysis['role']=/\bPRIV(?:ILEGED)?\b/.test(upper)&&kind==='SAAR'?'PRIV':/\bGEN(?:ERAL)?\b/.test(upper)&&kind==='SAAR'?'GEN':'',privilegedType=role==='PRIV'?(matched?.privilegedTypes.length===1?matched.privilegedTypes[0]:''):'',evidence:string[]=[];
+ if(kind)evidence.push(`Recognized ${kind}`);if(filenameIdentity)evidence.push(`Read identity from filename: ${filenameIdentity.last}, ${filenameIdentity.first}`);if(filenameMatch)evidence.push(`Matched tracker user ${filenameMatch.last}, ${filenameMatch.first}`);else if(matched)evidence.push(`Matched tracker user ${matched.last}, ${matched.first}`);else if(fallback)evidence.push('Read a labeled name from the document');if(date)evidence.push(`Selected date from: ${date.context}`);
+ const result={kind,first:filenameIdentity?.first??matched?.first??fallback?.first??'',last:filenameIdentity?.last??matched?.last??fallback?.last??'',organization:matched?.organization??defaultOrganization,date:date?.score&&date.score>=2?date.date:'',role,privilegedType,evidence};
+ const complete=!!result.kind&&!!result.first&&!!result.last&&!!result.organization&&!!result.date&&(result.kind!=='SAAR'||!!result.role)&&(result.role!=='PRIV'||!!result.privilegedType),strong=complete&&!!(filenameIdentity||matched||fallback)&&!!date&&date.score>=8;
  return{...result,confidence:strong?'High':complete?'Review':'Manual'};
+}
+
+export function applySaarFormFallback(analysis:RenamerAnalysis,identity?:{first:string;last:string},organization?:string):RenamerAnalysis{
+ return{...analysis,kind:'SAAR',first:analysis.first||clean(identity?.first??'',100),last:analysis.last||clean(identity?.last??'',100),organization:analysis.organization||clean(organization??'',100)};
 }
 
 export function buildTrackerFilename(input:Pick<RenamerAnalysis,'kind'|'first'|'last'|'organization'|'date'|'role'|'privilegedType'>){

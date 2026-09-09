@@ -61,13 +61,14 @@ function saarMarkers(filename:string){
  return{general,privilegedType:privileged?.[1]};
 }
 function hasSaarMarker(filename:string){const tokens=fileTokens(filename),markers=saarMarkers(filename);return tokens.has('SAAR')||markers.general||!!markers.privilegedType}
+export function legacy8570MemoFilename(filename:string){return !hasSaarMarker(filename)&&compactFilename(filename).includes('8570')}
 export function filenameMatchesKind(filename:string,kind:string){
  const canonical=canonicalArtifactKind(kind),tokens=fileTokens(filename),compact=compactFilename(filename),saar=hasSaarMarker(filename);
  if(canonical==='SAAR')return saar;
  if(saar)return false;
  if(canonical==='DoD Cyber Cert')return tokens.has('DOD')||(compact.includes('DOD')&&compact.includes('CYBER'))||(compact.includes('CYBER')&&compact.includes('AWARENESS'))||compact.includes('AWARENESSCHALLENGE');
  if(canonical===agreementArtifactKind)return tokens.has('AGREEMENT')||tokens.has('AGREEMENTS')||compact.includes('AGREEMENT');
- if(canonical==='8140 Cert Memo')return tokens.has('8140')||compact.includes('8140');
+ if(canonical==='8140 Cert Memo')return tokens.has('8140')||compact.includes('8140')||legacy8570MemoFilename(filename);
  if(canonical==='Privileged User Training Cert')return (tokens.has('PRIV')&&tokens.has('TRAINING'))||(compact.includes('PRIV')&&compact.includes('TRAINING'))||(!tokens.has('DTA')&&(tokens.has('RESPONSIBILITIES')||tokens.has('COURSE')));
  return (tokens.has('DTA')&&tokens.has('TRAINING'))||(compact.includes('DTA')&&compact.includes('TRAINING'));
 }
@@ -75,6 +76,7 @@ export function disabledSaarFilename(filename:string){return filenameMatchesKind
 
 const canonicalFilePart=(value:string,maxLength=80)=>clean(value,maxLength).replace(/[<>:"/\\|?*()]/g,' ').replace(/[^A-Za-z0-9'+.-]+/g,'_').replace(/^_+|_+$/g,'');
 export function canonicalEvidenceFilename(filename:string,organizationOverride?:string){
+ if(legacy8570MemoFilename(filename))return;
  const identity=identityFromFilename(filename),organization=organizationOverride||organizationFrom(filename),date=parseDate(filename),kind=artifactKinds.find(candidate=>filenameMatchesKind(filename,candidate));
  if(!identity||!organization||!date||!kind)return;
  const last=canonicalFilePart(identity.last),first=canonicalFilePart(identity.first),org=canonicalFilePart(organization),dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`;if(!last||!first||!org)return;
@@ -101,6 +103,7 @@ export function zipFilenameNeedsRework(filename:string,organizationOverride?:str
  */
 export function evidenceFilenamePassesStorageGate(filename:string,organizationOverride?:string){
  if(!/\.pdf(?:\.zip)?$/i.test(filename))return false;
+ if(legacy8570MemoFilename(filename))return true;
  if(filenameMatchesKind(filename,'SAAR')&&!validateNewUserSaarFilename(filename,{organization:organizationOverride,allowDisabled:true}).valid)return false;
  const canonical=canonicalEvidenceFilename(filename,organizationOverride);
  return !!canonical&&canonical.toUpperCase()===filename.toUpperCase();

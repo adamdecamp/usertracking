@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {analyzeDocumentText,buildTrackerFilename,documentNeedsFilenameNormalization,folderOrganizationDiffers,normalizeFilenameOrganization,organizationCleanupDirectory,organizationFromFolderPath,organizationStorageLocation,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
+import {analyzeDocumentText,applySaarFormFallback,buildTrackerFilename,documentNeedsFilenameNormalization,folderOrganizationDiffers,normalizeFilenameOrganization,organizationCleanupDirectory,organizationFromFolderPath,organizationStorageLocation,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
 import {canonicalEvidenceFilename} from '../app/filename-utils.ts';
 
 const users=[{first:'Jacob',last:'Brown',organization:'LM',roles:['General'],privilegedTypes:[]}];
@@ -9,6 +9,20 @@ test('reads a signed general user agreement and builds the ingest filename',()=>
  const analysis=analyzeDocumentText('GENERAL USER AGREEMENT Name of User: Brown, Jacob Signature Date: 08/26/2026','scan 004.pdf',users);
  assert.equal(analysis.kind,'User Agreement');assert.equal(analysis.date,'2026-08-26');assert.equal(analysis.confidence,'High');
  assert.equal(buildTrackerFilename(analysis),'Brown_Jacob_(LM)_User_Agreement_26AUG2026.pdf');
+});
+
+test('always gives a usable Last_First filename identity priority over PDF text and SAAR fields',()=>{
+ const analysis=analyzeDocumentText('DD FORM 2875 Name of User: Wrong, Person Signature Date: 08/26/2026','Shaw_Vivian_(GOV)_GEN_SAAR_26AUG2026.pdf',[],'GOV');
+ assert.equal(analysis.last,'Shaw');assert.equal(analysis.first,'Vivian');
+ assert.match(analysis.evidence.join(' '),/Read identity from filename: Shaw, Vivian/);
+ const merged=applySaarFormFallback(analysis,{last:'Wrong',first:'Person'},'OTHER');
+ assert.equal(merged.last,'Shaw');assert.equal(merged.first,'Vivian');assert.equal(merged.organization,'GOV');
+});
+
+test('uses SAAR form identity only when the filename has no usable person identity',()=>{
+ const analysis=analyzeDocumentText('DD FORM 2875 Signature Date: 08/26/2026','uploaded-saar.pdf',[],'');
+ const merged=applySaarFormFallback(analysis,{last:'Shaw',first:'Vivian'},'GOV');
+ assert.equal(merged.last,'Shaw');assert.equal(merged.first,'Vivian');assert.equal(merged.organization,'GOV');
 });
 
 test('does not misclassify third-party Security+ credentials as DoD Cyber Awareness',()=>{
@@ -62,6 +76,17 @@ test('reads a full completion date from a privileged training certificate when i
  assert.equal(analysis.date,'2023-08-26');
  assert.equal(analysis.confidence,'High');
  assert.equal(buildTrackerFilename(analysis),'Brown_Jacob_(LM)_Privileged_User_Training_Cert_26AUG2023.pdf');
+});
+
+test('classifies legacy 8570 filenames as the current 8140 certification memo type',()=>{
+ const analysis=analyzeDocumentText('Certification memorandum Signature Date: 08/26/2026','Brown_Jacob_(LM)_8570_Memo_26AUG2026.pdf',users);
+ assert.equal(analysis.kind,'8140 Cert Memo');
+ assert.equal(documentNeedsFilenameNormalization('Brown_Jacob_(LM)_8570_Memo_26AUG2026.pdf','Organizations/LM/Brown_Jacob_(LM)_8570_Memo_26AUG2026.pdf','SYSTEM'),false);
+});
+
+test('does not let an 8570 reference inside a SAAR override its filename document type',()=>{
+ const analysis=analyzeDocumentText('DD FORM 2875 GENERAL USER. Qualification under DoD 8570. Signature Date: 08/26/2026','Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf',users);
+ assert.equal(analysis.kind,'SAAR');
 });
 
 test('requires operator input when a signed date is not labeled',()=>{

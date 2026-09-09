@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,operatorMarkedIncomplete,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
+import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,looksLikeEvidenceFilename,normalizeFilenameDate,operatorMarkedIncomplete,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -70,6 +70,15 @@ test('normalizes any non-SAAR 8140 evidence marker to the required memo filename
   assert.equal(filenameMatchesKind(filename,'8140 Cert Memo'),true,filename);
   assert.equal(canonicalEvidenceFilename(filename,'GDMS'),expected,filename);
  }
+});
+
+test('routes a legacy 8570 filename as an 8140 memo without proposing a rename',()=>{
+ const filename='Brown Jacob (WRONG) 8570 qualification 08-26-2026.pdf';
+ assert.equal(legacy8570MemoFilename(filename),true);
+ assert.equal(filenameMatchesKind(filename,'8140 Cert Memo'),true);
+ assert.equal(canonicalEvidenceFilename(filename,'GDMS'),undefined);
+ assert.equal(evidenceFilenamePassesStorageGate(filename,'GDMS'),true);
+ assert.equal(pdfFilenameNeedsRework(filename,'GDMS'),false);
 });
 
 test('recognizes the reported General User Agreement filename',()=>{

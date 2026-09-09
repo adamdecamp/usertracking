@@ -69,6 +69,9 @@ test('archives obsolete Rework evidence without expiring SAARs',()=>{
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_2025.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_GEN_SAAR_2018.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8140_Memo.pdf',asOf),undefined);
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_31AUG2025.pdf',asOf),'Archive');
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_01SEP2025.pdf',asOf),undefined);
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_31AUG2020.pdf.zip',asOf),'Superseded');
 });
 
 test('deduplicates and splits notification recipients by count and encoded length',()=>{

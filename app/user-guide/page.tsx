@@ -364,12 +364,16 @@ export default function Guide() {
           organization—remains in the review queue rather than being treated as
           complete. The scan checks every active organization folder and each
           organization&apos;s Rework folder. Corrected Rework PDFs can therefore be
-          normalized and promoted by the next Sync. Exact canonical filenames are
+          normalized and promoted by the next Sync. Rework files are fully
+          revalidated on every Sync instead of being skipped by the unchanged-file
+          index, so corrections are detected after an earlier rejection. Exact canonical filenames are
           skipped without opening their PDF content. For remaining candidates, it
-          reads selectable text and supported SAAR form fields
-          locally, and uses the selected system&apos;s User Directory to propose
-          Last Name, First Name, document type, and signed or certification
-          date. Analysis yields to the interface after each small batch and
+          reads selectable text and supported SAAR form fields locally. A usable
+          <code> Last_First </code> identity in the filename is always authoritative;
+          PDF text and SAAR form fields fill identity only when the filename has no
+          usable person name. The selected system&apos;s User Directory can supply
+          matching metadata while the document supplies its type and signed or
+          certification date. Analysis yields to the interface after each small batch and
           supports administrative migrations of up to 10,000 candidate PDFs in one
           mapped repository. Progress is checkpointed in the mapped folder after
           every completed batch. Choose <b>Pause Analysis</b> or close the window; reopening
@@ -381,8 +385,8 @@ export default function Guide() {
           proposed filename; only a PDF at the mapped root uses the mapped
           folder name. High-confidence rows are selected automatically, editable
           fields can be corrected, and every original PDF opens immediately in
-          a full-window, read-only preview before approval. The preview includes
-          Fit-to-Width display, full-size browser viewing, and a validated-copy
+          a top-level, full-viewport read-only preview before approval. The preview includes
+          page-width display, full-size browser viewing, and a validated-copy
           download. Image-only scans are marked for manual entry.
           Applying a rename changes only the filesystem name, verifies that the
           PDF&apos;s SHA-256 is identical before and after, and writes an audit
@@ -684,13 +688,14 @@ export default function Guide() {
         </p>
         <p>
           Any non-SAAR evidence filename containing the standalone{" "}
-          <code>8140</code> marker is treated as an 8140 Certification Memo.
-          When its Last Name, First Name, authoritative organization folder, and
-          date are available, Sync normalizes it to{" "}
-          <code>Last_First_(ORG)_8140_Cert_Memo_DDMMMYYYY</code> while preserving
-          whether the evidence is a PDF or one-PDF ZIP. Missing or ambiguous
-          identity or date values are sent for operator review instead of being
-          guessed.
+          <code>8140</code> or legacy <code>8570</code> marker is treated as an
+          8140 Certification Memo. Sync moves that file into the authoritative
+          organization&apos;s <code>8140 Certification Memo</code> folder without
+          changing its filename. This is a routing-only compatibility rule; it
+          does not invent or rewrite identity, organization, or date values. If
+          the filename contains a valid date older than the one-year current
+          window, Archive Preflight moves it to that organization&apos;s Archive
+          folder first; evidence older than five years moves to Superseded.
         </p>
         <p>
           In the portable Windows app, the launcher—not the browser tab—performs
