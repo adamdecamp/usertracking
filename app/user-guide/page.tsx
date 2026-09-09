@@ -380,8 +380,10 @@ export default function Guide() {
           organization folder is used as the read-only Organization value in its
           proposed filename; only a PDF at the mapped root uses the mapped
           folder name. High-confidence rows are selected automatically, editable
-          fields can be corrected, and every original PDF can be previewed
-          before approval. Image-only scans are marked for manual entry.
+          fields can be corrected, and every original PDF opens immediately in
+          a full-window, read-only preview before approval. The preview includes
+          Fit-to-Width display, full-size browser viewing, and a validated-copy
+          download. Image-only scans are marked for manual entry.
           Applying a rename changes only the filesystem name, verifies that the
           PDF&apos;s SHA-256 is identical before and after, and writes an audit
           entry. It never rewrites, flattens, signs, or compresses the PDF.

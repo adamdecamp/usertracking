@@ -11,6 +11,7 @@ tests/sync-utils.test.ts
 tests/session-utils.test.ts
 tests/filename-utils.test.ts
 tests/document-renamer-utils.test.ts
+tests/document-renamer-preview.test.ts
 tests/error-utils.test.ts
 tests/manifest-validation.test.ts
 tests/saar-form-utils.test.ts
