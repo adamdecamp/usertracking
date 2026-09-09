@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {analyzeDocumentText,buildTrackerFilename,folderOrganizationDiffers,normalizeFilenameOrganization,organizationCleanupDirectory,organizationFromFolderPath,organizationStorageLocation,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
+import {analyzeDocumentText,buildTrackerFilename,documentNeedsFilenameNormalization,folderOrganizationDiffers,normalizeFilenameOrganization,organizationCleanupDirectory,organizationFromFolderPath,organizationStorageLocation,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
 import {canonicalEvidenceFilename} from '../app/filename-utils.ts';
 
 const users=[{first:'Jacob',last:'Brown',organization:'LM',roles:['General'],privilegedTypes:[]}];
@@ -114,6 +114,13 @@ test('normalizes the filename organization to its authoritative parent folder',(
  assert.equal(normalizeFilenameOrganization('Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf',organizationFromFolderPath('Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','NGC'))?.normalized,'Brown_Jacob_(NGC)_SAAR_26AUG2026.pdf');
  assert.equal(normalizeFilenameOrganization('Brown_Jacob_(GDMS)_User_Agreement_26AUG2026.pdf','GDMS')?.changed,false);
  assert.deepEqual(normalizeFilenameOrganization('Brown_Jacob_(WRONG)_Unrecognized_Form_26AUG2026.pdf','GOV'),{normalized:'Brown_Jacob_(GOV)_Unrecognized_Form_26AUG2026.pdf',organization:'GOV',changed:true});
+});
+
+test('queues every recognizable but noncanonical PDF and skips only exact canonical names',()=>{
+ assert.equal(documentNeedsFilenameNormalization('Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf','Organizations/LM/DoD Cyber Cert/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf','SYSTEM'),false);
+ assert.equal(documentNeedsFilenameNormalization('Brown, Jacob (LM) DoD Cyber Cert 26AUG2026.pdf','Organizations/LM/Brown, Jacob (LM) DoD Cyber Cert 26AUG2026.pdf','SYSTEM'),true);
+ assert.equal(documentNeedsFilenameNormalization('Brown_Jacob_(WRONG)_DoD_Cyber_Cert_26AUG2026.pdf','Organizations/LM/LM Rework/Brown_Jacob_(WRONG)_DoD_Cyber_Cert_26AUG2026.pdf','SYSTEM'),true);
+ assert.equal(documentNeedsFilenameNormalization('Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.zip','Organizations/LM/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.zip','SYSTEM'),false);
 });
 
 test('evaluates every artifact in every sibling organization folder',()=>{

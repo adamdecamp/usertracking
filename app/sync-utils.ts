@@ -18,6 +18,19 @@ export type SyncIndexEnvelope={
  files:SyncIndexEntry[];
 };
 
+export function unpackPortableScan<T>(payload:unknown):{items:T[];runId?:string;resumedFiles?:number}{
+ if(Array.isArray(payload))return{items:payload as T[]};
+ if(payload&&typeof payload==='object'){
+  const envelope=payload as{items?:unknown;runId?:unknown;resumedFiles?:unknown};
+  if(Array.isArray(envelope.items))return{
+   items:envelope.items as T[],
+   runId:typeof envelope.runId==='string'&&envelope.runId?envelope.runId:undefined,
+   resumedFiles:typeof envelope.resumedFiles==='number'&&Number.isSafeInteger(envelope.resumedFiles)&&envelope.resumedFiles>=0?envelope.resumedFiles:undefined,
+  };
+ }
+ throw new Error('The portable scan response has an invalid structure.');
+}
+
 export function syncIndexKey(path:string){return path.replaceAll('\\','/').toLowerCase()}
 
 export function syncIndexEntryMatches(previous:SyncIndexEntry,current:Pick<SyncIndexEntry,'path'|'name'|'size'|'lastModifiedUnixMs'>){

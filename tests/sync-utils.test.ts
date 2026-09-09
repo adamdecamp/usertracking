@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createSyncIndex,isSyncCancellation,readSyncIndex,syncIndexEntryMatches,syncIndexKey,throwIfSyncCancelled,type SyncIndexEntry} from '../app/sync-utils.ts';
+import {createSyncIndex,isSyncCancellation,readSyncIndex,syncIndexEntryMatches,syncIndexKey,throwIfSyncCancelled,unpackPortableScan,type SyncIndexEntry} from '../app/sync-utils.ts';
 
 test('allows an active Sync and throws a recognizable cancellation after Stop Sync',()=>{
  const controller=new AbortController();
@@ -24,4 +24,11 @@ test('accepts only a bounded Sync index for the active rule set',()=>{
  assert.equal(readSyncIndex(index,'rules-2'),undefined);
  assert.equal(readSyncIndex({...index,version:2},'rules-1'),undefined);
  assert.equal(readSyncIndex({...index,files:[{...entry,size:-1}]},'rules-1'),undefined);
+});
+
+test('accepts both legacy and journaled portable scan responses',()=>{
+ const item={name:'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf',path:'Organizations/LM/DoD Cyber Cert/file.pdf'};
+ assert.deepEqual(unpackPortableScan([item]),{items:[item]});
+ assert.deepEqual(unpackPortableScan({runId:'run-123',resumedFiles:7,items:[item]}),{runId:'run-123',resumedFiles:7,items:[item]});
+ assert.throws(()=>unpackPortableScan({runId:'run-123'}),/invalid structure/i);
 });

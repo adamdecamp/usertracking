@@ -359,7 +359,14 @@ export default function Guide() {
         <p>
           After mapping the system folder, choose <b>Document Renamer</b> from
           the main toolbar. It finds loose PDFs whose names do not already match
-          tracker rules, reads selectable text and supported SAAR form fields
+          the exact canonical tracker rules. A recognizable but noncanonical name—such
+          as one using commas, spaces, a legacy document label, or the wrong
+          organization—remains in the review queue rather than being treated as
+          complete. The scan checks every active organization folder and each
+          organization&apos;s Rework folder. Corrected Rework PDFs can therefore be
+          normalized and promoted by the next Sync. Exact canonical filenames are
+          skipped without opening their PDF content. For remaining candidates, it
+          reads selectable text and supported SAAR form fields
           locally, and uses the selected system&apos;s User Directory to propose
           Last Name, First Name, document type, and signed or certification
           date. Analysis yields to the interface after each small batch and

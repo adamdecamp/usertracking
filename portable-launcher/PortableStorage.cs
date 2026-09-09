@@ -914,7 +914,7 @@ internal sealed class PortableStorage : IDisposable
         lock (RootLock(systemId))
         {
             string root = Root(systemId);RecoverTransactions(root);string source = SafeRelativePath(root, relative), normalized = Relative(root, source);
-            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active evidence filenames can be normalized.");
+            if (ContainsManagedStorageDirectory(normalized) && !IsOrganizationReworkEvidencePath(normalized)) throw new InvalidDataException("Only active evidence or evidence in an organization Rework folder can be normalized.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string safeName = SafePart(filename, 180);
             if (!String.Equals(safeName, filename, StringComparison.Ordinal) || !String.Equals(Path.GetFileName(filename), filename, StringComparison.Ordinal)) throw new InvalidDataException("The normalized evidence filename is invalid or too long.");

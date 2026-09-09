@@ -1,4 +1,4 @@
-import {plausiblePersonIdentity} from './filename-utils.ts';
+import {evidenceFilenamePassesStorageGate,identityFromFilename,plausiblePersonIdentity} from './filename-utils.ts';
 
 export type RenamerUser={first:string;last:string;organization:string;roles:string[];privilegedTypes:string[]};
 export type RenamerAnalysis={kind:string;first:string;last:string;organization:string;date:string;role:'GEN'|'PRIV'|'';privilegedType:string;confidence:'High'|'Review'|'Manual';evidence:string[]};
@@ -34,6 +34,12 @@ export function organizationCleanupDirectory(path:string,rootFallback:string,cat
 
 export function folderOrganizationDiffers(path:string,filenameOrganization:string|undefined,rootFallback=''){
  return organizationFromFolderPath(path,rootFallback).toUpperCase()!==(filenameOrganization??'').trim().toUpperCase();
+}
+
+export function documentNeedsFilenameNormalization(filename:string,path:string,rootFallback=''){
+ if(!/\.pdf$/i.test(filename))return false;
+ const organization=organizationFromFolderPath(path,rootFallback,identityFromFilename(filename));
+ return !evidenceFilenamePassesStorageGate(filename,organization);
 }
 
 export function normalizeFilenameOrganization(filename:string,organization:string){

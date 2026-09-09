@@ -367,6 +367,14 @@ internal static class PortableStorageTests
         File.WriteAllBytes(Path.Combine(reworkDirectory, supersededReworkName), EvidenceZip(supersededReworkName.Substring(0, supersededReworkName.Length - 4), PdfBytes()));
         File.WriteAllBytes(Path.Combine(reworkDirectory, currentReworkName), Encoding.ASCII.GetBytes("current correction"));
         File.WriteAllBytes(Path.Combine(reworkDirectory, oldSaarReworkName), Encoding.ASCII.GetBytes("non-expiring SAAR correction"));
+        string renamableReworkName = "Jones Maria (WRONG) DoD Cyber Cert " + currentDate + ".pdf", canonicalReworkName = "Jones_Maria_(NGC)_DoD_Cyber_Cert_" + currentDate + ".pdf", renamableReworkRelative = Path.Combine("NGC", "NGC Rework", renamableReworkName);
+        File.WriteAllBytes(Path.Combine(reworkDirectory, renamableReworkName), PdfBytes());
+        var normalizedReworkResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.NormalizeEvidenceFilename("mapping-key", renamableReworkRelative, canonicalReworkName));
+        string normalizedReworkRelative = Convert.ToString(normalizedReworkResponse["renamed"]), normalizedReworkPath = Path.Combine(root, normalizedReworkRelative.Replace('/', Path.DirectorySeparatorChar));
+        Assert(!File.Exists(Path.Combine(reworkDirectory, renamableReworkName)) && File.Exists(normalizedReworkPath), "Document Renamer should normalize a corrected loose PDF inside its organization's Rework folder without changing its contents.");
+        var organizedReworkResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.OrganizeEvidence("mapping-key", normalizedReworkRelative, "DoD Cyber Cert"));
+        string organizedReworkRelative = Convert.ToString(organizedReworkResponse["organized"]);
+        Assert(organizedReworkRelative.StartsWith("NGC/DoD Cyber Cert/", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(root, organizedReworkRelative.Replace('/', Path.DirectorySeparatorChar))) && !File.Exists(normalizedReworkPath), "A normalized Rework PDF should promote into the organization's document-type folder after strict validation.");
         File.WriteAllBytes(Path.Combine(reworkDirectory, oldYearOnlyName), Encoding.ASCII.GetBytes("old year-only correction"));
         File.WriteAllBytes(Path.Combine(reworkDirectory, currentYearOnlyName), Encoding.ASCII.GetBytes("current year-only correction"));
         File.WriteAllBytes(Path.Combine(nestedReworkDirectory, disabledSaarName), Encoding.ASCII.GetBytes("disabled access request"));
