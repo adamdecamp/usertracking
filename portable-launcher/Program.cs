@@ -156,6 +156,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "restore-drill" && parts[0] == "POST") response = storage.RestoreDrill(systemId, QueryValue(target, "logical"), QueryValue(target, "file"));
                     else if (action == "verify" && parts[0] == "GET") response = storage.VerifyLatest(systemId, QueryValue(target, "logical"));
                     else if (action == "scan" && parts[0] == "GET") response = storage.ScanWithJournal(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal));
+                    else if (action == "locations" && parts[0] == "GET") response = storage.ListEvidenceLocations(systemId);
                     else if (action == "sync-commit" && parts[0] == "POST") response = storage.CommitSyncJournal(systemId, QueryValue(target, "run"));
                     else if (action == "renamer-queue" && parts[0] == "GET") response = storage.ReadRenamerQueue(systemId);
                     else if (action == "renamer-queue" && parts[0] == "POST") response = storage.SaveRenamerQueue(systemId, requestBody);

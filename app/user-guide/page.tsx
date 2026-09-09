@@ -301,7 +301,12 @@ export default function Guide() {
         </p>
         <p>
           A non-DTA filename containing <code>Responsibilities</code> or{" "}
-          <code>Course</code> is treated as Privileged User Training. When the
+          <code>Course</code> is treated as Privileged User Training. A DTA
+          filename containing <code>Course</code> or <code>Responsibilities</code>
+          is treated as DTA Training. A filename containing{" "}
+          <code>Awareness</code>, <code>Cyber Awareness</code>, or{" "}
+          <code>Awareness Challenge</code> is treated as DoD Cyber Awareness.
+          When the
           identity, authoritative organization, and date are available, Sync
           normalizes it to{" "}
           <code>Last_First_(ORG)_Privileged_User_Training_Cert_DDMMMYYYY.pdf</code>.
@@ -668,9 +673,11 @@ export default function Guide() {
           user or artifact that should not be applied. Only approved matches and
           proposed users are written when you choose{" "}
           <b>Apply Verified Updates</b>. Before provenance hashes are saved, the
-          app refreshes current file locations so a preceding rename, compression,
+          app refreshes current file locations from filename, path, size, and
+          modified-time metadata only, so a preceding rename, compression,
           Rework, Archive, or document-type move cannot leave an obsolete file
-          reference. For a collision decision, the exact operator-selected
+          reference. Unrelated PDF and ZIP contents are not reopened during this
+          refresh. For a collision decision, the exact operator-selected
           destination path is verified first, so another current file of the same
           artifact type cannot make the completed selection appear ambiguous. A
           verified <code>.pdf</code> to <code>.pdf.zip</code>
@@ -678,7 +685,8 @@ export default function Guide() {
           with the ZIP&apos;s actual filename and current path. If an exact container
           name is unavailable, Sync uses user identity, authoritative organization,
           and artifact type only when exactly one current file matches. It never
-          guesses between duplicates. A failed reference is rescanned once. If it still cannot be
+          guesses between duplicates. A failed reference receives one more
+          metadata-only location refresh. If it still cannot be
           verified, the database remains unchanged, the stale Sync Review is
           cleared, and the operator can run Sync again without restarting the app.
           In the manual <b>Add User</b> workflow
@@ -1116,7 +1124,12 @@ export default function Guide() {
       <aside>
         <b>Batch Processing Resilience:</b> High-volume read-only work uses
         bounded queues instead of one unlimited batch or one blocking serial
-        loop. Initial validation gives each changed file a 30-second read limit;
+        loop. Current-location refresh, stale-reference retry, Document Renamer
+        candidate discovery, Reconciliation discovery, Evidence Audit discovery,
+        and inspection-inventory discovery read only filename, path, size, and
+        modified-time metadata. Only relevant targets are opened afterward;
+        <b> Full Rescan</b> is the only operator action that deliberately reopens
+        every evidence file. Initial validation gives each changed file a 30-second read limit;
         duplicate-content checks, provenance hashing, Reconciliation hashing,
         and Inspection Package inventory hashing process no more than four files
         at once. Timed-out read-only operations receive no more than one fresh

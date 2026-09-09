@@ -204,6 +204,9 @@ internal static class PortableStorageTests
         File.WriteAllText(Path.Combine(root, "operator-notes.txt"), "This non-evidence file must not require metadata validation.", Encoding.UTF8);
         string scan = storage.Scan("mapping-key", "rules-1", false);
         Assert(scan.Contains("Shaw_Vivian_SAAR_24AUG2026.pdf.zip") && scan.Contains("\"accepted\":true") && scan.Contains("\"unchanged\":false"), "The first directory scan should validate launcher-stored PDF evidence.");
+        var locationPayload = (Dictionary<string, object>)Json.DeserializeObject(storage.ListEvidenceLocations("mapping-key"));object[] locationItems = (object[])locationPayload["items"];
+        Assert(locationItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip" && Convert.ToInt64(item["size"]) > 0 && Convert.ToInt64(item["lastModifiedUnixMs"]) > 0), "Metadata-only location refresh should return evidence paths, sizes, and modified times without content validation.");
+        Assert(!locationItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]) == "operator-notes.txt"), "Metadata-only location refresh should omit non-evidence files.");
         Dictionary<string, object> ignoredNonEvidence = ((object[])Json.DeserializeObject(scan)).Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "operator-notes.txt");
         Assert(Convert.ToInt64(ignoredNonEvidence["size"]) == 0 && !Convert.ToBoolean(ignoredNonEvidence["accepted"]), "Sync should classify irrelevant extensions without requesting provider metadata for them.");
         try

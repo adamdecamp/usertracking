@@ -78,6 +78,21 @@ test('reads a full completion date from a privileged training certificate when i
  assert.equal(buildTrackerFilename(analysis),'Brown_Jacob_(LM)_Privileged_User_Training_Cert_26AUG2023.pdf');
 });
 
+test('uses a complete filename date to auto-select every recognized legacy training rename',()=>{
+ const cases=[
+  ['Brown_Jacob_(LM)_Responsibilities_26AUG2026.pdf','Privileged User Training Cert','Brown_Jacob_(LM)_Privileged_User_Training_Cert_26AUG2026.pdf'],
+  ['Brown_Jacob_(LM)_Course_Completion_26AUG2026.pdf','Privileged User Training Cert','Brown_Jacob_(LM)_Privileged_User_Training_Cert_26AUG2026.pdf'],
+  ['Brown_Jacob_(LM)_Awareness_26AUG2026.pdf','DoD Cyber Cert','Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf'],
+ ];
+ for(const[filename,kind,target]of cases){
+  const analysis=analyzeDocumentText('',filename,users,'LM');
+  assert.equal(analysis.kind,kind,filename);
+  assert.equal(analysis.date,'2026-08-26',filename);
+  assert.equal(analysis.confidence,'High',filename);
+  assert.equal(buildTrackerFilename(analysis),target,filename);
+ }
+});
+
 test('classifies legacy 8570 filenames as the current 8140 certification memo type',()=>{
  const analysis=analyzeDocumentText('Certification memorandum Signature Date: 08/26/2026','Brown_Jacob_(LM)_8570_Memo_26AUG2026.pdf',users);
  assert.equal(analysis.kind,'8140 Cert Memo');

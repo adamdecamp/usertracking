@@ -60,3 +60,14 @@ test('incremental Sync uses a validation-only cache version and reports fast-pat
  assert.match(page,/\$\{scanResult\.scanned\} discovered; \$\{scanResult\.unchanged\}/);
  assert.match(page,/Daily retention already completed;/);
 });
+
+test('location refresh and discovery workflows use metadata without reopening every PDF',()=>{
+ assert.match(page,/portableRequest\(root,'locations'/);
+ assert.match(page,/Refreshing Current Evidence Locations[\s\S]*?refreshEvidenceLocations\(pendingSync\.handle/);
+ assert.match(page,/Refreshing Stale Evidence References[\s\S]*?refreshEvidenceLocations\(pendingSync\.handle/);
+ assert.match(page,/async function discoverRenamerPdfs[\s\S]*?refreshEvidenceLocations\(root\)/);
+ assert.match(page,/async function openReconciliation[\s\S]*?refreshEvidenceLocations\(root/);
+ assert.match(page,/scanEvidence=\{\(progress,signal\)=>refreshEvidenceLocations/);
+ assert.doesNotMatch(page,/Refreshing Current Evidence Locations[\s\S]{0,500}?scan\(pendingSync\.handle/);
+ assert.doesNotMatch(page,/Refreshing Stale Evidence References[\s\S]{0,500}?scan\(pendingSync\.handle/);
+});

@@ -429,6 +429,39 @@ internal sealed class PortableStorage : IDisposable
         }
     }
 
+    public string ListEvidenceLocations(string systemId)
+    {
+        lock (RootLock(systemId))
+        {
+            string root = Root(systemId);RecoverTransactions(root);
+            var result = new List<Dictionary<string, object>>();
+            var pending = new Stack<Tuple<string, int>>();pending.Push(Tuple.Create(root, 0));
+            while (pending.Count > 0)
+            {
+                Tuple<string, int> current = pending.Pop();
+                if (current.Item2 > 25) throw new InvalidDataException("Folder nesting limit exceeded while refreshing evidence locations.");
+                foreach (string file in EnumerateScanFiles(root, current.Item1))
+                {
+                    if (result.Count >= 100000) throw new InvalidDataException("Evidence location limit exceeded.");
+                    string filename = Path.GetFileName(file);
+                    if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase))) continue;
+                    if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
+                    string relative = Relative(root, file).Replace(Path.DirectorySeparatorChar, '/');var info = new FileInfo(file);long size = 0L, modified = 0L;
+                    try { size = info.Length;modified = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds(); }
+                    catch (Exception error) { if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;result.Add(new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "error", "File metadata could not be read: " + CleanLine(error.Message, 240) } });continue; }
+                    result.Add(new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", modified } });
+                }
+                foreach (string directory in EnumerateScanDirectories(root, current.Item1))
+                {
+                    string name = Path.GetFileName(directory);bool rework = IsReworkStorageDirectory(name);
+                    if (IsManagedStorageDirectory(name) && !rework) continue;
+                    if (!IsScanReparsePoint(root, directory)) pending.Push(Tuple.Create(directory, current.Item2 + 1));
+                }
+            }
+            return json.Serialize(new Dictionary<string, object> { { "items", result.ToArray() } });
+        }
+    }
+
     public string CommitSyncJournal(string systemId, string runId)
     {
         ValidateSessionId(runId);

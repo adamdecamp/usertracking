@@ -127,6 +127,16 @@ test('recognizes Responsibilities and Course filenames as Privileged User Traini
  assert.equal(canonicalEvidenceFilename(responsibilities,'GDMS'),'Brown_Jacob_(GDMS)_Privileged_User_Training_Cert_26AUG2026.pdf');
  assert.equal(canonicalEvidenceFilename(course,'LM'),'Shaw_Vivian_(LM)_Privileged_User_Training_Cert_26AUG2026.pdf');
  assert.equal(filenameMatchesKind(dta,'Privileged User Training Cert'),false);
+ assert.equal(filenameMatchesKind(dta,'DTA Training Cert'),true);
+ assert.equal(canonicalEvidenceFilename(dta,'GOV'),'Jones_Alex_(GOV)_DTA_Training_Cert_26AUG2026.pdf');
+});
+
+test('canonicalizes standalone Awareness filenames as DoD Cyber certificates',()=>{
+ const variants=['Brown_Jacob_(LM)_Awareness_26AUG2026.pdf','Brown, Jacob (LM) Awareness Certificate 26AUG2026.pdf','Brown_Jacob_(LM)_Cyber_Awareness_26AUG2026.pdf'];
+ for(const filename of variants){
+  assert.equal(filenameMatchesKind(filename,'DoD Cyber Cert'),true,filename);
+  assert.equal(canonicalEvidenceFilename(filename,'LM'),'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf',filename);
+ }
 });
 
 test('routes unidentified or incomplete loose PDFs to Rework',()=>{
