@@ -1,5 +1,19 @@
 type PortableFetcher=(input:RequestInfo|URL,init?:RequestInit)=>Promise<Response>;
 
+export const portablePresenceHeartbeatMs=15_000;
+
+export function startPortablePresenceHeartbeat(send:()=>Promise<unknown>,intervalMs=portablePresenceHeartbeatMs){
+ let stopped=false,pending=false;
+ const beat=()=>{
+  if(stopped||pending)return;
+  pending=true;
+  void Promise.resolve().then(send).catch(()=>undefined).finally(()=>{pending=false});
+ };
+ beat();
+ const timer=setInterval(beat,Math.max(1,intervalMs));
+ return()=>{stopped=true;clearInterval(timer)};
+}
+
 export class PortableRequestTimeoutError extends Error{
  constructor(message:string){super(message);this.name='PortableRequestTimeoutError'}
 }

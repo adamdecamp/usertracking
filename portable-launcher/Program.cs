@@ -337,7 +337,21 @@ internal sealed class TrackerContext : ApplicationContext
         }
     }
 
-    private void RecordPresence() { lock (lifecycleGate) { lastPresenceUtc = DateTime.UtcNow; } }
+    private void RecordPresence()
+    {
+        lock (lifecycleGate)
+        {
+            lastPresenceUtc = DateTime.UtcNow;
+            // A live page heartbeat wins a race with the browser-closed grace period.
+            // Operator logoff and idle shutdown remain final once requested.
+            if (shutdownReason == "browser-closed")
+            {
+                shutdownRequestedUtc = null;
+                shutdownReason = null;
+                shutdownReady = false;
+            }
+        }
+    }
 
     private void BeginStorageRequest()
     {

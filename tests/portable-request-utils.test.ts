@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {PortableRequestTimeoutError,PortableStorageBusyError,portableActionLabel,portableArchiveAction,portableFetch} from '../app/portable-request-utils.ts';
+import {PortableRequestTimeoutError,PortableStorageBusyError,portableActionLabel,portableArchiveAction,portableFetch,startPortablePresenceHeartbeat} from '../app/portable-request-utils.ts';
 
 test('identifies a recoverable busy response without treating it as lost session ownership',()=>{
  const error=new PortableStorageBusyError('Storage is busy.');
@@ -47,4 +47,19 @@ test('times out an unresponsive launcher request and aborts its fetch signal',as
  let fetchSignal:AbortSignal|null|undefined;
  await assert.rejects(()=>portableFetch(async(_url,init)=>{fetchSignal=init?.signal;return new Promise<Response>(()=>undefined)},'/api/storage/system/archive','archive',undefined,false,0,10),error=>error instanceof PortableRequestTimeoutError&&/within 1 seconds/.test(error.message));
  assert.equal(fetchSignal?.aborted,true);
+});
+
+test('keeps a live browser session present without overlapping heartbeat requests',async()=>{
+ let calls=0,releaseFirst:()=>void=()=>undefined;
+ const first=new Promise<void>(resolve=>{releaseFirst=resolve});
+ const stop=startPortablePresenceHeartbeat(async()=>{calls++;if(calls===1)await first},5);
+ await new Promise(resolve=>setTimeout(resolve,18));
+ assert.equal(calls,1);
+ releaseFirst();
+ await new Promise(resolve=>setTimeout(resolve,18));
+ assert.ok(calls>=2);
+ stop();
+ const stoppedAt=calls;
+ await new Promise(resolve=>setTimeout(resolve,12));
+ assert.equal(calls,stoppedAt);
 });

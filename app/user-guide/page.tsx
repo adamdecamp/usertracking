@@ -697,7 +697,10 @@ export default function Guide() {
           entries, reports, and session lease. The browser validates changes and
           sends them to this local-only storage service. This design keeps the
           final disk write and shutdown backup available even if the browser
-          window closes unexpectedly.
+          window closes unexpectedly. While the app page remains open, it sends
+          a lightweight presence heartbeat to keep the launcher available; Sync
+          also confirms activity before reading the shared database and keeps the
+          launcher active until processing finishes.
         </p>
         <p>
           Tracker-owned support folders are grouped beneath the mapped
