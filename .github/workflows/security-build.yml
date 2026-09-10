@@ -74,6 +74,20 @@ jobs:
 
       - name: Attest build provenance and SBOM
         if: github.event_name != 'pull_request'
+        id: attest_sbom
+        continue-on-error: true
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: release/InformationSystemUserTracker.exe
+          sbom-path: artifacts/information-system-user-tracker.spdx.json
+
+      - name: Wait before retrying SBOM attestation
+        if: github.event_name != 'pull_request' && steps.attest_sbom.outcome == 'failure'
+        shell: pwsh
+        run: Start-Sleep -Seconds 10
+
+      - name: Retry build provenance and SBOM attestation
+        if: github.event_name != 'pull_request' && steps.attest_sbom.outcome == 'failure'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: release/InformationSystemUserTracker.exe
@@ -81,6 +95,22 @@ jobs:
 
       - name: Attest release build provenance
         if: github.event_name != 'pull_request'
+        id: attest_release
+        continue-on-error: true
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: |
+            release/InformationSystemUserTracker.exe
+            release/Information-System-User-Tracker-Executive-Summary.pdf
+            release/SHA256SUMS.txt
+
+      - name: Wait before retrying release provenance attestation
+        if: github.event_name != 'pull_request' && steps.attest_release.outcome == 'failure'
+        shell: pwsh
+        run: Start-Sleep -Seconds 10
+
+      - name: Retry release build provenance attestation
+        if: github.event_name != 'pull_request' && steps.attest_release.outcome == 'failure'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |

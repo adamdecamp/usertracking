@@ -97,12 +97,42 @@ jobs:
           upload-artifact: false
 
       - name: Attest signed executable and SBOM
+        id: attest_sbom
+        continue-on-error: true
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: release/InformationSystemUserTracker.exe
+          sbom-path: artifacts/information-system-user-tracker.spdx.json
+
+      - name: Wait before retrying signed SBOM attestation
+        if: steps.attest_sbom.outcome == 'failure'
+        shell: pwsh
+        run: Start-Sleep -Seconds 10
+
+      - name: Retry signed executable and SBOM attestation
+        if: steps.attest_sbom.outcome == 'failure'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: release/InformationSystemUserTracker.exe
           sbom-path: artifacts/information-system-user-tracker.spdx.json
 
       - name: Attest signed release provenance
+        id: attest_release
+        continue-on-error: true
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: |
+            release/InformationSystemUserTracker.exe
+            release/Information-System-User-Tracker-Executive-Summary.pdf
+            release/SHA256SUMS.txt
+
+      - name: Wait before retrying signed release provenance attestation
+        if: steps.attest_release.outcome == 'failure'
+        shell: pwsh
+        run: Start-Sleep -Seconds 10
+
+      - name: Retry signed release provenance attestation
+        if: steps.attest_release.outcome == 'failure'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |
