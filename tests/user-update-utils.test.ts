@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {accessChangeOverrideAllowed,reactivationEvidenceRequirementSatisfied,updatedSaarRequirementSatisfied} from '../app/user-update-utils.ts';
+import {accessChangeOverrideAllowed,missingOfficialEmailUpdate,reactivationEvidenceRequirementSatisfied,updatedSaarRequirementSatisfied} from '../app/user-update-utils.ts';
 
 const input={statusChange:false,modifyingPrivileges:false,hasUpdatedSaar:false,overrideSelected:false,overrideComment:''};
 
@@ -34,4 +34,14 @@ test('requires every reactivation artifact unless a documented override is used'
  assert.equal(reactivationEvidenceRequirementSatisfied({reactivating:true,allRequiredEvidenceSelected:false,overrideAllowed:true,overrideSelected:false,overrideComment:''}),false);
  assert.equal(reactivationEvidenceRequirementSatisfied({reactivating:true,allRequiredEvidenceSelected:false,overrideAllowed:true,overrideSelected:true,overrideComment:'Mission requirement approved by the account manager.'}),true);
  assert.equal(reactivationEvidenceRequirementSatisfied({reactivating:true,allRequiredEvidenceSelected:false,overrideAllowed:false,overrideSelected:true,overrideComment:'Not sufficient'}),false);
+});
+
+test('allows a valid Official Email to fill an empty user record',()=>{
+ assert.deepEqual(missingOfficialEmailUpdate('',' User.Name@example.mil ',['other@example.mil']),{allowed:true,email:'User.Name@example.mil'});
+});
+
+test('rejects invalid, duplicate, or replacement Official Email edits',()=>{
+ assert.match(missingOfficialEmailUpdate('','not-an-email').reason??'',/valid Official Email/);
+ assert.match(missingOfficialEmailUpdate('','shared@example.mil',['SHARED@EXAMPLE.MIL']).reason??'',/already assigned/);
+ assert.match(missingOfficialEmailUpdate('existing@example.mil','replacement@example.mil').reason??'',/only be entered.*missing/);
 });

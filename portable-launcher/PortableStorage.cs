@@ -786,7 +786,7 @@ internal sealed class PortableStorage : IDisposable
                     if (current.Item3 && !archivedSaar && !datedArchiveRepair) continue;
                     if (!current.Item3 && saar && !disabledSaar) { skippedSaar++;continue; }
                     if (!disabledSaar && !archivedSaar && !datedArchiveRepair && !evidenceDate.HasValue) { undated++;continue; }
-                    if (!disabledSaar && !archivedSaar && !datedArchiveRepair && evidenceDate.Value >= DateTime.UtcNow.Date.AddYears(-1)) { currentFiles++;continue; }
+                    if (!disabledSaar && !archivedSaar && !datedArchiveRepair && evidenceDate.Value.AddYears(1).AddDays(90) >= DateTime.UtcNow.Date) { currentFiles++;continue; }
                     try
                     {
                         if (effectiveSource.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))

@@ -96,6 +96,36 @@ function xmlValue(xml:string,names:string[]){
 }
 const nonUserEmailField=(name:string)=>/\b(?:SUPERVISOR|SPONSOR|SECURITY\s+MANAGER|APPROVING|SIGNER)\b/i.test(normalizedName(name));
 
+function inheritedWidgetText(widget:PDFDict,key:string){
+ let current:PDFDict|undefined=widget;
+ for(let depth=0;current&&depth<8;depth++){
+  const value=current.lookup(PDFName.of(key));
+  if(value instanceof PDFString||value instanceof PDFHexString)return clean(value.decodeText(),500);
+  if(value instanceof PDFName)return clean(value.decodeText(),500);
+  const parent:unknown=current.lookup(PDFName.of('Parent'));current=parent instanceof PDFDict?parent:undefined;
+ }
+ return'';
+}
+
+function widgetTop(widget:PDFDict){
+ const rect=widget.lookup(PDFName.of('Rect'));if(!(rect instanceof PDFArray)||rect.size()<4)return-Infinity;
+ const first=rect.lookup(1),second=rect.lookup(3);return Math.max(first instanceof PDFNumber?first.asNumber():-Infinity,second instanceof PDFNumber?second.asNumber():-Infinity);
+}
+
+function widgetEmailCandidates(pdf:PDFDocument){
+ const candidates:{priority:number;page:number;top:number;order:number;value:string}[]=[];let order=0;
+ for(const[pageIndex,page]of pdf.getPages().entries()){
+  const annotations=page.node.lookup(PDFName.of('Annots'));if(!(annotations instanceof PDFArray))continue;
+  for(let index=0;index<annotations.size();index++){
+   const annotation=annotations.lookup(index);if(!(annotation instanceof PDFDict))continue;
+   const name=inheritedWidgetText(annotation,'T'),value=inheritedWidgetText(annotation,'V'),email=Array.from(value.matchAll(emailPattern))[0]?.[0].toLowerCase();
+   if(!email||nonUserEmailField(name))continue;
+   candidates.push({priority:emailFieldPriority(name),page:pageIndex,top:widgetTop(annotation),order:order++,value:email});
+  }
+ }
+ return candidates;
+}
+
 function decodeXfaBytes(bytes:Uint8Array){
  if(bytes.length>=2&&bytes[0]===0xff&&bytes[1]===0xfe)return new TextDecoder('utf-16le',{fatal:true}).decode(bytes);
  if(bytes.length>=2&&bytes[0]===0xfe&&bytes[1]===0xff){const swapped=new Uint8Array(bytes.length-2);for(let index=2;index+1<bytes.length;index+=2){swapped[index-2]=bytes[index+1];swapped[index-1]=bytes[index]}return new TextDecoder('utf-16le',{fatal:true}).decode(swapped)}
@@ -142,16 +172,16 @@ export async function readSaarFormFields(pdfBytes:Uint8Array):Promise<SaarFormFi
   const name=xmlValue(xfa.xml,['name1']),organization=xmlValue(xfa.xml,['Organization2']),email=xmlValue(xfa.xml,['Email_Address4','Official_Organization_Email_Address','OfficialOrganizationEmailAddress','Email_Address5','Official_Email','OfficialEmail','Official_Email_Address','OfficialEmailAddress'])??xfaEmailFallback(xfa.xml),requestDate=parseSaarRequestDate(xmlValue(xfa.xml,['signedDate12','SignedDate12','typeReqDate'])),processedBy=xmlValue(xfa.xml,['NameProcessed','ProcessedByName','CreatedBy']),createdDate=parseSaarRequestDate(xmlValue(xfa.xml,['ProcessedsignedDate','ProcessedSignedDate','CreatedBySignedDate'])),disabledBy=xmlValue(xfa.xml,['NameDisabled','DisabledByName','DisabledBy']),disabledDate=parseSaarRequestDate(xmlValue(xfa.xml,['DisabledsignedDate','DisabledSignedDate','DisabledBySignedDate'])),createdBySigned=!!processedBy&&!!createdDate,disabledBySigned=!!disabledBy&&!!disabledDate;
   return{fillable:true,format:'XFA',identity:name?parseSaarName(name):undefined,organization:organization?clean(organization,200):undefined,email:email?clean(email,254):undefined,...(requestDate?{requestDate}:{}),...(createdDate?{createdDate}:{}),...(disabledDate?{disabledDate}:{}),createdBySigned,disabledBySigned,signedFieldNames:[]}
  }
- const values:Partial<Record<'name'|'organization'|'email'|'requestDate',string>>={},emailCandidates:{priority:number;order:number;value:string}[]=[];let signedRequestDate:string|undefined;
+ const values:Partial<Record<'name'|'organization'|'email'|'requestDate',string>>={},emailCandidates:{priority:number;page:number;top:number;order:number;value:string}[]=widgetEmailCandidates(pdf);let signedRequestDate:string|undefined;
  try{
   const fields=pdf.getForm().getFields(),signatures=signatureSummary(fields);
   for(const[order,field]of fields.entries()){
    if(field instanceof PDFSignature){signedRequestDate=signedRequestDate??signatureRequestDate(field);continue}if(!(field instanceof PDFTextField))continue;
-   const value=clean(field.getText()??'',500),emailMatch=Array.from(value.matchAll(emailPattern))[0];if(emailMatch&&!nonUserEmailField(field.getName()))emailCandidates.push({priority:emailFieldPriority(field.getName()),order,value:emailMatch[0].toLowerCase()});
+   const value=clean(field.getText()??'',500),emailMatch=Array.from(value.matchAll(emailPattern))[0];if(emailMatch&&!nonUserEmailField(field.getName()))emailCandidates.push({priority:emailFieldPriority(field.getName()),page:Number.MAX_SAFE_INTEGER,top:-Infinity,order,value:emailMatch[0].toLowerCase()});
    const kind=fieldKind(field.getName());if(!kind||kind==='email'||values[kind])continue;
    if(value)values[kind]=value
   }
-  values.email=emailCandidates.sort((left,right)=>left.priority-right.priority||left.order-right.order)[0]?.value;
+  values.email=emailCandidates.sort((left,right)=>left.priority-right.priority||left.page-right.page||right.top-left.top||left.order-right.order)[0]?.value;
   const requestDate=parseSaarRequestDate(values.requestDate)??signedRequestDate;if(fields.length>0)return{fillable:true,format:'AcroForm',identity:values.name?parseSaarName(values.name):undefined,organization:values.organization?clean(values.organization,200):undefined,email:values.email?clean(values.email,254):undefined,...(requestDate?{requestDate}:{}),...signatures}
  }catch{}
  return{fillable:false}

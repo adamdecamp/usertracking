@@ -26,6 +26,18 @@ test('prioritizes OFFICIAL/ORGANIZATION E-MAIL ADDRESS over other email fields',
  assert.equal(result.email,'user.official@example.mil');
 });
 
+test('recovers the visible Official Email value stored on the field widget',async()=>{
+ const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm(),field=form.createTextField('4. OFFICIAL/ORGANIZATION E-MAIL ADDRESS');field.addToPage(page,{x:20,y:650,width:300,height:20});field.acroField.getWidgets()[0].dict.set(PDFName.of('V'),PDFString.of('widget.user@example.mil'));
+ const result=await readSaarFormFields(await pdf.save({useObjectStreams:false}));
+ assert.equal(result.email,'widget.user@example.mil');
+});
+
+test('uses widget page position to choose the first user email from the top of the form',async()=>{
+ const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm(),lower=form.createTextField('Additional Contact');lower.setText('lower@example.mil');lower.addToPage(page,{x:20,y:300,width:300,height:20});const upper=form.createTextField('User Contact');upper.setText('upper@example.mil');upper.addToPage(page,{x:20,y:650,width:300,height:20});
+ const result=await readSaarFormFields(await pdf.save());
+ assert.equal(result.email,'upper@example.mil');
+});
+
 test('reads equivalent fields from an official DD2875-style XFA datasets packet',async()=>{
  const pdf=await PDFDocument.create();pdf.addPage([612,792]);
  const xml='<?xml version="1.0"?><xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><page1><Part1><Organization2>Boeing</Organization2><Email_Address5>vivian.shaw@example.mil</Email_Address5><signedDate12>08/26/2026</signedDate12></Part1></page1><name1>Shaw, Vivian R</name1></form1></xfa:data></xfa:datasets>';

@@ -206,7 +206,14 @@ export default function Guide() {
           Privileged User Training certificate. Privileged users with DTA type
           also require DTA training. Open a User Record to replace evidence,
           disable or enable access, modify privileges, or delete the database
-          record under controlled conditions. Access and privilege changes
+          record under controlled conditions. If the record has no Official
+          Email, the User Record displays an editable Official Email field. Enter
+          the address verified from the user&apos;s SAAR and choose <b>Submit</b>;
+          the app validates the address, rejects an address assigned to another
+          record in the same information system, updates the manifest and backup,
+          and adds the operator action
+          to the change history and tamper-evident audit log. Existing email
+          addresses remain read-only in this workflow. Access and privilege changes
           require an updated SAAR by default. The date recorded for a SAAR is the
           date the account was created or disabled; it is never an expiration date,
           and SAARs are never classified as Overdue. Disabling a user moves the
@@ -304,7 +311,10 @@ export default function Guide() {
           does not count as the certificate. A SAAR filename date records the
           account creation or disable action; it is not an expiration date. A SAAR
           is therefore either Current or Missing and never becomes Overdue. Other
-          valid evidence becomes Overdue after one year.
+          valid evidence becomes Overdue after one year. It remains visible as
+          Overdue for up to 90 days. After the 90-day overdue grace period,
+          Archive Preflight moves it to the organization Archive and the active
+          requirement becomes Missing.
         </p>
         <p>
           A non-DTA filename containing <code>Responsibilities</code> or{" "}
@@ -545,8 +555,8 @@ export default function Guide() {
           Rework plus every new or changed file before PDF content or form-field
           extraction. Full Rescan forces the complete preflight regardless of the
           daily marker. A non-SAAR artifact with either a
-          full evidence date or a recognizable four-digit year that is safely
-          beyond the one-year currency window is moved to that organization&apos;s
+          full evidence date or a recognizable four-digit year that is more than
+          90 days beyond the one-year currency window is moved to that organization&apos;s
           dated Archive folder without correcting its filename; if it is older than five years, it
           moves directly to <code>ORG Archive / Superseded</code>. A SAAR whose
           filename contains the standalone word <b>DISABLED</b> moves into the
@@ -652,9 +662,12 @@ export default function Guide() {
           template placeholders, Sync reads the user name and organization
           from either a standard DD Form 2875 XFA dataset or the derived
           SAAR&apos;s AcroForm fields. Official Email is read first from the
-          <b> OFFICIAL/ORGANIZATION E-MAIL ADDRESS</b> field. That exact field
-          takes priority even when other email fields appear earlier in the PDF
-          field collection. If it is blank or invalid, Sync searches selectable
+          <b> OFFICIAL/ORGANIZATION E-MAIL ADDRESS</b> field, including a valid
+          value stored on that field&apos;s visible PDF widget when the canonical
+          field tree is blank or stale. That exact field takes priority even
+          when other email fields appear earlier in the PDF field collection.
+          Otherwise, form fields are evaluated by page and top-to-bottom widget
+          position. If they remain blank or invalid, Sync searches selectable
           PDF text immediately after that label and then uses the first valid
           email address appearing from the top of the form. Standard UTF-8 and
           UTF-16 XFA datasets are supported. If a completed XFA form uses an
@@ -732,9 +745,10 @@ export default function Guide() {
           organization&apos;s <code>8140 Certification Memo</code> folder without
           changing its filename. This is a routing-only compatibility rule; it
           does not invent or rewrite identity, organization, or date values. If
-          the filename contains a valid date older than the one-year current
-          window, Archive Preflight moves it to that organization&apos;s Archive
-          folder first; evidence older than five years moves to Superseded.
+          the filename contains a valid date more than 90 days beyond the
+          one-year current window, Archive Preflight moves it to that
+          organization&apos;s Archive folder first; evidence older than five years
+          moves to Superseded.
         </p>
         <p>
           In the portable Windows app, the launcher—not the browser tab—performs
@@ -1070,8 +1084,8 @@ export default function Guide() {
       <aside>
         <b>Five-Year Archive Retention:</b> Archived evidence keeps its original
         evidence date. At Sync start, non-SAAR evidence in active or Rework
-        folders that is older than one year bypasses filename correction and moves to
-        Archive; evidence older than five years moves directly to the
+        folders that is more than 90 days overdue bypasses filename correction
+        and moves to Archive; evidence older than five years moves directly to the
         organization&apos;s{" "}
         <code>ORG Archive / Superseded</code> folder instead of the current
         dated Archive folder. SAARs remain active or in Rework regardless of age

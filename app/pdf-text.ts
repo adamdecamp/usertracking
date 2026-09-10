@@ -1,6 +1,7 @@
 import {getDocument,PDFWorker} from 'pdfjs-dist/legacy/build/pdf.mjs';
 import PdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker&inline';
 import {destroyPdfResources} from './pdf-worker-utils.ts';
+import {topDownPdfText} from './pdf-text-order.ts';
 
 type PdfTextOptions={signal?:AbortSignal;timeoutMs?:number};
 
@@ -15,7 +16,7 @@ export async function extractPdfText(bytes:Uint8Array,maxPages=15,options:PdfTex
  try{
   task=getDocument(worker?{data:bytes.slice(),worker}:{data:bytes.slice()});
   const document=await bounded(task.promise,deadline,options.signal),totalPages=document.numPages,pages=Math.min(totalPages,maxPages);
-  for(let index=1;index<=pages;index++){const page=await bounded(document.getPage(index),deadline,options.signal),content=await bounded(page.getTextContent(),deadline,options.signal),text=content.items.map(item=>'str'in item?item.str:'').join(' ').replace(/\s+/g,' ').trim();if(text)parts.push(text)}
+  for(let index=1;index<=pages;index++){const page=await bounded(document.getPage(index),deadline,options.signal),content=await bounded(page.getTextContent(),deadline,options.signal),text=topDownPdfText(content.items);if(text)parts.push(text)}
   return{pagesRead:pages,totalPages,text:parts.join('\n')};
  }finally{await destroyPdfResources(task,worker,port)}
 }

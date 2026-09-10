@@ -22,6 +22,7 @@ tests/portable-request-utils.test.ts
 tests/launcher-lifecycle.test.ts
 tests/release-workflow.test.ts
 tests/pagination-utils.test.ts
+tests/pdf-text-order.test.ts
 tests/pdf-worker-utils.test.ts
 tests/security-headers.test.ts
 tests/user-update-utils.test.ts

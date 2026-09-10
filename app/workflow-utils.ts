@@ -11,6 +11,7 @@ export type SyncProvenanceUser={id:string;last:string;first:string;organization?
 export type UserEvidenceArchiveScope={last:string;first:string;organization:string};
 export type TransferEvidenceArtifact={kind:string;filename:string;sha256?:string;path?:string};
 export type HashedEvidence={filename:string;path:string;sha256:string};
+export type RetentionMove={source:string;archived:string;bucket:string};
 export type DuplicateContentGroup={sha256:string;files:{filename:string;path:string}[]};
 export type SaarAccountState={filename:string;date:Date;disabled:boolean};
 export function requiresSaarFormClassification(filename:string){return /\.pdf$/i.test(filename)&&filenameMatchesKind(filename,'SAAR')}
@@ -44,10 +45,16 @@ export function activeComplianceException(exceptions:ComplianceException[]|undef
 export function reworkRetentionDisposition(filename:string,asOf=new Date()):'Archive'|'Superseded'|undefined{
  if(/SAAR/i.test(filename)||filenameMatchesKind(filename,'SAAR'))return;
  const parsed=parseDate(filename),years=parsed?[]:Array.from(filename.matchAll(/(?:^|[^0-9])((?:19|20)[0-9]{2})(?![0-9])/g),match=>Number(match[1])).filter(year=>year>=1900&&year<=2099),evidenceDate=parsed??(years.length?new Date(Date.UTC(years.at(-1)!,11,31)):undefined);if(!evidenceDate)return;
- const oneYearCutoff=new Date(asOf);oneYearCutoff.setUTCHours(0,0,0,0);oneYearCutoff.setUTCFullYear(oneYearCutoff.getUTCFullYear()-1);
- if(evidenceDate>=oneYearCutoff)return;
+ const archiveAfter=new Date(evidenceDate);archiveAfter.setUTCFullYear(archiveAfter.getUTCFullYear()+1);archiveAfter.setUTCDate(archiveAfter.getUTCDate()+90);
+ const reportingDay=new Date(asOf);reportingDay.setUTCHours(0,0,0,0);if(reportingDay<=archiveAfter)return;
  const fiveYearCutoff=new Date(asOf);fiveYearCutoff.setUTCHours(0,0,0,0);fiveYearCutoff.setUTCFullYear(fiveYearCutoff.getUTCFullYear()-5);
  return evidenceDate<fiveYearCutoff?'Superseded':'Archive';
+}
+
+export function removePreflightArchivedArtifacts<T extends{id:string;artifacts:{filename:string;path?:string}[];changes?:{timestamp:string;actor:string;action:string;description:string;rolesBefore:string[];rolesAfter:string[];files:string[]}[];roles:string[]}>(users:T[],moves:RetentionMove[],timestamp:string,actor:string){
+ const archivalMoves=moves.filter(move=>!['Unaccepted File Format','Rework Extraction'].includes(move.bucket)),sources=archivalMoves.flatMap(move=>{const source=move.source.replaceAll('\\','/');return source.toLowerCase().endsWith('.pdf.zip')?[source,source.slice(0,-4)]:[source]}),paths=new Set(sources.map(source=>source.toUpperCase())),filenames=new Set(sources.map(source=>source.split('/').at(-1)!.toUpperCase()));
+ if(!archivalMoves.length)return users;
+ return users.map(user=>{const removed=user.artifacts.filter(artifact=>(!!artifact.path&&paths.has(artifact.path.replaceAll('\\','/').toUpperCase()))||filenames.has(artifact.filename.toUpperCase()));if(!removed.length)return user;return{...user,artifacts:user.artifacts.filter(artifact=>!removed.includes(artifact)),changes:[...(user.changes??[]),{timestamp,actor,action:'Archive Evidence After Retention Gate',description:'Archive Preflight removed evidence from the active record after its retention disposition was applied. The active requirement is now Missing unless another current file is matched during this Sync.',rolesBefore:[...user.roles],rolesAfter:[...user.roles],files:removed.map(artifact=>artifact.filename)}]}});
 }
 
 export function notificationRecipientBatches(values:string[],maxRecipients=40,maxEncodedCharacters=1500){

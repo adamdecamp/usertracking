@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,requiresSaarFormClassification,reworkRetentionDisposition,shouldDisableUserFromSaarState,type SyncProvenanceUser} from '../app/workflow-utils.ts';
+import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,removePreflightArchivedArtifacts,requiresSaarFormClassification,reworkRetentionDisposition,shouldDisableUserFromSaarState,type SyncProvenanceUser} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -56,9 +56,11 @@ test('returns only an active, unrevoked compliance exception',()=>{
  assert.equal(activeComplianceException(exceptions,'SAAR',new Date('2026-08-28T12:00:00Z')),undefined);
 });
 
-test('archives obsolete Rework evidence without expiring SAARs',()=>{
+test('archives evidence only after a 90-day overdue grace period without expiring SAARs',()=>{
  const asOf=new Date('2026-09-01T12:00:00Z');
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_31AUG2025.pdf',asOf),'Archive');
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_31AUG2025.pdf',asOf),undefined);
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_03JUN2025.pdf',asOf),undefined);
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_02JUN2025.pdf',asOf),'Archive');
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_User_Agreement_31AUG2020.pdf.zip',asOf),'Superseded');
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_GEN_SAAR_31AUG2019.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_GENSAAR_31AUG2019.pdf',asOf),undefined);
@@ -69,9 +71,24 @@ test('archives obsolete Rework evidence without expiring SAARs',()=>{
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_2025.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_GEN_SAAR_2018.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8140_Memo.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_31AUG2025.pdf',asOf),'Archive');
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_31AUG2025.pdf',asOf),undefined);
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_02JUN2025.pdf',asOf),'Archive');
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_01SEP2025.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_31AUG2020.pdf.zip',asOf),'Superseded');
+});
+
+test('removes preflight-archived evidence from the active record so the requirement becomes Missing',()=>{
+ const users=[{id:'u1',roles:['General'],artifacts:[{kind:'SAAR',filename:'Brown_Jacob_(LM)_GEN_SAAR_01JAN2020.pdf.zip',path:'LM/SAAR/Brown_Jacob_(LM)_GEN_SAAR_01JAN2020.pdf.zip'},{kind:'User Agreement',filename:'Brown_Jacob_(LM)_User_Agreement_01JAN2025.pdf',path:'LM/User Agreement/Brown_Jacob_(LM)_User_Agreement_01JAN2025.pdf'}],changes:[]}];
+ const updated=removePreflightArchivedArtifacts(users,[{source:'LM/User Agreement/Brown_Jacob_(LM)_User_Agreement_01JAN2025.pdf.zip',archived:'LM/LM Archive/2026-09-01/Brown_Jacob_(LM)_User_Agreement_01JAN2025.pdf.zip',bucket:'2026-09-01'}],'2026-09-01T12:00:00.000Z','DOMAIN\\operator');
+ assert.deepEqual(updated[0].artifacts.map(item=>item.kind),['SAAR']);
+ assert.equal(updated[0].changes.length,1);
+ assert.match((updated[0].changes as {description:string}[])[0].description,/active requirement is now Missing/);
+});
+
+test('does not remove evidence for Rework extraction or unaccepted-file routing',()=>{
+ const users=[{id:'u1',roles:['General'],artifacts:[{kind:'User Agreement',filename:'Brown_Jacob_(LM)_User_Agreement_01JAN2025.pdf.zip'}]}];
+ const updated=removePreflightArchivedArtifacts(users,[{source:'LM/LM Rework/Brown_Jacob_(LM)_User_Agreement_01JAN2025.pdf.zip',archived:'LM/LM Rework/Brown_Jacob_(LM)_User_Agreement_01JAN2025.pdf',bucket:'Rework Extraction'}],'2026-09-01T12:00:00.000Z','DOMAIN\\operator');
+ assert.equal(updated[0].artifacts.length,1);
 });
 
 test('deduplicates and splits notification recipients by count and encoded length',()=>{
