@@ -140,6 +140,11 @@ test('tolerates omitted separators inside artifact and SAAR role markers',()=>{
  assert.deepEqual(validateNewUserSaarFilename('Brown_Jacob_(GDMS)_PRIVadminSAAR_26AUG2026.pdf'),{valid:true,identity:{last:'Brown',first:'Jacob'},organization:'GDMS',role:'Privileged',privilegedTypes:['ADMIN']});
 });
 
+test('tolerates repeated underscores between ordered Last and First filename identity',()=>{
+ assert.deepEqual(identityFromFilename('Brown__Jacob__(LM)__DoD__Cyber__Cert__26AUG2026.pdf'),{last:'Brown',first:'Jacob'});
+ assert.equal(canonicalEvidenceFilename('Brown__Jacob__(LM)__DoD__Cyber__Cert__26AUG2026.pdf','LM'),'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf');
+});
+
 test('recognizes Responsibilities and Course filenames as Privileged User Training',()=>{
  const responsibilities='Brown_Jacob_(GDMS)_Responsibilities_26AUG2026.pdf',course='Shaw_Vivian_(LM)_Course_Completion_26AUG2026.pdf',dta='Jones_Alex_(GOV)_DTA_Course_26AUG2026.pdf';
  assert.equal(filenameMatchesKind(responsibilities,'Privileged User Training Cert'),true);

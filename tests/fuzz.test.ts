@@ -5,17 +5,22 @@ import {classifyEvidenceCollision} from '../app/cleanup-utils.ts';
 import {normalizeFilenameOrganization,organizationFromFolderPath,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
 import {inspectEvidenceBytes} from '../app/evidence-validation.ts';
 import {auditEvidenceContent} from '../app/evidence-audit-utils.ts';
-import {artifactKinds,canonicalEvidenceFilename,disabledSaarFilename,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
+import {artifactKinds,canonicalEvidenceFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
 import {officialEmailFromText,readSaarFormFields} from '../app/saar-form-utils.ts';
 import {readSyncIndex} from '../app/sync-utils.ts';
+import {activeUserProtectsEvidenceFromDeletion,hasActiveDuplicateEvidenceScope,reworkRetentionDisposition,type DeletionEvidenceUser} from '../app/workflow-utils.ts';
 import {PDFDocument,PDFName,PDFString} from 'pdf-lib';
 
-let seed=0x53a91f27;
+const configuredSeed=Number(process.env.ISUT_FUZZ_SEED??0x53a91f27);
+let seed=(Number.isSafeInteger(configuredSeed)&&configuredSeed!==0?configuredSeed:0x53a91f27)>>>0;
 function random(){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return(seed>>>0)/0x100000000}
 function pick<T>(values:T[]){return values[Math.floor(random()*values.length)]}
 function randomCase(value:string){return Array.from(value,character=>/[A-Za-z]/.test(character)?random()<.5?character.toLowerCase():character.toUpperCase():character).join('')}
 const fuzzCharacters=['A','z','0','_','-',',',' ','(',')','.','/','\\','\0','\n','\r','\t','é','中','😀','%','?','*',String.fromCharCode(0x7f)];
 function randomText(maxLength=700){const length=Math.floor(random()*maxLength);let value='';for(let index=0;index<length;index++)value+=pick(fuzzCharacters);return value}
+const monthNames=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+function dateToken(value:Date){return`${String(value.getUTCDate()).padStart(2,'0')}${monthNames[value.getUTCMonth()]}${value.getUTCFullYear()}`}
+function expectedRetention(date:Date,asOf:Date,graceDays:number){const archiveAfter=new Date(date);archiveAfter.setUTCFullYear(archiveAfter.getUTCFullYear()+1);archiveAfter.setUTCDate(archiveAfter.getUTCDate()+graceDays);if(asOf<=archiveAfter)return;const supersededBefore=new Date(asOf);supersededBefore.setUTCFullYear(supersededBefore.getUTCFullYear()-5);return date<supersededBefore?'Superseded':'Archive'}
 
 test('fuzzes filename parsing without uncaught parser failures',()=>{
  for(let index=0;index<5000;index++){
@@ -85,5 +90,45 @@ test('fuzzes DD2875 XFA dataset values without parser failures or markup leakage
   pdf.catalog.set(PDFName.of('AcroForm'),pdf.context.register(acro));
   const result=await readSaarFormFields(await pdf.save({useObjectStreams:false}));
   assert.equal(typeof result.fillable,'boolean');assert.ok(!result.organization?.includes('<')&&!result.email?.includes('<'));
+ }
+});
+
+test('fuzzes retention boundaries including the legacy 8570 no-grace rule',()=>{
+ const asOf=new Date(Date.UTC(2026,8,10));
+ for(let index=0;index<20000;index++){
+  const year=2018+Math.floor(random()*9),month=Math.floor(random()*12),day=1+Math.floor(random()*28),date=new Date(Date.UTC(year,month,day)),token=dateToken(date),identity=`User${index}_Test${index}_(ORG)`;
+  const standard=randomCase(`${identity}_DoD_Cyber_Cert_${token}.pdf.zip`),legacy=randomCase(`${identity}_8570_Cert_${token}.pdf`),saar=randomCase(`${identity}_GEN_SAAR_${token}.pdf.zip`);
+  assert.equal(reworkRetentionDisposition(standard,asOf),expectedRetention(date,asOf,90),standard);
+  assert.equal(reworkRetentionDisposition(legacy,asOf),expectedRetention(date,asOf,0),legacy);
+  assert.equal(legacy8570MemoFilename(legacy),true,legacy);
+  assert.equal(reworkRetentionDisposition(saar,asOf),undefined,saar);
+ }
+});
+
+test('fuzzes deletion ownership so active reassignment is never archived with a duplicate record',()=>{
+ for(let index=0;index<20000;index++){
+  const filename=`Brown${index}_Jacob${index}_(ORG)_DoD_Cyber_Cert_26AUG2026.pdf.zip`,canonicalPath=`Organizations/ORG/DoD Cyber Cert/${filename}`,variantPath=random()<.5?canonicalPath.toLowerCase():canonicalPath.replaceAll('/','\\');
+  const deleting:DeletionEvidenceUser={id:`delete-${index}`,last:`Brown${index}`,first:`Jacob${index}`,organization:'ORG',disabled:false,artifacts:[]};
+  const active:DeletionEvidenceUser={id:`active-${index}`,last:randomCase(deleting.last),first:randomCase(deleting.first),organization:randomCase('ORG'),disabled:false,artifacts:[{kind:'DoD Cyber Cert',filename,path:variantPath}]};
+  const inactive:DeletionEvidenceUser={...active,id:`inactive-${index}`,disabled:true};
+  assert.equal(hasActiveDuplicateEvidenceScope(deleting,[deleting,active]),true);
+  assert.equal(activeUserProtectsEvidenceFromDeletion({kind:'DoD Cyber Cert',filename,path:canonicalPath},deleting,[deleting,active]),true);
+  assert.equal(activeUserProtectsEvidenceFromDeletion({kind:'DoD Cyber Cert',filename,path:canonicalPath},deleting,[deleting,inactive]),false);
+  assert.equal(activeUserProtectsEvidenceFromDeletion({kind:'DoD Cyber Cert',filename,path:`Organizations/ORG/DoD Cyber Cert/Other_${filename}`},deleting,[deleting,active]),false);
+ }
+});
+
+test('fuzzes tolerant filename inputs through canonical storage-gate round trips',()=>{
+ const templates=[
+  (separator:string,date:string)=>`Brown${separator}Jacob${separator}(LM)${separator}DoD${separator}Cyber${separator}Cert${separator}${date}.pdf`,
+  (separator:string,date:string)=>`Brown${separator}Jacob${separator}(LM)${separator}GEN${separator}User${separator}Agreement${separator}${date}.pdf.zip`,
+  (separator:string,date:string)=>`Brown${separator}Jacob${separator}(LM)${separator}8140${separator}Cert${separator}Memo${separator}${date}.pdf`,
+  (separator:string,date:string)=>`Brown${separator}Jacob${separator}(LM)${separator}PRIV${separator}User${separator}Training${separator}${date}.pdf.zip`,
+ ];
+ for(let index=0;index<10000;index++){
+  const raw=randomCase(pick(templates)(pick(['_',' ','   ',', ','__']),pick(['26AUG2026','20260826','08262026','AUG262026']))),canonical=canonicalEvidenceFilename(raw,'LM');
+  assert.ok(canonical,raw);
+  assert.equal(evidenceFilenamePassesStorageGate(canonical!,'LM'),true,canonical);
+  assert.equal(filenameIdentityMatches(canonical!,{last:'Brown',first:'Jacob'}),true,canonical);
  }
 });

@@ -124,7 +124,7 @@ export function looksLikeEvidenceFilename(filename:string){return !!parseDate(fi
 export function identityFromFilename(filename:string){
  const cached=identityCache.get(filename);if(cached!==undefined)return cached??undefined;
  const base=filename.split(/[\\/]/).pop()??filename;
- const match=base.match(/^\s*([^_,()\s]+)\s*(?:_\s*|,\s*|\s+)([^_,()\s]+)(?=\s*(?:_|,|\(|\s))/);
+ const match=base.match(/^\s*([^_,()\s]+)\s*(?:_+\s*|,\s*|\s+)([^_,()\s]+)(?=\s*(?:_|,|\(|\s))/);
  if(!match)return remember(identityCache,filename,null)??undefined;
  const last=clean(match[1]),first=clean(match[2]);
  return remember(identityCache,filename,last&&first&&plausiblePersonIdentity(last,first)?{last,first}:null)??undefined;
