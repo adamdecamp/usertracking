@@ -22,6 +22,17 @@ test('offers only entire-system or immediate-organization Sync scope',()=>{
  assert.doesNotMatch(page,/onClick=\{\(\)=>void sync\(true\)\}/);
 });
 
+test('allows another scoped Sync while earlier review results are pending',()=>{
+ const openScope=page.slice(page.indexOf('async function openSyncScope'),page.indexOf('function stopSync'));
+ assert.doesNotMatch(openScope,/if\(pendingSync\).*sync-review/);
+ assert.match(openScope,/setModal\(null\);setSyncScopeOpen\(true\)/);
+ assert.match(page,/Previous Results Remain Available/);
+ assert.match(page,/hasPendingResults\?'Start Another Sync':'Start Sync'/);
+ assert.match(page,/tracker:start-another-sync/);
+ assert.match(page,/>Start Another Sync<\/button>/);
+ assert.doesNotMatch(page,/setSyncText\('Review Matches'\)/);
+});
+
 test('passes the validated organization scope to every launcher discovery stage',()=>{
  assert.match(launcher,/ScanWithJournal\([^\r\n]+OptionalQueryValue\(target, "organization"\)/);
  assert.match(launcher,/ListEvidenceLocations\(systemId, OptionalQueryValue\(target, "organization"\)\)/);

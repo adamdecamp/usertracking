@@ -24,6 +24,7 @@ export function newestSaarAccountState(filenames:string[]):SaarAccountState|unde
  const candidates=filenames.filter(filename=>filenameMatchesKind(filename,'SAAR')).map(filename=>{const date=parseDate(filename);return date?{filename,date,disabled:disabledSaarFilename(filename)}:undefined}).filter((candidate):candidate is SaarAccountState=>!!candidate);
  return candidates.sort((left,right)=>right.date.getTime()-left.date.getTime()||Number(right.disabled)-Number(left.disabled)||left.filename.localeCompare(right.filename))[0];
 }
+export function shouldDisableUserFromSaarState(currentlyDisabled:boolean,state:SaarAccountState|undefined){return !currentlyDisabled&&state?.disabled===true}
 
 export function proposedNewUserArtifacts(filenames:string[],user:{last:string;first:string;organization?:string},kinds:string[],saarSource:string){
  const organization=user.organization?.trim().toUpperCase(),sameOrganization=(filename:string)=>!organization||organizationFrom(filename)?.trim().toUpperCase()===organization;

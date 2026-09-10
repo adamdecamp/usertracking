@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,requiresSaarFormClassification,reworkRetentionDisposition,type SyncProvenanceUser} from '../app/workflow-utils.ts';
+import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,requiresSaarFormClassification,reworkRetentionDisposition,shouldDisableUserFromSaarState,type SyncProvenanceUser} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -125,10 +125,14 @@ test('never attaches an archive-only disabled SAAR to a new user',()=>{
  assert.deepEqual(proposedNewUserArtifacts([saar],{last:'Brown',first:'Jacob',organization:'GDMS'},['SAAR'],saar),[]);
 });
 
-test('uses the newest dated SAAR to determine a disabled account state',()=>{
+test('uses the newest dated SAAR as the mutually exclusive active or disabled account state',()=>{
  const olderDisabled='Brown_Jacob_(GDMS)_GEN_SAAR_25AUG2026_DISABLED.pdf.zip',newerActive='Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf.zip',newerDisabled='Brown_Jacob_(GDMS)_GEN_SAAR_27AUG2026_DISABLED.pdf.zip';
- assert.deepEqual(newestSaarAccountState([olderDisabled,newerActive]),{filename:newerActive,date:new Date('2026-08-26T00:00:00.000Z'),disabled:false});
- assert.deepEqual(newestSaarAccountState([newerActive,newerDisabled]),{filename:newerDisabled,date:new Date('2026-08-27T00:00:00.000Z'),disabled:true});
+ const activeState=newestSaarAccountState([olderDisabled,newerActive]),disabledState=newestSaarAccountState([newerActive,newerDisabled]);
+ assert.deepEqual(activeState,{filename:newerActive,date:new Date('2026-08-26T00:00:00.000Z'),disabled:false});
+ assert.deepEqual(disabledState,{filename:newerDisabled,date:new Date('2026-08-27T00:00:00.000Z'),disabled:true});
+ assert.equal(shouldDisableUserFromSaarState(false,activeState),false);
+ assert.equal(shouldDisableUserFromSaarState(false,disabledState),true);
+ assert.equal(shouldDisableUserFromSaarState(true,activeState),false);
  assert.equal(newestSaarAccountState(['Brown_Jacob_(GDMS)_User_Agreement_28AUG2026.pdf.zip']),undefined);
 });
 

@@ -72,7 +72,14 @@ export default function Guide() {
             You may close Sync Review or apply verified updates without running
             cleanup. Deferred and failed actions remain available under the
             correct system&apos;s main <b>Clean Up</b> button until completed or
-            replaced by a later Sync of that system.
+            replaced by a later successful Sync of that system. The main{" "}
+            <b>Sync</b> button always opens the scope chooser, even while earlier
+            review results remain pending, so another full or targeted
+            organization Sync can be started without completing Clean Up first.
+            The Review Sync Results window also provides{" "}
+            <b>Start Another Sync</b>, so logging off or relaunching is never
+            required. If that new Sync is stopped or fails, the earlier review
+            remains available.
           </li>
           <li>
             Click the Missing or Overdue total to filter affected users and
