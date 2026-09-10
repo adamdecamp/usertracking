@@ -1,4 +1,4 @@
-import {canonicalArtifactKind,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom,parseDate} from './filename-utils.ts';
+import {canonicalArtifactKind,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityKey,legacy8570MemoFilename,organizationFrom,parseDate} from './filename-utils.ts';
 import {resolveSyncProvenanceEvidence} from './provenance-utils.ts';
 
 export type ComplianceException={id:string;artifact:string;reason:string;approvedBy:string;createdAt:string;createdBy:string;expiresOn:string;revokedAt?:string;revokedBy?:string};
@@ -10,6 +10,8 @@ export type SyncProvenanceArtifact={kind:string;filename:string;sha256?:string;p
 export type SyncProvenanceUser={id:string;last:string;first:string;organization?:string;artifacts:SyncProvenanceArtifact[]};
 export type UserEvidenceArchiveScope={last:string;first:string;organization:string};
 export type TransferEvidenceArtifact={kind:string;filename:string;sha256?:string;path?:string};
+export type DeletionEvidenceUser=UserEvidenceArchiveScope&{id:string;disabled:boolean;artifacts:TransferEvidenceArtifact[]};
+export type DeletionEvidenceItem={filename:string;path:string;kind?:string};
 export type HashedEvidence={filename:string;path:string;sha256:string};
 export type RetentionMove={source:string;archived:string;bucket:string};
 export type DuplicateContentGroup={sha256:string;files:{filename:string;path:string}[]};
@@ -45,7 +47,7 @@ export function activeComplianceException(exceptions:ComplianceException[]|undef
 export function reworkRetentionDisposition(filename:string,asOf=new Date()):'Archive'|'Superseded'|undefined{
  if(/SAAR/i.test(filename)||filenameMatchesKind(filename,'SAAR'))return;
  const parsed=parseDate(filename),years=parsed?[]:Array.from(filename.matchAll(/(?:^|[^0-9])((?:19|20)[0-9]{2})(?![0-9])/g),match=>Number(match[1])).filter(year=>year>=1900&&year<=2099),evidenceDate=parsed??(years.length?new Date(Date.UTC(years.at(-1)!,11,31)):undefined);if(!evidenceDate)return;
- const archiveAfter=new Date(evidenceDate);archiveAfter.setUTCFullYear(archiveAfter.getUTCFullYear()+1);archiveAfter.setUTCDate(archiveAfter.getUTCDate()+90);
+ const archiveAfter=new Date(evidenceDate);archiveAfter.setUTCFullYear(archiveAfter.getUTCFullYear()+1);if(!legacy8570MemoFilename(filename))archiveAfter.setUTCDate(archiveAfter.getUTCDate()+90);
  const reportingDay=new Date(asOf);reportingDay.setUTCHours(0,0,0,0);if(reportingDay<=archiveAfter)return;
  const fiveYearCutoff=new Date(asOf);fiveYearCutoff.setUTCHours(0,0,0,0);fiveYearCutoff.setUTCFullYear(fiveYearCutoff.getUTCFullYear()-5);
  return evidenceDate<fiveYearCutoff?'Superseded':'Archive';
@@ -69,6 +71,20 @@ export function evidenceBelongsToUserArchiveScope(item:{filename:string;folderOr
  if(!filenameIdentityMatches(item.filename,user))return false;
  const organization=(item.folderOrganization||organizationFrom(item.filename)||'').trim();
  return !!organization&&organization.toUpperCase()===user.organization.trim().toUpperCase();
+}
+
+function normalizedEvidencePath(value?:string){return value?.replaceAll('\\','/').toUpperCase()}
+export function activeUserProtectsEvidenceFromDeletion(item:DeletionEvidenceItem,deletingUser:DeletionEvidenceUser,users:DeletionEvidenceUser[]){
+ const itemPath=normalizedEvidencePath(item.path),itemKind=canonicalArtifactKind(item.kind??artifactKindFromFilename(item.filename));
+ return users.some(user=>user.id!==deletingUser.id&&!user.disabled&&user.artifacts.some(artifact=>{
+  const artifactPath=normalizedEvidencePath(artifact.path);
+  if(itemPath&&artifactPath)return itemPath===artifactPath;
+  return !artifactPath&&canonicalArtifactKind(artifact.kind)===itemKind&&artifact.filename.toUpperCase()===item.filename.toUpperCase();
+ }));
+}
+function artifactKindFromFilename(filename:string){return['SAAR','DoD Cyber Cert','User Agreement','8140 Cert Memo','Privileged User Training Cert','DTA Training Cert'].find(kind=>filenameMatchesKind(filename,kind))??'Associated Evidence'}
+export function hasActiveDuplicateEvidenceScope(deletingUser:DeletionEvidenceUser,users:DeletionEvidenceUser[]){
+ return users.some(user=>user.id!==deletingUser.id&&!user.disabled&&identityKey(user.last,user.first)===identityKey(deletingUser.last,deletingUser.first)&&user.organization.trim().toUpperCase()===deletingUser.organization.trim().toUpperCase());
 }
 
 export function evidenceAssociationMatchesTransfer(existing:TransferEvidenceArtifact,incoming:TransferEvidenceArtifact,target:{last:string;first:string}){

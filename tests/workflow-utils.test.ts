@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,removePreflightArchivedArtifacts,requiresSaarFormClassification,reworkRetentionDisposition,shouldDisableUserFromSaarState,type SyncProvenanceUser} from '../app/workflow-utils.ts';
+import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,removePreflightArchivedArtifacts,requiresSaarFormClassification,reworkRetentionDisposition,shouldDisableUserFromSaarState,type SyncProvenanceUser} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -71,7 +71,7 @@ test('archives evidence only after a 90-day overdue grace period without expirin
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_2025.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_GEN_SAAR_2018.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8140_Memo.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_31AUG2025.pdf',asOf),undefined);
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_31AUG2025.pdf',asOf),'Archive');
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_02JUN2025.pdf',asOf),'Archive');
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_01SEP2025.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_31AUG2020.pdf.zip',asOf),'Superseded');
@@ -107,6 +107,14 @@ test('scopes delete-user archiving to the matching identity and authoritative or
  assert.equal(evidenceBelongsToUserArchiveScope({filename:'Brown_Jacob_(WRONG)_DoD_Cyber_Cert_26AUG2026.pdf.zip',folderOrganization:'GDMS'},user),true);
  assert.equal(evidenceBelongsToUserArchiveScope({filename:'Brown_Jacob_(GDMS)_User_Agreement_26AUG2026.pdf.zip',folderOrganization:'NGC'},user),false);
  assert.equal(evidenceBelongsToUserArchiveScope({filename:'Brown_Jane_(GDMS)_User_Agreement_26AUG2026.pdf.zip',folderOrganization:'GDMS'},user),false);
+});
+
+test('protects evidence reassigned to an active duplicate record when the old record is deleted',()=>{
+ const sharedPath='Organizations/LM/DoD Cyber Cert/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip',oldPath='Organizations/LM/SAAR/Brown_Jacob_(LM)_GEN_SAAR_25AUG2026.pdf.zip';
+ const deleting={id:'duplicate',last:'Brown',first:'Jacob',organization:'LM',disabled:false,artifacts:[{kind:'SAAR',filename:oldPath.split('/').at(-1)!,path:oldPath}]},active={id:'correct',last:'Brown',first:'Jacob',organization:'LM',disabled:false,artifacts:[{kind:'DoD Cyber Cert',filename:sharedPath.split('/').at(-1)!,path:sharedPath}]};
+ assert.equal(hasActiveDuplicateEvidenceScope(deleting,[deleting,active]),true);
+ assert.equal(activeUserProtectsEvidenceFromDeletion({kind:'DoD Cyber Cert',filename:active.artifacts[0].filename,path:sharedPath},deleting,[deleting,active]),true);
+ assert.equal(activeUserProtectsEvidenceFromDeletion({kind:'SAAR',filename:deleting.artifacts[0].filename,path:oldPath},deleting,[deleting,active]),false);
 });
 
 test('transfers only the same evidence association to the selected profile',()=>{

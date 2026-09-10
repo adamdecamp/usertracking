@@ -217,8 +217,10 @@ export default function Guide() {
           addresses remain read-only in this workflow. Access and privilege changes
           require an updated SAAR by default. The date recorded for a SAAR is the
           date the account was created or disabled; it is never an expiration date,
-          and SAARs are never classified as Overdue. Disabling a user moves the
-          user&apos;s prior active evidence into the organization Archive folder. Supporting
+          and SAARs are never classified as Overdue. Disabling or deleting a user moves only
+          evidence still associated with that specific record into the organization Archive folder.
+          Evidence reassigned to another active record is protected, including when duplicate
+          records share the same name and organization. Supporting
           artifact statuses are not applicable while the account is disabled, so the
           User Directory and CSV exports leave those statuses blank. When
           disabling without an updated SAAR, an operator may select the documented
@@ -555,7 +557,13 @@ export default function Guide() {
         <p>
           Sync automatically renames a recognized nonstandard evidence date to
           DDMMMYYYY in the same active folder and records the change in the
-          audit log. The first Sync of each UTC day performs a complete Archive
+          audit log. Before Archive Preflight, Sync checks evidence associated
+          with active users. If a retained artifact is missing from its recorded
+          active location but the same associated file is found in that
+          organization&apos;s Archive, Sync restores it to the canonical document-type
+          folder and updates its recorded path. SHA-256 provenance is used when
+          available; ambiguous Archive matches remain untouched for Clean Up
+          review. The first Sync of each UTC day performs a complete Archive
           preflight. Later Syncs that day use the prior Sync index to skip unchanged
           active evidence, skip the already-swept Archive tree, and still check all
           Rework plus every new or changed file before PDF content or form-field
@@ -751,10 +759,11 @@ export default function Guide() {
           organization&apos;s <code>8140 Certification Memo</code> folder without
           changing its filename. This is a routing-only compatibility rule; it
           does not invent or rewrite identity, organization, or date values. If
-          the filename contains a valid date more than 90 days beyond the
-          one-year current window, Archive Preflight moves it to that
-          organization&apos;s Archive folder first; evidence older than five years
-          moves to Superseded.
+          a legacy 8570 file reaches the end of its one-year current window,
+          Archive Preflight moves it to that organization&apos;s Archive folder without
+          the general 90-day overdue grace period. Evidence older than five years
+          moves to Superseded. True 8140 certification memos keep the standard
+          retention rule.
         </p>
         <p>
           In the portable Windows app, the launcher—not the browser tab—performs

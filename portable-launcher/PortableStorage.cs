@@ -786,7 +786,8 @@ internal sealed class PortableStorage : IDisposable
                     if (current.Item3 && !archivedSaar && !datedArchiveRepair) continue;
                     if (!current.Item3 && saar && !disabledSaar) { skippedSaar++;continue; }
                     if (!disabledSaar && !archivedSaar && !datedArchiveRepair && !evidenceDate.HasValue) { undated++;continue; }
-                    if (!disabledSaar && !archivedSaar && !datedArchiveRepair && evidenceDate.Value.AddYears(1).AddDays(90) >= DateTime.UtcNow.Date) { currentFiles++;continue; }
+                    DateTime archiveAfter = evidenceDate.HasValue ? evidenceDate.Value.AddYears(1).AddDays(IsLegacy8570Filename(filename) ? 0 : 90) : DateTime.MinValue;
+                    if (!disabledSaar && !archivedSaar && !datedArchiveRepair && archiveAfter >= DateTime.UtcNow.Date) { currentFiles++;continue; }
                     try
                     {
                         if (effectiveSource.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
@@ -827,6 +828,7 @@ internal sealed class PortableStorage : IDisposable
     private static bool IsReworkStorageDirectory(string name) { return String.Equals(name, "Rework", StringComparison.OrdinalIgnoreCase) || name.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase); }
     private static bool IsSupersededDirectory(string root, string directory) { return Relative(root, directory).Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries).Any(part => String.Equals(part, "Superseded", StringComparison.OrdinalIgnoreCase)); }
     private static bool IsSaarFilename(string filename) { return (filename ?? "").IndexOf("SAAR", StringComparison.OrdinalIgnoreCase) >= 0; }
+    private static bool IsLegacy8570Filename(string filename) { return !IsSaarFilename(filename) && (filename ?? "").IndexOf("8570", StringComparison.OrdinalIgnoreCase) >= 0; }
     private static bool IsDisabledSaarFilename(string filename) { return IsSaarFilename(filename) && Regex.IsMatch(filename ?? "", @"(?:^|[^A-Za-z0-9])DISABLED(?:[^A-Za-z0-9]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant); }
     private static bool IsOperatorMarkedIncomplete(string filename) { return Regex.IsMatch(filename ?? "", @"(?:^|[^A-Za-z0-9])INCOMPLETE(?:[^A-Za-z0-9]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant); }
     private static bool IsRootControlFile(string root, string path)
@@ -1820,6 +1822,85 @@ internal sealed class PortableStorage : IDisposable
         string raw = (value ?? "").Trim(), safe = SafePart(raw, 80);
         if (String.IsNullOrWhiteSpace(raw) || raw.Length > 80 || !String.Equals(raw, safe, StringComparison.Ordinal) || ReservedOrganizationName(raw)) throw new InvalidDataException("The organization name is invalid or reserved for application storage.");
         return raw;
+    }
+
+    public string RestoreActiveEvidence(string systemId, byte[] requestBytes)
+    {
+        lock (RootLock(systemId))
+        {
+            string root = Root(systemId);RecoverTransactions(root);
+            if (requestBytes == null || requestBytes.LongLength == 0 || requestBytes.LongLength > 20L * 1024 * 1024) throw new InvalidDataException("The active-evidence recovery request is empty or too large.");
+            Dictionary<string, object> request = ObjectDictionary(json.DeserializeObject(new UTF8Encoding(false, true).GetString(requestBytes)));
+            object rawItems;if (!request.TryGetValue("items", out rawItems)) throw new InvalidDataException("The active-evidence recovery request is missing its item list.");
+            object[] items = ObjectArray(rawItems);if (items.Length > 100000) throw new InvalidDataException("The active-evidence recovery request exceeds the item limit.");
+            var restored = new List<Dictionary<string, object>>();var errors = new List<Dictionary<string, object>>();
+            var archivesByOrganization = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (object raw in items)
+            {
+                string userId = "", filename = "";
+                try
+                {
+                    Dictionary<string, object> item = ObjectDictionary(raw);userId = CleanLine(Convert.ToString(item["userId"], CultureInfo.InvariantCulture), 200);string organization = ValidOrganizationName(Convert.ToString(item["organization"], CultureInfo.InvariantCulture)), kind = CleanLine(Convert.ToString(item["kind"], CultureInfo.InvariantCulture), 100), folder = ArtifactStorageFolder(kind);filename = CleanLine(Convert.ToString(item["filename"], CultureInfo.InvariantCulture), 180);string expectedHash = item.ContainsKey("sha256") ? CleanLine(Convert.ToString(item["sha256"], CultureInfo.InvariantCulture), 64).ToLowerInvariant() : "", recordedPath = item.ContainsKey("path") ? CleanLine(Convert.ToString(item["path"], CultureInfo.InvariantCulture), 32767) : "";
+                    if (String.IsNullOrWhiteSpace(userId) || String.IsNullOrWhiteSpace(filename) || !String.Equals(filename, SafePart(Path.GetFileName(filename), 180), StringComparison.Ordinal) || (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))) throw new InvalidDataException("The associated evidence identity, filename, or extension is invalid.");
+                    if (!String.IsNullOrWhiteSpace(expectedHash) && !IsSha256(expectedHash)) throw new InvalidDataException("The associated evidence SHA-256 value is invalid.");
+                    if (!String.IsNullOrWhiteSpace(recordedPath))
+                    {
+                        string recorded = SafeRelativePath(root, recordedPath), normalizedRecorded = Relative(root, recorded);
+                        if (File.Exists(recorded) && !ContainsManagedStorageDirectory(normalizedRecorded)) continue;
+                    }
+                    List<string> archivedFiles;
+                    if (!archivesByOrganization.TryGetValue(organization, out archivedFiles)) { archivedFiles = EnumerateOrganizationArchiveFiles(root, organization);archivesByOrganization[organization] = archivedFiles; }
+                    List<string> nameMatches = archivedFiles.Where(path => ArchivedNameMatches(filename, Path.GetFileName(path), !String.IsNullOrWhiteSpace(expectedHash))).ToList(), verified = new List<string>();
+                    foreach (string path in nameMatches)
+                    {
+                        if (String.IsNullOrWhiteSpace(expectedHash)) verified.Add(path);
+                        else { try { if (String.Equals(expectedHash, Sha256Bytes(File.ReadAllBytes(path)), StringComparison.OrdinalIgnoreCase)) verified.Add(path); } catch (Exception hashError) { errors.Add(ActiveRecoveryError(userId, filename, "An Archive candidate could not be hashed: " + CleanLine(hashError.Message, 220))); } }
+                    }
+                    if (verified.Count == 0) continue;
+                    if (verified.Count > 1) throw new InvalidDataException("More than one archived file matches this active evidence association. Resolve the duplicate in Clean Up before recovery.");
+                    string source = verified[0], organizationRoot = OrganizationScopeRoot(root, organization), destinationDirectory = Path.Combine(organizationRoot, folder), destination = Path.Combine(destinationDirectory, filename);Directory.CreateDirectory(destinationDirectory);
+                    string sourceHash = Sha256Bytes(File.ReadAllBytes(source));
+                    if (File.Exists(destination))
+                    {
+                        if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The active document-type folder already contains a different file with this associated filename.");
+                        restored.Add(ActiveRecoveryResult(userId, kind, filename, Relative(root, source), Relative(root, destination), true));continue;
+                    }
+                    string transaction = BeginTransaction(root, "restore-active", source, destination, sourceHash, "");File.Move(source, destination);FailAfter("restore-active-move");
+                    try { if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The restored active evidence failed its SHA-256 integrity check."); }
+                    catch { if (!File.Exists(source) && File.Exists(destination)) File.Move(destination, source);throw; }
+                    CompleteTransaction(transaction);string sourceRelative = Relative(root, source).Replace(Path.DirectorySeparatorChar, '/'), destinationRelative = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');restored.Add(ActiveRecoveryResult(userId, kind, filename, sourceRelative, destinationRelative, false));
+                }
+                catch (Exception error) { errors.Add(ActiveRecoveryError(userId, filename, CleanLine(error.Message, 300))); }
+            }
+            return json.Serialize(new Dictionary<string, object> { { "restored", restored.ToArray() }, { "errors", errors.ToArray() }, { "checked", items.Length } });
+        }
+    }
+
+    private static Dictionary<string, object> ActiveRecoveryResult(string userId, string kind, string filename, string source, string path, bool alreadyActive) { return new Dictionary<string, object> { { "userId", userId }, { "kind", kind }, { "filename", filename }, { "source", (source ?? "").Replace(Path.DirectorySeparatorChar, '/') }, { "path", (path ?? "").Replace(Path.DirectorySeparatorChar, '/') }, { "alreadyActive", alreadyActive } }; }
+    private static Dictionary<string, object> ActiveRecoveryError(string userId, string filename, string message) { return new Dictionary<string, object> { { "userId", userId ?? "" }, { "filename", filename ?? "" }, { "message", message ?? "Active evidence recovery failed." } }; }
+    private static string ArtifactStorageFolder(string kind)
+    {
+        string normalized = (kind ?? "").Trim().ToUpperInvariant();
+        if (normalized == "SAAR") return "SAAR";if (normalized == "DOD CYBER CERT") return "DoD Cyber Cert";if (normalized == "USER AGREEMENT" || normalized == "GEN USER AGREEMENT" || normalized == "GEN AND PRIV AGREEMENT" || normalized == "DTA AGREEMENT") return "User Agreement";if (normalized == "8140 CERT MEMO") return "8140 Certification Memo";if (normalized == "PRIVILEGED USER TRAINING CERT") return "Privileged User Training";if (normalized == "DTA TRAINING CERT") return "DTA Training";
+        throw new InvalidDataException("The associated evidence document type is invalid.");
+    }
+    private static List<string> EnumerateOrganizationArchiveFiles(string root, string organization)
+    {
+        string organizationRoot = OrganizationScopeRoot(root, organization);var result = new List<string>();var pending = new Stack<Tuple<string, int>>();
+        foreach (string directory in EnumerateScanDirectories(root, organizationRoot)) if (Path.GetFileName(directory).EndsWith(" Archive", StringComparison.OrdinalIgnoreCase)) pending.Push(Tuple.Create(directory, 0));
+        while (pending.Count > 0)
+        {
+            Tuple<string, int> current = pending.Pop();if (current.Item2 > 25) throw new InvalidDataException("An organization Archive exceeds the folder nesting limit.");
+            foreach (string file in EnumerateScanFiles(root, current.Item1)) { if (result.Count >= 100000) throw new InvalidDataException("An organization Archive exceeds the file recovery limit.");if (file.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) result.Add(file); }
+            foreach (string directory in EnumerateScanDirectories(root, current.Item1)) if (!IsScanReparsePoint(root, directory)) pending.Push(Tuple.Create(directory, current.Item2 + 1));
+        }
+        return result;
+    }
+    private static bool ArchivedNameMatches(string expected, string actual, bool allowCollisionSuffix)
+    {
+        if (String.Equals(expected, actual, StringComparison.OrdinalIgnoreCase)) return true;if (!allowCollisionSuffix) return false;
+        string extension = expected.EndsWith(".pdf.zip", StringComparison.OrdinalIgnoreCase) ? expected.Substring(expected.Length - 8) : Path.GetExtension(expected), stem = expected.Substring(0, expected.Length - extension.Length);if (!actual.EndsWith(extension, StringComparison.OrdinalIgnoreCase)) return false;
+        string actualStem = actual.Substring(0, actual.Length - extension.Length);if (!actualStem.StartsWith(stem + "_", StringComparison.OrdinalIgnoreCase)) return false;int suffix;return Int32.TryParse(actualStem.Substring(stem.Length + 1), NumberStyles.None, CultureInfo.InvariantCulture, out suffix) && suffix > 0;
     }
 
     private static string OrganizationScopeRoot(string root, string organization)

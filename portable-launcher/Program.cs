@@ -167,6 +167,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "rework-retention" && parts[0] == "POST") response = storage.ProcessReworkRetention(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"));
                     else if (action == "compress" && parts[0] == "POST") response = storage.CompressEvidence(systemId, QueryValue(target, "path"));
                     else if (action == "organize" && parts[0] == "POST") response = storage.OrganizeEvidence(systemId, QueryValue(target, "path"), QueryValue(target, "folder"));
+                    else if (action == "restore-active" && parts[0] == "POST") response = storage.RestoreActiveEvidence(systemId, requestBody);
                     else if (action == "normalize-date" && parts[0] == "POST") response = storage.NormalizeEvidenceFilename(systemId, QueryValue(target, "path"), QueryValue(target, "filename"));
                     else if (action == "organizations" && parts[0] == "GET") response = storage.ListOrganizations(systemId);
                     else if (action == "organizations" && parts[0] == "POST") response = storage.CreateOrganization(systemId, QueryValue(target, "name"));
