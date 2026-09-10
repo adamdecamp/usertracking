@@ -72,13 +72,16 @@ test('normalizes any non-SAAR 8140 evidence marker to the required memo filename
  }
 });
 
-test('routes a legacy 8570 filename as an 8140 memo without proposing a rename',()=>{
- const filename='Brown Jacob (WRONG) 8570 qualification 08-26-2026.pdf';
+test('routes a complete legacy 8570 filename as an 8140 memo without weakening the storage gate',()=>{
+ const filename='Brown_Jacob_(GDMS)_8570_Qualification_26AUG2026.pdf';
  assert.equal(legacy8570MemoFilename(filename),true);
  assert.equal(filenameMatchesKind(filename,'8140 Cert Memo'),true);
  assert.equal(canonicalEvidenceFilename(filename,'GDMS'),undefined);
  assert.equal(evidenceFilenamePassesStorageGate(filename,'GDMS'),true);
  assert.equal(pdfFilenameNeedsRework(filename,'GDMS'),false);
+ assert.equal(evidenceFilenamePassesStorageGate('Brown_Jacob_(WRONG)_8570_Qualification_26AUG2026.pdf','GDMS'),false);
+ assert.equal(evidenceFilenamePassesStorageGate('Brown_Jacob_(GDMS)_8570_Qualification.pdf','GDMS'),false);
+ assert.equal(evidenceFilenamePassesStorageGate('8570_Qualification_26AUG2026.pdf','GDMS'),false);
 });
 
 test('recognizes the reported General User Agreement filename',()=>{

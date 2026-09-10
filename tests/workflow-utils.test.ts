@@ -66,8 +66,8 @@ test('archives evidence only after a 90-day overdue grace period without expirin
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_GENSAAR_31AUG2019.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_01SEP2025.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_NO_DATE.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_2024.pdf',asOf),'Archive');
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_User_Agreement_2020.pdf.zip',asOf),'Superseded');
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_2024.pdf',asOf),undefined);
+ assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_User_Agreement_2020.pdf.zip',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_2025.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_GEN_SAAR_2018.pdf',asOf),undefined);
  assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8140_Memo.pdf',asOf),undefined);

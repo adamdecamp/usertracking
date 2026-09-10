@@ -103,7 +103,11 @@ export function zipFilenameNeedsRework(filename:string,organizationOverride?:str
  */
 export function evidenceFilenamePassesStorageGate(filename:string,organizationOverride?:string){
  if(!/\.pdf(?:\.zip)?$/i.test(filename))return false;
- if(legacy8570MemoFilename(filename))return true;
+ if(legacy8570MemoFilename(filename)){
+  const identity=identityFromFilename(filename),organization=organizationFrom(filename),date=parseDate(filename);
+  if(!identity||!organization||!date)return false;
+  return !organizationOverride||clean(organization).toUpperCase()===clean(organizationOverride).toUpperCase();
+ }
  if(filenameMatchesKind(filename,'SAAR')&&!validateNewUserSaarFilename(filename,{organization:organizationOverride,allowDisabled:true}).valid)return false;
  const canonical=canonicalEvidenceFilename(filename,organizationOverride);
  return !!canonical&&canonical.toUpperCase()===filename.toUpperCase();

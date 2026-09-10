@@ -46,7 +46,7 @@ export function activeComplianceException(exceptions:ComplianceException[]|undef
 
 export function reworkRetentionDisposition(filename:string,asOf=new Date()):'Archive'|'Superseded'|undefined{
  if(/SAAR/i.test(filename)||filenameMatchesKind(filename,'SAAR'))return;
- const parsed=parseDate(filename),years=parsed?[]:Array.from(filename.matchAll(/(?:^|[^0-9])((?:19|20)[0-9]{2})(?![0-9])/g),match=>Number(match[1])).filter(year=>year>=1900&&year<=2099),evidenceDate=parsed??(years.length?new Date(Date.UTC(years.at(-1)!,11,31)):undefined);if(!evidenceDate)return;
+ const evidenceDate=parseDate(filename);if(!evidenceDate)return;
  const archiveAfter=new Date(evidenceDate);archiveAfter.setUTCFullYear(archiveAfter.getUTCFullYear()+1);if(!legacy8570MemoFilename(filename))archiveAfter.setUTCDate(archiveAfter.getUTCDate()+90);
  const reportingDay=new Date(asOf);reportingDay.setUTCHours(0,0,0,0);if(reportingDay<=archiveAfter)return;
  const fiveYearCutoff=new Date(asOf);fiveYearCutoff.setUTCHours(0,0,0,0);fiveYearCutoff.setUTCFullYear(fiveYearCutoff.getUTCFullYear()-5);

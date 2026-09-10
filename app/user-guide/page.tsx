@@ -462,9 +462,11 @@ export default function Guide() {
           application launch, and information-system selection never start Sync
           automatically. <b>Sync</b> opens a scope chooser. Select the entire
           information system or exactly one immediate organization folder. A
-          targeted organization scan includes the evidence folders beneath that
-          organization, but document-type and deeper subfolders cannot be chosen
-          as independent scopes. The
+          targeted organization scan includes loose files at the top level of that
+          organization, its Rework folder, and its active evidence folders. Full
+          system scans apply the same discovery and validation rules to every
+          organization. Document-type and deeper subfolders cannot be chosen as
+          independent scopes. The
           filename parser treats the first recognized identity value as{" "}
           <b>Last Name</b> and the second as <b>First Name</b>, accepting
           underscores, a comma, ordinary spaces, and additional surrounding
@@ -569,7 +571,7 @@ export default function Guide() {
           Rework plus every new or changed file before PDF content or form-field
           extraction. Full Rescan forces the complete preflight regardless of the
           daily marker. A non-SAAR artifact with either a
-          full evidence date or a recognizable four-digit year that is more than
+          complete valid evidence date that is more than
           90 days beyond the one-year currency window is moved to that organization&apos;s
           dated Archive folder without correcting its filename; if it is older than five years, it
           moves directly to <code>ORG Archive / Superseded</code>. A SAAR whose
@@ -584,8 +586,10 @@ export default function Guide() {
           is converted to a ZIP containing exactly that one validated PDF. The
           source PDF is removed only after the ZIP is reopened and verified;
           existing ZIP evidence is not recompressed. Other SAARs never expire,
-          and current or undated Rework files stay in Rework until their
-          filenames are corrected. Any file-level retention error is listed at
+          and current Rework files stay in Rework until their filenames are
+          corrected. A year-only, missing, or invalid date never drives an Archive
+          decision; that file remains in Rework or is preselected for movement to
+          Rework. Any file-level retention error is listed at
           the end of Sync without stopping the remaining files. After filename
           normalization, accepted active files are placed into a
           canonical document-type folder inside the authoritative organization,
@@ -623,14 +627,17 @@ export default function Guide() {
           valid SAAR for the same user and organization is already recorded, or
           the operator approves that newer SAAR in the same Sync review. Evidence
           from another organization can never justify archiving the user&apos;s SAAR.
-          Only loose PDFs matched to a verified User Directory
-          record are eligible for compression. The new ZIP is reopened and
+          Only loose PDFs matched to a verified User Directory record or a
+          verified user discovered during the current Sync are eligible for
+          compression. This includes valid PDFs dropped directly into the top
+          level of an organization folder. The new ZIP is reopened and
           validated as containing exactly one readable PDF before the original
           PDF is deleted; a creation, validation, or deletion failure leaves no
           incomplete replacement and preserves the original PDF. Organization
-          Rework, ordinary Archive, and Superseded folders and generated reports
-          are excluded from later Sync scans. Permanent SAAR Archive folders are
-          limited to the historical account-status check.
+          Ordinary Archive and Superseded folders and generated reports are
+          excluded from later active-evidence scans. Rework is intentionally
+          revalidated on every Sync. Permanent SAAR Archive folders are limited
+          to the historical account-status check.
         </p>
         <p>
           Choose <b>Finish Review</b> when no additional action is selected. The
@@ -1111,9 +1118,9 @@ export default function Guide() {
         whether the newest dated SAAR marks the historical account Disabled. Sync
         repairs any SAAR previously left in a dated
         or Superseded archive. It also moves evidence that is not yet five years
-        old out of Superseded and into the current dated Archive bucket. A filename containing only a four-digit year uses
-        the end of that year as a conservative retention date, preventing a
-        current or borderline year from being archived prematurely. Retention
+        old out of Superseded and into the current dated Archive bucket. A filename
+        containing only a four-digit year is incomplete and cannot drive a
+        retention decision; it remains isolated in Rework until corrected. Retention
         preserves the existing evidence filename. Archive compression replaces
         only a loose PDF container with a verified one-PDF ZIP; it does not
         discard the PDF evidence content.

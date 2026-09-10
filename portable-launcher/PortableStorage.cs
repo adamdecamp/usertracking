@@ -67,6 +67,7 @@ internal sealed class PortableStorage : IDisposable
 
     private static readonly IntPtr InvalidFindHandle = new IntPtr(-1);
     private const uint InvalidFileAttributes = 0xffffffff;
+    private const uint ReparseTagNameSurrogate = 0x20000000;
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr FindFirstFileW(string fileName, out NativeFindData findData);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool FindNextFileW(IntPtr findHandle, out NativeFindData findData);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool FindClose(IntPtr findHandle);
@@ -666,13 +667,7 @@ internal sealed class PortableStorage : IDisposable
         AddEvidenceDates(candidates, value, @"(?<![A-Za-z0-9])(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-_., ]*(0?[1-9]|[12][0-9]|3[01])[-_., ]*((?:19|20)[0-9]{2})(?![A-Za-z0-9])", "MMM-d-yyyy");
         AddEvidenceDates(candidates, value, @"(?<![A-Za-z0-9])((?:19|20)[0-9]{2})[-_., ]*(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12][0-9]|3[01])(?![A-Za-z0-9])", "yyyy-MM-dd");
         AddEvidenceDates(candidates, value, @"(?<![A-Za-z0-9])(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12][0-9]|3[01])[-_., ]*((?:19|20)[0-9]{2})(?![A-Za-z0-9])", "MM-dd-yyyy");
-        if (candidates.Count == 0)
-        {
-            MatchCollection years = Regex.Matches(value, @"(?:^|[^0-9])((?:19|20)[0-9]{2})(?![0-9])", RegexOptions.IgnoreCase);
-            if (years.Count == 0) return null;
-            int year;if (!Int32.TryParse(years[years.Count - 1].Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out year) || year < 1900 || year > 2099) return null;
-            return new DateTime(year, 12, 31, 0, 0, 0, DateTimeKind.Utc);
-        }
+        if (candidates.Count == 0) return null;
         return candidates.OrderByDescending(item => item.Item1).First().Item2.Date;
     }
 
@@ -1906,8 +1901,9 @@ internal sealed class PortableStorage : IDisposable
     private static string OrganizationScopeRoot(string root, string organization)
     {
         if (String.IsNullOrWhiteSpace(organization)) return root;
-        string scoped = Path.Combine(root, "Organizations", ValidOrganizationName(organization));
+        string organizations = Path.Combine(root, "Organizations"), scoped = Path.Combine(organizations, ValidOrganizationName(organization));
         if (!Directory.Exists(scoped)) throw new DirectoryNotFoundException("The selected organization folder no longer exists beneath Organizations.");
+        if (IsScanReparsePoint(root, organizations) || IsScanReparsePoint(root, scoped)) throw new UnauthorizedAccessException("The selected organization scope redirects outside the mapped folder.");
         return scoped;
     }
 
@@ -2077,7 +2073,14 @@ internal sealed class PortableStorage : IDisposable
 
     private static bool IsScanReparsePoint(string root, string directory)
     {
-        try { return (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0; }
+        try
+        {
+            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) == 0) return false;
+            NativeFindData data;IntPtr handle = FindFirstFileW(directory, out data);
+            if (handle == InvalidFindHandle) return true;
+            try { return ReparseTagMayEscapeMappedTree(data.Reserved0); }
+            finally { FindClose(handle); }
+        }
         catch (IOException error)
         {
             if ((error.HResult & 0xffff) != 87) throw ScanFailure(root, directory, "checking folder attributes", error);
@@ -2090,6 +2093,14 @@ internal sealed class PortableStorage : IDisposable
             return (((FileAttributes)attributes) & FileAttributes.ReparsePoint) != 0;
         }
         catch (UnauthorizedAccessException error) { throw ScanFailure(root, directory, "checking folder attributes", error); }
+    }
+
+    internal static bool ReparseTagMayEscapeMappedTree(uint tag)
+    {
+        // Name-surrogate reparse points (junctions and symbolic links) can leave the
+        // mapped tree. Cloud placeholder tags, including OneDrive, do not redirect
+        // the namespace and must remain traversable during a full-system scan.
+        return tag == 0 || (tag & ReparseTagNameSurrogate) != 0;
     }
 
     private static IOException ScanFailure(string root, string path, string stage, Exception error)
