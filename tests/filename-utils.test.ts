@@ -201,18 +201,42 @@ test('strictly gates every managed document type before folder organization',()=
  }
 });
 
-test('extracts noncanonical ZIP evidence to Rework instead of normalizing or ingesting it',()=>{
+test('distinguishes safely normalizable ZIP names from incomplete ZIPs requiring Rework',()=>{
  assert.equal(zipFilenameNeedsRework('Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf.zip','GDMS'),false);
  assert.equal(zipFilenameNeedsRework('Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf.zip','GDMS'),false);
  assert.equal(zipFilenameNeedsRework('Brown_Jacob_(GDMS)_User_Agreement_26AUG2026.pdf.zip','GDMS'),false);
+ const normalizable=[
+   'Brown_Jacob_(GDMS)_GEN_SAAR_20260826.pdf.zip',
+   'Brown Jacob (GDMS) GEN SAAR 26AUG2026.zip',
+   'Brown_Jacob_(WRONG)_DoD_Cyber_Cert_26AUG2026.pdf.zip',
+   'Brown_Jacob_(GDMS)_Cyber_Awareness_Challenge_Certificate_20260826.pdf.zip',
+  ];
+ for(const filename of normalizable){
+  assert.equal(zipFilenameNeedsRework(filename,'GDMS'),true,filename);
+  assert.ok(canonicalEvidenceFilename(filename,'GDMS'),filename);
+ }
  for(const filename of [
-  'Brown_Jacob_(GDMS)_GEN_SAAR_20260826.pdf.zip',
-  'Brown Jacob (GDMS) GEN SAAR 26AUG2026.zip',
-  'Brown_Jacob_(WRONG)_DoD_Cyber_Cert_26AUG2026.pdf.zip',
-  'Brown_Jacob_(GDMS)_User_Agreement.pdf.zip',
-  'unidentified.zip',
- ])assert.equal(zipFilenameNeedsRework(filename,'GDMS'),true,filename);
+   'Brown_Jacob_(GDMS)_User_Agreement.pdf.zip',
+   'unidentified.zip',
+ ]){
+  assert.equal(zipFilenameNeedsRework(filename,'GDMS'),true,filename);
+  assert.equal(canonicalEvidenceFilename(filename,'GDMS'),undefined,filename);
+ }
  assert.equal(zipFilenameNeedsRework('Brown_Jacob_(GDMS)_GEN_SAAR_20260826.pdf','GDMS'),false);
+});
+
+test('canonicalizes every supported long-form artifact name for PDF and ZIP storage',()=>{
+ const variants:[string,string][]=[
+  ['Cyber_Awareness_Challenge_Certificate','DoD_Cyber_Cert'],
+  ['GEN_and_PRIV_User_Agreement','User_Agreement'],
+  ['8140_Certification_Memorandum','8140_Cert_Memo'],
+  ['Privileged_User_Cybersecurity_Responsibilities','Privileged_User_Training_Cert'],
+  ['DTA_User_Training_Course','DTA_Training_Cert'],
+ ];
+ for(const[legacy,canonical]of variants)for(const extension of ['.pdf','.pdf.zip']){
+  const source=`Brown_Jacob_(GDMS)_${legacy}_20260826${extension}`;
+  assert.equal(canonicalEvidenceFilename(source,'GDMS'),`Brown_Jacob_(GDMS)_${canonical}_26AUG2026${extension}`,source);
+ }
 });
 
 test('consolidates legacy agreement filenames into one User Agreement requirement',()=>{

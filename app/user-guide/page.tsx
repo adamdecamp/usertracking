@@ -330,17 +330,21 @@ export default function Guide() {
           is treated as DTA Training. A filename containing{" "}
           <code>Awareness</code>, <code>Cyber Awareness</code>, or{" "}
           <code>Awareness Challenge</code> is treated as DoD Cyber Awareness.
-          When the
-          identity, authoritative organization, and date are available, Sync
-          normalizes it to{" "}
-          <code>Last_First_(ORG)_Privileged_User_Training_Cert_DDMMMYYYY.pdf</code>.
-          Readable loose PDFs that remain incomplete or cannot be identified are
-          preselected for the organization&apos;s Rework folder instead of remaining
-          unhandled in an active evidence folder. A ZIP filename must already
-          match the complete canonical <code>.pdf.zip</code> convention. If it
-          does not, Clean Up extracts its single PDF to the organization Rework
-          folder, verifies the extracted content, and removes the ZIP only after
-          that verification succeeds.
+          When the identity, authoritative organization, and date are available,
+          Sync applies the canonical artifact label: <code>DoD_Cyber_Cert</code>,{" "}
+          <code>User_Agreement</code>, <code>8140_Cert_Memo</code>,{" "}
+          <code>Privileged_User_Training_Cert</code>, or{" "}
+          <code>DTA_Training_Cert</code>. SAAR filenames retain the validated GEN
+          or PRIV role and privileged type.
+           Readable loose PDFs that remain incomplete or cannot be identified are
+           preselected for the organization&apos;s Rework folder instead of remaining
+           unhandled in an active evidence folder. Sync applies the same canonical
+           naming rules to validated one-PDF ZIP containers. A ZIP with complete,
+           unambiguous identity, organization, artifact-type, and date metadata is
+           renamed in place to the canonical <code>.pdf.zip</code> convention. A
+           ZIP that cannot be normalized safely is offered in Clean Up so its
+           single PDF can be extracted to the organization Rework folder. The ZIP
+           is removed only after the extracted PDF is verified.
         </p>
         <p>
           <b>Incomplete</b> is a final operator disposition. During Archive

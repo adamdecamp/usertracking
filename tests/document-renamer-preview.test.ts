@@ -53,6 +53,16 @@ test('corrected Rework evidence is normalized, promoted, and clears stale source
  assert.match(page,/if\(!promotedSourcePaths\.has\(key\)&&!known\.has\(key\)\)scanResult\.rejected\.push\(rejection\)/);
 });
 
+test('Sync normalizes complete noncanonical ZIP names before routing ambiguous ZIPs to Rework',()=>{
+ const invalidZipGate=page.match(/const invalidZipCorrections:[\s\S]*?invalidZipPaths=/)?.[0]??'';
+ const normalizable=page.match(/const normalizableByPath=[\s\S]*?const filenameRenames=/)?.[0]??'';
+ assert.ok(invalidZipGate,'The invalid ZIP gate was not found.');
+ assert.match(invalidZipGate,/zipFilenameNeedsRework\(item\.filename,folderOrganization\)&&!canonicalEvidenceFilename\(item\.filename,folderOrganization\)/);
+ assert.ok(normalizable,'The shared PDF and ZIP normalization collection was not found.');
+ assert.match(normalizable,/scanResult\.evidence/);
+ assert.match(normalizable,/!invalidZipPaths\.has/);
+});
+
 test('disabled users do not expose actionable supporting-artifact status',()=>{
  assert.match(page,/const status=u\.disabled\?'':statusFor\(u,k\)/);
  assert.match(page,/const filterStatus=user\.disabled\?'':directoryStatusFor\(user,kind,asOf\)/);
