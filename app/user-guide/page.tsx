@@ -198,9 +198,10 @@ export default function Guide() {
           When General is selected, the inapplicable Privileged User Type filter
           and column are hidden. Choose{" "}
           <b>Reset Filters</b> to clear the search and restore every directory
-          filter to its default. The directory displays Privileged User Type but
-          keeps the full privileged username inside the User Record and CSV
-          exports. The directory displays only document categories required by
+          filter to its default. The User Record displays Privileged User Types.
+          During Modify Privileges, enter one or more types directly, separated by
+          commas; a leading underscore such as <code>_admin</code> or <code>_dta</code>
+          is optional. The directory displays only document categories required by
           every user currently shown. Every user requires one consolidated User
           Agreement. All Privileged users additionally require the 8140 memo and
           Privileged User Training certificate. Privileged users with DTA type
@@ -226,7 +227,11 @@ export default function Guide() {
           SAAR plus every artifact required for the user&apos;s role. Reactivation may
           also use a documented override with a required justification. Overrides,
           comments, and archive results are preserved in the user history and
-          tamper-evident audit log. Privilege changes still require an updated SAAR.
+          tamper-evident audit log. Privilege changes require an updated SAAR by
+          default. When the SAAR is unavailable or its Privileged User Type cannot
+          be recovered, the operator may select the Updated SAAR override and enter
+          a required justification. The manually entered Privileged User Type and
+          override justification are preserved in the user history and audit log.
           Updated PDF evidence is validated and stored as a ZIP, and newly added
           roles or Privileged User Types require their additional evidence before
           submission. Manual validation and storage has a two-minute safety limit,
@@ -408,10 +413,11 @@ export default function Guide() {
           organization folder is used as the read-only Organization value in its
           proposed filename; only a PDF at the mapped root uses the mapped
           folder name. High-confidence rows are selected automatically, editable
-          fields can be corrected, and every original PDF opens immediately in
-          a top-level, full-viewport read-only preview before approval. The preview includes
-          page-width display, full-size browser viewing, and a validated-copy
-          download. Image-only scans are marked for manual entry.
+          fields can be corrected, and every original PDF opens in the browser&apos;s
+          dedicated full-size PDF viewer before approval. The app reserves the new
+          browser window before reading the file so validation does not trigger a
+          popup blocker; if new windows are blocked, a full-window in-app preview
+          remains available. Image-only scans are marked for manual entry.
           Applying a rename changes only the filesystem name, verifies that the
           PDF&apos;s SHA-256 is identical before and after, and writes an audit
           entry. It never rewrites, flattens, signs, or compresses the PDF.
@@ -635,8 +641,8 @@ export default function Guide() {
           the redundant incoming copy for Archive while retaining the already
           organized copy. When the hashes differ—or a hash cannot be read—the
           pair requires an operator decision. It defaults to <b>Defer Decision</b>.
-          Use <b>Open Incoming PDF</b> and <b>Open Organized PDF</b> to open an
-          immediate preview over the review screen, then select which copy is
+          Use <b>Open Incoming PDF</b> and <b>Open Organized PDF</b> to open the
+          selected copy in the browser&apos;s dedicated PDF viewer, then select which copy is
           authoritative when ready. The selected copy remains active; the other copy
           moves to the organization Archive. Non-selected SAAR copies move to
           the permanent organization SAAR Archive. The audit log records both

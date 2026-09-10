@@ -23,10 +23,10 @@ test('requires a nonblank override comment',()=>{
  assert.equal(updatedSaarRequirementSatisfied({...input,statusChange:true,overrideSelected:true,overrideComment:'   '}),false);
 });
 
-test('does not allow the access override for privilege-only or combined changes',()=>{
+test('allows a documented override for privilege-only or combined changes',()=>{
  const override={...input,statusChange:true,overrideSelected:true,overrideComment:'Documented reason'};
- assert.equal(updatedSaarRequirementSatisfied({...override,modifyingPrivileges:true}),false);
- assert.equal(updatedSaarRequirementSatisfied({...input,modifyingPrivileges:true,overrideSelected:true,overrideComment:'Documented reason'}),false);
+ assert.equal(updatedSaarRequirementSatisfied({...override,modifyingPrivileges:true}),true);
+ assert.equal(updatedSaarRequirementSatisfied({...input,modifyingPrivileges:true,overrideSelected:true,overrideComment:'Documented reason'}),true);
 });
 
 test('requires every reactivation artifact unless a documented override is used',()=>{

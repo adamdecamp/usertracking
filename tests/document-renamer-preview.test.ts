@@ -6,8 +6,15 @@ const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const styles=readFileSync(new URL('../app/globals.css',import.meta.url),'utf8');
 const versions=readFileSync(new URL('../app/version.ts',import.meta.url),'utf8');
 
-test('Document Renamer preview opens immediately as a full-window read-only dialog',()=>{
- assert.match(page,/setPreview\(\{loading:true,filename:item\.filename,path:item\.path\}\)/);
+test('Document Renamer preview reserves a full browser window before asynchronous PDF validation',()=>{
+ assert.match(page,/function reservePdfPreviewWindow\(filename:string\)\{const target=window\.open\('about:blank','_blank'\)/);
+ assert.match(page,/async function showPreview\(item:RenamerItem\)\{const sequence=\+\+previewSequence\.current,target=reservePdfPreviewWindow\(item\.filename\)/);
+ assert.match(page,/target&&openPdfInReservedWindow\(target,url\)/);
+ assert.match(page,/async function showCollisionPreview\(item:ScannedEvidence\)[\s\S]*?target=reservePdfPreviewWindow\(item\.filename\)/);
+});
+
+test('Document Renamer keeps a full-window in-app fallback when popups are blocked',()=>{
+ assert.match(page,/if\(!target\)setPreview\(\{loading:true,filename:item\.filename,path:item\.path\}\)/);
  assert.match(page,/import \{createPortal\} from 'react-dom'/);
  assert.match(page,/className="renamer-preview-overlay" role="dialog" aria-modal="true"/);
  assert.match(page,/createPortal\(<div className="renamer-preview-overlay"/);

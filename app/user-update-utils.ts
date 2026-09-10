@@ -7,7 +7,7 @@ export type UpdatedSaarRequirementInput={
 };
 
 export function accessChangeOverrideAllowed(input:Pick<UpdatedSaarRequirementInput,'statusChange'|'modifyingPrivileges'>){
- return input.statusChange&&!input.modifyingPrivileges;
+ return input.statusChange||input.modifyingPrivileges;
 }
 
 export function updatedSaarRequirementSatisfied(input:UpdatedSaarRequirementInput){
