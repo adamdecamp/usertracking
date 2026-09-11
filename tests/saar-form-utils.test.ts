@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {PDFDocument,PDFName,PDFString} from 'pdf-lib';
+import {PDFDict,PDFDocument,PDFName,PDFString} from 'pdf-lib';
 import {firstEmailFromText,officialEmailFromText,parseSaarName,parseSaarRequestDate,readSaarFormFields} from '../app/saar-form-utils.ts';
 
 test('reads name, organization, and official email from the derived SAAR AcroForm',async()=>{
@@ -11,7 +11,7 @@ test('reads name, organization, and official email from the derived SAAR AcroFor
   ['4 OFFICIAL EMAIL ADDRESS','jacob.brown@example.mil',600],
  ]as const){const field=form.createTextField(name);field.setText(value);field.addToPage(page,{x:20,y,width:300,height:20})}
  const result=await readSaarFormFields(await pdf.save());
- assert.deepEqual(result,{fillable:true,format:'AcroForm',identity:{last:'Brown',first:'Jacob',middle:'A'},organization:'LM',email:'jacob.brown@example.mil',signedFieldNames:[],createdBySigned:false,disabledBySigned:false,createdDate:undefined,disabledDate:undefined});
+ assert.deepEqual(result,{fillable:true,format:'AcroForm',identity:{last:'Brown',first:'Jacob',middle:'A'},organization:'LM',email:'jacob.brown@example.mil',signedFieldNames:[],createdBySigned:false,disabledBySigned:false});
 });
 
 test('accepts a simplified Official Email AcroForm field name',async()=>{
@@ -32,6 +32,18 @@ test('recovers the visible Official Email value stored on the field widget',asyn
  assert.equal(result.email,'widget.user@example.mil');
 });
 
+test('recovers the visible Official Email value from a widget appearance when the canonical value is absent',async()=>{
+ const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm(),field=form.createTextField('4. OFFICIAL/ORGANIZATION E-MAIL ADDRESS');field.setText('appearance.user@example.mil');field.addToPage(page,{x:20,y:650,width:300,height:20});form.updateFieldAppearances();field.acroField.dict.delete(PDFName.of('V'));
+ const result=await readSaarFormFields(await pdf.save({useObjectStreams:false}));
+ assert.equal(result.email,'appearance.user@example.mil');
+});
+
+test('recovers Official Email from the default widget value',async()=>{
+ const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm(),field=form.createTextField('4. OFFICIAL/ORGANIZATION E-MAIL ADDRESS');field.addToPage(page,{x:20,y:650,width:300,height:20});field.acroField.dict.set(PDFName.of('DV'),PDFString.of('default.user@example.mil'));
+ const result=await readSaarFormFields(await pdf.save({useObjectStreams:false}));
+ assert.equal(result.email,'default.user@example.mil');
+});
+
 test('uses widget page position to choose the first user email from the top of the form',async()=>{
  const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm(),lower=form.createTextField('Additional Contact');lower.setText('lower@example.mil');lower.addToPage(page,{x:20,y:300,width:300,height:20});const upper=form.createTextField('User Contact');upper.setText('upper@example.mil');upper.addToPage(page,{x:20,y:650,width:300,height:20});
  const result=await readSaarFormFields(await pdf.save());
@@ -45,6 +57,14 @@ test('reads equivalent fields from an official DD2875-style XFA datasets packet'
  pdf.catalog.set(PDFName.of('AcroForm'),pdf.context.register(acro));
  const result=await readSaarFormFields(await pdf.save({useObjectStreams:false}));
  assert.deepEqual(result,{fillable:true,format:'XFA',identity:{last:'Shaw',first:'Vivian',middle:'R'},organization:'Boeing',email:'vivian.shaw@example.mil',requestDate:'2026-08-26',createdBySigned:false,disabledBySigned:false,signedFieldNames:[]});
+});
+
+test('uses populated AcroForm data when an XFA datasets packet is stale and blank',async()=>{
+ const base=await PDFDocument.create(),page=base.addPage([612,792]),form=base.getForm(),official=form.createTextField('4. OFFICIAL/ORGANIZATION E-MAIL ADDRESS');official.setText('merged.user@example.mil');official.addToPage(page,{x:20,y:650,width:300,height:20});
+ const pdf=await PDFDocument.load(await base.save({useObjectStreams:false})),xml='<?xml version="1.0"?><xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><Email_Address5 /></form1></xfa:data></xfa:datasets>',datasets=pdf.context.register(pdf.context.flateStream(xml)),acro=pdf.catalog.lookup(PDFName.of('AcroForm'));
+ assert.ok(acro instanceof PDFDict);acro.set(PDFName.of('XFA'),pdf.context.obj([PDFString.of('datasets'),datasets]));
+ const result=await readSaarFormFields(await pdf.save({useObjectStreams:false}));
+ assert.equal(result.format,'XFA');assert.equal(result.email,'merged.user@example.mil');
 });
 
 test('does not substitute a sponsor field when the official AcroForm email is blank',async()=>{
@@ -101,6 +121,7 @@ test('finds a valid email immediately after the Official Email label',()=>{
  assert.equal(officialEmailFromText('4. OFFICIAL EMAIL ADDRESS Jacob.Brown@Example.mil 5. JOB TITLE'),'jacob.brown@example.mil');
  assert.equal(officialEmailFromText('Official E-mail: vivian.shaw@example.com'),'vivian.shaw@example.com');
  assert.equal(officialEmailFromText('4. OFFICIAL/ORGANIZATION E\u00adMAIL ADDRESS user.name@example.mil 5. JOB TITLE'),'user.name@example.mil');
+ assert.equal(officialEmailFromText('4. OFFICIAL/ORGANIZATION E-MAIL ADDRESS user.name @ example . mil 5. JOB TITLE'),'user.name@example.mil');
  assert.equal(officialEmailFromText('Email jacob@example.mil without the required label'),undefined);
 });
 

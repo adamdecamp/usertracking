@@ -707,13 +707,16 @@ export default function Guide() {
           from either a standard DD Form 2875 XFA dataset or the derived
           SAAR&apos;s AcroForm fields. Official Email is read first from the
           <b> OFFICIAL/ORGANIZATION E-MAIL ADDRESS</b> field, including a valid
-          value stored on that field&apos;s visible PDF widget when the canonical
-          field tree is blank or stale. That exact field takes priority even
+          canonical value, default value, or rendered widget appearance when one
+          PDF representation is blank or stale. XFA and AcroForm values are
+          merged when a signed or converted form retains both. That exact field takes priority even
           when other email fields appear earlier in the PDF field collection.
           Otherwise, form fields are evaluated by page and top-to-bottom widget
           position. If they remain blank or invalid, Sync searches selectable
           PDF text immediately after that label and then uses the first valid
-          email address appearing from the top of the form. Standard UTF-8 and
+          email address appearing from the top of the form. PDF-introduced spacing
+          around the at sign or domain periods is normalized before validation.
+          Standard UTF-8 and
           UTF-16 XFA datasets are supported. If a completed XFA form uses an
           unfamiliar field name, the first non-supervisor, non-sponsor email
           value in dataset order is used as the final form-data fallback. A
