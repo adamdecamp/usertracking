@@ -1,11 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,looksLikeEvidenceFilename,normalizeFilenameDate,operatorMarkedIncomplete,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
+import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalManualEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,looksLikeEvidenceFilename,normalizeFilenameDate,operatorMarkedIncomplete,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
 const spacedDod='Brown, Jacob (LM) DoD Cyber Cert 26AUG2026.pdf';
 const extraSpaceGeneral='  Brown  _   Jacob   (LM)   GEN   User   Agreement   26AUG2026.pdf';
+
+test('canonicalizes an explicitly assigned PDF or ZIP to the selected user and artifact',()=>{
+ assert.equal(canonicalManualEvidenceFilename({filename:'archived-copy.zip',embeddedPdfFilename:'Old_Name_(LM)_Cyber_Awareness_20260826.pdf',kind:'DoD Cyber Cert',last:'Brown',first:'Jacob',organization:'LM'}),'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip');
+ assert.equal(canonicalManualEvidenceFilename({filename:'old-name.pdf.zip',embeddedPdfFilename:'old-name.pdf',kind:'User Agreement',last:'Brown',first:'Jacob',organization:'LM'}),undefined);
+});
+
+test('uses the selected role when canonicalizing manually assigned SAAR evidence',()=>{
+ assert.equal(canonicalManualEvidenceFilename({filename:'archive_20260826.zip',kind:'SAAR',last:'Brown',first:'Jacob',organization:'LM',role:'PRIV',privilegedType:'_dta'}),'Brown_Jacob_(LM)_PRIV_dta_SAAR_26AUG2026.pdf.zip');
+ assert.equal(canonicalManualEvidenceFilename({filename:'archive_20260826.zip',kind:'SAAR',last:'Brown',first:'Jacob',organization:'LM'}),undefined);
+});
 
 test('maps canonical evidence kinds to organization document-type folders',()=>{
  assert.equal(artifactStorageFolder('SAAR'),'SAAR');

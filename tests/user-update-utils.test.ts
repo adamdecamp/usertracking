@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {accessChangeOverrideAllowed,missingOfficialEmailUpdate,reactivationEvidenceRequirementSatisfied,updatedSaarRequirementSatisfied} from '../app/user-update-utils.ts';
+import {accessChangeOverrideAllowed,manualAddEvidenceGate,missingOfficialEmailUpdate,reactivationEvidenceRequirementSatisfied,updatedSaarRequirementSatisfied} from '../app/user-update-utils.ts';
 
 const input={statusChange:false,modifyingPrivileges:false,hasUpdatedSaar:false,overrideSelected:false,overrideComment:''};
 
@@ -34,6 +34,25 @@ test('requires every reactivation artifact unless a documented override is used'
  assert.equal(reactivationEvidenceRequirementSatisfied({reactivating:true,allRequiredEvidenceSelected:false,overrideAllowed:true,overrideSelected:false,overrideComment:''}),false);
  assert.equal(reactivationEvidenceRequirementSatisfied({reactivating:true,allRequiredEvidenceSelected:false,overrideAllowed:true,overrideSelected:true,overrideComment:'Mission requirement approved by the account manager.'}),true);
  assert.equal(reactivationEvidenceRequirementSatisfied({reactivating:true,allRequiredEvidenceSelected:false,overrideAllowed:false,overrideSelected:true,overrideComment:'Not sufficient'}),false);
+});
+
+test('allows manual user creation with documented missing supporting evidence',()=>{
+ const result=manualAddEvidenceGate({requiredKinds:['SAAR','DoD Cyber Cert','User Agreement'],selectedKinds:['SAAR'],overrideSelected:true,overrideComment:'  Supporting evidence will be collected after account onboarding.  '});
+ assert.deepEqual(result,{allowed:true,missingKinds:['DoD Cyber Cert','User Agreement'],overrideApplied:true,justification:'Supporting evidence will be collected after account onboarding.'});
+});
+
+test('requires justification and never allows the manual-add override to replace the SAAR',()=>{
+ const requiredKinds=['SAAR','DoD Cyber Cert','User Agreement'];
+ assert.equal(manualAddEvidenceGate({requiredKinds,selectedKinds:['SAAR'],overrideSelected:false,overrideComment:''}).allowed,false);
+ assert.equal(manualAddEvidenceGate({requiredKinds,selectedKinds:['SAAR'],overrideSelected:true,overrideComment:'   '}).allowed,false);
+ assert.equal(manualAddEvidenceGate({requiredKinds,selectedKinds:['DoD Cyber Cert','User Agreement'],overrideSelected:true,overrideComment:'SAAR pending'}).allowed,false);
+});
+
+test('does not record a manual-add override when every required artifact is selected',()=>{
+ const result=manualAddEvidenceGate({requiredKinds:['SAAR','DoD Cyber Cert'],selectedKinds:['SAAR','DoD Cyber Cert'],overrideSelected:true,overrideComment:'Not needed'});
+ assert.equal(result.allowed,true);
+ assert.equal(result.overrideApplied,false);
+ assert.deepEqual(result.missingKinds,[]);
 });
 
 test('allows a valid Official Email to fill an empty user record',()=>{

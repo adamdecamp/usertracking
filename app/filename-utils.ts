@@ -75,6 +75,18 @@ export function filenameMatchesKind(filename:string,kind:string){
 export function disabledSaarFilename(filename:string){return filenameMatchesKind(filename,'SAAR')&&fileTokens(filename).has('DISABLED')}
 
 const canonicalFilePart=(value:string,maxLength=80)=>clean(value,maxLength).replace(/[<>:"/\\|?*()]/g,' ').replace(/[^A-Za-z0-9'+.-]+/g,'_').replace(/^_+|_+$/g,'');
+export function canonicalManualEvidenceFilename(input:{filename:string;embeddedPdfFilename?:string;kind:string;last:string;first:string;organization:string;role?:'GEN'|'PRIV';privilegedType?:string}){
+ const date=parseDate(input.filename)??parseDate(input.embeddedPdfFilename??''),kind=canonicalArtifactKind(input.kind),last=canonicalFilePart(input.last),first=canonicalFilePart(input.first),organization=canonicalFilePart(input.organization);
+ if(!date||!artifactKinds.includes(kind)||!last||!first||!organization)return;
+ let artifact=kind.replaceAll(' ','_');
+ if(kind==='SAAR'){
+  if(input.role==='GEN')artifact='GEN_SAAR';
+  else if(input.role==='PRIV'){const privilegedType=canonicalFilePart(input.privilegedType??'');if(!privilegedType)return;artifact=`PRIV_${privilegedType}_SAAR`}
+  else return;
+ }
+ const dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`,target=`${last}_${first}_(${organization})_${artifact}_${dateToken}.pdf.zip`;
+ return target.length<=180?target:undefined;
+}
 export function canonicalEvidenceFilename(filename:string,organizationOverride?:string){
  if(legacy8570MemoFilename(filename))return;
  const identity=identityFromFilename(filename),organization=organizationOverride||organizationFrom(filename),date=parseDate(filename),kind=artifactKinds.find(candidate=>filenameMatchesKind(filename,candidate));

@@ -21,6 +21,12 @@ export function reactivationEvidenceRequirementSatisfied(input:{reactivating:boo
  return input.overrideAllowed&&input.overrideSelected&&input.overrideComment.trim().length>0;
 }
 
+export function manualAddEvidenceGate(input:{requiredKinds:string[];selectedKinds:string[];overrideSelected:boolean;overrideComment:string}){
+ const selected=new Set(input.selectedKinds),missingKinds=input.requiredKinds.filter(kind=>!selected.has(kind)),missingSaar=missingKinds.includes('SAAR'),justification=input.overrideComment.trim();
+ const overrideApplied=missingKinds.length>0&&!missingSaar&&input.overrideSelected&&justification.length>0;
+ return{allowed:missingKinds.length===0||overrideApplied,missingKinds,overrideApplied,justification};
+}
+
 const emailPattern=/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
 
 export function missingOfficialEmailUpdate(currentEmail:string,nextEmail:string,otherEmails:string[]=[]){

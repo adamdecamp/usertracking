@@ -171,14 +171,27 @@ export default function Guide() {
           </li>
           <li>
             Drag and drop or browse for either a readable PDF or a ZIP
-            containing exactly one readable PDF for every displayed evidence
+            containing exactly one readable PDF for each available evidence
             requirement. Other file types, mixed-content ZIPs, and
-            multi-document ZIPs are rejected.
+            multi-document ZIPs are rejected. If supporting evidence is not yet
+            available, select <b>Override Missing Supporting Evidence</b> and
+            enter the required justification. The SAAR cannot be overridden.
+            Every omitted supporting requirement remains visibly <b>Missing</b>
+            and remains available to filters and notifications; the override
+            only permits creation of the user record. The missing artifact list
+            and justification are preserved in Administrative Change History
+            and the tamper-evident audit log.
           </li>
           <li>
             Choose <b>Add User</b>. A direct PDF is compressed into its own ZIP
             before storage; an already valid one-PDF ZIP is stored without
-            another compression layer.
+            another compression layer. For an explicitly selected PDF or ZIP,
+            the tracker uses the selected user, artifact type, organization,
+            and the date in the ZIP or contained PDF to create the canonical
+            evidence filename. A previously archived ZIP therefore counts as
+            the selected requirement after validation instead of remaining
+            Missing. A ZIP that needs a canonical outer or contained filename
+            is safely repackaged around the same validated PDF content.
           </li>
           <li>
             The files are saved under{" "}
