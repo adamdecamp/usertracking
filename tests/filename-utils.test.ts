@@ -94,6 +94,13 @@ test('routes a complete legacy 8570 filename as an 8140 memo without weakening t
  assert.equal(evidenceFilenamePassesStorageGate('8570_Qualification_26AUG2026.pdf','GDMS'),false);
 });
 
+test('does not treat 8570 digits inside a user identity as an expired legacy credential',()=>{
+ const currentCyber='User8570_Test8570_(ORG)_DoD_Cyber_Cert_05SEP2025.pdf.zip';
+ assert.equal(legacy8570MemoFilename(currentCyber),false);
+ assert.equal(filenameMatchesKind(currentCyber,'DoD Cyber Cert'),true);
+ assert.equal(filenameMatchesKind(currentCyber,'8140 Cert Memo'),false);
+});
+
 test('recognizes the reported General User Agreement filename',()=>{
  assert.equal(looksLikeEvidenceFilename(general),true);
  assert.equal(filenameMatchesKind(general,'User Agreement'),true);

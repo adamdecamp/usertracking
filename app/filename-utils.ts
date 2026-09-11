@@ -61,7 +61,7 @@ function saarMarkers(filename:string){
  return{general,privilegedType:privileged?.[1]};
 }
 function hasSaarMarker(filename:string){const tokens=fileTokens(filename),markers=saarMarkers(filename);return tokens.has('SAAR')||markers.general||!!markers.privilegedType}
-export function legacy8570MemoFilename(filename:string){return !hasSaarMarker(filename)&&compactFilename(filename).includes('8570')}
+export function legacy8570MemoFilename(filename:string){return !hasSaarMarker(filename)&&fileTokens(filename).has('8570')}
 export function filenameMatchesKind(filename:string,kind:string){
  const canonical=canonicalArtifactKind(kind),tokens=fileTokens(filename),compact=compactFilename(filename),saar=hasSaarMarker(filename);
  if(canonical==='SAAR')return saar;
