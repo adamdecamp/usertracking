@@ -634,12 +634,12 @@ internal sealed class PortableStorage : IDisposable
         return "{\"cleared\":true}";
     }
 
-    public string ArchiveEvidence(string systemId, string relative, string requestedFilename = null)
+    public string ArchiveEvidence(string systemId, string relative, string requestedFilename = null, bool allowReworkSource = false)
     {
         lock (RootLock(systemId))
         {
             string root = Root(systemId);RecoverTransactions(root);string source = SafeRelativePath(root, relative), normalized = Relative(root, source);
-            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active evidence files can be moved to an organization Archive folder.");
+            if (ContainsManagedStorageDirectory(normalized) && !(allowReworkSource && IsOrganizationReworkEvidencePath(normalized))) throw new InvalidDataException("Only active evidence files can be moved to an organization Archive folder. Collision cleanup may move a verified file from its organization Rework folder.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string validationError;
             if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
@@ -1532,13 +1532,14 @@ internal sealed class PortableStorage : IDisposable
 
     private bool RefreshLease(string systemId, HeldLease held, bool released)
     {
-        try { WriteLeaseMetadata(held, released); return true; }
-        catch
+        for (int attempt = 0; attempt < 2; attempt++)
         {
-            lock (mapGate) { HeldLease current; if (heldLeases.TryGetValue(systemId, out current) && Object.ReferenceEquals(current, held)) heldLeases.Remove(systemId); }
-            DisposeLease(held, false);
-            return false;
+            try { WriteLeaseMetadata(held, released); return true; }
+            catch { if (attempt == 0) Thread.Sleep(50); }
         }
+        lock (mapGate) { HeldLease current; if (heldLeases.TryGetValue(systemId, out current) && Object.ReferenceEquals(current, held)) heldLeases.Remove(systemId); }
+        DisposeLease(held, false);
+        return false;
     }
 
     private void WriteLeaseMetadata(HeldLease held, bool released)
@@ -1546,8 +1547,8 @@ internal sealed class PortableStorage : IDisposable
         var value = new Dictionary<string, object> { { "sessionId", held.SessionId }, { "actor", actor }, { "computer", Environment.MachineName }, { "processId", System.Diagnostics.Process.GetCurrentProcess().Id }, { "updated", DateTime.UtcNow.ToString("o") }, { "released", released }, { "lockType", "exclusive-windows-file-lock" } };
         byte[] bytes = Encoding.UTF8.GetBytes(json.Serialize(value));
         held.Stream.Position = 0;
-        held.Stream.SetLength(0);
         held.Stream.Write(bytes, 0, bytes.Length);
+        held.Stream.SetLength(bytes.Length);
         FlushCompatible(held.Stream);
         held.LastRenewedUtc = DateTime.UtcNow;
     }

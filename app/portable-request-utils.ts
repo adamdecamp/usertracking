@@ -22,13 +22,24 @@ export class PortableStorageBusyError extends Error{
  constructor(message:string){super(message);this.name='PortableStorageBusyError'}
 }
 
+export class SessionLeaseLostError extends Error{
+ constructor(message='This tracker session is disconnected because another operator is active.'){
+  super(message);this.name='SessionLeaseLostError';
+ }
+}
+
 export function portableActionLabel(action:string){
  const value=action.split('?')[0].replace(/[^A-Za-z0-9_-]+/g,' ').replace(/[-_]+/g,' ').trim();
  return (value||'storage request').slice(0,100);
 }
 
-export function portableArchiveAction(path:string,requestedFilename?:string){
- return `archive?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(requestedFilename??'')}`;
+export function portableArchiveAction(path:string,requestedFilename?:string,allowReworkSource=false){
+ return `archive?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(requestedFilename??'')}&rework=${allowReworkSource?'1':'0'}`;
+}
+
+export function portableErrorMessage(serverMessage:string,operationId:string){
+ const message=serverMessage.trim()||'The Windows storage service request failed.';
+ return /(?:^|\s)Operation ID:/i.test(message)?message:`${message} Operation ID: ${operationId}.`;
 }
 
 function aborted(error:unknown,signal?:AbortSignal|null){

@@ -685,6 +685,9 @@ export default function Guide() {
           moves to the organization Archive. Non-selected SAAR copies move to
           the permanent organization SAAR Archive. The audit log records both
           paths, available hashes, the selected copy, operator, and UTC time.
+          A verified collision copy already inside the organization&apos;s Rework
+          folder can be archived by this collision workflow without relaxing
+          protection for System files or unrelated managed folders.
           No collision resolution overwrites or discards either file. If the
           identity is not already in the User Directory, resolve the collision
           first and run Sync again; this prevents a new record from being
@@ -866,7 +869,11 @@ export default function Guide() {
         <p>
           After 15 minutes without activity, the operator is disconnected and
           must choose <b>Yes, Reconnect Me</b>. Reconnection succeeds only when
-          another operator does not hold the exclusive lock.
+          another operator does not hold the exclusive lock. If ownership is
+          lost during Clean Up, the current review is preserved and the batch
+          stops after the first lease error instead of attempting every remaining
+          file. Reconnect retries briefly while a verified storage operation is
+          finishing, then the operator can resume the preserved review.
         </p>
         <p>
           Each meaningful database state creates a full-fidelity, timestamped

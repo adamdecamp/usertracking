@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {PortableRequestTimeoutError,PortableStorageBusyError,portableActionLabel,portableArchiveAction,portableFetch,startPortablePresenceHeartbeat} from '../app/portable-request-utils.ts';
+import {PortableRequestTimeoutError,PortableStorageBusyError,SessionLeaseLostError,portableActionLabel,portableArchiveAction,portableErrorMessage,portableFetch,startPortablePresenceHeartbeat} from '../app/portable-request-utils.ts';
 
 test('identifies a recoverable busy response without treating it as lost session ownership',()=>{
  const error=new PortableStorageBusyError('Storage is busy.');
  assert.equal(error.name,'PortableStorageBusyError');
+ assert.equal(new SessionLeaseLostError().name,'SessionLeaseLostError');
 });
 
 test('keeps launcher failure stages useful without exposing query values',()=>{
@@ -18,6 +19,14 @@ test('always supplies the optional archive filename request value',()=>{
  assert.equal(defaultName.get('filename'),'');
  const collision=new URLSearchParams(portableArchiveAction('GDMS/source.pdf','target conflict.pdf').split('?')[1]);
  assert.equal(collision.get('filename'),'target conflict.pdf');
+ assert.equal(collision.get('rework'),'0');
+ const reworkCollision=new URLSearchParams(portableArchiveAction('GDMS/GDMS Rework/source.pdf',undefined,true).split('?')[1]);
+ assert.equal(reworkCollision.get('rework'),'1');
+});
+
+test('adds an operation ID exactly once to launcher errors',()=>{
+ assert.equal(portableErrorMessage('Storage failed.','abc-123'),'Storage failed. Operation ID: abc-123.');
+ assert.equal(portableErrorMessage('Storage failed. Operation ID: abc-123.','abc-123'),'Storage failed. Operation ID: abc-123.');
 });
 
 test('retries a resumable or idempotent launcher request once',async()=>{

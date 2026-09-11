@@ -19,3 +19,18 @@ test('a live heartbeat cancels only a pending browser-closed shutdown',()=>{
  assert.match(presence,/shutdownRequestedUtc = null/);
  assert.doesNotMatch(presence,/operator-logoff|operator-exit|"idle"/);
 });
+
+test('lease loss stops active work and preserves the current Sync review',()=>{
+ assert.match(page,/if\(!ok\)\{syncAbort\.current\?\.abort\(\)/);
+ const apply=page.slice(page.indexOf('async function applyVerifiedSync'),page.indexOf('function resetFilters'));
+ assert.match(apply,/if\(error instanceof SessionLeaseLostError\)throw error/g);
+ assert.match(apply,/pendingSyncBySystem\.current\.set\(failedSystemId,pendingSync\)/);
+ assert.match(apply,/Verified Sync Paused/);
+});
+
+test('reconnection waits for an in-flight verified storage operation before activating the session',()=>{
+ assert.match(page,/async function readManifestAfterStorageSettles/);
+ const reconnect=page.slice(page.indexOf('async function reconnect'),page.indexOf('async function openRestore'));
+ assert.match(reconnect,/await readManifestAfterStorageSettles\(root\)/);
+ assert.ok(reconnect.indexOf('await readManifestAfterStorageSettles(root)')<reconnect.indexOf("setSessionState('active')"));
+});
