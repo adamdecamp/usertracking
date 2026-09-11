@@ -88,3 +88,13 @@ test('location refresh and discovery workflows use metadata without reopening ev
  assert.doesNotMatch(page,/Refreshing Current Evidence Locations[\s\S]{0,500}?scan\(pendingSync\.handle/);
  assert.doesNotMatch(page,/Refreshing Stale Evidence References[\s\S]{0,500}?scan\(pendingSync\.handle/);
 });
+
+test('Document Renamer automatically applies unique high-confidence names and verifies by metadata only',()=>{
+ assert.match(page,/automatic\?item\.confidence==='High':item\.selected/);
+ assert.match(page,/const automatic=await renameBatch\(next,true\),verification=await discoverRenamerPdfs/);
+ assert.match(page,/reconcileMetadata\(automatic\.remaining,verification\)/);
+ assert.match(page,/Unique high-confidence results are renamed automatically/);
+ assert.match(page,/Needs Operator Input/);
+ assert.match(page,/Archive Trees Excluded/);
+ assert.match(styles,/\.renamer-stats\{/);
+});

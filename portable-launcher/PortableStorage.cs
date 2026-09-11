@@ -440,7 +440,7 @@ internal sealed class PortableStorage : IDisposable
         lock (RootLock(systemId))
         {
             string root = Root(systemId), cleanOrganization = String.IsNullOrWhiteSpace(organization) ? null : ValidOrganizationName(organization), scanRoot = OrganizationScopeRoot(root, cleanOrganization);RecoverTransactions(root);
-            var result = new List<Dictionary<string, object>>();
+            var result = new List<Dictionary<string, object>>();int skippedZips = 0, skippedArchives = 0;
             var pending = new Stack<Tuple<string, int>>();pending.Push(Tuple.Create(scanRoot, 0));
             while (pending.Count > 0)
             {
@@ -451,7 +451,7 @@ internal sealed class PortableStorage : IDisposable
                     if (result.Count >= 100000) throw new InvalidDataException("Evidence location limit exceeded.");
                     string filename = Path.GetFileName(file);
                     if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase))) continue;
-                    if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;if (filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) skippedZips++;
                     string relative = Relative(root, file).Replace(Path.DirectorySeparatorChar, '/');var info = new FileInfo(file);long size = 0L, modified = 0L;
                     try { size = info.Length;modified = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds(); }
                     catch (Exception error) { if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;result.Add(new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "error", "File metadata could not be read: " + CleanLine(error.Message, 240) } });continue; }
@@ -460,11 +460,11 @@ internal sealed class PortableStorage : IDisposable
                 foreach (string directory in EnumerateScanDirectories(root, current.Item1))
                 {
                     string name = Path.GetFileName(directory);bool rework = IsReworkStorageDirectory(name);
-                    if (IsManagedStorageDirectory(name) && !rework) continue;
+                    if (IsManagedStorageDirectory(name) && !rework) { if (name.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase)) skippedArchives++;continue; }
                     if (!IsScanReparsePoint(root, directory)) pending.Push(Tuple.Create(directory, current.Item2 + 1));
                 }
             }
-            return json.Serialize(new Dictionary<string, object> { { "items", result.ToArray() } });
+            return json.Serialize(new Dictionary<string, object> { { "items", result.ToArray() }, { "skippedZips", skippedZips }, { "skippedArchives", skippedArchives } });
         }
     }
 

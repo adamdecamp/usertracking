@@ -431,13 +431,19 @@ export default function Guide() {
           from Sync evidence scans. The PDF&apos;s authoritative top-level
           organization folder is used as the read-only Organization value in its
           proposed filename; only a PDF at the mapped root uses the mapped
-          folder name. High-confidence rows are selected automatically, editable
-          fields can be corrected, and every original PDF opens in the browser&apos;s
-          dedicated full-size PDF viewer before approval. The app reserves the new
+          folder name. After content analysis, the app automatically renames every
+          unique high-confidence result. It then performs a metadata-only location
+          refresh, which verifies the results without reopening PDF content. The
+          summary reports Renamed, Needs Input, Collisions, ZIPs Skipped, and
+          Archive Trees Excluded. Ambiguous or incomplete results appear under
+          <b> Needs Operator Input</b>; duplicate proposed names and existing target
+          names appear separately under <b>Collisions</b>. Editable fields can be
+          corrected, selected, and applied individually. Every original PDF opens
+          in the browser&apos;s dedicated full-size PDF viewer before approval. The app reserves the new
           browser window before reading the file so validation does not trigger a
           popup blocker; if new windows are blocked, a full-window in-app preview
           remains available. Image-only scans are marked for manual entry.
-          Applying a rename changes only the filesystem name, verifies that the
+          Applying an operator-reviewed rename changes only the filesystem name, verifies that the
           PDF&apos;s SHA-256 is identical before and after, and writes an audit
           entry. It never rewrites, flattens, signs, or compresses the PDF.
         </p>
