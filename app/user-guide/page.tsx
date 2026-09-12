@@ -750,7 +750,12 @@ export default function Guide() {
           User Type. Verify or correct the permitted fields and deselect any
           user or artifact that should not be applied. Only approved matches and
           proposed users are written when you choose{" "}
-          <b>Apply Verified Updates</b>. Before provenance hashes are saved, the
+          <b>Apply Verified Updates</b>. If an existing User Directory record has
+          no Official Email, Sync reads its matched SAAR using the same preferred
+          official-field and top-to-bottom text rules, displays the detected value
+          in Sync Review, and fills the blank email only after that SAAR is
+          approved and verified. An email already assigned to another record is
+          never copied automatically. Before provenance hashes are saved, the
           app refreshes current file locations from filename, path, size, and
           modified-time metadata only, so a preceding rename, compression,
           Rework, Archive, or document-type move cannot leave an obsolete file
@@ -768,10 +773,14 @@ export default function Guide() {
           and artifact type only when exactly one current file matches. It never
           guesses between duplicates. A failed reference receives one more
           metadata-only location refresh. If it still cannot be
-          verified, the database remains unchanged and the Sync Review stays
-          available. The operator can deselect or resolve the failed update and
-          continue any other Clean Up actions without rescanning or restarting
-          the app. A new Sync can still be started separately when needed.
+          verified, only that file or dependent new-user record remains pending.
+          Other independently verified artifact updates, new users, and Clean Up
+          actions are committed normally. The Sync Review stays available so the
+          operator can retry, deselect, or resolve failed items and continue the
+          remaining work without rescanning or restarting the app. A failed batch
+          does not commit its incremental-scan index, ensuring unresolved files
+          are reconsidered after a later restart. A new Sync can still be started
+          separately when needed.
           In the manual <b>Add User</b> workflow
           only, the operator may enter a valid <b>Official Email</b> when the
           uploaded SAAR&apos;s email field and labeled-text fallback are blank;

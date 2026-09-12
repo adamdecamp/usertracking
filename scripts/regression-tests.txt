@@ -9,6 +9,7 @@ tests/concurrency-utils.test.ts
 tests/notification-utils.test.ts
 tests/sync-utils.test.ts
 tests/sync-scope.test.ts
+tests/sync-apply-isolation.test.ts
 tests/session-utils.test.ts
 tests/filename-utils.test.ts
 tests/document-renamer-utils.test.ts
