@@ -757,7 +757,10 @@ export default function Guide() {
           reference. Unrelated PDF and ZIP contents are not reopened during this
           refresh. For a collision decision, the exact operator-selected
           destination path is verified first, so another current file of the same
-          artifact type cannot make the completed selection appear ambiguous. A
+          artifact type cannot make the completed selection appear ambiguous.
+          Every proposed artifact update also retains its exact scanned source
+          path through review; if Clean Up compresses that PDF, verification uses
+          the resulting ZIP path instead of searching by filename alone. A
           verified <code>.pdf</code> to <code>.pdf.zip</code>
           conversion is treated as the same evidence, and the record is updated
           with the ZIP&apos;s actual filename and current path. If an exact container
@@ -765,8 +768,10 @@ export default function Guide() {
           and artifact type only when exactly one current file matches. It never
           guesses between duplicates. A failed reference receives one more
           metadata-only location refresh. If it still cannot be
-          verified, the database remains unchanged, the stale Sync Review is
-          cleared, and the operator can run Sync again without restarting the app.
+          verified, the database remains unchanged and the Sync Review stays
+          available. The operator can deselect or resolve the failed update and
+          continue any other Clean Up actions without rescanning or restarting
+          the app. A new Sync can still be started separately when needed.
           In the manual <b>Add User</b> workflow
           only, the operator may enter a valid <b>Official Email</b> when the
           uploaded SAAR&apos;s email field and labeled-text fallback are blank;

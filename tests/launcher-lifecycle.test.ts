@@ -28,6 +28,21 @@ test('lease loss stops active work and preserves the current Sync review',()=>{
  assert.match(apply,/Verified Sync Paused/);
 });
 
+test('a recoverable verified Sync error preserves review and cleanup actions',()=>{
+ const apply=page.slice(page.indexOf('async function applyVerifiedSync'),page.indexOf('function resetFilters'));
+ assert.match(apply,/pendingSyncBySystem\.current\.set\(failedSystemId,pendingSync\);setPendingSync\(pendingSync\)/);
+ assert.match(apply,/setModal\('sync-review'\)/);
+ assert.match(apply,/current Sync review and Clean Up actions were preserved/);
+ assert.doesNotMatch(apply,/pendingSyncBySystem\.current\.delete\(failedSystemId\)/);
+});
+
+test('selected updates retain exact paths through optional PDF compression',()=>{
+ const apply=page.slice(page.indexOf('async function applyVerifiedSync'),page.indexOf('function resetFilters'));
+ assert.match(page,/type SyncCandidate=\{[^}]*path:string/);
+ assert.match(apply,/compressionResults\.get\(scanPathKey\(match\.path\)\)/);
+ assert.match(apply,/path:compressedResult\?\.path\?\?match\.path/);
+});
+
 test('reconnection waits for an in-flight verified storage operation before activating the session',()=>{
  assert.match(page,/async function readManifestAfterStorageSettles/);
  const reconnect=page.slice(page.indexOf('async function reconnect'),page.indexOf('async function openRestore'));
