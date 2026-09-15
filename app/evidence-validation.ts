@@ -4,7 +4,7 @@ export const evidenceFileLimit=100*1024*1024;
 const zipEntryLimit=8,zipExpansionRatioLimit=200;
 const textDecoder=new TextDecoder('utf-8',{fatal:true});
 
-export type InspectedEvidence={kind:'pdf'|'zip';pdfName:string;pdfBytes:Uint8Array};
+export type InspectedEvidence={kind:'pdf'|'zip';pdfName:string;pdfBytes:Uint8Array;encryptedPdf:boolean};
 
 function hasSequence(bytes:Uint8Array,sequence:Uint8Array,start:number,end:number){
  for(let offset=start;offset<=end-sequence.length;offset++){
@@ -20,6 +20,11 @@ function validatePdf(name:string,bytes:Uint8Array){
  const header=new Uint8Array([0x25,0x50,0x44,0x46,0x2d]),eof=new Uint8Array([0x25,0x25,0x45,0x4f,0x46]);
  if(!hasSequence(bytes,header,0,Math.min(bytes.length,1024)))throw new Error(`${name} does not contain a valid PDF header.`);
  if(!hasSequence(bytes,eof,Math.max(0,bytes.length-4096),bytes.length))throw new Error(`${name} does not contain a valid PDF end marker.`)
+}
+
+function encryptedPdfDictionary(bytes:Uint8Array){
+ const marker=new Uint8Array([0x2f,0x45,0x6e,0x63,0x72,0x79,0x70,0x74]);
+ return hasSequence(bytes,marker,0,bytes.length)
 }
 
 function safeZipPath(name:string){
@@ -56,14 +61,14 @@ function centralEntries(bytes:Uint8Array){
 
 export function inspectEvidenceBytes(filename:string,bytes:Uint8Array):InspectedEvidence{
  const lower=filename.toLowerCase();
- if(lower.endsWith('.pdf')){validatePdf(filename,bytes);return{kind:'pdf',pdfName:filename,pdfBytes:bytes}}
+ if(lower.endsWith('.pdf')){validatePdf(filename,bytes);return{kind:'pdf',pdfName:filename,pdfBytes:bytes,encryptedPdf:encryptedPdfDictionary(bytes)}}
  if(!lower.endsWith('.zip'))throw new Error(`${filename} is not accepted. Select a PDF or a ZIP containing one PDF.`);
  const entries=centralEntries(bytes),files=entries.filter(entry=>!entry.directory);
  if(files.length!==1||entries.some(entry=>!entry.directory&&!entry.name.toLowerCase().endsWith('.pdf')))throw new Error(`${filename} must contain exactly one PDF and no other files.`);
  const entry=files[0],unzipped=unzipSync(bytes),pdfBytes=unzipped[entry.name];
  if(!pdfBytes||pdfBytes.length!==entry.uncompressed)throw new Error(`${filename} could not be safely extracted.`);
  validatePdf(entry.name,pdfBytes);
- return{kind:'zip',pdfName:entry.name,pdfBytes}
+ return{kind:'zip',pdfName:entry.name,pdfBytes,encryptedPdf:encryptedPdfDictionary(pdfBytes)}
 }
 
 export function acceptsEvidenceExtension(filename:string){const lower=filename.toLowerCase();return lower.endsWith('.pdf')||lower.endsWith('.zip')}

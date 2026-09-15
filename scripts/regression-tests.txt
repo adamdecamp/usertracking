@@ -18,6 +18,7 @@ tests/error-utils.test.ts
 tests/manifest-validation.test.ts
 tests/saar-form-utils.test.ts
 tests/manual-saar-utils.test.ts
+tests/manual-evidence-storage.test.ts
 tests/operation-timeout.test.ts
 tests/portable-request-utils.test.ts
 tests/launcher-lifecycle.test.ts

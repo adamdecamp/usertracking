@@ -19,11 +19,12 @@ test('reuses a validated Sync entry only when its path, name, size, and modifica
 });
 
 test('accepts only a bounded Sync index for the active rule set',()=>{
- const entry:SyncIndexEntry={path:'User Evidence/GOV/Shaw_Vivian/file.pdf.zip',name:'file.pdf.zip',size:2048,lastModifiedUnixMs:1787770000123,accepted:true,error:''},index=createSyncIndex('rules-1',[entry],'2026-08-27T00:00:00.000Z');
+ const entry:SyncIndexEntry={path:'User Evidence/GOV/Shaw_Vivian/file.pdf.zip',name:'file.pdf.zip',size:2048,lastModifiedUnixMs:1787770000123,accepted:true,error:'',encryptedPdf:true},index=createSyncIndex('rules-1',[entry],'2026-08-27T00:00:00.000Z');
  assert.deepEqual(readSyncIndex(index,'rules-1')?.files,[entry]);
  assert.equal(readSyncIndex(index,'rules-2'),undefined);
  assert.equal(readSyncIndex({...index,version:2},'rules-1'),undefined);
  assert.equal(readSyncIndex({...index,files:[{...entry,size:-1}]},'rules-1'),undefined);
+ assert.equal(readSyncIndex({...index,files:[{...entry,encryptedPdf:'yes'}]},'rules-1'),undefined);
 });
 
 test('accepts both legacy and journaled portable scan responses',()=>{

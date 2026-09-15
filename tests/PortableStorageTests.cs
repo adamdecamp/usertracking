@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
@@ -16,6 +17,10 @@ internal static class PortableStorageTests
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
 
     private static byte[] PdfBytes() { return Encoding.ASCII.GetBytes("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n"); }
+
+    private static byte[] EncryptedPdfBytes() { return Encoding.ASCII.GetBytes("%PDF-1.4\n1 0 obj\n<< /Encrypt 2 0 R >>\nendobj\ntrailer\n<<>>\n%%EOF\n"); }
+
+    private static string Sha256(byte[] bytes) { using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant(); }
 
     private static byte[] EvidenceZip(string entryName, byte[] contents)
     {
@@ -203,11 +208,18 @@ internal static class PortableStorageTests
         string restored = storage.Restore("mapping-key", "system-1", firstFilename);
         Assert(restored.Contains("first@example.mil") && !restored.Contains("second@example.mil"), "Restore should replace the manifest with the selected snapshot.");
 
-        string evidence = storage.StoreEvidence("mapping-key", "GOV", "Shaw", "Vivian", "Shaw_Vivian_SAAR_24AUG2026.pdf.zip", EvidenceZip("Shaw_Vivian_SAAR_24AUG2026.pdf", PdfBytes()));
+        byte[] storedEvidenceBytes = EvidenceZip("Shaw_Vivian_SAAR_24AUG2026.pdf", PdfBytes());
+        string evidence = storage.StoreEvidence("mapping-key", "GOV", "Shaw", "Vivian", "Shaw_Vivian_SAAR_24AUG2026.pdf.zip", storedEvidenceBytes);
         Assert(evidence.EndsWith(".zip", StringComparison.OrdinalIgnoreCase), "Evidence should retain a ZIP filename.");
+        string evidenceReceipt = storage.VerifyStoredEvidence("mapping-key", "GOV", "Shaw", "Vivian", evidence, Sha256(storedEvidenceBytes));
+        Assert(evidenceReceipt.Contains("\"stored\":true") && evidenceReceipt.Contains("Organizations/GOV/Shaw_Vivian/") && evidenceReceipt.Contains(Sha256(storedEvidenceBytes)), "A completed manual evidence write should expose an exact-path SHA-256 receipt for late-response reconciliation.");
+        Assert(storage.VerifyStoredEvidence("mapping-key", "GOV", "Shaw", "Vivian", evidence, new string('0', 64)).Contains("\"stored\":false"), "A receipt must not accept different content at the same evidence path.");
         File.WriteAllText(Path.Combine(root, "operator-notes.txt"), "This non-evidence file must not require metadata validation.", Encoding.UTF8);
+        string encryptedEvidenceName = "Encrypted_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf", encryptedEvidencePath = Path.Combine(root, "Organizations", "GOV", encryptedEvidenceName);File.WriteAllBytes(encryptedEvidencePath, EncryptedPdfBytes());
         string scan = storage.Scan("mapping-key", "rules-1", false);
         Assert(scan.Contains("Shaw_Vivian_SAAR_24AUG2026.pdf.zip") && scan.Contains("\"accepted\":true") && scan.Contains("\"unchanged\":false"), "The first directory scan should validate launcher-stored PDF evidence.");
+        Dictionary<string, object> encryptedEvidenceItem = ((object[])Json.DeserializeObject(scan)).Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == encryptedEvidenceName);
+        Assert(Convert.ToBoolean(encryptedEvidenceItem["accepted"]) && Convert.ToBoolean(encryptedEvidenceItem["encryptedPdf"]), "The launcher should structurally validate and explicitly identify an encrypted PDF in one pass.");
         string excludedArchiveDirectory = Path.Combine(root, "Organizations", "GOV", "GOV Archive");Directory.CreateDirectory(excludedArchiveDirectory);File.WriteAllBytes(Path.Combine(excludedArchiveDirectory, "Archived_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf.zip"), EvidenceZip("Archived_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf", PdfBytes()));
         var locationPayload = (Dictionary<string, object>)Json.DeserializeObject(storage.ListEvidenceLocations("mapping-key"));object[] locationItems = (object[])locationPayload["items"];
         Assert(locationItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip" && Convert.ToInt64(item["size"]) > 0 && Convert.ToInt64(item["lastModifiedUnixMs"]) > 0), "Metadata-only location refresh should return evidence paths, sizes, and modified times without content validation.");

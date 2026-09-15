@@ -171,9 +171,13 @@ export default function Guide() {
           </li>
           <li>
             Drag and drop or browse for either a readable PDF or a ZIP
-            containing exactly one readable PDF for each available evidence
-            requirement. Other file types, mixed-content ZIPs, and
-            multi-document ZIPs are rejected. If supporting evidence is not yet
+            containing exactly one PDF for each available evidence requirement.
+            An encrypted PDF is accepted only when its complete filename passes
+            the strict Last Name, First Name, organization, artifact type, and
+            DDMMMYYYY date gate. The app records that exception as
+            filename-verified and content-unverified. Other file types,
+            encrypted ZIP containers, mixed-content ZIPs, and multi-document
+            ZIPs are rejected. If supporting evidence is not yet
             available, select <b>Override Missing Supporting Evidence</b> and
             enter the required justification. The SAAR cannot be overridden.
             Every omitted supporting requirement remains visibly <b>Missing</b>
@@ -192,6 +196,16 @@ export default function Guide() {
             the selected requirement after validation instead of remaining
             Missing. A ZIP that needs a canonical outer or contained filename
             is safely repackaged around the same validated PDF content.
+          </li>
+          <li>
+            Manual storage applies separate safety limits to the source read,
+            PDF validation, compression, verified write, and database save. A
+            completed ZIP is hashed before transfer and is not downloaded and
+            hashed a second time. If the Windows launcher finishes a verified
+            write as the browser connection reaches its limit, the app checks
+            the exact destination path and SHA-256 receipt before deciding that
+            the upload failed. Supporting evidence omitted under the documented
+            override does not add extra storage work.
           </li>
           <li>
             The files are saved under{" "}
@@ -249,9 +263,10 @@ export default function Guide() {
           override justification are preserved in the user history and audit log.
           Updated PDF evidence is validated and stored as a ZIP, and newly added
           roles or Privileged User Types require their additional evidence before
-          submission. Manual validation and storage has a two-minute safety limit,
-          so a damaged file or interrupted launcher request returns an actionable
-          error instead of leaving Submit running indefinitely. If the exact
+          submission. Manual validation and storage uses bounded stage-specific
+          safety limits, so a damaged file or interrupted launcher request returns
+          an actionable error without a healthy multi-stage upload being cut off by
+          one shared timer. If the exact
           evidence is associated with another profile, the app uses its SHA-256,
           stored path, or identity-matching filename to release that association,
           archive the prior location, associate it with the selected profile, and
@@ -534,10 +549,18 @@ export default function Guide() {
           For a valid ZIP, Sync reads identity, organization, artifact type, and
           date from the formatted outer <code>.zip</code> or{" "}
           <code>.pdf.zip</code> filename and validates the one embedded PDF for
-          readability. Renamed non-PDFs, unreadable PDFs, unsafe archive paths,
-          encrypted or unsupported ZIPs, mixed-content archives, multi-document
-          archives, files over 100 MB, and suspiciously high ZIP expansion
-          ratios are rejected. Once a valid SAAR is stored as a ZIP, later Syncs
+          readability. An encrypted PDF, including the one PDF inside an
+          unencrypted ZIP, is accepted only when the complete evidence filename
+          independently passes the strict Last Name, First Name, authoritative
+          organization, recognized artifact type, and DDMMMYYYY date gate. Sync
+          reports these files as accepted by filename while leaving their PDF
+          contents and signatures unverified. A new user from an encrypted SAAR
+          has a Missing Official Email until the operator enters it manually.
+          Malformed encrypted filenames, renamed non-PDFs, unreadable PDFs,
+          unsafe archive paths, encrypted or unsupported ZIP containers,
+          mixed-content archives, multi-document archives, files over 100 MB,
+          and suspiciously high ZIP expansion ratios are rejected. Once a valid
+          SAAR is stored as a ZIP, later Syncs
           use its verified container and formatted filename without sending it
           back through loose-PDF form classification or attempting to archive it
           again. An active file with any extension other than PDF
@@ -551,7 +574,9 @@ export default function Guide() {
           locked PDF is reported and left in place rather than being assumed to
           be flattened. Rejected evidence-like filenames appear in the Sync
           Review with the reason and are never used to populate compliance
-          status.
+          status. Evidence Audit does not claim content or digital-signature
+          verification for an encrypted PDF accepted by the strict filename
+          exception.
         </p>
         <aside>
           <b>Disabled SAAR History:</b> Sync also performs a narrow filename-only
@@ -660,7 +685,11 @@ export default function Guide() {
           Ordinary Archive and Superseded folders and generated reports are
           excluded from later active-evidence scans. Rework is intentionally
           revalidated on every Sync. Permanent SAAR Archive folders are limited
-          to the historical account-status check.
+          to the historical account-status check. When Clean Up rebuilds its
+          remaining-action queue after a partial pass, it reapplies the same
+          active-folder and strict canonical-filename gates. Rework evidence and
+          malformed filenames therefore cannot reappear as ZIP or duplicate
+          archive actions.
         </p>
         <p>
           Choose <b>Finish Review</b> when no additional action is selected. The

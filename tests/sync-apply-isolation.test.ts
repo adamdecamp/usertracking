@@ -27,3 +27,11 @@ test('Sync reads and applies Official Email for an existing record with a blank 
  assert.match(apply,/email=matches\.find\(match=>match\.email\)\?\.email\?\?user\.email/);
  assert.match(page,/Official Email Detected/);
 });
+
+test('post-apply cleanup discovery reapplies active-folder and strict-filename gates',()=>{
+ assert.match(apply,/refreshedActiveEvidence=remainingEvidence\.filter\(item=>!insideOrganizationRework\(item\.path\)&&!insidePermanentSaarArchive\(item\.path\)&&evidenceFilenamePassesStorageGate/);
+ assert.match(apply,/duplicateArchiveCandidates\(nextUsers,refreshedActiveEvidence/);
+ assert.match(apply,/selectLoosePdfCleanupCandidates\(refreshedActiveEvidence,nextUsers/);
+ assert.doesNotMatch(apply,/duplicateArchiveCandidates\(nextUsers,remainingEvidence/);
+ assert.doesNotMatch(apply,/selectLoosePdfCleanupCandidates\(remainingEvidence,nextUsers/);
+});

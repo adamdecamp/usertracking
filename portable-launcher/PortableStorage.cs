@@ -405,14 +405,14 @@ internal sealed class PortableStorage : IDisposable
                     Dictionary<string, object> cached = null;
                     bool unchanged = !reworkEvidence && previous.TryGetValue(relative, out cached) && String.Equals(Convert.ToString(cached["name"], CultureInfo.InvariantCulture), filename, StringComparison.OrdinalIgnoreCase) && Convert.ToInt64(cached["size"], CultureInfo.InvariantCulture) == size && Convert.ToInt64(cached["lastModifiedUnixMs"], CultureInfo.InvariantCulture) == lastModifiedUnixMs;
                     string validationError = unchanged ? Convert.ToString(cached["error"], CultureInfo.InvariantCulture) : "";
-                    bool cacheable = true, accepted = unchanged ? Convert.ToBoolean(cached["accepted"], CultureInfo.InvariantCulture) : historicalSaar || TryValidateEvidenceFile(file, out validationError, out cacheable);
+                    bool cacheable = true, encryptedPdf = unchanged && cached.ContainsKey("encryptedPdf") && Convert.ToBoolean(cached["encryptedPdf"], CultureInfo.InvariantCulture), accepted = unchanged ? Convert.ToBoolean(cached["accepted"], CultureInfo.InvariantCulture) : historicalSaar || TryValidateEvidenceFile(file, out validationError, out cacheable, out encryptedPdf);
                     if (!unchanged)
                     {
                         try { info.Refresh();if (!info.Exists || info.Length != size || new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds() != lastModifiedUnixMs) { accepted = false; validationError = "The evidence file changed during Sync. Run Sync again."; cacheable = false; } }
                         catch (Exception error) { if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;accepted = false;validationError = "File metadata could not be rechecked after validation: " + CleanLine(error.Message, 220);cacheable = false; }
                     }
                     string cleanName = CleanLine(filename, 500), cleanError = CleanLine(validationError, 300);
-                    var item = new Dictionary<string, object> { { "name", cleanName }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", lastModifiedUnixMs }, { "accepted", accepted }, { "error", cleanError }, { "unchanged", unchanged } };
+                    var item = new Dictionary<string, object> { { "name", cleanName }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", lastModifiedUnixMs }, { "accepted", accepted }, { "error", cleanError }, { "encryptedPdf", encryptedPdf }, { "unchanged", unchanged } };
                     result.Add(item);
                     if (cacheable) next.Add(new Dictionary<string, object> { { "name", cleanName }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", lastModifiedUnixMs }, { "accepted", accepted }, { "error", cleanError } });
                     item["cacheable"] = cacheable;AppendSyncJournalResult(journal.Path, item, accepted ? "validated" : "rejected");item.Remove("cacheable");
@@ -550,7 +550,9 @@ internal sealed class PortableStorage : IDisposable
 
     private static Dictionary<string, object> IndexItem(Dictionary<string, object> item)
     {
-        return new Dictionary<string, object> { { "name", item["name"] }, { "path", item["path"] }, { "size", item["size"] }, { "lastModifiedUnixMs", item["lastModifiedUnixMs"] }, { "accepted", item["accepted"] }, { "error", item["error"] } };
+        var indexed = new Dictionary<string, object> { { "name", item["name"] }, { "path", item["path"] }, { "size", item["size"] }, { "lastModifiedUnixMs", item["lastModifiedUnixMs"] }, { "accepted", item["accepted"] }, { "error", item["error"] } };
+        if (item.ContainsKey("encryptedPdf")) indexed["encryptedPdf"] = item["encryptedPdf"];
+        return indexed;
     }
 
     private static void PruneSyncJournals(string directory)
@@ -579,7 +581,7 @@ internal sealed class PortableStorage : IDisposable
                 string relative = Convert.ToString(item["path"], CultureInfo.InvariantCulture), name = Convert.ToString(item["name"], CultureInfo.InvariantCulture), error = Convert.ToString(item["error"], CultureInfo.InvariantCulture);
                 long size = Convert.ToInt64(item["size"], CultureInfo.InvariantCulture), modified = Convert.ToInt64(item["lastModifiedUnixMs"], CultureInfo.InvariantCulture);
                 if (String.IsNullOrWhiteSpace(relative) || relative.Length > 32767 || relative.IndexOf('\0') >= 0 || String.IsNullOrWhiteSpace(name) || name.Length > 500 || size < 0 || modified < 0 || error.Length > 300) return new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
-                item["accepted"] = Convert.ToBoolean(item["accepted"], CultureInfo.InvariantCulture);result[relative] = item;
+                item["accepted"] = Convert.ToBoolean(item["accepted"], CultureInfo.InvariantCulture);if (item.ContainsKey("encryptedPdf")) item["encryptedPdf"] = Convert.ToBoolean(item["encryptedPdf"], CultureInfo.InvariantCulture);result[relative] = item;
             }
         }
         catch { return new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase); }
@@ -1077,6 +1079,17 @@ internal sealed class PortableStorage : IDisposable
             AtomicWrite(Path.Combine(directory, zipName), bytes);
         }
         return zipName;
+    }
+
+    public string VerifyStoredEvidence(string systemId, string organization, string last, string first, string filename, string expectedSha256)
+    {
+        string expected = CleanLine(expectedSha256, 64).ToLowerInvariant();
+        if (!IsSha256(expected)) throw new InvalidDataException("The expected evidence SHA-256 value is invalid.");
+        string safeName = SafePart(filename, 180);
+        if (!safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || !String.Equals(safeName, filename, StringComparison.Ordinal)) throw new InvalidDataException("The stored evidence filename is invalid.");
+        string root = Root(systemId), path = Path.Combine(root, "Organizations", ValidOrganizationName(organization), SafePart(last, 80) + "_" + SafePart(first, 80), safeName), actual = TryFileHash(path);
+        bool stored = String.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
+        return json.Serialize(new Dictionary<string, object> { { "stored", stored }, { "filename", safeName }, { "path", Relative(root, path).Replace(Path.DirectorySeparatorChar, '/') }, { "sha256", actual } });
     }
 
     public string ListOrganizations(string systemId)
@@ -2129,13 +2142,21 @@ internal sealed class PortableStorage : IDisposable
     private static bool TryValidateEvidenceFile(string path, out string error)
     {
         bool cacheable;
-        return TryValidateEvidenceFile(path, out error, out cacheable);
+        bool encryptedPdf;
+        return TryValidateEvidenceFile(path, out error, out cacheable, out encryptedPdf);
     }
 
     private static bool TryValidateEvidenceFile(string path, out string error, out bool cacheable)
     {
+        bool encryptedPdf;
+        return TryValidateEvidenceFile(path, out error, out cacheable, out encryptedPdf);
+    }
+
+    private static bool TryValidateEvidenceFile(string path, out string error, out bool cacheable, out bool encryptedPdf)
+    {
         error = "";
         cacheable = true;
+        encryptedPdf = false;
         try
         {
             var info = new FileInfo(path);
@@ -2143,12 +2164,12 @@ internal sealed class PortableStorage : IDisposable
             if (info.Length > EvidenceLimit) throw new InvalidDataException("The file exceeds the 100 MB evidence limit.");
             if (path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
             {
-                using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) ValidatePdfStream(stream, Path.GetFileName(path), info.Length);
+                using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) encryptedPdf = ValidatePdfStream(stream, Path.GetFileName(path), info.Length);
                 return true;
             }
             if (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
-                using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) ValidateEvidenceZip(stream, Path.GetFileName(path));
+                using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) encryptedPdf = ValidateEvidenceZip(stream, Path.GetFileName(path));
                 return true;
             }
             error = "Only PDF evidence or a ZIP containing one PDF is accepted.";
@@ -2160,7 +2181,7 @@ internal sealed class PortableStorage : IDisposable
         catch (Exception ex) { cacheable = false;error = CleanLine(ex.Message, 300);return false; }
     }
 
-    private static void ValidateEvidenceZip(Stream stream, string label)
+    private static bool ValidateEvidenceZip(Stream stream, string label)
     {
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Read, true))
         {
@@ -2177,9 +2198,9 @@ internal sealed class PortableStorage : IDisposable
                 if (entry.Length > 1024L * 1024 && entry.Length / Math.Max(1D, entry.CompressedLength) > 200D) throw new InvalidDataException("The ZIP expansion ratio exceeds the safety limit.");
             }
             if (files.Count != 1) throw new InvalidDataException("The ZIP must contain exactly one PDF and no other files.");
-            try { using (Stream pdf = files[0].Open()) ValidatePdfStream(pdf, files[0].FullName, files[0].Length); }
+            try { using (Stream pdf = files[0].Open()) return ValidatePdfStream(pdf, files[0].FullName, files[0].Length); }
             catch (InvalidDataException) { throw; }
-            catch (Exception) { throw new InvalidDataException(label + " contains an encrypted, unsupported, or unreadable PDF entry."); }
+            catch (Exception) { throw new InvalidDataException(label + " contains an unsupported or unreadable PDF entry."); }
         }
     }
 
@@ -2189,10 +2210,11 @@ internal sealed class PortableStorage : IDisposable
         foreach (string segment in name.Split('/')) if (segment == "." || segment == "..") throw new InvalidDataException("The ZIP contains an unsafe entry path.");
     }
 
-    private static void ValidatePdfStream(Stream stream, string label, long expectedLength)
+    private static bool ValidatePdfStream(Stream stream, string label, long expectedLength)
     {
-        byte[] buffer = new byte[8192], head = new byte[1024], tail = new byte[4096];
-        int headCount = 0, tailCount = 0, tailPosition = 0, read;
+        byte[] buffer = new byte[8192], head = new byte[1024], tail = new byte[4096], encryptionMarker = Encoding.ASCII.GetBytes("/Encrypt");
+        int headCount = 0, tailCount = 0, tailPosition = 0, encryptionMatched = 0, read;
+        bool encryptedPdf = false;
         long total = 0;
         while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
         {
@@ -2206,6 +2228,12 @@ internal sealed class PortableStorage : IDisposable
             }
             for (int index = 0; index < read; index++)
             {
+                byte value = buffer[index];
+                if (!encryptedPdf)
+                {
+                    if (value == encryptionMarker[encryptionMatched]) { encryptionMatched++;if (encryptionMatched == encryptionMarker.Length) encryptedPdf = true; }
+                    else encryptionMatched = value == encryptionMarker[0] ? 1 : 0;
+                }
                 tail[tailPosition] = buffer[index];
                 tailPosition = (tailPosition + 1) % tail.Length;
                 if (tailCount < tail.Length) tailCount++;
@@ -2217,6 +2245,7 @@ internal sealed class PortableStorage : IDisposable
         for (int index = 0; index < tailCount; index++) orderedTail[index] = tail[(tailStart + index) % tail.Length];
         if (!ContainsBytes(head, headCount, pdfHeader)) throw new InvalidDataException(label + " does not contain a valid PDF header.");
         if (!ContainsBytes(orderedTail, orderedTail.Length, pdfEnd)) throw new InvalidDataException(label + " does not contain a valid PDF end marker.");
+        return encryptedPdf;
     }
 
     private static bool ContainsBytes(byte[] bytes, int length, byte[] sequence)

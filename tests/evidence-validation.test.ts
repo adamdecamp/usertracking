@@ -4,6 +4,7 @@ import {zipSync} from 'fflate';
 import {acceptsEvidenceExtension,inspectEvidenceBytes} from '../app/evidence-validation.ts';
 
 const pdf=new TextEncoder().encode('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n');
+const encryptedPdf=new TextEncoder().encode('%PDF-1.4\n1 0 obj\n<< /Encrypt 2 0 R >>\nendobj\ntrailer\n<<>>\n%%EOF\n');
 
 test('accepts a direct PDF by content',()=>{
  const result=inspectEvidenceBytes('Shaw_Vivian_(GOV)_GEN_SAAR_24AUG2026.pdf',pdf);
@@ -16,6 +17,14 @@ test('accepts a ZIP containing exactly one PDF',()=>{
  const result=inspectEvidenceBytes('Shaw_Vivian_(GOV)_GEN_SAAR_24AUG2026.pdf.zip',archive);
  assert.equal(result.kind,'zip');
  assert.equal(result.pdfName,'Shaw_Vivian_(GOV)_GEN_SAAR_24AUG2026.pdf')
+});
+
+test('identifies structurally valid encrypted PDFs without decrypting their contents',()=>{
+ const direct=inspectEvidenceBytes('Shaw_Vivian_(GOV)_GEN_SAAR_24AUG2026.pdf',encryptedPdf);
+ assert.equal(direct.encryptedPdf,true);
+ const archive=zipSync({'Shaw_Vivian_(GOV)_GEN_SAAR_24AUG2026.pdf':encryptedPdf});
+ const zipped=inspectEvidenceBytes('Shaw_Vivian_(GOV)_GEN_SAAR_24AUG2026.pdf.zip',archive);
+ assert.equal(zipped.encryptedPdf,true)
 });
 
 test('rejects renamed files, non-PDF ZIP entries, and multiple documents',()=>{

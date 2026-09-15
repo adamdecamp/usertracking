@@ -9,6 +9,7 @@ export type SyncIndexEntry={
  lastModifiedUnixMs:number;
  accepted:boolean;
  error:string;
+ encryptedPdf?:boolean;
 };
 
 export type SyncIndexEnvelope={
@@ -45,7 +46,7 @@ export function readSyncIndex(value:unknown,expectedRuleSetVersion:string){
  for(const item of envelope.files){
   if(!item||typeof item!=='object')return;
   const entry=item as Partial<SyncIndexEntry>;
-  if(typeof entry.path!=='string'||!entry.path||entry.path.length>32767||entry.path.includes('\0')||typeof entry.name!=='string'||!entry.name||entry.name.length>500||typeof entry.size!=='number'||!Number.isSafeInteger(entry.size)||entry.size<0||typeof entry.lastModifiedUnixMs!=='number'||!Number.isSafeInteger(entry.lastModifiedUnixMs)||entry.lastModifiedUnixMs<0||typeof entry.accepted!=='boolean'||typeof entry.error!=='string'||entry.error.length>300)return;
+  if(typeof entry.path!=='string'||!entry.path||entry.path.length>32767||entry.path.includes('\0')||typeof entry.name!=='string'||!entry.name||entry.name.length>500||typeof entry.size!=='number'||!Number.isSafeInteger(entry.size)||entry.size<0||typeof entry.lastModifiedUnixMs!=='number'||!Number.isSafeInteger(entry.lastModifiedUnixMs)||entry.lastModifiedUnixMs<0||typeof entry.accepted!=='boolean'||typeof entry.error!=='string'||entry.error.length>300||(entry.encryptedPdf!==undefined&&typeof entry.encryptedPdf!=='boolean'))return;
   files.push(entry as SyncIndexEntry);
  }
  return{...envelope,files} as SyncIndexEnvelope;
