@@ -47,6 +47,20 @@ test('recognizes Cyber Awareness filename wording as DoD Cyber evidence',()=>{
  }
 });
 
+test('does not use a standalone DoD marker to relabel another DoD artifact as cyber training',()=>{
+ const filename='Brown_Jacob_(LM)_DoD_8140_Qualification_Memo_26AUG2026.pdf';
+ assert.equal(filenameMatchesKind(filename,'DoD Cyber Cert'),false);
+ assert.equal(filenameMatchesKind(filename,'8140 Cert Memo'),true);
+ assert.equal(canonicalEvidenceFilename(filename,'LM'),'Brown_Jacob_(LM)_8140_Cert_Memo_26AUG2026.pdf');
+});
+
+test('gives the specific Delegated Trusted Agent rule precedence over a generic course rule',()=>{
+ const filename='Brown_Jacob_(LM)_Delegated_Trusted_Agent_Course_26AUG2026.pdf';
+ assert.equal(filenameMatchesKind(filename,'Privileged User Training Cert'),false);
+ assert.equal(filenameMatchesKind(filename,'DTA Training Cert'),true);
+ assert.equal(canonicalEvidenceFilename(filename,'LM'),'Brown_Jacob_(LM)_DTA_Training_Cert_26AUG2026.pdf');
+});
+
 test('never treats a certificate title as a Last Name and First Name',()=>{
  for(const filename of [
   'Cyber_Awareness_(LM)_DoD_Cyber_Cert_26AUG2026.pdf',

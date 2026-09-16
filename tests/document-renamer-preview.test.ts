@@ -98,3 +98,18 @@ test('Document Renamer automatically applies unique high-confidence names and ve
  assert.match(page,/Archive Trees Excluded/);
  assert.match(styles,/\.renamer-stats\{/);
 });
+
+test('Sync applies the shared Document Renamer analysis to changed noncanonical PDFs',()=>{
+ const shared=page.match(/async function analyzeRenamerPdf[\s\S]*?function DocumentRenamerModal/)?.[0]??'';
+ const sync=page.match(/const syncRenamerCandidates=[\s\S]*?const saarReads=/)?.[0]??'';
+ const manual=page.match(/const batch=remaining\.slice[\s\S]*?saveRenamerQueue/)?.[0]??'';
+ assert.ok(shared,'The shared Document Renamer PDF analysis routine was not found.');
+ assert.ok(sync,'The Sync Document Renamer stage was not found.');
+ assert.match(sync,/documentNeedsFilenameNormalization/);
+ assert.match(sync,/!item\.unchanged\|\|insideOrganizationRework\(item\.path\)/);
+ assert.match(sync,/analyzeRenamerPdf\(candidate,sourceUsers,h\.name,controller\.signal\)/);
+ assert.match(sync,/item\.confidence==='High'/);
+ assert.match(sync,/normalizationFailures\.push/);
+ assert.match(sync,/renamedDuringSync\+\+/);
+ assert.match(manual,/analyzeRenamerPdf\(candidate,users,root\.name\)/);
+});

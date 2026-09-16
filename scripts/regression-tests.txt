@@ -13,6 +13,7 @@ tests/sync-apply-isolation.test.ts
 tests/session-utils.test.ts
 tests/filename-utils.test.ts
 tests/document-renamer-utils.test.ts
+tests/document-renamer-filename-fuzz.test.ts
 tests/document-renamer-preview.test.ts
 tests/error-utils.test.ts
 tests/manifest-validation.test.ts

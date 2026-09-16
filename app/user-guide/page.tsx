@@ -424,7 +424,12 @@ export default function Guide() {
         <h3>Rename Existing Documents</h3>
         <p>
           After mapping the system folder, choose <b>Document Renamer</b> from
-          the main toolbar. It finds loose PDFs whose names do not already match
+          the main toolbar for an operator-directed review. Every Sync also runs
+          the same content-based Document Renamer analysis before user and evidence
+          matching. Sync limits that heavier analysis to new or changed loose PDFs
+          and every in-scope Rework PDF that still fails the canonical filename
+          gate; exact canonical names and unchanged previously analyzed active files
+          stay on the fast path. It finds loose PDFs whose names do not already match
           the exact canonical tracker rules. A recognizable but noncanonical name—such
           as one using commas, spaces, a legacy document label, or the wrong
           organization—remains in the review queue rather than being treated as
@@ -434,7 +439,12 @@ export default function Guide() {
           revalidated on every Sync instead of being skipped by the unchanged-file
           index, so corrections are detected after an earlier rejection. Exact canonical filenames are
           skipped without opening their PDF content. For remaining candidates, it
-          reads selectable text and supported SAAR form fields locally. A usable
+          first recognizes case-insensitive filename keywords despite commas, spaces,
+          or underscores. Supported legacy labels include DD Form 2875 and System
+          Access Request; Cyber Awareness and Awareness Challenge; Acceptable Use;
+          8140 and 8570; Responsibilities and Course; and DTA or Delegated Trusted
+          Agent training. It then reads selectable text and supported SAAR form fields
+          locally when filename metadata is incomplete. A usable
           <code> Last_First </code> identity in the filename is always authoritative;
           PDF text and SAAR form fields fill identity only when the filename has no
           usable person name. The selected system&apos;s User Directory can supply
@@ -610,7 +620,12 @@ export default function Guide() {
         <p>
           Sync automatically renames a recognized nonstandard evidence date to
           DDMMMYYYY in the same active folder and records the change in the
-          audit log. Before Archive Preflight, Sync checks evidence associated
+          audit log. It then uses the shared Document Renamer rules to read the
+          content of remaining changed noncanonical PDFs, automatically applies
+          unique high-confidence canonical names, and continues past per-file
+          timeouts or analysis failures so one document cannot stop the Sync.
+          Ambiguous results remain available for the manual Document Renamer and
+          Rework workflow. Before Archive Preflight, Sync checks evidence associated
           with active users. If a retained artifact is missing from its recorded
           active location but the same associated file is found in that
           organization&apos;s Archive, Sync restores it to the canonical document-type

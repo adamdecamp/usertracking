@@ -52,15 +52,15 @@ export function normalizeFilenameOrganization(filename:string,organization:strin
 }
 
 const kindRules:[string,RegExp[]][]=[
- ['DTA Training Cert',[/\bDTA\b.{0,80}\bTRAINING\b/i,/\bDELEGATED TRUSTED AGENT\b.{0,80}\bTRAINING\b/i]],
+ ['DTA Training Cert',[/\bDTA\b.{0,80}\b(?:TRAINING|COURSE|RESPONSIBILITIES)\b/i,/\bDELEGATED TRUSTED AGENT\b.{0,80}\b(?:TRAINING|COURSE|RESPONSIBILITIES)\b/i]],
  ['Privileged User Training Cert',[/\bPRIV(?:ILEGED)?(?:\s+USER)?\b.{0,100}\bTRAINING\b/i,/\bPRIVILEGED ACCESS\b.{0,100}\bTRAINING\b/i,/\bPRIVILEGED USER CYBERSECURITY RESPONSIBILITIES\b/i]],
  ['8140 Cert Memo',[/\b8140(?:\.0+)?\b.{0,180}\b(?:MEMO|MEMORANDUM|CERTIFICATION|QUALIFICATION)\b/i,/\b(?:MEMO|MEMORANDUM)\b.{0,180}\b8140(?:\.0+)?\b/i]],
- ['SAAR',[/\bDD\s*FORM\s*2875\b/i,/\bSYSTEM AUTHORIZATION ACCESS REQUEST\b/i,/\bSAAR\b/i]],
- ['User Agreement',[/\bAGREEMENTS?\b/i,/\bACCEPTABLE USE POLICY\b/i]],
- ['DoD Cyber Cert',[/\b(?:DOD\s+)?CYBER\s+AWARENESS(?:\s+CHALLENGE)?(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bAWARENESS\s+CHALLENGE(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i]],
+ ['SAAR',[/\bDD\s*FORM\s*2875\b/i,/\bSYSTEM(?:\s+AUTHORIZATION)?\s+ACCESS\s+REQUEST\b/i,/\bSAAR\b/i]],
+ ['User Agreement',[/\bAGREEMENTS?\b/i,/\bACCEPTABLE\s+USE(?:\s+POLICY)?\b/i]],
+ ['DoD Cyber Cert',[/\b(?:DOD\s+)?CYBER\s+AWARENESS(?:\s+CHALLENGE)?(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bAWARENESS\s+CHALLENGE(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bINFORMATION\s+ASSURANCE\b.{0,80}\bAWARENESS\b/i]],
 ];
 
-function detectKind(text:string,filename:string){const filenameKind=artifactKinds.find(kind=>filenameMatchesKind(filename,kind));if(filenameKind)return filenameKind;const source=text.slice(0,120000);for(const[kind,rules]of kindRules)if(rules.some(rule=>rule.test(source)))return kind;return''}
+function detectKind(text:string,filename:string){const filenameKind=artifactKinds.find(kind=>filenameMatchesKind(filename,kind));if(filenameKind)return filenameKind;const filenameText=filename.replace(/[^A-Za-z0-9.]+/g,' '),source=`${filenameText}\n${text}`.slice(0,120000);for(const[kind,rules]of kindRules)if(rules.some(rule=>rule.test(source)))return kind;return''}
 
 function identifyUser(text:string,filename:string,users:RenamerUser[]){
  const haystack=` ${normalized(`${text}\n${filename}`)} `,scored=users.filter(user=>plausiblePersonIdentity(user.last,user.first)).map(user=>{const first=normalized(user.first),last=normalized(user.last);let score=0;if(first&&last){if(haystack.includes(` ${first} ${last} `))score+=5;if(haystack.includes(` ${last} ${first} `))score+=4;if(haystack.includes(` ${last} ${first.charAt(0)} `))score+=2;if(normalized(filename).startsWith(`${last} ${first}`))score+=5}return{user,score}}).filter(item=>item.score>0).sort((a,b)=>b.score-a.score);
