@@ -241,7 +241,10 @@ export default function Guide() {
           record in the same information system, updates the manifest and backup,
           and adds the operator action
           to the change history and tamper-evident audit log. Existing email
-          addresses remain read-only in this workflow. Access and privilege changes
+          addresses remain read-only in this workflow. Each existing-user evidence
+          card accepts drag and drop or File Explorer selection for a PDF or a ZIP
+          containing exactly one PDF. The Updated SAAR control uses the same upload
+          methods and validation. Access and privilege changes
           require an updated SAAR by default. The date recorded for a SAAR is the
           date the account was created or disabled; it is never an expiration date,
           and SAARs are never classified as Overdue. Disabling or deleting a user moves only
@@ -678,7 +681,9 @@ export default function Guide() {
           Only loose PDFs matched to a verified User Directory record or a
           verified user discovered during the current Sync are eligible for
           compression. This includes valid PDFs dropped directly into the top
-          level of an organization folder. The new ZIP is reopened and
+          level of an organization folder. Incremental and full rescans retain
+          unchanged loose PDFs in this review, so deferring compression does not
+          hide them on a later Sync. The new ZIP is reopened and
           validated as containing exactly one readable PDF before the original
           PDF is deleted; a creation, validation, or deletion failure leaves no
           incomplete replacement and preserves the original PDF. Organization

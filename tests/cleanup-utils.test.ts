@@ -69,6 +69,15 @@ test('reuses first-scan evidence for cleanup immediately after a verified user i
  assert.deepEqual(selectLoosePdfCleanupCandidates(scanned,[{identity:'Shaw/Vivian'}],matches).map(item=>item.path),[scanned[0].path]);
 });
 
+test('retags unchanged loose PDFs for compression on every rescan',()=>{
+ const scanned=[
+  {path:'Organizations/LM/DoD Cyber Cert/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf',filename:'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf',identity:'Brown/Jacob',unchanged:true},
+  {path:'Organizations/LM/DoD Cyber Cert/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip',filename:'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip',identity:'Brown/Jacob',unchanged:true},
+ ];
+ const result=selectLoosePdfCleanupCandidates(scanned,[{identity:'Brown/Jacob'}],(item,user)=>item.identity===user.identity);
+ assert.deepEqual(result.map(item=>item.path),[scanned[0].path]);
+});
+
 test('retains deferred and failed cleanup actions after successful actions are removed',()=>{
  const items=[{id:'archive-1'},{id:'zip-1'},{id:'rework-1'}];
  assert.deepEqual(retainUnfinishedCleanup(items,['zip-1']).map(item=>item.id),['archive-1','rework-1']);
