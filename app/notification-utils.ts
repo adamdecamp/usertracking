@@ -28,6 +28,6 @@ export function notificationBody(state:NotificationState,requirement:string){
  };
  const fallback=`Last_First_(ORG)_${requirement.replace(/[^A-Za-z0-9]+/g,'_')}_DDMMMYYYY.pdf`;
  const trainingInstruction=requirement==='DoD Cyber Cert'?`\n\nComplete the DoD Cyber Awareness Challenge here:\n${dodCyberTrainingUrl}`:'';
- const filenameInstruction=state==='Missing'?`\n\nWhen returning the document, use this filename format:\n${filenameByRequirement[requirement]??fallback}\n\nIncorrectly formatted or incorrectly named files will be rejected. The naming standard matches evidence to the correct user and helps the tracker calculate due dates accurately.`:'';
+ const filenameInstruction=`\n\nIMPORTANT - REQUIRED FILE NAME\n${filenameByRequirement[requirement]??fallback}\n\nFILES THAT DO NOT FOLLOW THIS NAMING STANDARD WILL BE REJECTED.\nRename the file before returning it. The naming standard matches evidence to the correct user and helps the tracker calculate due dates accurately.`;
  return `Hello,\n\n${issue}\n\nFailure to provide this requirement may result in loss of access to the system.${trainingInstruction}\n\nPlease provide a copy as soon as possible to maintain your account access.${filenameInstruction}`;
 }

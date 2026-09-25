@@ -1107,10 +1107,11 @@ export default function Guide() {
             Outlook must be available to create an attachment-bearing draft.
           </li>
           <li>
-            Missing-document drafts include the selected artifact&apos;s required
-            filename format. The message warns that incorrectly formatted or
-            incorrectly named files will be rejected and explains that consistent
-            names support accurate user matching and due-date tracking.
+            Missing, due-within-30-days, and overdue drafts prominently display the
+            selected artifact&apos;s required filename format. The message uses an
+            uppercase warning that files outside the naming standard will be rejected
+            and instructs the recipient to rename the file before returning it.
+            Consistent names support accurate user matching and due-date tracking.
           </li>
           <li>
             Missing, due-within-30-days, and overdue DoD Cyber Cert drafts include
