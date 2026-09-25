@@ -52,7 +52,7 @@ export function normalizeFilenameOrganization(filename:string,organization:strin
 }
 
 const kindRules:[string,RegExp[]][]=[
- ['DTA Training Cert',[/\bDTA\b.{0,80}\b(?:TRAINING|COURSE|RESPONSIBILITIES)\b/i,/\bDELEGATED TRUSTED AGENT\b.{0,80}\b(?:TRAINING|COURSE|RESPONSIBILITIES)\b/i]],
+ ['DTA Training',[/\bDTA\b.{0,80}\b(?:TRAINING|COURSE|RESPONSIBILITIES)\b/i,/\bDELEGATED TRUSTED AGENT\b.{0,80}\b(?:TRAINING|COURSE|RESPONSIBILITIES)\b/i]],
  ['Privileged User Training Cert',[/\bPRIV(?:ILEGED)?(?:\s+USER)?\b.{0,100}\bTRAINING\b/i,/\bPRIVILEGED ACCESS\b.{0,100}\bTRAINING\b/i,/\bPRIVILEGED USER CYBERSECURITY RESPONSIBILITIES\b/i]],
  ['8140 Cert Memo',[/\b8140(?:\.0+)?\b.{0,180}\b(?:MEMO|MEMORANDUM|CERTIFICATION|QUALIFICATION)\b/i,/\b(?:MEMO|MEMORANDUM)\b.{0,180}\b8140(?:\.0+)?\b/i]],
  ['SAAR',[/\bDD\s*FORM\s*2875\b/i,/\bSYSTEM(?:\s+AUTHORIZATION)?\s+ACCESS\s+REQUEST\b/i,/\bSAAR\b/i]],
@@ -114,7 +114,7 @@ export function applySaarFormFallback(analysis:RenamerAnalysis,identity?:{first:
 
 export function buildTrackerFilename(input:Pick<RenamerAnalysis,'kind'|'first'|'last'|'organization'|'date'|'role'|'privilegedType'>){
  const last=token(input.last),first=token(input.first),organization=token(input.organization),dateMatch=input.date.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!last||!first||!organization||!dateMatch||!input.kind)return;
- const month=+dateMatch[2],date=`${dateMatch[3]}${months[month-1]??''}${dateMatch[1]}`;if(!months[month-1])return;let kind=token(input.kind);
+ const month=+dateMatch[2],date=`${dateMatch[3]}${months[month-1]??''}${dateMatch[1]}`;if(!months[month-1])return;let kind=input.kind==='DTA Training'?'DTA_Training':token(input.kind);
  if(input.kind==='SAAR'){if(!input.role)return;kind=input.role==='PRIV'?`PRIV_${token(input.privilegedType)}_SAAR`:'GEN_SAAR';if(kind.includes('__'))return}
  const value=`${last}_${first}_(${organization})_${kind}_${date}.pdf`;return value.length<=180?value:undefined;
 }

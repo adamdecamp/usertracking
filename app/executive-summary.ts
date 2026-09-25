@@ -38,10 +38,10 @@ export async function createExecutiveSummaryPdf(input:ExecutiveSummaryInput){
  page.drawText(`Release ${input.version}   |   Rule Set ${input.ruleSetVersion}`,{x:54,y:665,size:8.5,font:bold,color:white});
 
  let leftY=611;leftY=heading(page,'Executive Purpose',42,leftY,bold);leftY=paragraph(page,'Provides a single administrative view of user access, roles, training, agreements, and supporting evidence across multiple information systems. It is designed for intermittent Windows use with organization-controlled shared folders.',42,leftY,248,regular);leftY-=9;leftY=heading(page,'Core Capabilities',42,leftY,bold);bullets(page,[
-  'Folder-first automation restores mapped systems and starts Sync at launch, after mapping, and when changing systems.',
+  'Folder-first automation restores mapped systems and supports operator-selected full-system or targeted organization Sync.',
   'Evidence-driven records discover users from validated SAARs or correctly named supporting evidence, while clearly marking absent SAARs and email data.',
   'Role-aware tracking distinguishes General and Privileged users, including multiple privileged types such as DTA, admin, developer, and cyber.',
-  'Actionable status identifies Current, Due Within 30 Days, Missing, and Overdue items and prepares targeted Outlook drafts.'
+  'Actionable status identifies Current, Due Within 30 Days, Missing, and Overdue items and prepares targeted Outlook drafts with approved User Agreement templates when required.'
  ],42,leftY,248,regular);
 
  let rightY=611;rightY=heading(page,'Audit and Inspection Readiness',322,rightY,bold);rightY=bullets(page,[

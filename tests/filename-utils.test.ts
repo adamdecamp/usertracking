@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalManualEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,looksLikeEvidenceFilename,normalizeFilenameDate,operatorMarkedIncomplete,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
+import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalManualEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,looksLikeEvidenceFilename,normalizeFilenameDate,operatorMarkedIncomplete,organizationArtifactStorageFolder,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -23,7 +23,11 @@ test('maps canonical evidence kinds to organization document-type folders',()=>{
  assert.equal(artifactStorageFolder('DoD Cyber Cert'),'DoD Cyber Cert');
  assert.equal(artifactStorageFolder('8140 Cert Memo'),'8140 Certification Memo');
  assert.equal(artifactStorageFolder('Privileged User Training Cert'),'Privileged User Training');
+ assert.equal(artifactStorageFolder('DTA Training'),'DTA Training');
  assert.equal(artifactStorageFolder('DTA Training Cert'),'DTA Training');
+ assert.equal(organizationArtifactStorageFolder('SAAR','LM'),'LM SAAR');
+ assert.equal(organizationArtifactStorageFolder('DoD Cyber Cert','GOV'),'GOV DoD Cyber Cert');
+ assert.equal(organizationArtifactStorageFolder('DTA Training','Boeing'),'Boeing DTA Training');
  assert.equal(artifactStorageFolder('Unknown'),undefined);
 });
 
@@ -57,8 +61,8 @@ test('does not use a standalone DoD marker to relabel another DoD artifact as cy
 test('gives the specific Delegated Trusted Agent rule precedence over a generic course rule',()=>{
  const filename='Brown_Jacob_(LM)_Delegated_Trusted_Agent_Course_26AUG2026.pdf';
  assert.equal(filenameMatchesKind(filename,'Privileged User Training Cert'),false);
- assert.equal(filenameMatchesKind(filename,'DTA Training Cert'),true);
- assert.equal(canonicalEvidenceFilename(filename,'LM'),'Brown_Jacob_(LM)_DTA_Training_Cert_26AUG2026.pdf');
+ assert.equal(filenameMatchesKind(filename,'DTA Training'),true);
+ assert.equal(canonicalEvidenceFilename(filename,'LM'),'Brown_Jacob_(LM)_DTA_Training_26AUG2026.pdf');
 });
 
 test('never treats a certificate title as a Last Name and First Name',()=>{
@@ -77,7 +81,7 @@ test('canonicalizes every recognized evidence filename from parsed metadata',()=
   ['Brown_Jacob_(LM)_GEN_User_Agreement_08262026.pdf','Brown_Jacob_(GDMS)_User_Agreement_26AUG2026.pdf'],
   ['Brown Jacob (LM) 8140 Memo AUG262026.pdf','Brown_Jacob_(GDMS)_8140_Cert_Memo_26AUG2026.pdf'],
   ['Brown_Jacob_(LM)_PRIV_User_Training_26 AUG 26.pdf','Brown_Jacob_(GDMS)_Privileged_User_Training_Cert_26AUG2026.pdf'],
-  ['Brown_Jacob_(LM)_DTA_Training_20260826.pdf','Brown_Jacob_(GDMS)_DTA_Training_Cert_26AUG2026.pdf'],
+  ['Brown_Jacob_(LM)_DTA_Training_20260826.pdf','Brown_Jacob_(GDMS)_DTA_Training_26AUG2026.pdf'],
   ['Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf','Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf'],
   ['Brown_Jacob_(LM)_PRIV_admin_SAAR_26AUG2026.pdf.zip','Brown_Jacob_(GDMS)_PRIV_ADMIN_SAAR_26AUG2026.pdf.zip'],
  ];
@@ -129,13 +133,15 @@ test('applies every filename rule without regard to letter case',()=>{
   ['Brown_Jacob_(GdMs)_uSeR_aGrEeMeNt_26aUg2026.PdF','USER AGREEMENT'],
   ['brown_jacob_(gdms)_8140_cErT_mEmO_26aug2026.pdf','8140 CERT MEMO'],
   ['brown_jacob_(gdms)_pRiViLeGeD_uSeR_tRaInInG_cErT_26aug2026.pdf','privileged user training cert'],
-  ['brown_jacob_(gdms)_dTa_tRaInInG_cErT_26aug2026.pdf','DTA TRAINING CERT'],
+  ['brown_jacob_(gdms)_dTa_tRaInInG_26aug2026.pdf','DTA TRAINING'],
  ];
  for(const[filename,kind]of cases){
   assert.equal(filenameMatchesKind(filename,kind),true,filename);
   assert.equal(evidenceFilenamePassesStorageGate(filename,'GDMS'),true,filename);
  }
  assert.equal(canonicalArtifactKind('gen and priv agreement'),'User Agreement');
+ assert.equal(filenameMatchesKind('brown_jacob_(gdms)_dTa_tRaInInG_cErT_26aug2026.pdf','DTA TRAINING'),true);
+ assert.equal(evidenceFilenamePassesStorageGate('brown_jacob_(gdms)_dTa_tRaInInG_cErT_26aug2026.pdf','GDMS'),false);
  assert.equal(disabledSaarFilename('brown_jacob_(gdms)_gen_saar_disabled_26aug2026.pdf'),true);
  const privileged=validateNewUserSaarFilename('brown_jacob_(gdms)_priv_cyber_saar_26aug2026.pdf');
  assert.equal(privileged.valid,true);
@@ -170,7 +176,7 @@ test('tolerates omitted separators inside artifact and SAAR role markers',()=>{
  assert.equal(filenameMatchesKind('Brown_Jacob_(GDMS)_DoDCyberCert_26AUG2026.pdf','DoD Cyber Cert'),true);
  assert.equal(filenameMatchesKind('Brown_Jacob_(GDMS)_GENUserAgreement_26AUG2026.pdf','User Agreement'),true);
  assert.equal(filenameMatchesKind('Brown_Jacob_(GDMS)_PRIVUserTrainingCert_26AUG2026.pdf','Privileged User Training Cert'),true);
- assert.equal(filenameMatchesKind('Brown_Jacob_(GDMS)_DTAUserTrainingCert_26AUG2026.pdf','DTA Training Cert'),true);
+ assert.equal(filenameMatchesKind('Brown_Jacob_(GDMS)_DTAUserTrainingCert_26AUG2026.pdf','DTA Training'),true);
  assert.deepEqual(validateNewUserSaarFilename('Brown_Jacob_(GDMS)_PRIVadminSAAR_26AUG2026.pdf'),{valid:true,identity:{last:'Brown',first:'Jacob'},organization:'GDMS',role:'Privileged',privilegedTypes:['ADMIN']});
 });
 
@@ -186,8 +192,8 @@ test('recognizes Responsibilities and Course filenames as Privileged User Traini
  assert.equal(canonicalEvidenceFilename(responsibilities,'GDMS'),'Brown_Jacob_(GDMS)_Privileged_User_Training_Cert_26AUG2026.pdf');
  assert.equal(canonicalEvidenceFilename(course,'LM'),'Shaw_Vivian_(LM)_Privileged_User_Training_Cert_26AUG2026.pdf');
  assert.equal(filenameMatchesKind(dta,'Privileged User Training Cert'),false);
- assert.equal(filenameMatchesKind(dta,'DTA Training Cert'),true);
- assert.equal(canonicalEvidenceFilename(dta,'GOV'),'Jones_Alex_(GOV)_DTA_Training_Cert_26AUG2026.pdf');
+ assert.equal(filenameMatchesKind(dta,'DTA Training'),true);
+ assert.equal(canonicalEvidenceFilename(dta,'GOV'),'Jones_Alex_(GOV)_DTA_Training_26AUG2026.pdf');
 });
 
 test('canonicalizes standalone Awareness filenames as DoD Cyber certificates',()=>{
@@ -223,7 +229,7 @@ test('strictly gates every managed document type before folder organization',()=
   'Brown_Jacob_(GDMS)_User_Agreement_26AUG2026.pdf',
   'Brown_Jacob_(GDMS)_8140_Cert_Memo_26AUG2026.pdf',
   'Brown_Jacob_(GDMS)_Privileged_User_Training_Cert_26AUG2026.pdf',
-  'Brown_Jacob_(GDMS)_DTA_Training_Cert_26AUG2026.pdf',
+  'Brown_Jacob_(GDMS)_DTA_Training_26AUG2026.pdf',
  ];
  for(const filename of accepted)assert.equal(evidenceFilenamePassesStorageGate(filename,'GDMS'),true,filename);
  for(const filename of accepted){
@@ -262,7 +268,7 @@ test('canonicalizes every supported long-form artifact name for PDF and ZIP stor
   ['GEN_and_PRIV_User_Agreement','User_Agreement'],
   ['8140_Certification_Memorandum','8140_Cert_Memo'],
   ['Privileged_User_Cybersecurity_Responsibilities','Privileged_User_Training_Cert'],
-  ['DTA_User_Training_Course','DTA_Training_Cert'],
+  ['DTA_User_Training_Course','DTA_Training'],
  ];
  for(const[legacy,canonical]of variants)for(const extension of ['.pdf','.pdf.zip']){
   const source=`Brown_Jacob_(GDMS)_${legacy}_20260826${extension}`;

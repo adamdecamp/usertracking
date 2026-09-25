@@ -54,7 +54,7 @@ export function auditEvidenceContent(input:EvidenceAuditInput):EvidenceAuditResu
   const privileged=contains(text,/\bPRIV(?:ILEGED)?(?:\s+USER)?\b/)||contains(text,/\bPRIVILEGED\s+ACCESS\b/),training=contains(text,/\bTRAINING\b|\bRESPONSIBILIT(?:Y|IES)\b|\bCOURSE\b/);
   return privileged&&training?{passed:true,reason:'Privileged User Training content verified.'}:{passed:false,reason:'The PDF is not identifiable as Privileged User Training evidence.'};
  }
- if(input.kind==='DTA Training Cert'){
+ if(input.kind==='DTA Training'){
   const dta=contains(text,/\bDTA\b|\bDELEGATED\s+TRUSTED\s+AGENT\b/),training=contains(text,/\bTRAINING\b|\bCOURSE\b|\bCERTIFICAT(?:E|ION)\b/);
   return dta&&training?{passed:true,reason:'DTA Training content verified.'}:{passed:false,reason:'The PDF is not identifiable as DTA Training evidence.'};
  }

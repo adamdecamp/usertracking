@@ -5,7 +5,7 @@ import {classifyEvidenceCollision} from '../app/cleanup-utils.ts';
 import {normalizeFilenameOrganization,organizationFromFolderPath,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
 import {inspectEvidenceBytes} from '../app/evidence-validation.ts';
 import {auditEvidenceContent} from '../app/evidence-audit-utils.ts';
-import {artifactKinds,canonicalEvidenceFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationFrom,parseDate,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
+import {artifactKinds,canonicalEvidenceFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationArtifactStorageFolder,organizationFrom,parseDate,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
 import {officialEmailFromText,readSaarFormFields} from '../app/saar-form-utils.ts';
 import {readSyncIndex} from '../app/sync-utils.ts';
 import {activeUserProtectsEvidenceFromDeletion,hasActiveDuplicateEvidenceScope,reworkRetentionDisposition,type DeletionEvidenceUser} from '../app/workflow-utils.ts';
@@ -59,6 +59,16 @@ test('fuzzes accepted separator variations while preserving ordered identity and
  }
 });
 
+test('fuzzes organization-prefixed document folders for every supported artifact',()=>{
+ const organizations=['LM','GOV','Boeing','GDMS','Org With Spaces','Org-é','A.B-C'];
+ for(let index=0;index<10000;index++){
+  const organization=pick(organizations),kind=pick(artifactKinds),folder=organizationArtifactStorageFolder(kind,organization);
+  assert.ok(folder,`${organization}: ${kind}`);
+  assert.ok(folder!.endsWith(` ${kind==='8140 Cert Memo'?'8140 Certification Memo':kind==='Privileged User Training Cert'?'Privileged User Training':kind}`),folder);
+  assert.ok(!/[<>:"/\\|?*()]/.test(folder!),folder);
+ }
+});
+
 test('fuzzes malformed PDF and ZIP bytes with controlled validation errors',()=>{
  for(let index=0;index<1500;index++){
   const length=Math.floor(random()*4096),bytes=new Uint8Array(length);for(let byte=0;byte<length;byte++)bytes[byte]=Math.floor(random()*256);
@@ -107,7 +117,7 @@ test('fuzzes retention boundaries including the legacy 8570 no-grace rule',()=>{
 
 test('fuzzes deletion ownership so active reassignment is never archived with a duplicate record',()=>{
  for(let index=0;index<20000;index++){
-  const filename=`Brown${index}_Jacob${index}_(ORG)_DoD_Cyber_Cert_26AUG2026.pdf.zip`,canonicalPath=`Organizations/ORG/DoD Cyber Cert/${filename}`,variantPath=random()<.5?canonicalPath.toLowerCase():canonicalPath.replaceAll('/','\\');
+  const filename=`Brown${index}_Jacob${index}_(ORG)_DoD_Cyber_Cert_26AUG2026.pdf.zip`,canonicalPath=`Organizations/ORG/ORG DoD Cyber Cert/${filename}`,variantPath=random()<.5?canonicalPath.toLowerCase():canonicalPath.replaceAll('/','\\');
   const deleting:DeletionEvidenceUser={id:`delete-${index}`,last:`Brown${index}`,first:`Jacob${index}`,organization:'ORG',disabled:false,artifacts:[]};
   const active:DeletionEvidenceUser={id:`active-${index}`,last:randomCase(deleting.last),first:randomCase(deleting.first),organization:randomCase('ORG'),disabled:false,artifacts:[{kind:'DoD Cyber Cert',filename,path:variantPath}]};
   const inactive:DeletionEvidenceUser={...active,id:`inactive-${index}`,disabled:true};
@@ -124,6 +134,7 @@ test('fuzzes tolerant filename inputs through canonical storage-gate round trips
   (separator:string,date:string)=>`Brown${separator}Jacob${separator}(LM)${separator}GEN${separator}User${separator}Agreement${separator}${date}.pdf.zip`,
   (separator:string,date:string)=>`Brown${separator}Jacob${separator}(LM)${separator}8140${separator}Cert${separator}Memo${separator}${date}.pdf`,
   (separator:string,date:string)=>`Brown${separator}Jacob${separator}(LM)${separator}PRIV${separator}User${separator}Training${separator}${date}.pdf.zip`,
+  (separator:string,date:string)=>`Brown${separator}Jacob${separator}(LM)${separator}DTA${separator}Training${separator}Cert${separator}${date}.pdf`,
  ];
  for(let index=0;index<10000;index++){
   const raw=randomCase(pick(templates)(pick(['_',' ','   ',', ','__']),pick(['26AUG2026','20260826','08262026','AUG262026']))),canonical=canonicalEvidenceFilename(raw,'LM');

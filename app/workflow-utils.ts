@@ -82,7 +82,7 @@ export function activeUserProtectsEvidenceFromDeletion(item:DeletionEvidenceItem
   return !artifactPath&&canonicalArtifactKind(artifact.kind)===itemKind&&artifact.filename.toUpperCase()===item.filename.toUpperCase();
  }));
 }
-function artifactKindFromFilename(filename:string){return['SAAR','DoD Cyber Cert','User Agreement','8140 Cert Memo','Privileged User Training Cert','DTA Training Cert'].find(kind=>filenameMatchesKind(filename,kind))??'Associated Evidence'}
+function artifactKindFromFilename(filename:string){return['SAAR','DoD Cyber Cert','User Agreement','8140 Cert Memo','Privileged User Training Cert','DTA Training'].find(kind=>filenameMatchesKind(filename,kind))??'Associated Evidence'}
 export function hasActiveDuplicateEvidenceScope(deletingUser:DeletionEvidenceUser,users:DeletionEvidenceUser[]){
  return users.some(user=>user.id!==deletingUser.id&&!user.disabled&&identityKey(user.last,user.first)===identityKey(deletingUser.last,deletingUser.first)&&user.organization.trim().toUpperCase()===deletingUser.organization.trim().toUpperCase());
 }

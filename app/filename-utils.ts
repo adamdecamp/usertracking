@@ -1,10 +1,10 @@
 export const agreementArtifactKind='User Agreement';
-export const artifactKinds=['SAAR','DoD Cyber Cert',agreementArtifactKind,'8140 Cert Memo','Privileged User Training Cert','DTA Training Cert'];
+export const artifactKinds=['SAAR','DoD Cyber Cert',agreementArtifactKind,'8140 Cert Memo','Privileged User Training Cert','DTA Training'];
 const legacyAgreementKinds=new Set(['GEN USER AGREEMENT','GEN AND PRIV AGREEMENT','DTA AGREEMENT']);
-export const canonicalArtifactKind=(kind:string)=>{const normalized=kind.trim().toUpperCase();if(legacyAgreementKinds.has(normalized))return agreementArtifactKind;return artifactKinds.find(value=>value.toUpperCase()===normalized)??kind};
+export const canonicalArtifactKind=(kind:string)=>{const normalized=kind.trim().toUpperCase();if(legacyAgreementKinds.has(normalized))return agreementArtifactKind;if(normalized==='DTA TRAINING CERT')return'DTA Training';return artifactKinds.find(value=>value.toUpperCase()===normalized)??kind};
 export function artifactStorageFolder(kind:string){
  const canonical=canonicalArtifactKind(kind);
- return canonical==='SAAR'?'SAAR':canonical==='DoD Cyber Cert'?'DoD Cyber Cert':canonical===agreementArtifactKind?'User Agreement':canonical==='8140 Cert Memo'?'8140 Certification Memo':canonical==='Privileged User Training Cert'?'Privileged User Training':canonical==='DTA Training Cert'?'DTA Training':undefined
+ return canonical==='SAAR'?'SAAR':canonical==='DoD Cyber Cert'?'DoD Cyber Cert':canonical===agreementArtifactKind?'User Agreement':canonical==='8140 Cert Memo'?'8140 Certification Memo':canonical==='Privileged User Training Cert'?'Privileged User Training':canonical==='DTA Training'?'DTA Training':undefined
 }
 const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const clean=(value:string,max=500)=>value.replace(/[\r\n\u0000-\u001f\u007f]/g,' ').trim().slice(0,max);
@@ -75,10 +75,12 @@ export function filenameMatchesKind(filename:string,kind:string){
 export function disabledSaarFilename(filename:string){return filenameMatchesKind(filename,'SAAR')&&fileTokens(filename).has('DISABLED')}
 
 const canonicalFilePart=(value:string,maxLength=80)=>clean(value,maxLength).replace(/[<>:"/\\|?*()]/g,' ').replace(/[^A-Za-z0-9'+.-]+/g,'_').replace(/^_+|_+$/g,'');
+export function organizationArtifactStorageFolder(kind:string,organization:string){const folder=artifactStorageFolder(kind),prefix=canonicalFilePart(organization);return folder&&prefix?`${prefix} ${folder}`:undefined}
 export function canonicalManualEvidenceFilename(input:{filename:string;embeddedPdfFilename?:string;kind:string;last:string;first:string;organization:string;role?:'GEN'|'PRIV';privilegedType?:string}){
  const date=parseDate(input.filename)??parseDate(input.embeddedPdfFilename??''),kind=canonicalArtifactKind(input.kind),last=canonicalFilePart(input.last),first=canonicalFilePart(input.first),organization=canonicalFilePart(input.organization);
  if(!date||!artifactKinds.includes(kind)||!last||!first||!organization)return;
  let artifact=kind.replaceAll(' ','_');
+ if(kind==='DTA Training')artifact='DTA_Training';
  if(kind==='SAAR'){
   if(input.role==='GEN')artifact='GEN_SAAR';
   else if(input.role==='PRIV'){const privilegedType=canonicalFilePart(input.privilegedType??'');if(!privilegedType)return;artifact=`PRIV_${privilegedType}_SAAR`}
@@ -93,6 +95,7 @@ export function canonicalEvidenceFilename(filename:string,organizationOverride?:
  if(!identity||!organization||!date||!kind)return;
  const last=canonicalFilePart(identity.last),first=canonicalFilePart(identity.first),org=canonicalFilePart(organization),dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`;if(!last||!first||!org)return;
  let artifact=kind.replaceAll(' ','_');
+ if(kind==='DTA Training')artifact='DTA_Training';
  if(kind==='SAAR'){const markers=saarMarkers(filename);if(markers.general===!!markers.privilegedType)return;artifact=markers.general?'GEN_SAAR':`PRIV_${canonicalFilePart(markers.privilegedType??'')}_SAAR`;if(artifact.includes('__'))return}
  const extension=/\.zip$/i.test(filename)?'.pdf.zip':'.pdf',target=`${last}_${first}_(${org})_${artifact}_${dateToken}${extension}`;
  return target.length<=180?target:undefined;

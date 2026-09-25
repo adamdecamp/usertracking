@@ -28,12 +28,17 @@ internal sealed class PortableStorage : IDisposable
     private const int StorageTransactionVersion = 1;
     private const int MappingCacheVersion = 2;
     private const string SystemDirectoryName = "System";
+    private const string TemplateDirectoryName = "Template";
     private const string ErrorReportsDirectoryName = "Error Reports";
+    internal const string UserAgreementTemplateFilename = "Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf";
+    private const string ManifestFilename = "information-system-user-tracker.json";
     private static readonly string[] SupportDirectoryNames = new[] { "Audit Logs", "backup", "Archive Review", "Reports", "Sync Journals", "Storage Transactions", ErrorReportsDirectoryName };
+    private static readonly string[] ArtifactDirectoryNames = new[] { "SAAR", "User Agreement", "DoD Cyber Cert", "8140 Certification Memo", "Privileged User Training", "DTA Training" };
     private const string SyncIndexFilename = "tracker-sync-index.json";
     private const string SyncIndexChecksumFilename = "tracker-sync-index.json.sha256";
     private const string RetentionMarkerFilename = "retention-preflight-date.txt";
     private const string RenamerQueueFilename = "tracker-document-renamer-queue.json";
+    private static readonly string[] OperationalRootFiles = new[] { ManifestFilename, SyncIndexFilename, SyncIndexChecksumFilename, RenamerQueueFilename, "tracker-active-session.json" };
     private static readonly string AuditGenesisHash = new string('0', 64);
     private readonly Dictionary<string, string> roots = new Dictionary<string, string>(StringComparer.Ordinal);
     private readonly Dictionary<string, string> cachedRoots = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -122,6 +127,8 @@ internal sealed class PortableStorage : IDisposable
         ProbeMappedFolder(full);
         MigrateSupportDirectories(full);
         Directory.CreateDirectory(Path.Combine(full, "Organizations"));
+        Directory.CreateDirectory(Path.Combine(full, TemplateDirectoryName));
+        EnsureOrganizationDocumentFolders(full);
         object gate, leaseGate;
         lock (mapGate)
         {
@@ -160,7 +167,10 @@ internal sealed class PortableStorage : IDisposable
             try
             {
                 if (!Directory.Exists(mapping.Value)) continue;
-                string manifestPath = Path.Combine(mapping.Value, "information-system-user-tracker.json");
+                MigrateSupportDirectories(mapping.Value);
+                Directory.CreateDirectory(Path.Combine(mapping.Value, "Organizations"));
+                Directory.CreateDirectory(Path.Combine(mapping.Value, TemplateDirectoryName));
+                string manifestPath = SystemFile(mapping.Value, ManifestFilename);
                 if (!File.Exists(manifestPath)) continue;
                 string manifest = ReadText(manifestPath, ManifestLimit);
                 Dictionary<string, object> database = ValidateDatabase(manifest);
@@ -186,9 +196,20 @@ internal sealed class PortableStorage : IDisposable
     public string FolderName(string systemId) { return new DirectoryInfo(Root(systemId)).Name; }
     public string FolderPath(string systemId) { return Root(systemId); }
 
+    public string ResolveUserAgreementTemplate(string systemId)
+    {
+        string directory = Path.Combine(Root(systemId), TemplateDirectoryName);
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, UserAgreementTemplateFilename);
+        if (!File.Exists(path)) throw new FileNotFoundException("Place the User Agreement template at Template\\" + UserAgreementTemplateFilename + ". Other Template-folder files are ignored.");
+        string validationError;
+        if (!TryValidateEvidenceFile(path, out validationError) || !path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The User Agreement template is not a readable PDF. Replace Template\\" + UserAgreementTemplateFilename + " before preparing the notification.");
+        return path;
+    }
+
     public string ReadManifest(string systemId)
     {
-        string path = Path.Combine(Root(systemId), "information-system-user-tracker.json");
+        string path = SystemFile(Root(systemId), ManifestFilename);
         if (!File.Exists(path)) return null;
         string text = ReadText(path, ManifestLimit);
         ValidateDatabase(text);
@@ -203,7 +224,7 @@ internal sealed class PortableStorage : IDisposable
         canonical = json.Serialize(database);
         lock (RootLock(systemId))
         {
-            string root = Root(systemId), manifest = Path.Combine(root, "information-system-user-tracker.json");
+            string root = Root(systemId), manifest = SystemFile(root, ManifestFilename);
             RecoverTransactions(root);
             byte[] manifestBytes = Encoding.UTF8.GetBytes(canonical);
             string destinationHash = Sha256Bytes(manifestBytes), transaction = BeginTransaction(root, "manifest-write", manifest, manifest, TryFileHash(manifest), destinationHash);
@@ -262,7 +283,7 @@ internal sealed class PortableStorage : IDisposable
             ValidateDatabaseObject(restored);
             object[] systems = ObjectArray(restored["systems"]);
             if (systems.Length != 1 || !String.Equals(Convert.ToString(ObjectDictionary(systems[0])["id"]), logicalSystemId, StringComparison.Ordinal)) throw new InvalidDataException("The backup does not match the selected information system.");
-            string manifestPath = Path.Combine(Root(systemId), "information-system-user-tracker.json");
+            string manifestPath = SystemFile(Root(systemId), ManifestFilename);
             if (File.Exists(manifestPath))
             {
                 Dictionary<string, object> current = ValidateDatabase(ReadText(manifestPath, ManifestLimit));
@@ -298,7 +319,7 @@ internal sealed class PortableStorage : IDisposable
     public string VerifyLatest(string systemId, string logicalSystemId)
     {
         ValidateSystemId(logicalSystemId);
-        string manifestPath = Path.Combine(Root(systemId), "information-system-user-tracker.json"), directory = SupportDirectory(Root(systemId), "backup");
+        string manifestPath = SystemFile(Root(systemId), ManifestFilename), directory = SupportDirectory(Root(systemId), "backup");
         if (!File.Exists(manifestPath)) throw new FileNotFoundException("The current database manifest is missing.");
         ValidateDatabase(ReadText(manifestPath, ManifestLimit));
         string latest = SnapshotPaths(directory).FirstOrDefault();
@@ -318,7 +339,7 @@ internal sealed class PortableStorage : IDisposable
         {
             lock (RootLock(id))
             {
-                string root = Root(id), manifest = Path.Combine(root, "information-system-user-tracker.json");
+                string root = Root(id), manifest = SystemFile(root, ManifestFilename);
                 if (!File.Exists(manifest)) continue;
                 Dictionary<string, object> database = ValidateDatabase(ReadText(manifest, ManifestLimit));
                 string backupDirectory = SupportDirectory(root, "backup");
@@ -566,7 +587,7 @@ internal sealed class PortableStorage : IDisposable
         var result = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            string indexPath = Path.Combine(root, SyncIndexFilename), checksumPath = Path.Combine(root, SyncIndexChecksumFilename);
+            string indexPath = SystemFile(root, SyncIndexFilename), checksumPath = SystemFile(root, SyncIndexChecksumFilename);
             if (!File.Exists(indexPath) || !File.Exists(checksumPath)) return result;
             string text = ReadText(indexPath, SyncIndexLimit), checksum = ReadText(checksumPath, 1024).Trim();
             string[] checksumParts = checksum.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
@@ -594,10 +615,10 @@ internal sealed class PortableStorage : IDisposable
         {
             var envelope = new Dictionary<string, object> { { "version", SyncIndexVersion }, { "ruleSetVersion", ruleSetVersion }, { "generatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "files", files.ToArray() } };
             string text = json.Serialize(envelope);byte[] bytes = Encoding.UTF8.GetBytes(text);if (bytes.LongLength > SyncIndexLimit) return;
-            string indexPath = Path.Combine(root, SyncIndexFilename), checksumPath = Path.Combine(root, SyncIndexChecksumFilename);
+            string indexPath = SystemFile(root, SyncIndexFilename), checksumPath = SystemFile(root, SyncIndexChecksumFilename);
             AtomicWrite(indexPath, bytes);AtomicWrite(checksumPath, Encoding.ASCII.GetBytes(Sha256(text) + "  " + SyncIndexFilename + Environment.NewLine));
         }
-        catch { TryDelete(Path.Combine(root, SyncIndexFilename));TryDelete(Path.Combine(root, SyncIndexChecksumFilename)); }
+        catch { TryDelete(SystemFile(root, SyncIndexFilename));TryDelete(SystemFile(root, SyncIndexChecksumFilename)); }
     }
 
     public byte[] ReadRelativeFile(string systemId, string relative)
@@ -611,7 +632,7 @@ internal sealed class PortableStorage : IDisposable
 
     public string ReadRenamerQueue(string systemId)
     {
-        string path = Path.Combine(Root(systemId), RenamerQueueFilename);
+        string path = SystemFile(Root(systemId), RenamerQueueFilename);
         if (!File.Exists(path)) return "null";
         string text = ReadText(path, RenamerQueueLimit);
         object parsed = json.DeserializeObject(text);
@@ -626,13 +647,13 @@ internal sealed class PortableStorage : IDisposable
         var value = json.DeserializeObject(text) as Dictionary<string, object>;
         object rawVersion, rawItems;
         if (value == null || !value.TryGetValue("version", out rawVersion) || Convert.ToInt32(rawVersion, CultureInfo.InvariantCulture) != 1 || !value.TryGetValue("items", out rawItems) || !(rawItems is object[]) || ((object[])rawItems).Length > 10000) throw new InvalidDataException("The Document Renamer queue has an invalid structure.");
-        AtomicWrite(Path.Combine(Root(systemId), RenamerQueueFilename), bytes);
+        AtomicWrite(SystemFile(Root(systemId), RenamerQueueFilename), bytes);
         return "{\"saved\":true}";
     }
 
     public string ClearRenamerQueue(string systemId)
     {
-        TryDelete(Path.Combine(Root(systemId), RenamerQueueFilename));
+        TryDelete(SystemFile(Root(systemId), RenamerQueueFilename));
         return "{\"cleared\":true}";
     }
 
@@ -954,12 +975,11 @@ internal sealed class PortableStorage : IDisposable
         lock (RootLock(systemId))
         {
             string root = Root(systemId);RecoverTransactions(root);string source = SafeRelativePath(root, relative), normalized = Relative(root, source), safeFolder = SafePart(folder, 60);
-            string[] allowed = { "SAAR", "User Agreement", "DoD Cyber Cert", "8140 Certification Memo", "Privileged User Training", "DTA Training" };
-            if (!allowed.Any(item => String.Equals(item, safeFolder, StringComparison.OrdinalIgnoreCase)) || !String.Equals(safeFolder, folder, StringComparison.Ordinal)) throw new InvalidDataException("The evidence document-type folder is invalid.");
+            if (!ArtifactDirectoryNames.Any(item => String.Equals(item, safeFolder, StringComparison.OrdinalIgnoreCase)) || !String.Equals(safeFolder, folder, StringComparison.Ordinal)) throw new InvalidDataException("The evidence document-type folder is invalid.");
             if (ContainsManagedStorageDirectory(normalized) && !IsOrganizationReworkEvidencePath(normalized)) throw new InvalidDataException("Only active evidence or corrected evidence in an organization Rework folder can be organized by document type.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string validationError;if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
-            Tuple<string, string> organization = OrganizationStorageLocation(root, source);string directory = Path.Combine(organization.Item1, safeFolder);Directory.CreateDirectory(directory);
+            Tuple<string, string> organization = OrganizationStorageLocation(root, source);string canonicalFolder = OrganizationArtifactStorageFolder(safeFolder, organization.Item2), directory = Path.Combine(organization.Item1, canonicalFolder);Directory.CreateDirectory(directory);
             string destination = Path.Combine(directory, Path.GetFileName(source));
             if (String.Equals(source, destination, StringComparison.OrdinalIgnoreCase)) return json.Serialize(new Dictionary<string, object> { { "organized", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "alreadyCompleted", true } });
             if (File.Exists(destination)) return json.Serialize(new Dictionary<string, object> { { "organized", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "collision", true }, { "existing", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') } });
@@ -1064,7 +1084,7 @@ internal sealed class PortableStorage : IDisposable
         return destination;
     }
 
-    public string StoreEvidence(string systemId, string organization, string last, string first, string filename, byte[] bytes)
+    public string StoreEvidence(string systemId, string organization, string kind, string filename, byte[] bytes)
     {
         if (bytes.Length > EvidenceLimit) throw new InvalidDataException("The compressed evidence exceeds the size limit.");
         string entry = SafePart(filename, 180), zipName = entry.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? entry : entry + ".zip";
@@ -1074,20 +1094,20 @@ internal sealed class PortableStorage : IDisposable
         catch (Exception) { throw new InvalidDataException("The evidence ZIP is invalid or unreadable."); }
         lock (RootLock(systemId))
         {
-            string directory = Path.Combine(Root(systemId), "Organizations", ValidOrganizationName(organization), SafePart(last, 80) + "_" + SafePart(first, 80));
+            string safeOrganization = ValidOrganizationName(organization), directory = Path.Combine(Root(systemId), "Organizations", safeOrganization, OrganizationArtifactStorageFolder(ArtifactStorageFolder(kind), safeOrganization));
             Directory.CreateDirectory(directory);
             AtomicWrite(Path.Combine(directory, zipName), bytes);
         }
         return zipName;
     }
 
-    public string VerifyStoredEvidence(string systemId, string organization, string last, string first, string filename, string expectedSha256)
+    public string VerifyStoredEvidence(string systemId, string organization, string kind, string filename, string expectedSha256)
     {
         string expected = CleanLine(expectedSha256, 64).ToLowerInvariant();
         if (!IsSha256(expected)) throw new InvalidDataException("The expected evidence SHA-256 value is invalid.");
         string safeName = SafePart(filename, 180);
         if (!safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || !String.Equals(safeName, filename, StringComparison.Ordinal)) throw new InvalidDataException("The stored evidence filename is invalid.");
-        string root = Root(systemId), path = Path.Combine(root, "Organizations", ValidOrganizationName(organization), SafePart(last, 80) + "_" + SafePart(first, 80), safeName), actual = TryFileHash(path);
+        string root = Root(systemId), safeOrganization = ValidOrganizationName(organization), path = Path.Combine(root, "Organizations", safeOrganization, OrganizationArtifactStorageFolder(ArtifactStorageFolder(kind), safeOrganization), safeName), actual = TryFileHash(path);
         bool stored = String.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
         return json.Serialize(new Dictionary<string, object> { { "stored", stored }, { "filename", safeName }, { "path", Relative(root, path).Replace(Path.DirectorySeparatorChar, '/') }, { "sha256", actual } });
     }
@@ -1098,6 +1118,7 @@ internal sealed class PortableStorage : IDisposable
         {
             string root = Root(systemId), directory = Path.Combine(root, "Organizations");Directory.CreateDirectory(directory);
             string[] names = EnumerateScanDirectories(root, directory).Select(path => new DirectoryInfo(path).Name).Where(name => !ReservedOrganizationName(name)).OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+            foreach (string name in names) EnsureOrganizationDocumentFolders(Path.Combine(directory, name), name);
             return json.Serialize(names);
         }
     }
@@ -1107,7 +1128,7 @@ internal sealed class PortableStorage : IDisposable
         string organization = ValidOrganizationName(requested);
         lock (RootLock(systemId))
         {
-            string directory = Path.Combine(Root(systemId), "Organizations", organization);Directory.CreateDirectory(directory);
+            string directory = Path.Combine(Root(systemId), "Organizations", organization);Directory.CreateDirectory(directory);EnsureOrganizationDocumentFolders(directory, organization);
             return json.Serialize(new Dictionary<string, object> { { "organization", organization } });
         }
     }
@@ -1587,6 +1608,12 @@ internal sealed class PortableStorage : IDisposable
         return directory;
     }
 
+    private static string SystemFile(string root, string name)
+    {
+        string system = Path.Combine(root, SystemDirectoryName);Directory.CreateDirectory(system);
+        return Path.Combine(system, name);
+    }
+
     private static void MigrateSupportDirectories(string root)
     {
         string system = Path.Combine(root, SystemDirectoryName);Directory.CreateDirectory(system);
@@ -1597,6 +1624,22 @@ internal sealed class PortableStorage : IDisposable
             MergeSupportDirectory(legacy, destination);
             try { if (!Directory.EnumerateFileSystemEntries(legacy).Any()) Directory.Delete(legacy); } catch { }
         }
+        foreach (string name in OperationalRootFiles) MigrateOperationalRootFile(root, system, name);
+    }
+
+    private static void MigrateOperationalRootFile(string root, string system, string name)
+    {
+        string source = Path.Combine(root, name);if (!File.Exists(source)) return;
+        string destination = Path.Combine(system, name);
+        if (File.Exists(destination))
+        {
+            if (String.Equals(Sha256Bytes(File.ReadAllBytes(source)), Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) { File.Delete(source);return; }
+            string stem = Path.GetFileNameWithoutExtension(name), extension = Path.GetExtension(name);
+            destination = Path.Combine(system, stem + "_Legacy_" + Guid.NewGuid().ToString("N").Substring(0, 8) + extension);
+        }
+        File.Copy(source, destination, false);
+        if (!String.Equals(Sha256Bytes(File.ReadAllBytes(source)), Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) { TryDelete(destination);throw new IOException("An operational-file migration copy failed its SHA-256 verification."); }
+        File.Delete(source);
     }
 
     private static void MergeSupportDirectory(string source, string destination)
@@ -1778,7 +1821,7 @@ internal sealed class PortableStorage : IDisposable
     private static bool IsManagedStorageDirectory(string name)
     {
         string value = (name ?? "").Trim();
-        return String.Equals(value, SystemDirectoryName, StringComparison.OrdinalIgnoreCase) || String.Equals(value, ErrorReportsDirectoryName, StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Reports", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Sync Journals", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Storage Transactions", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase);
+        return String.Equals(value, SystemDirectoryName, StringComparison.OrdinalIgnoreCase) || String.Equals(value, TemplateDirectoryName, StringComparison.OrdinalIgnoreCase) || String.Equals(value, ErrorReportsDirectoryName, StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Audit Logs", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "backup", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Archive Review", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Rework", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Reports", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Sync Journals", StringComparison.OrdinalIgnoreCase) || String.Equals(value, "Storage Transactions", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsPermanentSaarArchiveDirectory(string name)
@@ -1867,7 +1910,7 @@ internal sealed class PortableStorage : IDisposable
                     }
                     if (verified.Count == 0) continue;
                     if (verified.Count > 1) throw new InvalidDataException("More than one archived file matches this active evidence association. Resolve the duplicate in Clean Up before recovery.");
-                    string source = verified[0], organizationRoot = OrganizationScopeRoot(root, organization), destinationDirectory = Path.Combine(organizationRoot, folder), destination = Path.Combine(destinationDirectory, filename);Directory.CreateDirectory(destinationDirectory);
+                    string source = verified[0], organizationRoot = OrganizationScopeRoot(root, organization), destinationDirectory = Path.Combine(organizationRoot, OrganizationArtifactStorageFolder(folder, organization)), destination = Path.Combine(destinationDirectory, filename);Directory.CreateDirectory(destinationDirectory);
                     string sourceHash = Sha256Bytes(File.ReadAllBytes(source));
                     if (File.Exists(destination))
                     {
@@ -1890,8 +1933,27 @@ internal sealed class PortableStorage : IDisposable
     private static string ArtifactStorageFolder(string kind)
     {
         string normalized = (kind ?? "").Trim().ToUpperInvariant();
-        if (normalized == "SAAR") return "SAAR";if (normalized == "DOD CYBER CERT") return "DoD Cyber Cert";if (normalized == "USER AGREEMENT" || normalized == "GEN USER AGREEMENT" || normalized == "GEN AND PRIV AGREEMENT" || normalized == "DTA AGREEMENT") return "User Agreement";if (normalized == "8140 CERT MEMO") return "8140 Certification Memo";if (normalized == "PRIVILEGED USER TRAINING CERT") return "Privileged User Training";if (normalized == "DTA TRAINING CERT") return "DTA Training";
+        if (normalized == "SAAR") return "SAAR";if (normalized == "DOD CYBER CERT") return "DoD Cyber Cert";if (normalized == "USER AGREEMENT" || normalized == "GEN USER AGREEMENT" || normalized == "GEN AND PRIV AGREEMENT" || normalized == "DTA AGREEMENT") return "User Agreement";if (normalized == "8140 CERT MEMO") return "8140 Certification Memo";if (normalized == "PRIVILEGED USER TRAINING CERT") return "Privileged User Training";if (normalized == "DTA TRAINING" || normalized == "DTA TRAINING CERT") return "DTA Training";
         throw new InvalidDataException("The associated evidence document type is invalid.");
+    }
+    private static string OrganizationArtifactStorageFolder(string folder, string organization)
+    {
+        string canonical = ArtifactDirectoryNames.FirstOrDefault(item => String.Equals(item, folder, StringComparison.OrdinalIgnoreCase));
+        if (canonical == null) throw new InvalidDataException("The evidence document-type folder is invalid.");
+        return SafePart(ValidOrganizationName(organization), 80) + " " + canonical;
+    }
+    private static void EnsureOrganizationDocumentFolders(string root)
+    {
+        string organizations = Path.Combine(root, "Organizations");if (!Directory.Exists(organizations)) return;
+        foreach (string directory in EnumerateScanDirectories(root, organizations))
+        {
+            string organization = Path.GetFileName(directory);if (ReservedOrganizationName(organization)) continue;
+            EnsureOrganizationDocumentFolders(directory, organization);
+        }
+    }
+    private static void EnsureOrganizationDocumentFolders(string directory, string organization)
+    {
+        foreach (string folder in ArtifactDirectoryNames) Directory.CreateDirectory(Path.Combine(directory, OrganizationArtifactStorageFolder(folder, organization)));
     }
     private static List<string> EnumerateOrganizationArchiveFiles(string root, string organization)
     {

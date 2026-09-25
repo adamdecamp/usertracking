@@ -69,6 +69,27 @@ test('disabled users do not expose actionable supporting-artifact status',()=>{
  assert.match(page,/if\(u\.disabled\)return <td key=\{kind\} aria-label=\{`\$\{kind\} status not applicable`\}>—<\/td>/);
 });
 
+test('DTA Training is an annual DTA requirement throughout the directory workflow',()=>{
+ assert.match(page,/\['DTA Training','DTA Training'\]/);
+ assert.match(page,/hasPrivilegedType\(u,'DTA'\)\)out\.push\('DTA Training'\)/);
+ assert.match(page,/if\(kind==='SAAR'\)return'Current';const due=new Date\(d\);due\.setUTCFullYear\(due\.getUTCFullYear\(\)\+1\)/);
+ assert.match(page,/\['8140 Cert Memo','Privileged User Training Cert','DTA Training'\]/);
+});
+
+test('manual and synchronized evidence use organization-prefixed document folders',()=>{
+ assert.match(page,/function evidenceStoragePath[\s\S]*?organizationArtifactStorageFolder\(kind,user\.organization\)/);
+ assert.match(page,/const documentDir=await organizationDir\.getDirectoryHandle\(folder,\{create:true\}\)/);
+ assert.match(page,/canonicalFolder=folder&&organizationArtifactStorageFolder\(folder,folderOrganization\)/);
+ assert.match(page,/ensureBrowserOrganizationDocumentFolders/);
+});
+
+test('browser operational JSON is stored beneath System',()=>{
+ assert.match(page,/const browserOperationalFilenames=/);
+ assert.match(page,/async function browserOperationalDirectory/);
+ assert.match(page,/browserOperationalDirectory\(root\)[\s\S]*?manifestFilename/);
+ assert.match(page,/browserOperationalDirectory\(root\)[\s\S]*?syncIndexFilename/);
+});
+
 test('incremental Sync uses a validation-only cache version and reports fast-path counts',()=>{
  assert.match(versions,/export const evidenceValidationCacheVersion=/);
  assert.match(page,/readSyncIndex\(JSON\.parse\(text\),evidenceValidationCacheVersion\)/);
@@ -112,4 +133,13 @@ test('Sync applies the shared Document Renamer analysis to changed noncanonical 
  assert.match(sync,/normalizationFailures\.push/);
  assert.match(sync,/renamedDuringSync\+\+/);
  assert.match(manual,/analyzeRenamerPdf\(candidate,users,root\.name\)/);
+});
+
+test('User Agreement notification templates are launcher-attached and excluded from Sync',()=>{
+ assert.match(page,/getDirectoryHandle\('Template',\{create:true\}\)/);
+ assert.match(page,/\['system','template','error reports'/);
+ assert.match(page,/notificationUsesUserAgreementTemplate\(state,selectedKind\)/);
+ assert.match(page,/portableRequest\(templateRoot,'outlook-draft'/);
+ assert.match(page,/attachUserAgreementTemplate:true/);
+ assert.match(page,/Each system receives its own draft with Template\//);
 });

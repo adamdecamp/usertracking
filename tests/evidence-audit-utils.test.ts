@@ -24,6 +24,6 @@ test('signature-required agreements and 8140 memoranda fail closed',()=>{
 
 test('training audit applies document-specific language',()=>{
  assert.equal(auditEvidenceContent({kind:'Privileged User Training Cert',text:'Privileged User Cybersecurity Responsibilities Course'}).passed,true);
- assert.equal(auditEvidenceContent({kind:'DTA Training Cert',text:'Delegated Trusted Agent Training Certificate'}).passed,true);
- assert.equal(auditEvidenceContent({kind:'DTA Training Cert',text:'Privileged User Training'}).passed,false);
+ assert.equal(auditEvidenceContent({kind:'DTA Training',text:'Delegated Trusted Agent Training Certificate'}).passed,true);
+ assert.equal(auditEvidenceContent({kind:'DTA Training',text:'Privileged User Training'}).passed,false);
 });

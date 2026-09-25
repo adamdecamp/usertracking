@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {availableNotificationKinds,notificationBody,notificationKindForState} from '../app/notification-utils.ts';
+import {availableNotificationKinds,dodCyberTrainingUrl,notificationBody,notificationKindForState,notificationUsesUserAgreementTemplate,userAgreementTemplateFilename} from '../app/notification-utils.ts';
 
 test('creates the approved missing-artifact message',()=>{
- assert.equal(notificationBody('Missing','DoD Cyber Cert'),'Hello,\n\nOur records indicate you are missing DoD Cyber Cert.\n\nFailure to provide this requirement may result in loss of access to the system.\n\nPlease provide a copy as soon as possible to maintain your account access.\n\nWhen returning the document, use this filename format:\nLast_First_(ORG)_DoD_Cyber_Cert_DDMMMYYYY.pdf\n\nIncorrectly formatted or incorrectly named files will be rejected. The naming standard matches evidence to the correct user and helps the tracker calculate due dates accurately.');
+ assert.equal(notificationBody('Missing','DoD Cyber Cert'),`Hello,\n\nOur records indicate you are missing DoD Cyber Cert.\n\nFailure to provide this requirement may result in loss of access to the system.\n\nComplete the DoD Cyber Awareness Challenge here:\n${dodCyberTrainingUrl}\n\nPlease provide a copy as soon as possible to maintain your account access.\n\nWhen returning the document, use this filename format:\nLast_First_(ORG)_DoD_Cyber_Cert_DDMMMYYYY.pdf\n\nIncorrectly formatted or incorrectly named files will be rejected. The naming standard matches evidence to the correct user and helps the tracker calculate due dates accurately.`);
+});
+
+test('adds the official training URL to every actionable DoD Cyber message only',()=>{
+ for(const state of['Missing','Due Within 30 Days','Overdue'] as const)assert.equal(notificationBody(state,'DoD Cyber Cert').split(dodCyberTrainingUrl).length,2,state);
+ for(const state of['Missing','Due Within 30 Days','Overdue'] as const)assert.equal(notificationBody(state,'User Agreement').includes(dodCyberTrainingUrl),false,state);
 });
 
 test('adds the appropriate filename instructions to every missing-artifact message',()=>{
@@ -12,7 +17,7 @@ test('adds the appropriate filename instructions to every missing-artifact messa
   ['User Agreement','Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf'],
   ['8140 Cert Memo','Last_First_(ORG)_8140_Cert_Memo_DDMMMYYYY.pdf'],
   ['Privileged User Training Cert','Last_First_(ORG)_PRIV_User_Training_DDMMMYYYY.pdf'],
-  ['DTA Training Cert','Last_First_(ORG)_DTA_Training_Cert_DDMMMYYYY.pdf'],
+  ['DTA Training','Last_First_(ORG)_DTA_Training_DDMMMYYYY.pdf'],
  ] as const;
  for(const[requirement,format]of expected){
   const message=notificationBody('Missing',requirement);
@@ -36,4 +41,12 @@ test('replaces an invalid artifact selection when the notification status change
  assert.deepEqual(availableNotificationKinds('Overdue',kinds),['DoD Cyber Cert','User Agreement']);
  assert.equal(notificationKindForState('Overdue','SAAR',kinds),'DoD Cyber Cert');
  assert.equal(notificationKindForState('Overdue','User Agreement',kinds),'User Agreement');
+});
+
+test('attaches only the exact User Agreement template for missing or overdue notices',()=>{
+ assert.equal(userAgreementTemplateFilename,'Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf');
+ assert.equal(notificationUsesUserAgreementTemplate('Missing','User Agreement'),true);
+ assert.equal(notificationUsesUserAgreementTemplate('Overdue','User Agreement'),true);
+ assert.equal(notificationUsesUserAgreementTemplate('Due Within 30 Days','User Agreement'),false);
+ assert.equal(notificationUsesUserAgreementTemplate('Missing','DoD Cyber Cert'),false);
 });

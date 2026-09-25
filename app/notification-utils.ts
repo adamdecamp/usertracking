@@ -1,5 +1,12 @@
 export type NotificationState='Missing'|'Due Within 30 Days'|'Overdue';
 
+export const dodCyberTrainingUrl='https://www.cyber.mil/cyber-awareness-challenge';
+export const userAgreementTemplateFilename='Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf';
+
+export function notificationUsesUserAgreementTemplate(state:NotificationState,requirement:string){
+ return requirement==='User Agreement'&&(state==='Missing'||state==='Overdue');
+}
+
 export function availableNotificationKinds(state:NotificationState,kinds:readonly string[]){
  return state==='Missing'?[...kinds]:kinds.filter(kind=>kind!=='SAAR');
 }
@@ -17,9 +24,10 @@ export function notificationBody(state:NotificationState,requirement:string){
   'User Agreement':'Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf',
   '8140 Cert Memo':'Last_First_(ORG)_8140_Cert_Memo_DDMMMYYYY.pdf',
   'Privileged User Training Cert':'Last_First_(ORG)_PRIV_User_Training_DDMMMYYYY.pdf',
-  'DTA Training Cert':'Last_First_(ORG)_DTA_Training_Cert_DDMMMYYYY.pdf',
+  'DTA Training':'Last_First_(ORG)_DTA_Training_DDMMMYYYY.pdf',
  };
  const fallback=`Last_First_(ORG)_${requirement.replace(/[^A-Za-z0-9]+/g,'_')}_DDMMMYYYY.pdf`;
+ const trainingInstruction=requirement==='DoD Cyber Cert'?`\n\nComplete the DoD Cyber Awareness Challenge here:\n${dodCyberTrainingUrl}`:'';
  const filenameInstruction=state==='Missing'?`\n\nWhen returning the document, use this filename format:\n${filenameByRequirement[requirement]??fallback}\n\nIncorrectly formatted or incorrectly named files will be rejected. The naming standard matches evidence to the correct user and helps the tracker calculate due dates accurately.`:'';
- return `Hello,\n\n${issue}\n\nFailure to provide this requirement may result in loss of access to the system.\n\nPlease provide a copy as soon as possible to maintain your account access.${filenameInstruction}`;
+ return `Hello,\n\n${issue}\n\nFailure to provide this requirement may result in loss of access to the system.${trainingInstruction}\n\nPlease provide a copy as soon as possible to maintain your account access.${filenameInstruction}`;
 }

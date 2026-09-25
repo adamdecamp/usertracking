@@ -10,7 +10,7 @@ const formats = [
   ["User Agreement", "Last_First_(ORG)_User_Agreement_DDMMMYYYY"],
   ["8140 Certification Memo", "Last_First_(ORG)_8140_Cert_Memo_DDMMMYYYY"],
   ["Privileged User Training", "Last_First_(ORG)_PRIV_Training_Cert_DDMMMYYYY"],
-  ["DTA Training", "Last_First_(ORG)_DTA_Training_Cert_DDMMMYYYY"],
+  ["DTA Training", "Last_First_(ORG)_DTA_Training_DDMMMYYYY"],
 ];
 
 export default function Guide() {
@@ -56,7 +56,9 @@ export default function Guide() {
           </li>
           <li>
             Map that system&apos;s shared folder and approve folder access. Mapping
-            loads the saved records but does not start Sync.
+            loads the saved records but does not start Sync. It also creates a
+            top-level <code>Template</code> folder for approved User Management
+            templates.
           </li>
           <li>
             Choose <b>Sync</b>, then select either the entire information system
@@ -123,11 +125,13 @@ export default function Guide() {
           Mapping creates a top-level <code>Organizations</code> folder. Choose{" "}
           <b>Manage Organizations</b> to create each organization beneath it,
           then place that organization&apos;s evidence in the corresponding folder.
-          Document-type folders such as <code>SAAR</code>,{" "}
-          <code>DoD Cyber Cert</code>, and <code>User Agreement</code> belong
-          inside an organization and are never listed as organizations. Existing
-          legacy organization layouts remain readable, but all new organization
-          and manual-evidence storage uses the managed Organizations hierarchy.
+          Every active document-type folder begins with its organization name,
+          such as <code>LM SAAR</code>, <code>LM DoD Cyber Cert</code>,{" "}
+          <code>LM User Agreement</code>, and <code>LM DTA Training</code>.
+          These folders belong inside LM and are never listed as separate
+          organizations. Existing legacy unprefixed and Last_First layouts remain
+          readable; Sync safely moves accepted evidence into the prefixed folders,
+          and all new organization and manual-evidence storage uses this structure.
         </p>
       </section>
       <section id="users">
@@ -349,7 +353,7 @@ export default function Guide() {
           does not count as the certificate. A SAAR filename date records the
           account creation or disable action; it is not an expiration date. A SAAR
           is therefore either Current or Missing and never becomes Overdue. Other
-          valid evidence becomes Overdue after one year. It remains visible as
+          valid evidence, including DTA Training, becomes Overdue after one year. It remains visible as
           Overdue for up to 90 days. After the 90-day overdue grace period,
           Archive Preflight moves it to the organization Archive and the active
           requirement becomes Missing.
@@ -365,7 +369,7 @@ export default function Guide() {
           Sync applies the canonical artifact label: <code>DoD_Cyber_Cert</code>,{" "}
           <code>User_Agreement</code>, <code>8140_Cert_Memo</code>,{" "}
           <code>Privileged_User_Training_Cert</code>, or{" "}
-          <code>DTA_Training_Cert</code>. SAAR filenames retain the validated GEN
+          <code>DTA_Training</code>. SAAR filenames retain the validated GEN
           or PRIV role and privileged type.
            Readable loose PDFs that remain incomplete or cannot be identified are
            preselected for the organization&apos;s Rework folder instead of remaining
@@ -528,6 +532,13 @@ export default function Guide() {
           date for compliance status, display, notifications, and exports.
         </p>
         <p>
+          The top-level <code>Template</code> folder is reserved for operator-
+          supplied User Management templates and is excluded from Sync. For User
+          Agreement notification attachments, the only recognized file is{" "}
+          <code>Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf</code>. Other files
+          in that folder are ignored by this automation.
+        </p>
+        <p>
           The <b>Processing Status</b> panel appears during Sync, verified
           clean-up actions, backup restoration, storage verification, and
           Compliance Snapshot generation. It displays the current phase,
@@ -658,10 +669,11 @@ export default function Guide() {
           Rework. Any file-level retention error is listed at
           the end of Sync without stopping the remaining files. After filename
           normalization, accepted active files are placed into a
-          canonical document-type folder inside the authoritative organization,
-          including <code>SAAR</code>, <code>User Agreement</code>,{" "}
-          <code>DoD Cyber Cert</code>, <code>8140 Certification Memo</code>,{" "}
-          <code>Privileged User Training</code>, and <code>DTA Training</code>.
+          organization-prefixed canonical document-type folder inside the
+          authoritative organization, including <code>ORG SAAR</code>,{" "}
+          <code>ORG User Agreement</code>, <code>ORG DoD Cyber Cert</code>,{" "}
+          <code>ORG 8140 Certification Memo</code>,{" "}
+          <code>ORG Privileged User Training</code>, and <code>ORG DTA Training</code>.
           Archive, SAAR Archive, Rework, and Superseded trees remain separate
           managed locations; only SAAR filenames inside SAAR Archive participate
           in the narrow account-status check. Other correction, duplicate,
@@ -877,8 +889,10 @@ export default function Guide() {
           launcher active until processing finishes.
         </p>
         <p>
-          Tracker-owned support folders are grouped beneath the mapped
-          system&apos;s top-level <code>System</code> folder: Audit Logs, Error
+          Tracker-owned support folders and operational JSON files are grouped
+          beneath the mapped system&apos;s top-level <code>System</code> folder:
+          the database manifest, Sync index, document-renamer queue, session
+          metadata, Audit Logs, Error
           Reports, backup, Reports, Sync Journals, Storage Transactions, and Archive
           Review. Existing top-level copies are migrated into this structure
           when the portable launcher maps the folder. Error entries append to
@@ -1085,10 +1099,22 @@ export default function Guide() {
             audit entry in each affected system.
           </li>
           <li>
+            For Missing or Overdue User Agreement notices, the portable Windows
+            launcher opens one draft per affected information system and attaches
+            that system&apos;s exact{" "}
+            <code>Template/Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf</code>{" "}
+            file. Due-within-30-days notices do not attach it. Classic Microsoft
+            Outlook must be available to create an attachment-bearing draft.
+          </li>
+          <li>
             Missing-document drafts include the selected artifact&apos;s required
             filename format. The message warns that incorrectly formatted or
             incorrectly named files will be rejected and explains that consistent
             names support accurate user matching and due-date tracking.
+          </li>
+          <li>
+            Missing, due-within-30-days, and overdue DoD Cyber Cert drafts include
+            the official DoD Cyber Awareness Challenge training link.
           </li>
           <li>
             Review every Outlook draft, make any required organizational edits,
@@ -1097,8 +1123,8 @@ export default function Guide() {
         </ol>
         <aside>
           The tracker never sends email automatically. Outlook must be
-          configured as the computer&apos;s email handler for each draft button
-          to open it.
+          configured for the Windows operator. Review the recipients, message,
+          and attachment before manually sending every draft.
         </aside>
       </section>
       <section id="archive">
@@ -1117,8 +1143,8 @@ export default function Guide() {
       </section>
       <aside>
         <b>Incremental Sync:</b> After successful validation, the tracker stores
-        a checksum-protected <code>tracker-sync-index.json</code> in each mapped
-        system folder. Later Syncs still enumerate active folders to detect
+        a checksum-protected <code>tracker-sync-index.json</code> beneath each
+        mapped system&apos;s <code>System</code> folder. Later Syncs still enumerate active folders to detect
         additions, moves, and deletions, but skip reopening evidence when its
         path, name, size, last-modified UTC value, and rule-set version are
         unchanged. The shared index accelerates another computer using the same
@@ -1228,7 +1254,7 @@ export default function Guide() {
         format. The resulting readable PDF or one-PDF ZIP must then pass the complete
         filename gate, including identity, parent-folder organization, artifact type,
         role details when applicable, date, and extension. Passing evidence is moved
-        into the corresponding document-type folder before user and artifact matching,
+        into the corresponding organization-prefixed document-type folder before user and artifact matching,
         so its database update is available in that same Sync Review and its obsolete
         Rework rejection is cleared. Failed files remain isolated in Rework and are
         never ingested.
