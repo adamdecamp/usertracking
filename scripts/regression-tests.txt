@@ -19,6 +19,7 @@ tests/error-utils.test.ts
 tests/manifest-validation.test.ts
 tests/saar-form-utils.test.ts
 tests/manual-saar-utils.test.ts
+tests/saar-ingest-utils.test.ts
 tests/manual-evidence-storage.test.ts
 tests/operation-timeout.test.ts
 tests/portable-request-utils.test.ts
@@ -31,5 +32,6 @@ tests/existing-user-evidence-upload.test.ts
 tests/pdf-worker-utils.test.ts
 tests/security-headers.test.ts
 tests/user-update-utils.test.ts
+tests/user-edit-ui.test.ts
 tests/workflow-utils.test.ts
 tests/data-migrations.test.ts

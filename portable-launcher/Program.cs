@@ -38,6 +38,7 @@ internal sealed class TrackerContext : ApplicationContext
     private bool backupClean = true;
     private bool shutdownReady;
     private int activeStorageRequests;
+    private int outlookDraftActive;
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr windowHandle);
@@ -171,6 +172,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "organize" && parts[0] == "POST") response = storage.OrganizeEvidence(systemId, QueryValue(target, "path"), QueryValue(target, "folder"));
                     else if (action == "restore-active" && parts[0] == "POST") response = storage.RestoreActiveEvidence(systemId, requestBody);
                     else if (action == "normalize-date" && parts[0] == "POST") response = storage.NormalizeEvidenceFilename(systemId, QueryValue(target, "path"), QueryValue(target, "filename"));
+                    else if (action == "relabel-user-evidence" && parts[0] == "POST") response = storage.RelabelUserEvidence(systemId, QueryValue(target, "path"), QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"));
                     else if (action == "organizations" && parts[0] == "GET") response = storage.ListOrganizations(systemId);
                     else if (action == "organizations" && parts[0] == "POST") response = storage.CreateOrganization(systemId, QueryValue(target, "name"));
                     else if (action == "evidence" && parts[0] == "POST") response = "{\"filename\":\"" + Json(storage.StoreEvidence(systemId, QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"), requestBody)) + "\"}";
@@ -288,7 +290,9 @@ internal sealed class TrackerContext : ApplicationContext
         if (request == null) throw new InvalidDataException("The Outlook draft request is invalid.");
         string bcc = request.ContainsKey("bcc") ? Convert.ToString(request["bcc"]) : "", subject = request.ContainsKey("subject") ? Convert.ToString(request["subject"]) : "", body = request.ContainsKey("body") ? Convert.ToString(request["body"]) : "";
         bool attachTemplate = request.ContainsKey("attachUserAgreementTemplate") && Convert.ToBoolean(request["attachUserAgreementTemplate"]);
-        if (!attachTemplate) throw new InvalidDataException("The Outlook draft request did not identify the approved User Agreement template.");
+        object[] requestedAuditSystems = request.ContainsKey("auditSystemIds") ? request["auditSystemIds"] as object[] : null;
+        string[] auditSystemIds = requestedAuditSystems == null ? new[] { systemId } : requestedAuditSystems.Select(value => Convert.ToString(value)).Where(value => !String.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
+        if (auditSystemIds.Length == 0 || auditSystemIds.Length > 40 || !auditSystemIds.Contains(systemId, StringComparer.Ordinal) || auditSystemIds.Any(value => value.Length > 100 || value.IndexOfAny(new[] { '\r', '\n', '\0', '/', '\\' }) >= 0)) throw new InvalidDataException("The Outlook audit-system list is invalid.");
         if (String.IsNullOrWhiteSpace(bcc) || bcc.Length > 8000 || bcc.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook BCC list is invalid.");
         if (String.IsNullOrWhiteSpace(subject) || subject.Length > 200 || subject.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook subject is invalid.");
         if (body.Length > 20000 || body.IndexOf('\0') >= 0) throw new InvalidDataException("The Outlook message body is invalid or too large.");
@@ -300,12 +304,20 @@ internal sealed class TrackerContext : ApplicationContext
             try { var parsed = new System.Net.Mail.MailAddress(recipient);if (!String.Equals(parsed.Address, recipient, StringComparison.OrdinalIgnoreCase)) throw new FormatException(); }
             catch { throw new InvalidDataException("The Outlook BCC list contains an invalid email address."); }
         }
-        string attachmentPath = storage.ResolveUserAgreementTemplate(systemId), failure = null;
-        dispatcher.Invoke(new Action(delegate
+        if (Interlocked.CompareExchange(ref outlookDraftActive, 1, 0) != 0) throw new InvalidOperationException("Another Outlook draft is still being prepared. Wait for it to open before trying again.");
+        string htmlBody = OutlookHtmlBody(body), operationId = Guid.NewGuid().ToString("N").ToUpperInvariant();
+        var outlookThread = new Thread(new ThreadStart(delegate
         {
             object outlook = null, message = null, attachments = null, attachment = null;
             try
             {
+                string attachmentPath = null;
+                if (attachTemplate)
+                {
+                    Task<string> templateLookup = Task.Run(() => storage.ResolveUserAgreementTemplate(systemId));
+                    if (!templateLookup.Wait(TimeSpan.FromSeconds(20))) throw new TimeoutException("The User Agreement template could not be validated within 20 seconds. Confirm that the mapped folder is available and try again.");
+                    attachmentPath = templateLookup.GetAwaiter().GetResult();
+                }
                 Type outlookType = Type.GetTypeFromProgID("Outlook.Application");
                 if (outlookType == null) throw new InvalidOperationException("Classic Microsoft Outlook is not installed or available to this Windows account.");
                 outlook = Activator.CreateInstance(outlookType);
@@ -313,19 +325,80 @@ internal sealed class TrackerContext : ApplicationContext
                 Type messageType = message.GetType();
                 messageType.InvokeMember("BCC", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { String.Join(";", recipients) });
                 messageType.InvokeMember("Subject", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { subject });
-                messageType.InvokeMember("Body", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { body });
-                attachments = messageType.InvokeMember("Attachments", BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, null);
-                attachment = attachments.GetType().InvokeMember("Add", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, attachments, new object[] { attachmentPath, Type.Missing, Type.Missing, Type.Missing });
+                if (attachTemplate)
+                {
+                    attachments = messageType.InvokeMember("Attachments", BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, null);
+                    attachment = attachments.GetType().InvokeMember("Add", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, attachments, new object[] { attachmentPath, Type.Missing, Type.Missing, Type.Missing });
+                }
                 messageType.InvokeMember("Display", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { false });
+                string signatureHtml = Convert.ToString(messageType.InvokeMember("HTMLBody", BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, null));
+                messageType.InvokeMember("HTMLBody", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { OutlookHtmlWithSignature(htmlBody, signatureHtml) });
+                RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + recipients.Length + " BCC recipients; User Agreement template " + (attachTemplate ? "attached" : "not applicable") + "; operator review required before sending", null, operationId);
             }
-            catch (Exception error) { failure = CleanError(error.InnerException != null ? error.InnerException.Message : error.Message); }
+            catch (Exception error)
+            {
+                string failure = CleanError(error.InnerException != null ? error.InnerException.Message : error.Message);
+                RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT FAILED: operation " + operationId + "; " + failure, failure, operationId);
+                try { dispatcher.BeginInvoke(new Action(delegate { MessageBox.Show("Microsoft Outlook could not create the draft. " + failure, "Information System User Tracker", MessageBoxButtons.OK, MessageBoxIcon.Error); })); }
+                catch { }
+            }
             finally
             {
                 ReleaseComObject(attachment);ReleaseComObject(attachments);ReleaseComObject(message);ReleaseComObject(outlook);
+                Interlocked.Exchange(ref outlookDraftActive, 0);
             }
         }));
-        if (!String.IsNullOrWhiteSpace(failure)) throw new InvalidOperationException("Microsoft Outlook could not create the draft. " + failure);
-        return "{\"opened\":true,\"attachment\":\"" + Json(PortableStorage.UserAgreementTemplateFilename) + "\"}";
+        outlookThread.IsBackground = true;
+        outlookThread.Name = "Information System User Tracker Outlook Draft";
+        outlookThread.SetApartmentState(ApartmentState.STA);
+        try { outlookThread.Start(); }
+        catch { Interlocked.Exchange(ref outlookDraftActive, 0);throw; }
+        return "{\"queued\":true,\"operationId\":\"" + operationId + "\",\"attachment\":" + (attachTemplate ? "\"" + Json(PortableStorage.UserAgreementTemplateFilename) + "\"" : "null") + "}";
+    }
+
+    internal static string OutlookHtmlBody(string body)
+    {
+        string normalized = (body ?? "").Replace("\r\n", "\n").Replace('\r', '\n');
+        string[] lines = normalized.Split('\n');
+        var html = new StringBuilder("<html><body style=\"font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#000000\">");
+        bool highlightFilenameStandard = false;
+        foreach (string line in lines)
+        {
+            if (String.Equals(line, "IMPORTANT - REQUIRED FILE NAME", StringComparison.Ordinal)) highlightFilenameStandard = true;
+            if (line.StartsWith("Rename the file before returning it.", StringComparison.Ordinal)) highlightFilenameStandard = false;
+            string encoded = WebUtility.HtmlEncode(line);
+            if (String.Equals(line, "https://www.cyber.mil/cyber-awareness-challenge", StringComparison.Ordinal)) encoded = "<a href=\"https://www.cyber.mil/cyber-awareness-challenge\">https://www.cyber.mil/cyber-awareness-challenge</a>";
+            if (highlightFilenameStandard && encoded.Length > 0) html.Append("<span style=\"background-color:#fff200;color:#000000;font-weight:bold\">").Append(encoded).Append("</span>");
+            else html.Append(encoded);
+            html.Append("<br>");
+        }
+        return html.Append("</body></html>").ToString();
+    }
+
+    internal static string OutlookHtmlWithSignature(string messageHtml, string signatureHtml)
+    {
+        if (String.IsNullOrWhiteSpace(signatureHtml)) return messageHtml;
+        int bodyStart = signatureHtml.IndexOf("<body", StringComparison.OrdinalIgnoreCase), bodyOpenEnd = bodyStart >= 0 ? signatureHtml.IndexOf('>', bodyStart) : -1, bodyEnd = bodyOpenEnd >= 0 ? signatureHtml.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase) : -1;
+        string signatureContent = bodyOpenEnd >= 0 && bodyEnd > bodyOpenEnd ? signatureHtml.Substring(bodyOpenEnd + 1, bodyEnd - bodyOpenEnd - 1) : signatureHtml;
+        int messageBodyEnd = messageHtml.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
+        return messageBodyEnd >= 0 ? messageHtml.Insert(messageBodyEnd, "<br>" + signatureContent) : messageHtml + "<br>" + signatureContent;
+    }
+
+    private void RecordOutlookOutcome(string[] systemIds, string action, string failure, string operationId)
+    {
+        foreach (string id in systemIds)
+        {
+            string auditFailure = null;
+            try { storage.AppendAudit(id, action); }
+            catch (Exception error) { auditFailure = CleanError(error.InnerException != null ? error.InnerException.Message : error.Message); }
+            if (failure == null && auditFailure == null) continue;
+            try
+            {
+                string now = DateTime.UtcNow.ToString("o"), detail = failure ?? ("The Outlook draft was displayed, but its completion audit could not be recorded. " + auditFailure), report = "Information System User Tracker Error Entry\r\nGeneration Time UTC: " + now + "\r\nWindows Operator: " + user + "\r\nInformation System ID: " + id + "\r\nContext: Outlook draft outcome.\r\nDetails: " + detail + "\r\nOperation ID: " + operationId;
+                storage.StoreErrorReport(id, "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".txt", report);
+            }
+            catch { }
+        }
     }
 
     private static void ReleaseComObject(object value)

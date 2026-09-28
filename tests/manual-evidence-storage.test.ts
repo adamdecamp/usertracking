@@ -36,6 +36,13 @@ test('encrypted evidence requires the complete filename gate in manual storage a
  assert.match(store,/validateReadableOrStrictEncryptedEvidence\(inspected,source\.name,sourcePath/);
  assert.match(store,/last:user\.last,first:user\.first,organization:user\.organization,kind/);
  assert.match(page,/const activeSaarEvidence=scanResult\.evidence\.filter\(item=>!item\.encryptedPdf/);
- assert.match(page,/emailResult\.error&&!emailResult\.encryptedFilenameOverride/);
- assert.match(page,/emailRequired:!emailResult\.encryptedFilenameOverride/);
+ assert.match(page,/const emailAdmission=saarEmailAdmission\(emailResult\)/);
+ assert.match(page,/if\(!emailAdmission\.allowed\)/);
+ assert.match(page,/emailRequired:!emailAdmission\.missingOfficialEmail/);
+ assert.match(page,/missingOfficialEmail:emailAdmission\.missingOfficialEmail/);
+ assert.match(page,/readOnly=\{!item\.missingOfficialEmail\}/);
+ assert.match(page,/Official Email Missing · Manual Entry Required/);
+ assert.match(page,/missingEmailUsers=discoveredUsers\.filter\(item=>!failedNewUserIds\.has\(item\.record\.id\)/);
+ assert.match(page,/aria-label="Official Email Filter"/);
+ assert.match(page,/emailFilter==='Official Email missing'/);
 });

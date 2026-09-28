@@ -1023,6 +1023,30 @@ internal sealed class PortableStorage : IDisposable
         }
     }
 
+    public string RelabelUserEvidence(string systemId, string relative, string organization, string kind, string filename)
+    {
+        lock (RootLock(systemId))
+        {
+            string root = Root(systemId);RecoverTransactions(root);string source = SafeRelativePath(root, relative), normalized = Relative(root, source);
+            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active user evidence can be relabeled from the User Record.");
+            if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
+            string safeOrganization = ValidOrganizationName(organization), folder = ArtifactStorageFolder(kind), safeName = SafePart(filename, 180);
+            if (!String.Equals(safeName, filename, StringComparison.Ordinal) || !String.Equals(Path.GetFileName(filename), filename, StringComparison.Ordinal)) throw new InvalidDataException("The relabeled evidence filename is invalid or too long.");
+            string sourceExtension = Path.GetExtension(source), targetExtension = Path.GetExtension(safeName);
+            if ((!sourceExtension.Equals(".pdf", StringComparison.OrdinalIgnoreCase) && !sourceExtension.Equals(".zip", StringComparison.OrdinalIgnoreCase)) || !sourceExtension.Equals(targetExtension, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The relabeled evidence filename must preserve the PDF or ZIP extension.");
+            string directory = Path.Combine(root, "Organizations", safeOrganization, OrganizationArtifactStorageFolder(folder, safeOrganization));Directory.CreateDirectory(directory);EnsureOrganizationDocumentFolders(Path.Combine(root, "Organizations", safeOrganization), safeOrganization);
+            string destination = Path.Combine(directory, safeName), sourceRelative = normalized.Replace(Path.DirectorySeparatorChar, '/'), destinationRelative = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
+            if (String.Equals(source, destination, StringComparison.OrdinalIgnoreCase)) return json.Serialize(new Dictionary<string, object> { { "path", sourceRelative }, { "filename", Path.GetFileName(source) }, { "alreadyCompleted", true } });
+            if (File.Exists(destination)) return json.Serialize(new Dictionary<string, object> { { "path", sourceRelative }, { "filename", Path.GetFileName(source) }, { "collision", true }, { "existing", destinationRelative } });
+            string sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "relabel-user-evidence", source, destination, sourceHash, "");
+            File.Move(source, destination);FailAfter("relabel-user-evidence-move");
+            try { if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The relabeled evidence failed its SHA-256 integrity check."); }
+            catch { if (!File.Exists(source) && File.Exists(destination)) File.Move(destination, source);throw; }
+            CompleteTransaction(transaction);
+            return json.Serialize(new Dictionary<string, object> { { "path", destinationRelative }, { "filename", safeName }, { "sha256", sourceHash } });
+        }
+    }
+
     public string CompressEvidence(string systemId, string relative)
     {
         lock (RootLock(systemId))

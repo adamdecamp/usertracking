@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const styles=readFileSync(new URL('../app/globals.css',import.meta.url),'utf8');
 const versions=readFileSync(new URL('../app/version.ts',import.meta.url),'utf8');
+const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 
 test('Document Renamer preview reserves a full browser window before asynchronous PDF validation',()=>{
  assert.match(page,/function reservePdfPreviewWindow\(filename:string\)\{const target=window\.open\('about:blank','_blank'\)/);
@@ -139,7 +140,17 @@ test('User Agreement notification templates are launcher-attached and excluded f
  assert.match(page,/getDirectoryHandle\('Template',\{create:true\}\)/);
  assert.match(page,/\['system','template','error reports'/);
  assert.match(page,/notificationUsesUserAgreementTemplate\(state,selectedKind\)/);
- assert.match(page,/portableRequest\(templateRoot,'outlook-draft'/);
- assert.match(page,/attachUserAgreementTemplate:true/);
+ assert.match(page,/portableRequest\(draftRoot,'outlook-draft'/);
+ assert.match(page,/attachUserAgreementTemplate:attachAgreementTemplate/);
+ assert.match(page,/auditSystemIds:systemIds/);
+ assert.match(page,/disabled=\{draftBusyIndex!==null\}/);
  assert.match(page,/Each system receives its own draft with Template\//);
+ assert.match(launcher,/outlookThread\.SetApartmentState\(ApartmentState\.STA\)/);
+ assert.match(launcher,/Interlocked\.CompareExchange\(ref outlookDraftActive/);
+ assert.match(launcher,/templateLookup\.Wait\(TimeSpan\.FromSeconds\(20\)\)/);
+ assert.match(launcher,/OutlookHtmlWithSignature\(htmlBody, signatureHtml\)/);
+ assert.match(launcher,/OUTLOOK DRAFT DISPLAYED/);
+ assert.match(launcher,/OUTLOOK DRAFT FAILED/);
+ assert.match(launcher,/background-color:#fff200/);
+ assert.match(launcher,/cyber-awareness-challenge/);
 });

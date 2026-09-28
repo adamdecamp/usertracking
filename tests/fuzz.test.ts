@@ -7,6 +7,7 @@ import {inspectEvidenceBytes} from '../app/evidence-validation.ts';
 import {auditEvidenceContent} from '../app/evidence-audit-utils.ts';
 import {artifactKinds,canonicalEvidenceFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationArtifactStorageFolder,organizationFrom,parseDate,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
 import {officialEmailFromText,readSaarFormFields} from '../app/saar-form-utils.ts';
+import {saarEmailAdmission} from '../app/saar-ingest-utils.ts';
 import {readSyncIndex} from '../app/sync-utils.ts';
 import {activeUserProtectsEvidenceFromDeletion,hasActiveDuplicateEvidenceScope,reworkRetentionDisposition,type DeletionEvidenceUser} from '../app/workflow-utils.ts';
 import {PDFDocument,PDFName,PDFString} from 'pdf-lib';
@@ -43,6 +44,14 @@ test('fuzzes Official Email selectable-text recovery without accepting unlabeled
   assert.doesNotThrow(()=>officialEmailFromText(noise));
   assert.equal(officialEmailFromText(`${noise} OFFICIAL EMAIL ADDRESS ${address} JOB TITLE`),address);
   assert.equal(officialEmailFromText(`${noise} ${address}`),undefined);
+ }
+});
+
+test('fuzzes missing SAAR email admission without bypassing manual-entry authorization',()=>{
+ for(let index=0;index<3000;index++){
+  const manualEntryAllowed=index%3===0,result=saarEmailAdmission({email:randomText(400),error:randomText(200),manualEntryAllowed});
+  if(result.allowed&&result.missingOfficialEmail)assert.equal(manualEntryAllowed,true);
+  if(result.allowed&&!result.missingOfficialEmail)assert.match(result.email,/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i);
  }
 });
 

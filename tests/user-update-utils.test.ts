@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {accessChangeOverrideAllowed,manualAddEvidenceGate,missingOfficialEmailUpdate,reactivationEvidenceRequirementSatisfied,updatedSaarRequirementSatisfied} from '../app/user-update-utils.ts';
+import {accessChangeOverrideAllowed,manualAddEvidenceGate,missingOfficialEmailUpdate,officialEmailUpdate,reactivationEvidenceRequirementSatisfied,updatedSaarRequirementSatisfied} from '../app/user-update-utils.ts';
 
 const input={statusChange:false,modifyingPrivileges:false,hasUpdatedSaar:false,overrideSelected:false,overrideComment:''};
 
@@ -63,4 +63,11 @@ test('rejects invalid, duplicate, or replacement Official Email edits',()=>{
  assert.match(missingOfficialEmailUpdate('','not-an-email').reason??'',/valid Official Email/);
  assert.match(missingOfficialEmailUpdate('','shared@example.mil',['SHARED@EXAMPLE.MIL']).reason??'',/already assigned/);
  assert.match(missingOfficialEmailUpdate('existing@example.mil','replacement@example.mil').reason??'',/only be entered.*missing/);
+});
+
+test('allows controlled Official Email replacement without permitting removal or duplicates',()=>{
+ assert.deepEqual(officialEmailUpdate('old@example.mil',' New.Address@example.mil ',['other@example.mil']),{allowed:true,email:'New.Address@example.mil'});
+ assert.match(officialEmailUpdate('old@example.mil','').reason??'',/cannot be removed/);
+ assert.match(officialEmailUpdate('old@example.mil','other@example.mil',['OTHER@example.mil']).reason??'',/already assigned/);
+ assert.match(officialEmailUpdate('old@example.mil','not-an-email').reason??'',/valid Official Email/);
 });

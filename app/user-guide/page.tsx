@@ -236,16 +236,21 @@ export default function Guide() {
           every user currently shown. Every user requires one consolidated User
           Agreement. All Privileged users additionally require the 8140 memo and
           Privileged User Training certificate. Privileged users with DTA type
-          also require DTA training. Open a User Record to replace evidence,
-          disable or enable access, modify privileges, or delete the database
-          record under controlled conditions. If the record has no Official
-          Email, the User Record displays an editable Official Email field. Enter
-          the address verified from the user&apos;s SAAR and choose <b>Submit</b>;
-          the app validates the address, rejects an address assigned to another
-          record in the same information system, updates the manifest and backup,
-          and adds the operator action
-          to the change history and tamper-evident audit log. Existing email
-          addresses remain read-only in this workflow. Each existing-user evidence
+          also require DTA training. Open a User Record and choose{" "}
+          <b>Edit User Information</b> to correct Official Email, Last Name, First
+          Name, Middle Initial, or organization. The app validates replacement
+          email addresses and rejects an address assigned to another record in the
+          same information system. If a name or organization changes, active
+          evidence is transactionally moved to the correct organization folder and
+          relabeled with the updated identity; a collision or unrecognizable
+          evidence date stops the edit without overwriting a file. Disabled names
+          and organizations stay locked as historical identities until the user is
+          re-enabled, while Official Email and Middle Initial remain correctable.
+          Every successful edit updates the manifest and backup and records the old
+          and new values in the change history and tamper-evident audit log. Open a
+          User Record to replace evidence, disable or enable access, modify
+          privileges, or delete the database record under controlled conditions.
+          Each existing-user evidence
           card accepts drag and drop or File Explorer selection for a PDF or a ZIP
           containing exactly one PDF. The Updated SAAR control uses the same upload
           methods and validation. Access and privilege changes
@@ -804,7 +809,13 @@ export default function Guide() {
           The Sync Review window displays separate editable Last Name, First
           Name, and Organization fields, the read-only email extracted from the
           form&apos;s Official Email field or labeled selectable text, and the
-          role inferred from the filename. A <code>PRIV</code> SAAR creates a
+          role inferred from the filename. If the SAAR otherwise passes validation
+          but Official Email is blank, invalid, or undetected, Sync still proposes
+          the user with the SAAR attached. Sync Review and the User Directory mark
+          <b> Official Email Missing — Manual Entry Required</b>. The operator may
+          enter the address in Sync Review or open the resulting User Record and
+          enter it later; that update is validated, checked for duplicates, and
+          audited. A <code>PRIV</code> SAAR creates a
           Privileged role. Its editable Privileged Account Type field is
           prepopulated with the <code>_TYPE</code> suffix, such as{" "}
           <code>_admin</code> or <code>_DTA</code>; DTA remains a Privileged
@@ -842,10 +853,11 @@ export default function Guide() {
           does not commit its incremental-scan index, ensuring unresolved files
           are reconsidered after a later restart. A new Sync can still be started
           separately when needed.
-          In the manual <b>Add User</b> workflow
-          only, the operator may enter a valid <b>Official Email</b> when the
-          uploaded SAAR&apos;s email field and labeled-text fallback are blank;
-          Sync never substitutes a manually entered value.
+          In the manual <b>Add User</b> workflow, the operator may enter a valid
+          <b> Official Email</b> when the uploaded SAAR&apos;s email field and
+          labeled-text fallback are blank. Sync also permits manual entry only
+          after it explicitly flags a validated SAAR as missing Official Email.
+          It never invents or silently substitutes an address.
         </p>
         <p>
           A correctly named supporting artifact may create a proposed minimal
@@ -1065,7 +1077,8 @@ export default function Guide() {
         <h3>Export Filtered User Directory Results</h3>
         <p>
           Set the Information System, search text, Organization, Role,
-          Privileged User Type, Artifact, and Compliance Status filters in the{" "}
+          Privileged User Type, Official Email status, Artifact, and Compliance
+          Status filters in the{" "}
           <b>User Directory</b>, then choose <b>Export CSV</b> beside{" "}
           <b>Add User</b>. The CSV contains only the users and applicable
           requirement rows that match the current directory filters, including
@@ -1108,9 +1121,10 @@ export default function Guide() {
           </li>
           <li>
             Missing, due-within-30-days, and overdue drafts prominently display the
-            selected artifact&apos;s required filename format. The message uses an
-            uppercase warning that files outside the naming standard will be rejected
-            and instructs the recipient to rename the file before returning it.
+            selected artifact&apos;s required filename format. Drafts opened by the
+            portable Windows launcher use a yellow marker background on the filename
+            standard and rejection warning. The message instructs the recipient to
+            rename the file before returning it.
             Consistent names support accurate user matching and due-date tracking.
           </li>
           <li>
@@ -1125,7 +1139,14 @@ export default function Guide() {
         <aside>
           The tracker never sends email automatically. Outlook must be
           configured for the Windows operator. Review the recipients, message,
-          and attachment before manually sending every draft.
+          and attachment before manually sending every draft. Outlook draft creation
+          is queued separately so a slow Outlook startup or attachment operation does
+          not leave the tracker waiting indefinitely; Outlook displays an error if it
+          cannot complete the draft. The launcher prevents overlapping draft requests,
+          limits User Agreement template validation to 20 seconds, preserves the
+          operator&apos;s configured Outlook signature, makes the DoD Cyber training URL
+          clickable, and records whether the draft was displayed or failed. Failures
+          are also appended to the UTC-daily text error report.
         </aside>
       </section>
       <section id="archive">
