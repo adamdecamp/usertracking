@@ -36,8 +36,14 @@ export function folderOrganizationDiffers(path:string,filenameOrganization:strin
  return organizationFromFolderPath(path,rootFallback).toUpperCase()!==(filenameOrganization??'').trim().toUpperCase();
 }
 
+export function insideArchiveTree(path:string){
+ const directories=path.replaceAll('\\','/').split('/').slice(0,-1);
+ return directories.some(segment=>{const value=normalized(segment);return value==='ARCHIVE'||value==='ARCHIVE REVIEW'||value.endsWith(' ARCHIVE')});
+}
+
 export function documentNeedsFilenameNormalization(filename:string,path:string,rootFallback=''){
  if(!/\.pdf$/i.test(filename))return false;
+ if(insideArchiveTree(path))return false;
  if(legacy8570MemoFilename(filename))return false;
  const organization=organizationFromFolderPath(path,rootFallback,identityFromFilename(filename));
  return !evidenceFilenamePassesStorageGate(filename,organization);

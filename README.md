@@ -47,7 +47,7 @@ This is an administrative evidence and tracking tool. It may support an organiza
 
 ## Development
 
-Requirements: Node.js 22.13 or later, pnpm 10.14, and Windows for the standalone executable.
+Requirements: Node.js 22.13 or later, pnpm 11.19.0, and Windows for the standalone executable.
 
 ```powershell
 pnpm install --frozen-lockfile

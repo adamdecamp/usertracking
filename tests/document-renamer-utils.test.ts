@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {analyzeDocumentText,applySaarFormFallback,buildTrackerFilename,documentNeedsFilenameNormalization,folderOrganizationDiffers,normalizeFilenameOrganization,organizationCleanupDirectory,organizationFromFolderPath,organizationStorageLocation,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
+import {analyzeDocumentText,applySaarFormFallback,buildTrackerFilename,documentNeedsFilenameNormalization,folderOrganizationDiffers,insideArchiveTree,normalizeFilenameOrganization,organizationCleanupDirectory,organizationFromFolderPath,organizationStorageLocation,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
 import {canonicalEvidenceFilename} from '../app/filename-utils.ts';
 
 const users=[{first:'Jacob',last:'Brown',organization:'LM',roles:['General'],privilegedTypes:[]}];
@@ -161,6 +161,20 @@ test('queues every recognizable but noncanonical PDF and skips only exact canoni
  assert.equal(documentNeedsFilenameNormalization('Brown, Jacob (LM) DoD Cyber Cert 26AUG2026.pdf','Organizations/LM/Brown, Jacob (LM) DoD Cyber Cert 26AUG2026.pdf','SYSTEM'),true);
  assert.equal(documentNeedsFilenameNormalization('Brown_Jacob_(WRONG)_DoD_Cyber_Cert_26AUG2026.pdf','Organizations/LM/LM Rework/Brown_Jacob_(WRONG)_DoD_Cyber_Cert_26AUG2026.pdf','SYSTEM'),true);
  assert.equal(documentNeedsFilenameNormalization('Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.zip','Organizations/LM/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.zip','SYSTEM'),false);
+});
+
+test('never queues nonstandard filenames from Archive trees',()=>{
+ const filename='Brown, Jacob (WRONG) Cyber Awareness 20260826.pdf';
+ for(const path of[
+  `Organizations/LM/LM Archive/2026-08-26/${filename}`,
+  `Organizations/LM/LM SAAR Archive/${filename}`,
+  `System/Archive Review/${filename}`,
+ ]){
+  assert.equal(insideArchiveTree(path),true,path);
+  assert.equal(documentNeedsFilenameNormalization(filename,path,'SYSTEM'),false,path);
+ }
+ assert.equal(insideArchiveTree(`Organizations/LM/LM Rework/${filename}`),false);
+ assert.equal(documentNeedsFilenameNormalization(filename,`Organizations/LM/LM Rework/${filename}`,'SYSTEM'),true);
 });
 
 test('evaluates every artifact in every sibling organization folder',()=>{

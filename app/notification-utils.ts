@@ -4,7 +4,7 @@ export const dodCyberTrainingUrl='https://www.cyber.mil/cyber-awareness-challeng
 export const userAgreementTemplateFilename='Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf';
 
 export function notificationUsesUserAgreementTemplate(state:NotificationState,requirement:string){
- return requirement==='User Agreement'&&(state==='Missing'||state==='Overdue');
+ return requirement==='User Agreement'&&['Missing','Due Within 30 Days','Overdue'].includes(state);
 }
 
 export function availableNotificationKinds(state:NotificationState,kinds:readonly string[]){

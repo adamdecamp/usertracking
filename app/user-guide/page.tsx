@@ -472,7 +472,9 @@ export default function Guide() {
           unique high-confidence result. It then performs a metadata-only location
           refresh, which verifies the results without reopening PDF content. The
           summary reports Renamed, Needs Input, Collisions, ZIPs Skipped, and
-          Archive Trees Excluded. Ambiguous or incomplete results appear under
+          Archive Trees Excluded. Archive, SAAR Archive, Superseded, and Archive
+          Review files are historical records and are never evaluated as nonstandard
+          filename candidates. Ambiguous or incomplete results appear under
           <b> Needs Operator Input</b>; duplicate proposed names and existing target
           names appear separately under <b>Collisions</b>. Editable fields can be
           corrected, selected, and applied individually. Every original PDF opens
@@ -1112,11 +1114,11 @@ export default function Guide() {
             audit entry in each affected system.
           </li>
           <li>
-            For Missing or Overdue User Agreement notices, the portable Windows
+            For Missing, Due Within 30 Days, or Overdue User Agreement notices, the portable Windows
             launcher opens one draft per affected information system and attaches
             that system&apos;s exact{" "}
             <code>Template/Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf</code>{" "}
-            file. Due-within-30-days notices do not attach it. Classic Microsoft
+            file. Classic Microsoft
             Outlook must be available to create an attachment-bearing draft.
           </li>
           <li>

@@ -128,6 +128,7 @@ test('Sync applies the shared Document Renamer analysis to changed noncanonical 
  assert.ok(shared,'The shared Document Renamer PDF analysis routine was not found.');
  assert.ok(sync,'The Sync Document Renamer stage was not found.');
  assert.match(sync,/documentNeedsFilenameNormalization/);
+ assert.match(sync,/!insideArchiveTree\(item\.path\)/);
  assert.match(sync,/!item\.unchanged\|\|insideOrganizationRework\(item\.path\)/);
  assert.match(sync,/analyzeRenamerPdf\(candidate,sourceUsers,h\.name,controller\.signal\)/);
  assert.match(sync,/item\.confidence==='High'/);

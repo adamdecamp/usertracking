@@ -48,10 +48,11 @@ test('replaces an invalid artifact selection when the notification status change
  assert.equal(notificationKindForState('Overdue','User Agreement',kinds),'User Agreement');
 });
 
-test('attaches only the exact User Agreement template for missing or overdue notices',()=>{
+test('attaches only the exact User Agreement template for every actionable notice',()=>{
  assert.equal(userAgreementTemplateFilename,'Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf');
  assert.equal(notificationUsesUserAgreementTemplate('Missing','User Agreement'),true);
  assert.equal(notificationUsesUserAgreementTemplate('Overdue','User Agreement'),true);
- assert.equal(notificationUsesUserAgreementTemplate('Due Within 30 Days','User Agreement'),false);
+ assert.equal(notificationUsesUserAgreementTemplate('Due Within 30 Days','User Agreement'),true);
  assert.equal(notificationUsesUserAgreementTemplate('Missing','DoD Cyber Cert'),false);
+ assert.equal(notificationUsesUserAgreementTemplate('Due Within 30 Days','DoD Cyber Cert'),false);
 });
