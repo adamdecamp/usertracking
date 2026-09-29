@@ -712,9 +712,11 @@ export default function Guide() {
           valid SAAR for the same user and organization is already recorded, or
           the operator approves that newer SAAR in the same Sync review. Evidence
           from another organization can never justify archiving the user&apos;s SAAR.
-          Only loose PDFs matched to a verified User Directory record or a
-          verified user discovered during the current Sync are eligible for
-          compression. This includes valid PDFs dropped directly into the top
+          Every valid loose PDF detected in an active organization folder is
+          flagged for optional compression, whether or not it is already
+          associated with a User Directory record. Rework remains uncompressed
+          for correction, and Archive compression is handled by the retention
+          workflow. This includes valid PDFs dropped directly into the top
           level of an organization folder. Incremental and full rescans retain
           unchanged loose PDFs in this review, so deferring compression does not
           hide them on a later Sync. The new ZIP is reopened and

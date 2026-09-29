@@ -51,6 +51,16 @@ test('offers loose PDF compression only for an existing matching directory user'
  assert.deepEqual(result.map(item=>item.filename),['Brown_Jacob_DoD.pdf']);
 });
 
+test('offers an eligible organization PDF for compression without a matching user',()=>{
+ const items=[
+  {path:'Organizations/LM/LM DoD Cyber Cert/Unknown_User_(LM)_DoD_Cyber_Cert_26AUG2026.pdf',filename:'Unknown_User_(LM)_DoD_Cyber_Cert_26AUG2026.pdf'},
+  {path:'Organizations/LM/LM Rework/Unknown_User_(LM)_DoD_Cyber_Cert_26AUG2026.pdf',filename:'Unknown_User_(LM)_DoD_Cyber_Cert_26AUG2026.pdf'},
+  {path:'Organizations/LM/LM DoD Cyber Cert/Unknown_User_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip',filename:'Unknown_User_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip'},
+ ];
+ const result=selectLoosePdfCleanupCandidates(items,[],()=>false,[items[1].path],item=>item.path.includes('/LM DoD Cyber Cert/'));
+ assert.deepEqual(result.map(item=>item.path),[items[0].path]);
+});
+
 test('detects a loose PDF whose compression destination already exists',()=>{
  const items=[
   {path:'GDMS/DoD Cyber Cert/Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf',filename:'Brown_Jacob_(GDMS)_DoD_Cyber_Cert_26AUG2026.pdf'},

@@ -9,9 +9,9 @@ export function distinctByPath<T extends{path:string}>(items:T[]){
  return items.filter(item=>{const key=item.path.replaceAll('\\','/').toUpperCase();if(seen.has(key))return false;seen.add(key);return true});
 }
 
-export function selectLoosePdfCleanupCandidates<T extends{filename:string;path:string},U>(items:T[],existingUsers:U[],matchesUser:(item:T,user:U)=>boolean,excludedPaths:string[]=[]){
+export function selectLoosePdfCleanupCandidates<T extends{filename:string;path:string},U>(items:T[],existingUsers:U[],matchesUser:(item:T,user:U)=>boolean,excludedPaths:string[]=[],includeUnmatched:(item:T)=>boolean=()=>false){
  const excluded=new Set(excludedPaths.map(path=>path.replaceAll('\\','/').toUpperCase()));
- return distinctByPath(items.filter(item=>item.filename.toLowerCase().endsWith('.pdf')&&!excluded.has(item.path.replaceAll('\\','/').toUpperCase())&&existingUsers.some(user=>matchesUser(item,user))));
+ return distinctByPath(items.filter(item=>item.filename.toLowerCase().endsWith('.pdf')&&!excluded.has(item.path.replaceAll('\\','/').toUpperCase())&&(includeUnmatched(item)||existingUsers.some(user=>matchesUser(item,user)))));
 }
 
 export function findLoosePdfZipCollisions<T extends{filename:string;path:string}>(items:T[]){
