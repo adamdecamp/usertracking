@@ -5,6 +5,8 @@ import test from 'node:test';
 const validation=readFileSync(new URL('../.github/workflows/security-build.yml',import.meta.url),'utf8');
 const release=readFileSync(new URL('../.github/workflows/signed-release.yml',import.meta.url),'utf8');
 const buildScript=readFileSync(new URL('../scripts/build-portable.ps1',import.meta.url),'utf8');
+const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
+const portableIndex=readFileSync(new URL('../portable/index.html',import.meta.url),'utf8');
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const layout=readFileSync(new URL('../app/layout.tsx',import.meta.url),'utf8');
 const guide=readFileSync(new URL('../app/user-guide/page.tsx',import.meta.url),'utf8');
@@ -32,6 +34,12 @@ test('packages the AUDIT brand and application icons consistently',()=>{
  }
  assert.match(buildScript,/win32icon:\$icon/);
  assert.match(buildScript,/Tracker\.Favicon/);
+ assert.match(layout,/favicon\.ico\?v=\$\{iconVersion\}/);
+ assert.match(portableIndex,/favicon\.ico\?v=1\.2\.73/);
+ assert.match(launcher,/path == "\/favicon\.ico" \? "no-cache, max-age=0"/);
+ assert.match(page,/archived\.blockingErrors\.length/);
+ assert.match(page,/Delete user completed with missing evidence files/);
+ assert.match(page,/Disable user completed with missing evidence files/);
  assert.match(page,/<h1>AUDIT<\/h1>/);
  assert.match(page,/Authorized User Documentation &amp; Information Tracker/);
  assert.match(layout,/AUDIT — Authorized User Documentation & Information Tracker/);

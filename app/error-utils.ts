@@ -6,6 +6,11 @@ export function errorDetail(error:unknown,fallback='An unexpected error occurred
  return fallback;
 }
 
+export function isMissingEvidenceError(error:unknown){
+ const detail=errorDetail(error,'').toLowerCase();
+ return /(?:filenotfoundexception|notfounderror|no longer exists|does not exist|could not be located|cannot find (?:the )?(?:file|path)|could not find (?:the )?(?:file|path|a part of the path)|path not found|file not found)/.test(detail);
+}
+
 export function errorAuditAction(context:string,detail:string){return`ERROR: ${clean(context,160)}; details ${clean(detail,300)}`}
 
 export function detailedErrorMessage(context:string,detail:string,audit:'recorded'|'unavailable'|'failed',auditDetail=''){

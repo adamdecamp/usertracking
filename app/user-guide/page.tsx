@@ -292,10 +292,13 @@ export default function Guide() {
           authoritative organization folder. Every matching SAAR moves to the
           organization&apos;s permanent SAAR Archive, while all other matching evidence
           moves to the organization Archive. The user is removed from the active
-          database only after every file move and the verified manifest and backup
-          save succeed. If any archive operation fails, the user record is retained.
-          The request, justification, Windows operator, completion result, and
-          archive destinations are recorded in the tamper-evident audit log.
+          database after the verified manifest and backup save succeed. A source
+          file that was already removed or renamed is recorded in the daily error
+          report and tamper-evident audit log without blocking a manual Disable or
+          Delete action. Other archive failures, such as permission, integrity, or
+          destination-write errors, still retain the user record for safe review.
+          The request, justification, Windows operator, completion result, archive
+          destinations, and any already-missing evidence are recorded.
         </p>
         <p>
           For responsive display with very large user populations, identical

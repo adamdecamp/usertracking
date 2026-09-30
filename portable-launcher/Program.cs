@@ -200,7 +200,7 @@ internal sealed class TrackerContext : ApplicationContext
                 finally { EndStorageRequest(); if (serializedStorage) storageOperations.Release(); }
             }
             WebAsset asset;
-            if (assets.TryGetValue(path, out asset)) { await Respond(stream, 200, asset.ContentType, asset.Bytes, parts[0] == "HEAD", "public, max-age=31536000, immutable", "gzip"); return; }
+            if (assets.TryGetValue(path, out asset)) { string cache = path == "/favicon.ico" ? "no-cache, max-age=0" : "public, max-age=31536000, immutable"; await Respond(stream, 200, asset.ContentType, asset.Bytes, parts[0] == "HEAD", cache, "gzip"); return; }
             if (path == "/" || path == "/index.html" || !Path.HasExtension(path)) { await Respond(stream, 200, "text/html; charset=utf-8", indexHtml, parts[0] == "HEAD", "no-cache"); return; }
             await Respond(stream, 404, "text/plain", Encoding.UTF8.GetBytes("Not Found"), parts[0] == "HEAD", "no-store");
         }
