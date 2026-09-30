@@ -511,7 +511,7 @@ export default function Guide() {
           until the launcher knows how many files are present.
         </p>
         <p>
-          Legacy Import uses filename-first processing for large unmanaged repositories. Files that contain
+          Both Sync modes use filename-first processing. Files that contain
           a recognizable identity, organization, artifact type, and date are matched
           without opening the PDF. System Sync does not open incomplete training
           certificates or attempt to recover their names or dates from PDF content.
@@ -534,11 +534,12 @@ export default function Guide() {
         </aside>
         <aside>
           <b>Daily Sync vs. Legacy Import:</b> Daily Sync is the normal operating
-          mode. It requires the standard filename, creates new users only from a
-          valid SAAR, reuses validated unchanged Rework evidence, and does not run
-          historical PDF content guessing. Legacy Import adds tolerant date and
-          filename normalization, bounded SAAR filename-field recovery, complete
-          Rework revalidation, and carefully reviewed user proposals from supporting
+          mode. It safely normalizes recognizable filename dates, organizations, and
+          artifact wording, creates new users only from a valid SAAR, reuses validated
+          unchanged Rework evidence, and limits PDF-assisted renaming to new, changed,
+          or moved files. Legacy Import adds a full historical PDF-renaming sweep,
+          bounded SAAR filename-field recovery, complete Rework revalidation, and
+          carefully reviewed user proposals from supporting
           evidence when an old repository has no matching SAAR. Both modes retain
           strict final storage gates, audit logging, retention, compression,
           collision review, and operator verification before database changes.
@@ -604,11 +605,12 @@ export default function Guide() {
           evidence matching or user creation and is shown for operator review.
         </p>
         <p>
-          Legacy Import automatically renames a recognized nonstandard evidence date to
-          DDMMMYYYY in the same active folder and records the change in the
-          audit log. It then uses the shared filename-normalization rules to read the
-          content of remaining changed noncanonical PDFs, automatically applies
-          unique high-confidence canonical names, and continues past per-file
+          Daily Sync and Legacy Import automatically rename a recognized nonstandard
+          evidence date to DDMMMYYYY in the same active folder and record the change
+          in the audit log. Daily Sync then uses the shared filename-normalization rules
+          to read only new, changed, or moved noncanonical PDFs. Legacy Import also
+          evaluates eligible unchanged historical PDFs. Both modes automatically apply
+          unique high-confidence canonical names and continue past per-file
           timeouts or analysis failures so one document cannot stop the Sync.
           Ambiguous results remain available in Sync review and the Rework workflow.
           Before Archive Preflight, Sync checks evidence associated

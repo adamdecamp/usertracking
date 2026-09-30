@@ -40,12 +40,13 @@ test('browser Sync caches unchanged Rework in Daily Sync and revalidates it in L
  assert.match(page,/reworkEvidence=insideOrganizationRework\(path\),cached=!\(legacyImport&&reworkEvidence\)&&!!previous/);
 });
 
-test('Legacy Import normalizes corrected Rework while strict promotion clears stale source rejections',()=>{
+test('Daily Sync normalizes filenames while Legacy Import retains corrected Rework recovery',()=>{
  const normalizable=page.match(/const normalizableByPath=[\s\S]*?const filenameRenames=/)?.[0]??'';
  const saarPreparation=page.match(/saarPreparations=[\s\S]*?formSaarPreparations=/)?.[0]??'';
  assert.ok(normalizable,'Sync normalization wiring was not found.');
  assert.ok(saarPreparation,'SAAR preparation wiring was not found.');
- assert.match(normalizable,/if\(legacyImport\)/);
+ assert.match(normalizable,/for\(const item of scanResult\.evidence\)/);
+ assert.match(normalizable,/legacyImport\|\|!rejected\.unchanged/);
  assert.match(saarPreparation,/legacyImport\?/);
  assert.doesNotMatch(normalizable,/!insideOrganizationRework/);
  assert.doesNotMatch(saarPreparation,/!insideOrganizationRework/);
@@ -55,13 +56,12 @@ test('Legacy Import normalizes corrected Rework while strict promotion clears st
  assert.match(page,/if\(!promotedSourcePaths\.has\(key\)&&!known\.has\(key\)\)scanResult\.rejected\.push\(rejection\)/);
 });
 
-test('Legacy Import normalizes complete noncanonical ZIP names before routing ambiguous ZIPs to Rework',()=>{
+test('both Sync modes normalize complete noncanonical ZIP names before routing ambiguous ZIPs to Rework',()=>{
  const invalidZipGate=page.match(/const invalidZipCorrections:[\s\S]*?invalidZipPaths=/)?.[0]??'';
  const normalizable=page.match(/const normalizableByPath=[\s\S]*?const filenameRenames=/)?.[0]??'';
  assert.ok(invalidZipGate,'The invalid ZIP gate was not found.');
- assert.match(invalidZipGate,/legacyImport\?zipFilenameNeedsRework\(item\.filename,folderOrganization\)&&!canonicalEvidenceFilename\(item\.filename,folderOrganization\):!evidenceFilenamePassesStorageGate\(item\.filename,folderOrganization\)/);
+ assert.match(invalidZipGate,/zipFilenameNeedsRework\(item\.filename,folderOrganization\)&&!canonicalEvidenceFilename\(item\.filename,folderOrganization\)/);
  assert.ok(normalizable,'The shared PDF and ZIP normalization collection was not found.');
- assert.match(normalizable,/if\(legacyImport\)/);
  assert.match(normalizable,/scanResult\.evidence/);
  assert.match(normalizable,/!invalidZipPaths\.has/);
 });
@@ -128,7 +128,7 @@ test('Sync applies the shared Document Renamer analysis to changed noncanonical 
  const manual=page.match(/const batch=remaining\.slice[\s\S]*?saveRenamerQueue/)?.[0]??'';
  assert.ok(shared,'The shared Document Renamer PDF analysis routine was not found.');
  assert.ok(sync,'The Sync Document Renamer stage was not found.');
- assert.match(sync,/syncRenamerCandidates=legacyImport\?/);
+ assert.match(sync,/shouldReadPdfForFilenameNormalization\(syncMode,item\.unchanged\)/);
  assert.match(sync,/documentNeedsFilenameNormalization/);
  assert.match(sync,/!insideArchiveTree\(item\.path\)/);
  assert.doesNotMatch(sync,/!item\.unchanged\|\|insideOrganizationRework\(item\.path\)/);
@@ -139,7 +139,7 @@ test('Sync applies the shared Document Renamer analysis to changed noncanonical 
  assert.match(manual,/analyzeRenamerPdf\(candidate,users,root\.name\)/);
 });
 
-test('the manual Document Renamer button is removed while Legacy Import retains normalization',()=>{
+test('the manual Document Renamer button is removed while both Sync modes retain automatic normalization',()=>{
  const toolbar=page.slice(page.indexOf('<section className="toolbar">'),page.indexOf('</section>',page.indexOf('<section className="toolbar">')));
  assert.doesNotMatch(toolbar,/Document Renamer/);
  assert.doesNotMatch(toolbar,/setModal\('renamer'\)/);

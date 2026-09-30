@@ -11,5 +11,9 @@ export function syncModeLabel(mode:SyncMode){
 export function syncModeDescription(mode:SyncMode){
  return isLegacyImport(mode)
   ?'Recovers historical evidence through tolerant filename normalization, bounded PDF field extraction, Rework revalidation, and supporting-evidence-only user proposals.'
-  :'Uses strict filenames and the validated Sync index. Only new, changed, or moved files are opened, while unchanged Rework evidence remains cached.';
+  :'Normalizes recognizable filenames, uses strict final storage rules, and opens PDF content only for new, changed, or moved files while unchanged Rework evidence remains cached.';
+}
+
+export function shouldReadPdfForFilenameNormalization(mode:SyncMode,unchanged?:boolean){
+ return isLegacyImport(mode)||!unchanged;
 }

@@ -41,11 +41,11 @@ test('passes the validated organization scope to every launcher discovery stage'
  assert.match(launcher,/ProcessReworkRetention\([^\r\n]+OptionalQueryValue\(target, "organization"\)/);
 });
 
-test('Daily Sync skips legacy recovery while Legacy Import enables it explicitly',()=>{
+test('Daily Sync retains renaming while Legacy Import adds historical recovery',()=>{
  const syncFlow=page.slice(page.indexOf('async function syncMapped'),page.indexOf('async function sync(forceFull'));
  assert.match(syncFlow,/legacyImport=isLegacyImport\(syncMode\)/);
- assert.match(syncFlow,/normalizableByPath=new Map[\s\S]*?if\(legacyImport\)/);
- assert.match(syncFlow,/syncRenamerCandidates=legacyImport\?/);
+ assert.match(syncFlow,/normalizableByPath=new Map[\s\S]*?for\(const item of scanResult\.evidence\)/);
+ assert.match(syncFlow,/syncRenamerCandidates=scanResult\.evidence\.filter\(item=>shouldReadPdfForFilenameNormalization\(syncMode,item\.unchanged\)/);
  assert.match(syncFlow,/saarPreparations=legacyImport\?/);
  assert.match(syncFlow,/if\(legacyImport\)\{for\(const item of activeEvidence\)/);
  assert.match(syncFlow,/requiresSaarFormClassification\(item\.filename\)&&\(legacyImport\|\|!item\.unchanged/);
