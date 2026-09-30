@@ -1,4 +1,4 @@
-export const applicationVersion='1.2.71';
+export const applicationVersion='1.2.72';
 export const complianceRuleSetVersion='2026.09.30-73';
 // Bump only when evidence validation semantics change. UI and reporting releases
 // must not force every previously validated file through content validation again.

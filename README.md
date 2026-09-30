@@ -1,4 +1,8 @@
-# Information System User Tracker
+# AUDIT — Authorized User Documentation & Information Tracker
+
+<img src="public/audit-icon.png" alt="AUDIT shield, document, and verification mark" width="96" height="96">
+
+AUDIT is a portable Windows administrative evidence tracker for information-system users, access documentation, training, and inspection readiness.
 
 A lightweight Windows administrative tool for tracking information-system users, access roles, training requirements, and supporting evidence. The portable application runs locally, opens its interface in the default browser, and stores records and evidence only in a user-selected shared directory.
 

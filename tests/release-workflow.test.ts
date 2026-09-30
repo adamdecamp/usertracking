@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {existsSync,readFileSync,statSync} from 'node:fs';
 import test from 'node:test';
 
 const validation=readFileSync(new URL('../.github/workflows/security-build.yml',import.meta.url),'utf8');
 const release=readFileSync(new URL('../.github/workflows/signed-release.yml',import.meta.url),'utf8');
+const buildScript=readFileSync(new URL('../scripts/build-portable.ps1',import.meta.url),'utf8');
+const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const layout=readFileSync(new URL('../app/layout.tsx',import.meta.url),'utf8');
+const guide=readFileSync(new URL('../app/user-guide/page.tsx',import.meta.url),'utf8');
 const attestAction='actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6';
 
 test('retries transient GitHub attestation service failures without weakening the final gate',()=>{
@@ -18,4 +22,23 @@ test('retries transient GitHub attestation service failures without weakening th
  assert.match(validation,/Retry release build provenance attestation[\s\S]*?SHA256SUMS\.txt/);
  assert.match(release,/Retry signed executable and SBOM attestation[\s\S]*?sbom-path:/);
  assert.match(release,/Retry signed release provenance attestation[\s\S]*?SHA256SUMS\.txt/);
+});
+
+test('packages the AUDIT brand and application icons consistently',()=>{
+ for(const source of [validation,release,buildScript]){
+  assert.match(source,/AUDIT\.exe/);
+  assert.match(source,/AUDIT-Executive-Capability-Summary\.pdf/);
+  assert.doesNotMatch(source,/InformationSystemUserTracker\.exe/);
+ }
+ assert.match(buildScript,/win32icon:\$icon/);
+ assert.match(buildScript,/Tracker\.Favicon/);
+ assert.match(page,/<h1>AUDIT<\/h1>/);
+ assert.match(page,/Authorized User Documentation &amp; Information Tracker/);
+ assert.match(layout,/AUDIT — Authorized User Documentation & Information Tracker/);
+ assert.match(guide,/AUDIT User Guide/);
+ for(const asset of ['../public/audit-icon.png','../public/favicon.ico','../portable-launcher/AUDIT.ico']){
+  const url=new URL(asset,import.meta.url);
+  assert.equal(existsSync(url),true,asset);
+  assert.ok(statSync(url).size>1000,asset);
+ }
 });

@@ -69,7 +69,7 @@ jobs:
         with:
           path: .
           format: spdx-json
-          output-file: artifacts/information-system-user-tracker.spdx.json
+          output-file: artifacts/audit-user-tracker.spdx.json
           upload-artifact: false
 
       - name: Attest build provenance and SBOM
@@ -78,8 +78,8 @@ jobs:
         continue-on-error: true
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
-          subject-path: release/InformationSystemUserTracker.exe
-          sbom-path: artifacts/information-system-user-tracker.spdx.json
+          subject-path: release/AUDIT.exe
+          sbom-path: artifacts/audit-user-tracker.spdx.json
 
       - name: Wait before retrying SBOM attestation
         if: github.event_name != 'pull_request' && steps.attest_sbom.outcome == 'failure'
@@ -90,8 +90,8 @@ jobs:
         if: github.event_name != 'pull_request' && steps.attest_sbom.outcome == 'failure'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
-          subject-path: release/InformationSystemUserTracker.exe
-          sbom-path: artifacts/information-system-user-tracker.spdx.json
+          subject-path: release/AUDIT.exe
+          sbom-path: artifacts/audit-user-tracker.spdx.json
 
       - name: Attest release build provenance
         if: github.event_name != 'pull_request'
@@ -100,8 +100,8 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |
-            release/InformationSystemUserTracker.exe
-            release/Information-System-User-Tracker-Executive-Summary.pdf
+            release/AUDIT.exe
+            release/AUDIT-Executive-Capability-Summary.pdf
             release/SHA256SUMS.txt
 
       - name: Wait before retrying release provenance attestation
@@ -114,8 +114,8 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |
-            release/InformationSystemUserTracker.exe
-            release/Information-System-User-Tracker-Executive-Summary.pdf
+            release/AUDIT.exe
+            release/AUDIT-Executive-Capability-Summary.pdf
             release/SHA256SUMS.txt
 
       - name: Upload unsigned validation build
@@ -123,10 +123,10 @@ jobs:
         with:
           name: unsigned-validation-build
           path: |
-            release/InformationSystemUserTracker.exe
-            release/Information-System-User-Tracker-Executive-Summary.pdf
+            release/AUDIT.exe
+            release/AUDIT-Executive-Capability-Summary.pdf
             release/SHA256SUMS.txt
-            artifacts/information-system-user-tracker.spdx.json
+            artifacts/audit-user-tracker.spdx.json
           if-no-files-found: error
           retention-days: 7
 

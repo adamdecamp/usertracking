@@ -5,7 +5,7 @@ import nextTs from 'eslint-config-next/typescript';
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  globalIgnores(['.next/**', 'dist/**', 'out/**', 'build/**', 'portable-launcher/wwwroot/**', 'InformationSystemUserTracker-Portable/**', 'next-env.d.ts']),
+  globalIgnores(['.next/**', 'dist/**', 'out/**', 'build/**', 'portable-launcher/wwwroot/**', 'AUDIT-Portable/**', 'InformationSystemUserTracker-Portable/**', 'next-env.d.ts']),
 ]);
 
 export default eslintConfig;

@@ -54,7 +54,7 @@ if (-not (Test-Path -LiteralPath $releaseRoot -PathType Container)) {
     throw "Release directory does not exist: $releaseRoot"
 }
 
-$allowedFiles = @("InformationSystemUserTracker.exe", "Information-System-User-Tracker-Executive-Summary.pdf", "SHA256SUMS.txt")
+$allowedFiles = @("AUDIT.exe", "AUDIT-Executive-Capability-Summary.pdf", "SHA256SUMS.txt")
 $releaseFiles = @(Get-ChildItem -LiteralPath $releaseRoot -Recurse -File)
 $releaseDirectories = @(Get-ChildItem -LiteralPath $releaseRoot -Recurse -Directory)
 if ($releaseDirectories.Count -ne 0) {
@@ -76,7 +76,7 @@ foreach ($requiredFile in $allowedFiles) {
 
 $checksumLines = @(Get-Content -LiteralPath (Join-Path $releaseRoot "SHA256SUMS.txt") | Where-Object { $_.Trim() })
 $expectedChecksums = @{}
-foreach ($filename in @("InformationSystemUserTracker.exe", "Information-System-User-Tracker-Executive-Summary.pdf")) {
+foreach ($filename in @("AUDIT.exe", "AUDIT-Executive-Capability-Summary.pdf")) {
     $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $releaseRoot $filename)).Hash.ToLowerInvariant()
     $expectedChecksums[$filename] = "$actualHash  $filename"
 }

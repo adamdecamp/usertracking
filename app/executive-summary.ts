@@ -28,12 +28,13 @@ function bullets(page:PDFPage,items:string[],x:number,y:number,width:number,font
 
 export async function createExecutiveSummaryPdf(input:ExecutiveSummaryInput){
  const pdf=await PDFDocument.create(),regular=await pdf.embedFont(StandardFonts.Helvetica),bold=await pdf.embedFont(StandardFonts.HelveticaBold),page=pdf.addPage([612,792]);
- pdf.setTitle('Information System User Tracker - Executive Capability Summary');pdf.setAuthor('Information System User Tracker');pdf.setSubject('Executive summary of administrative user-access and compliance evidence capabilities');pdf.setKeywords(['user tracking','audit evidence','access administration','NIST SP 800-53']);pdf.setCreationDate(new Date(input.generatedAtUtc));pdf.setModificationDate(new Date(input.generatedAtUtc));
+ pdf.setTitle('AUDIT - Executive Capability Summary');pdf.setAuthor('Authorized User Documentation & Information Tracker');pdf.setSubject('Executive summary of administrative user-access and compliance evidence capabilities');pdf.setKeywords(['AUDIT','user tracking','audit evidence','access administration','NIST SP 800-53']);pdf.setCreationDate(new Date(input.generatedAtUtc));pdf.setModificationDate(new Date(input.generatedAtUtc));
 
  page.drawRectangle({x:0,y:642,width:612,height:150,color:navy});page.drawRectangle({x:0,y:642,width:9,height:150,color:green});
  page.drawText('EXECUTIVE CAPABILITY BRIEF',{x:42,y:757,size:9,font:bold,color:rgb(0.53,0.89,0.72)});
- page.drawText('Information System User Tracker',{x:42,y:719,size:25,font:bold,color:white});
- page.drawText('Audit-ready administrative oversight for access and training evidence',{x:42,y:693,size:11,font:regular,color:rgb(0.86,0.91,0.94)});
+ page.drawText('AUDIT',{x:42,y:719,size:25,font:bold,color:white});
+ page.drawText('Authorized User Documentation & Information Tracker',{x:42,y:704,size:8.5,font:regular,color:rgb(.84,.91,.88)});
+ page.drawText('Audit-ready administrative oversight for access and training evidence',{x:42,y:684,size:11,font:regular,color:rgb(0.86,0.91,0.94)});
  page.drawRectangle({x:42,y:658,width:332,height:21,color:green});
  page.drawText(`Release ${input.version}   |   Rule Set ${input.ruleSetVersion}`,{x:54,y:665,size:8.5,font:bold,color:white});
 
@@ -61,7 +62,7 @@ export async function createExecutiveSummaryPdf(input:ExecutiveSummaryInput){
   page.drawText('Mission Value Statement',{x:57,y:190,size:12,font:bold,color:navy});
   paragraph(page,'Strengthens mission assurance by converting distributed access and training evidence into a reliable, audit-ready operational picture. Folder-first automation reduces manual reconciliation, identifies missing and expiring requirements before access is disrupted, preserves traceable records for inspections, and supports timely, accountable decisions across organizations. It operates within existing Windows-controlled storage as an administrative evidence tool and does not replace authorization decisions or technical access controls.',57,168,496,regular,9.2,12,slate);
  page.drawLine({start:{x:42,y:36},end:{x:570,y:36},thickness:0.7,color:line});
- page.drawText(`Information System User Tracker  |  Version ${input.version}`,{x:42,y:20,size:7.4,font:regular,color:muted});
+ page.drawText(`AUDIT  |  Version ${input.version}`,{x:42,y:20,size:7.4,font:regular,color:muted});
  const generated=`Generated ${input.generatedAtUtc}`;page.drawText(generated,{x:570-regular.widthOfTextAtSize(generated,7.4),y:20,size:7.4,font:regular,color:muted});
  return pdf.save();
 }

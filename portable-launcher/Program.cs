@@ -53,9 +53,10 @@ internal sealed class TrackerContext : ApplicationContext
         IntPtr dispatcherHandle = dispatcher.Handle;
         listener = new TcpListener(IPAddress.Loopback, Port);
         listener.Start();
-        tray = new NotifyIcon { Icon = SystemIcons.Shield, Text = "Information System User Tracker", Visible = true };
+        Icon appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Shield;
+        tray = new NotifyIcon { Icon = appIcon, Text = "AUDIT", Visible = true };
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Open Tracker", null, delegate { OpenTracker(); });
+        menu.Items.Add("Open AUDIT", null, delegate { OpenTracker(); });
         menu.Items.Add("Exit", null, delegate { RequestShutdown("operator-exit"); });
         tray.ContextMenuStrip = menu;
         tray.DoubleClick += delegate { OpenTracker(); };
@@ -339,7 +340,7 @@ internal sealed class TrackerContext : ApplicationContext
             {
                 string failure = CleanError(error.InnerException != null ? error.InnerException.Message : error.Message);
                 RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT FAILED: operation " + operationId + "; " + failure, failure, operationId);
-                try { dispatcher.BeginInvoke(new Action(delegate { MessageBox.Show("Microsoft Outlook could not create the draft. " + failure, "Information System User Tracker", MessageBoxButtons.OK, MessageBoxIcon.Error); })); }
+                try { dispatcher.BeginInvoke(new Action(delegate { MessageBox.Show("Microsoft Outlook could not create the draft. " + failure, "AUDIT", MessageBoxButtons.OK, MessageBoxIcon.Error); })); }
                 catch { }
             }
             finally
@@ -349,7 +350,7 @@ internal sealed class TrackerContext : ApplicationContext
             }
         }));
         outlookThread.IsBackground = true;
-        outlookThread.Name = "Information System User Tracker Outlook Draft";
+        outlookThread.Name = "AUDIT Outlook Draft";
         outlookThread.SetApartmentState(ApartmentState.STA);
         try { outlookThread.Start(); }
         catch { Interlocked.Exchange(ref outlookDraftActive, 0);throw; }
@@ -394,7 +395,7 @@ internal sealed class TrackerContext : ApplicationContext
             if (failure == null && auditFailure == null) continue;
             try
             {
-                string now = DateTime.UtcNow.ToString("o"), detail = failure ?? ("The Outlook draft was displayed, but its completion audit could not be recorded. " + auditFailure), report = "Information System User Tracker Error Entry\r\nGeneration Time UTC: " + now + "\r\nWindows Operator: " + user + "\r\nInformation System ID: " + id + "\r\nContext: Outlook draft outcome.\r\nDetails: " + detail + "\r\nOperation ID: " + operationId;
+                string now = DateTime.UtcNow.ToString("o"), detail = failure ?? ("The Outlook draft was displayed, but its completion audit could not be recorded. " + auditFailure), report = "AUDIT Error Entry\r\nApplication: Authorized User Documentation & Information Tracker\r\nGeneration Time UTC: " + now + "\r\nWindows Operator: " + user + "\r\nInformation System ID: " + id + "\r\nContext: Outlook draft outcome.\r\nDetails: " + detail + "\r\nOperation ID: " + operationId;
                 storage.StoreErrorReport(id, "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".txt", report);
             }
             catch { }
@@ -610,6 +611,7 @@ internal sealed class TrackerContext : ApplicationContext
             if (fields.Length != 3 || !fields[0].StartsWith("/assets/", StringComparison.Ordinal) || !fields[1].StartsWith("Tracker.Asset", StringComparison.Ordinal) || (fields[2] != "text/javascript; charset=utf-8" && fields[2] != "text/css; charset=utf-8")) throw new InvalidDataException("The embedded asset manifest is invalid.");
             result.Add(fields[0], new WebAsset { Bytes = LoadResource(fields[1]), ContentType = fields[2] });
         }
+        result.Add("/favicon.ico", new WebAsset { Bytes = LoadResource("Tracker.Favicon"), ContentType = "image/x-icon" });
         if (result.Count == 0) throw new InvalidDataException("The embedded asset manifest contains no browser assets.");
         return result;
     }
@@ -632,7 +634,7 @@ internal static class Program
     {
         Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
         try { Application.Run(new TrackerContext()); }
-        catch (SocketException) { MessageBox.Show("The tracker is already running.", "Information System User Tracker", MessageBoxButtons.OK, MessageBoxIcon.Information); }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "Unable to Start Tracker", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (SocketException) { MessageBox.Show("AUDIT is already running.", "AUDIT", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+        catch (Exception ex) { MessageBox.Show(ex.Message, "Unable to Start AUDIT", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 }

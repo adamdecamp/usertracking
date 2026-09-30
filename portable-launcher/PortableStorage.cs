@@ -115,6 +115,7 @@ internal sealed class PortableStorage : IDisposable
     public PortableStorage(string currentActor, string cachePath = null)
     {
         actor = CleanLine(currentActor, 500);
+        // Keep the pre-AUDIT cache directory so branded releases restore existing mappings without migration or remapping.
         mappingCachePath = String.IsNullOrWhiteSpace(cachePath) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InformationSystemUserTracker", "folder-mappings.json") : Path.GetFullPath(cachePath);
         LoadMappingCache();
     }

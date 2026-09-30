@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $workspaceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $packageRoot = [IO.Path]::GetFullPath((Join-Path $workspaceRoot 'test-evidence-package'))
 $testDataRoot = [IO.Path]::GetFullPath((Join-Path $workspaceRoot 'test-data'))
-$zipPath = [IO.Path]::GetFullPath((Join-Path $testDataRoot 'Information-System-User-Tracker-Test-Evidence.zip'))
+$zipPath = [IO.Path]::GetFullPath((Join-Path $testDataRoot 'AUDIT-Test-Evidence.zip'))
 $workspacePrefix = $workspaceRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 
 if (-not $packageRoot.StartsWith($workspacePrefix, [StringComparison]::OrdinalIgnoreCase) -or
@@ -171,7 +171,7 @@ foreach ($sampleIndex in @(0,35,45)) {
 }
 
 $readme = @'
-INFORMATION SYSTEM USER TRACKER - SYNTHETIC TEST PACKAGE
+AUDIT - AUTHORIZED USER DOCUMENTATION & INFORMATION TRACKER - SYNTHETIC TEST PACKAGE
 
 This package contains 50 fictional users and no real personnel or compliance data:
 - 35 General users

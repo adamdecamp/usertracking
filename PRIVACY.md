@@ -1,6 +1,6 @@
 # Privacy
 
-Information System User Tracker is designed for local administrative use.
+AUDIT — Authorized User Documentation & Information Tracker — is designed for local administrative use.
 
 - The executable hosts its interface only on the local Windows computer.
 - It reads the active Windows account name to attribute consequential audit actions.

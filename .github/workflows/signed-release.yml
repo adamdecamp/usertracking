@@ -62,23 +62,23 @@ jobs:
           endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
           certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
-          files: ${{ github.workspace }}\release\InformationSystemUserTracker.exe
+          files: ${{ github.workspace }}\release\AUDIT.exe
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
-          description: Information System User Tracker
+          description: AUDIT - Authorized User Documentation and Information Tracker
           description-url: ${{ github.server_url }}/${{ github.repository }}
 
       - name: Verify signature and refresh checksum
         shell: pwsh
         run: |
-          $file = "release\InformationSystemUserTracker.exe"
-          $summary = "release\Information-System-User-Tracker-Executive-Summary.pdf"
+          $file = "release\AUDIT.exe"
+          $summary = "release\AUDIT-Executive-Capability-Summary.pdf"
           $signature = Get-AuthenticodeSignature -FilePath $file
           if ($signature.Status -ne 'Valid') { throw "Authenticode signature verification failed: $($signature.Status)" }
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
           $summaryHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $summary).Hash.ToLowerInvariant()
-          Set-Content -LiteralPath "release\SHA256SUMS.txt" -Encoding ascii -Value @("$hash  InformationSystemUserTracker.exe", "$summaryHash  Information-System-User-Tracker-Executive-Summary.pdf")
+          Set-Content -LiteralPath "release\SHA256SUMS.txt" -Encoding ascii -Value @("$hash  AUDIT.exe", "$summaryHash  AUDIT-Executive-Capability-Summary.pdf")
 
       - name: Verify release-clean signed package
         shell: pwsh
@@ -93,7 +93,7 @@ jobs:
         with:
           path: .
           format: spdx-json
-          output-file: artifacts/information-system-user-tracker.spdx.json
+          output-file: artifacts/audit-user-tracker.spdx.json
           upload-artifact: false
 
       - name: Attest signed executable and SBOM
@@ -101,8 +101,8 @@ jobs:
         continue-on-error: true
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
-          subject-path: release/InformationSystemUserTracker.exe
-          sbom-path: artifacts/information-system-user-tracker.spdx.json
+          subject-path: release/AUDIT.exe
+          sbom-path: artifacts/audit-user-tracker.spdx.json
 
       - name: Wait before retrying signed SBOM attestation
         if: steps.attest_sbom.outcome == 'failure'
@@ -113,8 +113,8 @@ jobs:
         if: steps.attest_sbom.outcome == 'failure'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
-          subject-path: release/InformationSystemUserTracker.exe
-          sbom-path: artifacts/information-system-user-tracker.spdx.json
+          subject-path: release/AUDIT.exe
+          sbom-path: artifacts/audit-user-tracker.spdx.json
 
       - name: Attest signed release provenance
         id: attest_release
@@ -122,8 +122,8 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |
-            release/InformationSystemUserTracker.exe
-            release/Information-System-User-Tracker-Executive-Summary.pdf
+            release/AUDIT.exe
+            release/AUDIT-Executive-Capability-Summary.pdf
             release/SHA256SUMS.txt
 
       - name: Wait before retrying signed release provenance attestation
@@ -136,8 +136,8 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |
-            release/InformationSystemUserTracker.exe
-            release/Information-System-User-Tracker-Executive-Summary.pdf
+            release/AUDIT.exe
+            release/AUDIT-Executive-Capability-Summary.pdf
             release/SHA256SUMS.txt
 
       - name: Publish GitHub Release
@@ -146,10 +146,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" `
-            "release\InformationSystemUserTracker.exe" `
-            "release\Information-System-User-Tracker-Executive-Summary.pdf" `
+            "release\AUDIT.exe" `
+            "release\AUDIT-Executive-Capability-Summary.pdf" `
             "release\SHA256SUMS.txt" `
-            "artifacts\information-system-user-tracker.spdx.json" `
+            "artifacts\audit-user-tracker.spdx.json" `
             --verify-tag `
             --generate-notes `
-            --title "Information System User Tracker ${{ github.ref_name }}"
+            --title "AUDIT ${{ github.ref_name }}"

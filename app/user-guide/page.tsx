@@ -18,10 +18,11 @@ export default function Guide() {
     <main className="guide">
       {/* Plain anchor keeps the same guide compatible with the portable Vite build. */}
       {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-      <a href="/">← Return to the Tracker</a>
+      <a href="/">← Return to AUDIT</a>
       <header>
         <p>Reference</p>
-        <h1>User Guide</h1>
+        <h1>AUDIT User Guide</h1>
+        <p>Authorized User Documentation &amp; Information Tracker</p>
       </header>
       <nav>
         {[
