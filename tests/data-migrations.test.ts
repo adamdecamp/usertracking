@@ -22,3 +22,9 @@ test('accepts each currently released persisted format and rejects future versio
  assert.equal(migrateAuditEntryPayload({version:999}),undefined);
  assert.equal(migrateSyncIndexPayload({version:999}),undefined);
 });
+
+test('normalizes privileged account types case-insensitively in current manifests',()=>{
+ const migrated=migrateManifestPayload({version:currentManifestVersion,systems:[{id:'s1'}],users:[{id:'u1',privilegedTypes:['DEV','dev','_Dev','DTA']}]})!;
+ const users=migrated.users as Array<{privilegedTypes:string[]}>;
+ assert.deepEqual(users[0].privilegedTypes,['DEV','DTA']);
+});

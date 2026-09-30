@@ -171,7 +171,9 @@ export default function Guide() {
             accounts with commas—for example,{" "}
             <code>jsmith_admin, jsmith_dta</code>. A <code>_dta</code> suffix
             keeps the user&apos;s role as Privileged and adds DTA as a
-            Privileged User Type.
+            Privileged User Type. Privileged User Types are case-insensitive
+            and stored consistently in uppercase, so <code>_DEV</code>,{" "}
+            <code>_dev</code>, and <code>_Dev</code> are the same type.
           </li>
           <li>
             Drag and drop or browse for either a readable PDF or a ZIP
@@ -394,24 +396,6 @@ export default function Guide() {
           original relative path and SHA-256 hash. Do not add that word unless
           the file has been manually verified as invalid and should be deleted.
         </p>
-        <h3>Audit Evidence Content</h3>
-        <p>
-          Choose <b>Audit Evidence</b> only when a deeper inspection is needed.
-          Select the organizations and document-type folders to inspect. This
-          operator-initiated workflow opens only evidence in that scope, applies
-          two bounded PDF readers at a time, and moves failed evidence to the
-          organization&apos;s Rework folder. A failed ZIP is extracted to a loose PDF
-          for correction. SAARs must contain a dated Part IV Created By or
-          Disabled By digital signature. User Agreements and 8140 certification
-          memoranda must contain their expected content and a populated PDF
-          digital-signature field. DoD Cyber evidence must identify Cyber
-          Awareness or Cyber Awareness Challenge; CompTIA, 8570, Security+, CySA+,
-          CASP+, CISSP, and similar third-party credentials are not relabeled as
-          DoD Cyber Awareness. Privileged and DTA training use their own content
-          rules. A verified Disabled By signature marks the matching account
-          Disabled and archives its active evidence. Unselected organizations and
-          document types are not opened or changed.
-        </p>
         <h3>Unarchive Evidence for Correction</h3>
         <p>
           In the portable Windows app, choose <b>Unarchive</b> from the main
@@ -430,61 +414,31 @@ export default function Guide() {
           extracted under these same safeguards so Rework always provides a
           loose PDF that can be edited.
         </p>
-        <h3>Rename Existing Documents</h3>
+        <h3>Automatic Filename Normalization During Sync</h3>
         <p>
-          After mapping the system folder, choose <b>Document Renamer</b> from
-          the main toolbar for an operator-directed review. Every Sync also runs
-          the same content-based Document Renamer analysis before user and evidence
-          matching. Sync limits that heavier analysis to new or changed loose PDFs
+          Filename normalization is part of Sync; there is no separate Document
+          Renamer button. Sync limits content analysis to new or changed loose PDFs
           and every in-scope Rework PDF that still fails the canonical filename
-          gate; exact canonical names and unchanged previously analyzed active files
-          stay on the fast path. It finds loose PDFs whose names do not already match
-          the exact canonical tracker rules. A recognizable but noncanonical name—such
-          as one using commas, spaces, a legacy document label, or the wrong
-          organization—remains in the review queue rather than being treated as
-          complete. The scan checks every active organization folder and each
-          organization&apos;s Rework folder. Corrected Rework PDFs can therefore be
-          normalized and promoted by the next Sync. Rework files are fully
-          revalidated on every Sync instead of being skipped by the unchanged-file
-          index, so corrections are detected after an earlier rejection. Exact canonical filenames are
-          skipped without opening their PDF content. For remaining candidates, it
-          first recognizes case-insensitive filename keywords despite commas, spaces,
-          or underscores. Supported legacy labels include DD Form 2875 and System
-          Access Request; Cyber Awareness and Awareness Challenge; Acceptable Use;
-          8140 and 8570; Responsibilities and Course; and DTA or Delegated Trusted
-          Agent training. It then reads selectable text and supported SAAR form fields
-          locally when filename metadata is incomplete. A usable
-          <code> Last_First </code> identity in the filename is always authoritative;
-          PDF text and SAAR form fields fill identity only when the filename has no
-          usable person name. The selected system&apos;s User Directory can supply
-          matching metadata while the document supplies its type and signed or
-          certification date. Analysis yields to the interface after each small batch and
-          supports administrative migrations of up to 10,000 candidate PDFs in one
-          mapped repository. Progress is checkpointed in the mapped folder after
-          every completed batch. Choose <b>Pause Analysis</b> or close the window; reopening
-          Document Renamer resumes unchanged files from that saved queue.{" "}
-          <b>Analyze Again</b> clears the checkpoint and starts a fresh
-          analysis. The queue contains proposed metadata only and is excluded
-          from Sync evidence scans. The PDF&apos;s authoritative top-level
-          organization folder is used as the read-only Organization value in its
-          proposed filename; only a PDF at the mapped root uses the mapped
-          folder name. After content analysis, the app automatically renames every
-          unique high-confidence result. It then performs a metadata-only location
-          refresh, which verifies the results without reopening PDF content. The
-          summary reports Renamed, Needs Input, Collisions, ZIPs Skipped, and
-          Archive Trees Excluded. Archive, SAAR Archive, Superseded, and Archive
-          Review files are historical records and are never evaluated as nonstandard
-          filename candidates. Ambiguous or incomplete results appear under
-          <b> Needs Operator Input</b>; duplicate proposed names and existing target
-          names appear separately under <b>Collisions</b>. Editable fields can be
-          corrected, selected, and applied individually. Every original PDF opens
-          in the browser&apos;s dedicated full-size PDF viewer before approval. The app reserves the new
-          browser window before reading the file so validation does not trigger a
-          popup blocker; if new windows are blocked, a full-window in-app preview
-          remains available. Image-only scans are marked for manual entry.
-          Applying an operator-reviewed rename changes only the filesystem name, verifies that the
-          PDF&apos;s SHA-256 is identical before and after, and writes an audit
-          entry. It never rewrites, flattens, signs, or compresses the PDF.
+          gate. Exact canonical names and unchanged previously analyzed active files
+          stay on the fast path without opening PDF content. The scan checks every
+          active organization folder and each organization&apos;s Rework folder, so a
+          corrected Rework PDF can be normalized and promoted by the next Sync.
+          Archive, SAAR Archive, Superseded, and Archive Review files are historical
+          records and are excluded from normalization.
+        </p>
+        <p>
+          Matching is case-insensitive and recognizes supported separators and legacy
+          labels, including DD Form 2875 and System Access Request; Cyber Awareness
+          and Awareness Challenge; Acceptable Use; 8140 and 8570; Responsibilities
+          and Course; and DTA or Delegated Trusted Agent training. A usable
+          <code> Last_First </code> identity in the filename is authoritative. Sync
+          reads selectable text and supported SAAR form fields only when needed to
+          recover supported metadata. The immediate organization folder is
+          authoritative for the canonical filename. Unique high-confidence results
+          are renamed automatically, verified by unchanged SHA-256, and audited.
+          Ambiguous, incomplete, unreadable, or colliding files stay available in
+          Sync review or move to Rework; the app never invents missing identity or
+          date values and never rewrites, flattens, or signs PDF content.
         </p>
         <p>
           Within a User Record, choose <b>Preview &amp; Provenance</b> to open
@@ -522,8 +476,11 @@ export default function Guide() {
           that folder already contains a single-system tracker manifest, its
           system and users are loaded before anything is written. Mapping,
           application launch, and information-system selection never start Sync
-          automatically. <b>Sync</b> opens a scope chooser. Select the entire
-          information system or exactly one immediate organization folder. A
+          automatically. <b>Sync</b> opens a mode and scope chooser. Use the
+          default <b>Daily Sync — Fast and Strict</b> for routine operations.
+          Select <b>Legacy Import — Historical Recovery</b> when onboarding an
+          unmanaged repository or correcting a historical backlog. In either
+          mode, select the entire information system or exactly one immediate organization folder. A
           targeted organization scan includes loose files at the top level of that
           organization, its Rework folder, and its active evidence folders. Full
           system scans apply the same discovery and validation rules to every
@@ -554,13 +511,12 @@ export default function Guide() {
           until the launcher knows how many files are present.
         </p>
         <p>
-          Large legacy repositories use filename-first processing. Files that contain
+          Legacy Import uses filename-first processing for large unmanaged repositories. Files that contain
           a recognizable identity, organization, artifact type, and date are matched
           without opening the PDF. System Sync does not open incomplete training
           certificates or attempt to recover their names or dates from PDF content.
-          Unresolved certificates remain available in the resumable{" "}
-          <b>Document Renamer</b> queue for operator-reviewed migration and do not
-          delay clean-file Sync.
+          Unresolved certificates remain in Sync review or Rework for operator
+          correction and do not delay clean-file Sync.
         </p>
         <aside>
           <b>Incremental Operator Sync:</b> When the operator starts Sync, the launcher
@@ -568,11 +524,24 @@ export default function Guide() {
           are found. It compares
           path, filename, byte size, and modified time with the checksum-protected Sync
           index, then opens and validates only new or changed evidence. Unchanged files
-          are not written into the per-file recovery journal. Rework remains deliberately
-          uncached so operator corrections are checked on every Sync. The evidence-cache
+          are not written into the per-file recovery journal. Daily Sync also reuses
+          unchanged Rework results; a corrected or renamed Rework file changes its
+          metadata and is validated on the next run. Legacy Import deliberately
+          revalidates every in-scope Rework file. The evidence-cache
           version is independent from interface and reporting releases; it changes only
           when evidence-validation semantics change. Select <b>Full Rescan</b> in the Sync
           scope window to deliberately ignore this cache for the selected scope.
+        </aside>
+        <aside>
+          <b>Daily Sync vs. Legacy Import:</b> Daily Sync is the normal operating
+          mode. It requires the standard filename, creates new users only from a
+          valid SAAR, reuses validated unchanged Rework evidence, and does not run
+          historical PDF content guessing. Legacy Import adds tolerant date and
+          filename normalization, bounded SAAR filename-field recovery, complete
+          Rework revalidation, and carefully reviewed user proposals from supporting
+          evidence when an old repository has no matching SAAR. Both modes retain
+          strict final storage gates, audit logging, retention, compression,
+          collision review, and operator verification before database changes.
         </aside>
         <p>
           Sync accepts direct PDFs and ZIPs containing exactly one PDF. It
@@ -605,9 +574,8 @@ export default function Guide() {
           locked PDF is reported and left in place rather than being assumed to
           be flattened. Rejected evidence-like filenames appear in the Sync
           Review with the reason and are never used to populate compliance
-          status. Evidence Audit does not claim content or digital-signature
-          verification for an encrypted PDF accepted by the strict filename
-          exception.
+          status. Sync does not claim content or digital-signature verification
+          for an encrypted PDF accepted by the strict filename exception.
         </p>
         <aside>
           <b>Disabled SAAR History:</b> Sync also performs a narrow filename-only
@@ -636,14 +604,14 @@ export default function Guide() {
           evidence matching or user creation and is shown for operator review.
         </p>
         <p>
-          Sync automatically renames a recognized nonstandard evidence date to
+          Legacy Import automatically renames a recognized nonstandard evidence date to
           DDMMMYYYY in the same active folder and records the change in the
-          audit log. It then uses the shared Document Renamer rules to read the
+          audit log. It then uses the shared filename-normalization rules to read the
           content of remaining changed noncanonical PDFs, automatically applies
           unique high-confidence canonical names, and continues past per-file
           timeouts or analysis failures so one document cannot stop the Sync.
-          Ambiguous results remain available for the manual Document Renamer and
-          Rework workflow. Before Archive Preflight, Sync checks evidence associated
+          Ambiguous results remain available in Sync review and the Rework workflow.
+          Before Archive Preflight, Sync checks evidence associated
           with active users. If a retained artifact is missing from its recorded
           active location but the same associated file is found in that
           organization&apos;s Archive, Sync restores it to the canonical document-type
@@ -651,9 +619,10 @@ export default function Guide() {
           available; ambiguous Archive matches remain untouched for Clean Up
           review. The first Sync of each UTC day performs a complete Archive
           preflight. Later Syncs that day use the prior Sync index to skip unchanged
-          active evidence, skip the already-swept Archive tree, and still check all
-          Rework plus every new or changed file before PDF content or form-field
-          extraction. Full Rescan forces the complete preflight regardless of the
+          active evidence, skip the already-swept Archive tree, and still check every
+          new or changed file before PDF content or form-field extraction. Legacy
+          Import additionally revalidates all in-scope Rework; Daily Sync reuses
+          unchanged Rework validation. Full Rescan forces the complete preflight regardless of the
           daily marker. A non-SAAR artifact with either a
           complete valid evidence date that is more than
           90 days beyond the one-year currency window is moved to that organization&apos;s
@@ -712,9 +681,10 @@ export default function Guide() {
           valid SAAR for the same user and organization is already recorded, or
           the operator approves that newer SAAR in the same Sync review. Evidence
           from another organization can never justify archiving the user&apos;s SAAR.
-          Every valid loose PDF detected in an active organization folder is
-          flagged for optional compression, whether or not it is already
-          associated with a User Directory record. Rework remains uncompressed
+          Every validated loose PDF entering the User Directory database is
+          compressed automatically and cannot be deselected. Other valid loose PDFs
+          detected in an active organization folder are flagged for optional
+          compression. Rework remains uncompressed
           for correction, and Archive compression is handled by the retention
           workflow. This includes valid PDFs dropped directly into the top
           level of an organization folder. Incremental and full rescans retain
@@ -1026,6 +996,15 @@ export default function Guide() {
           data, then run Sync again.
         </p>
         <p>
+          After Reconciliation finishes, choose <b>Generate PDF Report</b> to
+          create an operator correction reference. The report includes the
+          system, mapped folder, UTC generation time, Windows operator,
+          application and rule-set versions, issue totals, every affected path,
+          and a recommended action for each finding. A checksum-protected copy is
+          stored in <code>System/Reports</code>, the action is recorded in the
+          audit log, and a copy downloads for the operator.
+        </p>
+        <p>
           Sync itself blocks automatic matching when more than one User
           Directory record has the same Last Name and First Name, when a SAAR
           organization conflicts with the existing record, or when multiple
@@ -1113,7 +1092,10 @@ export default function Guide() {
             Open each numbered Outlook batch. Recipient count and
             encoded-address length are bounded to avoid oversized{" "}
             <code>mailto:</code> links, and every opened batch receives its own
-            audit entry in each affected system.
+            audit entry in each affected system. Each affected User Record also
+            displays the draft preparation date, status, and artifact. That temporary
+            notification entry clears automatically when the user record or its
+            evidence is updated.
           </li>
           <li>
             For Missing, Due Within 30 Days, or Overdue User Agreement notices, the portable Windows
@@ -1134,6 +1116,20 @@ export default function Guide() {
           <li>
             Missing, due-within-30-days, and overdue DoD Cyber Cert drafts include
             the official DoD Cyber Awareness Challenge training link.
+          </li>
+          <li>
+            Missing, due-within-30-days, and overdue Privileged User Training
+            drafts include the official CDSE Privileged User Cybersecurity
+            Responsibilities course link and explain that a free account is
+            required to complete the training.
+          </li>
+          <li>
+            Every automated message uses the <b>Sir/Ma&apos;am</b> salutation,
+            explains why the recipient is being contacted, invites the recipient
+            to report an earlier submission, and states that the message will never
+            request a password or other login credentials by email. The tone is
+            professional and courteous while preserving the required filename and
+            access-maintenance instructions.
           </li>
           <li>
             Review every Outlook draft, make any required organizational edits,
@@ -1248,7 +1244,7 @@ export default function Guide() {
         alternate filename dates are converted to DDMMMYYYY. System Sync does not
         inspect certificate PDF content to recover missing names or dates. Generic,
         incomplete, ambiguous, or image-only certificate names remain unresolved
-        and available in <b>Document Renamer</b> for operator review. The app never
+        and available in Sync review or Rework for operator correction. The app never
         invents a missing month or day.
       </aside>
       <aside>
@@ -1309,8 +1305,11 @@ export default function Guide() {
         one safe retry. Other file-changing actions are never automatically
         repeated. During new-user ingestion, a complete filename is accepted
         without opening the PDF, and the containing organization folder supplies
-        a missing filename organization without a PDF read. Only SAARs that need
-        recoverable identity or signed Part IV account-action date fields are opened. Those form-field
+        a missing filename organization without a PDF read. Legacy Import opens
+        SAARs that need recoverable identity or signed Part IV account-action date
+        fields. Daily Sync requires a valid SAAR filename and opens a selected new
+        or changed SAAR only for required form validation and Official Email
+        recovery. Those form-field
         reads run in a bounded group of four with visible completed-file progress;
         a read that does not finish within 30 seconds receives one fresh retry
         with a 60-second limit while the other readers continue. A second timeout
@@ -1318,25 +1317,24 @@ export default function Guide() {
         is deferred until Sync selects the newest SAAR for a proposed user, so it
         is not performed across every candidate form. System Sync performs no
         training-certificate PDF extraction; incomplete certificate filenames are
-        left for the operator-initiated Document Renamer instead of extending the
-        Sync session.
+        left for Sync review or Rework instead of extending the Sync session.
       </aside>
       <aside>
         <b>Batch Processing Resilience:</b> High-volume read-only work uses
         bounded queues instead of one unlimited batch or one blocking serial
         loop. Current-location refresh, stale-reference retry, Document Renamer
-        candidate discovery, Reconciliation discovery, Evidence Audit discovery,
-        and inspection-inventory discovery read only filename, path, size, and
+        candidate discovery, Reconciliation discovery, and inspection-inventory
+        discovery read only filename, path, size, and
         modified-time metadata. Only relevant targets are opened afterward;
         <b> Full Rescan</b> is the only operator action that deliberately reopens
         every evidence file. Initial validation gives each changed file a 30-second read limit;
         duplicate-content checks, provenance hashing, Reconciliation hashing,
         and Inspection Package inventory hashing process no more than four files
         at once. Timed-out read-only operations receive no more than one fresh
-        retry; deterministic validation failures are not retried. Document Renamer processes saved
-        batches of 12 with three active PDF readers, stores progress after every
-        batch, and records individual read failures without discarding completed
-        analysis. Reconciliation exposes scanning and hashing progress and keeps
+        retry; deterministic validation failures are not retried. Filename
+        normalization processes small bounded batches and records individual read
+        failures without discarding completed analysis. Reconciliation exposes
+        scanning and hashing progress and keeps
         unreadable files as review issues. File mutations—rename, compression,
         Rework, Archive, and manifest commits—remain sequential and transactional
         so concurrency cannot produce partial or conflicting writes. Browser-mode
@@ -1345,7 +1343,7 @@ export default function Guide() {
         extending an unverified chain. Launcher storage requests use bounded
         safety limits: two minutes for ordinary reads or writes and 30 minutes
         for resumable directory scans and Archive preflight. File-changing
-        Clean Up and Document Renamer actions have a two-minute per-file
+        Clean Up and Sync filename-normalization actions have a two-minute per-file
         watchdog, continue with later files after a failure, and list the
         affected item in the final review.
       </aside>
@@ -1357,8 +1355,8 @@ export default function Guide() {
         corrected before the storage request is sent.
       </aside>
       <aside>
-        <b>Efficient Audit Batches:</b> Consecutive file-level Sync and Document
-        Renamer results are extended as one verified audit batch. The complete
+        <b>Efficient Audit Batches:</b> Consecutive file-level Sync and filename
+        normalization results are extended as one verified audit batch. The complete
         existing hash chain is verified once, each new action still receives its
         own sequence, UTC timestamp, previous hash, and entry hash, and the
         launcher performs one append per UTC day instead of rereading the chain

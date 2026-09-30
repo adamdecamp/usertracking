@@ -27,6 +27,13 @@ test('calculates counts, breakdowns, and aging',()=>{
  assert.equal(summary.byPrivilegedType[0].label,'DTA');
 });
 
+test('combines privileged account type case variants into one report category',()=>{
+ const variantInput:ComplianceReportInput={...input,users:[...input.users,{...input.users[1],id:'u3',privilegedTypes:['dev']},{...input.users[1],id:'u4',privilegedTypes:['DEV']}],requirements:[...input.requirements,{...input.requirements[2],userId:'u3',privilegedTypes:['dev']},{...input.requirements[2],userId:'u4',privilegedTypes:['DEV']}]};
+ const summary=summarizeCompliance(variantInput);
+ assert.equal(summary.privilegedTypes.filter(type=>type==='DEV').length,1);
+ assert.equal(summary.byPrivilegedType.filter(row=>row.label==='DEV').length,1);
+});
+
 test('generates a readable multi-section PDF',async()=>{
  const progress:{phase:string;processed:number;total:number}[]=[],bytes=await createComplianceSnapshotPdf(input,(phase,processed,total)=>progress.push({phase,processed,total})),document=await PDFDocument.load(bytes);
  assert.ok(bytes.length>3000);assert.ok(document.getPageCount()>=2);assert.equal(document.getTitle(),'Compliance Snapshot RPT-TEST-001');

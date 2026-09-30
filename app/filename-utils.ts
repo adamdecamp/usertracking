@@ -1,3 +1,5 @@
+import {normalizePrivilegedType} from './privileged-type-utils.ts';
+
 export const agreementArtifactKind='User Agreement';
 export const artifactKinds=['SAAR','DoD Cyber Cert',agreementArtifactKind,'8140 Cert Memo','Privileged User Training Cert','DTA Training'];
 const legacyAgreementKinds=new Set(['GEN USER AGREEMENT','GEN AND PRIV AGREEMENT','DTA AGREEMENT']);
@@ -83,7 +85,7 @@ export function canonicalManualEvidenceFilename(input:{filename:string;embeddedP
  if(kind==='DTA Training')artifact='DTA_Training';
  if(kind==='SAAR'){
   if(input.role==='GEN')artifact='GEN_SAAR';
-  else if(input.role==='PRIV'){const privilegedType=canonicalFilePart(input.privilegedType??'');if(!privilegedType)return;artifact=`PRIV_${privilegedType}_SAAR`}
+  else if(input.role==='PRIV'){const privilegedType=canonicalFilePart(normalizePrivilegedType(input.privilegedType??''));if(!privilegedType)return;artifact=`PRIV_${privilegedType}_SAAR`}
   else return;
  }
  const dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`,target=`${last}_${first}_(${organization})_${artifact}_${dateToken}.pdf.zip`;
@@ -96,7 +98,7 @@ export function canonicalEvidenceFilename(filename:string,organizationOverride?:
  const last=canonicalFilePart(identity.last),first=canonicalFilePart(identity.first),org=canonicalFilePart(organization),dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`;if(!last||!first||!org)return;
  let artifact=kind.replaceAll(' ','_');
  if(kind==='DTA Training')artifact='DTA_Training';
- if(kind==='SAAR'){const markers=saarMarkers(filename);if(markers.general===!!markers.privilegedType)return;artifact=markers.general?'GEN_SAAR':`PRIV_${canonicalFilePart(markers.privilegedType??'')}_SAAR`;if(artifact.includes('__'))return}
+ if(kind==='SAAR'){const markers=saarMarkers(filename);if(markers.general===!!markers.privilegedType)return;artifact=markers.general?'GEN_SAAR':`PRIV_${canonicalFilePart(normalizePrivilegedType(markers.privilegedType??''))}_SAAR`;if(artifact.includes('__'))return}
  const extension=/\.zip$/i.test(filename)?'.pdf.zip':'.pdf',target=`${last}_${first}_(${org})_${artifact}_${dateToken}${extension}`;
  return target.length<=180?target:undefined;
 }
@@ -170,7 +172,7 @@ export function validateNewUserSaarFilename(filename:string,fallback?:{identity?
  const markers=saarMarkers(filename),hasGeneral=markers.general,hasPrivileged=!!markers.privilegedType;
  if(hasGeneral===hasPrivileged)return{valid:false,reason:'The SAAR filename must identify exactly one role: GEN or PRIV.'};
  if(hasGeneral)return{valid:true,identity,organization,role:'General',privilegedTypes:[]};
- const privilegedType=clean(markers.privilegedType??'',200);
+ const privilegedType=normalizePrivilegedType(clean(markers.privilegedType??'',200));
  if(!privilegedType||privilegedType==='TYPE')return{valid:false,reason:'A PRIV SAAR filename must contain the actual privileged account type between PRIV and SAAR.'};
  return{valid:true,identity,organization,role:'Privileged',privilegedTypes:[privilegedType]};
 }
@@ -179,7 +181,7 @@ export function canRecoverNewUserSaarFromForm(filename:string,fallback?:{organiz
  return validateNewUserSaarFilename(filename,{identity:{last:'RecoveredLast',first:'RecoveredFirst'},organization:fallback?.organization||'RecoveredOrganization',accountActionDate:new Date('2000-01-01T00:00:00.000Z')}).valid;
 }
 export function canonicalValidatedSaarFilename(filename:string,validation:Extract<NewUserSaarFilenameValidation,{valid:true}>,accountActionDate?:Date,disabled=false){
- const date=parseDate(filename)??verifiedAccountDate(accountActionDate),last=canonicalFilePart(validation.identity.last),first=canonicalFilePart(validation.identity.first),organization=canonicalFilePart(validation.organization),type=validation.role==='Privileged'?canonicalFilePart(validation.privilegedTypes[0]??''):'';
+ const date=parseDate(filename)??verifiedAccountDate(accountActionDate),last=canonicalFilePart(validation.identity.last),first=canonicalFilePart(validation.identity.first),organization=canonicalFilePart(validation.organization),type=validation.role==='Privileged'?canonicalFilePart(normalizePrivilegedType(validation.privilegedTypes[0]??'')):'';
  if(!date||!last||!first||!organization||(validation.role==='Privileged'&&!type))return;
  const dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`,artifact=validation.role==='General'?'GEN_SAAR':`PRIV_${type}_SAAR`,state=disabled?'_DISABLED':'',extension=/\.zip$/i.test(filename)?'.pdf.zip':'.pdf',target=`${last}_${first}_(${organization})_${artifact}${state}_${dateToken}${extension}`;
  return target.length<=180?target:undefined;

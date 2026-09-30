@@ -1,6 +1,7 @@
 export type NotificationState='Missing'|'Due Within 30 Days'|'Overdue';
 
 export const dodCyberTrainingUrl='https://www.cyber.mil/cyber-awareness-challenge';
+export const privilegedUserTrainingUrl='https://www.cdse.edu/Training/eLearning/DS-IA112/';
 export const userAgreementTemplateFilename='Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf';
 
 export function notificationUsesUserAgreementTemplate(state:NotificationState,requirement:string){
@@ -17,7 +18,7 @@ export function notificationKindForState(state:NotificationState,current:string,
 }
 
 export function notificationBody(state:NotificationState,requirement:string){
- const issue=state==='Missing'?`Our records indicate you are missing ${requirement}.`:state==='Due Within 30 Days'?`Our records indicate your ${requirement} is due within 30 days.`:`Our records indicate your ${requirement} is overdue.`;
+ const issue=state==='Missing'?`Our records show that we do not have a current ${requirement} for your account.`:state==='Due Within 30 Days'?`Our records show that your ${requirement} is due within 30 days.`:`Our records show that your ${requirement} is overdue.`;
  const filenameByRequirement:Record<string,{format:string;example:string}>={
   SAAR:{format:'Last_First_(ORG)_GEN_SAAR_DDMMMYYYY.pdf or Last_First_(ORG)_PRIV_TYPE_SAAR_DDMMMYYYY.pdf',example:'Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf or Brown_Jacob_(LM)_PRIV_DTA_SAAR_26AUG2026.pdf'},
   'DoD Cyber Cert':{format:'Last_First_(ORG)_DoD_Cyber_Cert_DDMMMYYYY.pdf',example:'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf'},
@@ -28,7 +29,8 @@ export function notificationBody(state:NotificationState,requirement:string){
  };
  const fallback=`Last_First_(ORG)_${requirement.replace(/[^A-Za-z0-9]+/g,'_')}_DDMMMYYYY.pdf`;
  const filenameStandard=filenameByRequirement[requirement]??{format:fallback,example:fallback.replace('Last_First_(ORG)','Brown_Jacob_(LM)').replace('DDMMMYYYY','26AUG2026')};
- const trainingInstruction=requirement==='DoD Cyber Cert'?`\n\nComplete the DoD Cyber Awareness Challenge here:\n${dodCyberTrainingUrl}`:'';
- const filenameInstruction=`\n\nIMPORTANT - REQUIRED FILE NAME\nFormat: ${filenameStandard.format}\nExample: ${filenameStandard.example}\n\nFILES THAT DO NOT FOLLOW THIS NAMING STANDARD WILL BE REJECTED.\nRename the file before returning it. The naming standard matches evidence to the correct user and helps the tracker calculate due dates accurately.`;
- return `Hello,\n\n${issue}\n\nFailure to provide this requirement may result in loss of access to the system.${trainingInstruction}\n\nPlease provide a copy as soon as possible to maintain your account access.${filenameInstruction}`;
+ const trainingInstruction=requirement==='DoD Cyber Cert'?`\n\nPlease complete the DoD Cyber Awareness Challenge at the official DoD Cyber Exchange website:\n${dodCyberTrainingUrl}`:requirement==='Privileged User Training Cert'?`\n\nPlease complete the CDSE Privileged User Cybersecurity Responsibilities training at the official CDSE website:\n${privilegedUserTrainingUrl}\n\nA free account is required to complete the training.`:'';
+ const trainingRequirement=['DoD Cyber Cert','Privileged User Training Cert','DTA Training'].includes(requirement),responseRequest=trainingRequirement?'Once complete, please send us a copy of your certificate using the filename format below.':requirement==='User Agreement'?'Please complete and return the User Agreement using the filename format below.':requirement==='SAAR'?'Please complete and return the SAAR using the filename format below.':`Please send us a current copy of your ${requirement} using the filename format below.`;
+ const filenameInstruction=`\n\nUsing this format helps us associate the document with the correct account and accurately track its due date.\n\nIMPORTANT — REQUIRED FILE NAME\n\nFormat: ${filenameStandard.format}\nExample: ${filenameStandard.example}\n\nFiles that do not follow this naming standard may be returned for correction.`;
+ return `Sir/Ma'am,\n\n${issue}${trainingInstruction}\n\n${responseRequest}${filenameInstruction}\n\nIf you have already submitted this document, please let us know so we can verify that it was received and properly recorded. Keeping this requirement current helps prevent an interruption to your system access.\n\nFor security, this message will never ask you to provide a password or other login credentials by email.\n\nThank you for your assistance.`;
 }

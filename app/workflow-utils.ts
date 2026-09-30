@@ -16,6 +16,8 @@ export type HashedEvidence={filename:string;path:string;sha256:string};
 export type RetentionMove={source:string;archived:string;bucket:string};
 export type DuplicateContentGroup={sha256:string;files:{filename:string;path:string}[]};
 export type SaarAccountState={filename:string;date:Date;disabled:boolean};
+export type NotificationHistoryChange={timestamp:string;actor:string;action:string;description:string;rolesBefore:string[];rolesAfter:string[];files:string[]};
+export const complianceNotificationAction='Paperwork Notification Draft Prepared';
 export function requiresSaarFormClassification(filename:string){return /\.pdf$/i.test(filename)&&filenameMatchesKind(filename,'SAAR')}
 export function duplicateContentGroups(items:HashedEvidence[]):DuplicateContentGroup[]{
  const groups=new Map<string,{filename:string;path:string}[]>();
@@ -63,6 +65,23 @@ export function notificationRecipientBatches(values:string[],maxRecipients=40,ma
  const unique=Array.from(new Set(values.map(value=>value.trim().toLowerCase()).filter(Boolean))),batches:string[][]=[];let current:string[]=[];
  for(const value of unique){const candidate=[...current,value],length=encodeURIComponent(candidate.join(';')).length;if(current.length&&(candidate.length>maxRecipients||length>maxEncodedCharacters)){batches.push(current);current=[value]}else current=candidate}
  if(current.length)batches.push(current);return batches;
+}
+
+export function automaticDatabaseCompressionCandidateIds(candidates:{id:string;path:string;filename:string}[],updates:{id:string;path:string}[],approvedUpdateIds:Iterable<string>,discoveredUsers:{last:string;first:string;organization:string;artifacts:{filename:string}[]}[]){
+ const approved=new Set(approvedUpdateIds),approvedPaths=new Set(updates.filter(update=>approved.has(update.id)).map(update=>update.path.replaceAll('\\','/').toUpperCase()));
+ return candidates.filter(candidate=>approvedPaths.has(candidate.path.replaceAll('\\','/').toUpperCase())||discoveredUsers.some(user=>organizationFrom(candidate.filename)?.trim().toUpperCase()===user.organization.trim().toUpperCase()&&filenameIdentityMatches(candidate.filename,user)&&user.artifacts.some(artifact=>artifact.filename.toUpperCase()===candidate.filename.toUpperCase()))).map(candidate=>candidate.id);
+}
+
+export function isComplianceNotificationChange(change:{action?:string}){return change.action===complianceNotificationAction}
+
+export function clearComplianceNotificationHistory<T extends{changes?:NotificationHistoryChange[]}>(record:T):T{
+ if(!record.changes?.some(isComplianceNotificationChange))return record;
+ return{...record,changes:record.changes.filter(change=>!isComplianceNotificationChange(change))};
+}
+
+export function recordComplianceNotificationHistory<T extends{id:string;email:string;roles:string[];changes?:NotificationHistoryChange[]}>(users:T[],userIds:Iterable<string>,state:string,artifact:string,timestamp:string,actor:string,batchNumber:number,batchTotal:number){
+ const selected=new Set(userIds);
+ return users.map(user=>{if(!selected.has(user.id))return user;const change:NotificationHistoryChange={timestamp,actor,action:complianceNotificationAction,description:`${state} ${artifact} Outlook draft prepared for ${user.email}; BCC batch ${batchNumber} of ${batchTotal}. Outlook controls final sending, so this entry records draft preparation rather than delivery confirmation.`,rolesBefore:[...user.roles],rolesAfter:[...user.roles],files:[]};return{...user,changes:[...(user.changes??[]),change]}});
 }
 
 export function committedRecordWithExceptions<T extends{exceptions?:ComplianceException[]}>(record:T,exceptions:ComplianceException[]){return{...record,exceptions}}

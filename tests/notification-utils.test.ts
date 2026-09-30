@@ -1,14 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {availableNotificationKinds,dodCyberTrainingUrl,notificationBody,notificationKindForState,notificationUsesUserAgreementTemplate,userAgreementTemplateFilename} from '../app/notification-utils.ts';
+import {availableNotificationKinds,dodCyberTrainingUrl,notificationBody,notificationKindForState,notificationUsesUserAgreementTemplate,privilegedUserTrainingUrl,userAgreementTemplateFilename} from '../app/notification-utils.ts';
 
 test('creates the approved missing-artifact message',()=>{
- assert.equal(notificationBody('Missing','DoD Cyber Cert'),`Hello,\n\nOur records indicate you are missing DoD Cyber Cert.\n\nFailure to provide this requirement may result in loss of access to the system.\n\nComplete the DoD Cyber Awareness Challenge here:\n${dodCyberTrainingUrl}\n\nPlease provide a copy as soon as possible to maintain your account access.\n\nIMPORTANT - REQUIRED FILE NAME\nFormat: Last_First_(ORG)_DoD_Cyber_Cert_DDMMMYYYY.pdf\nExample: Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf\n\nFILES THAT DO NOT FOLLOW THIS NAMING STANDARD WILL BE REJECTED.\nRename the file before returning it. The naming standard matches evidence to the correct user and helps the tracker calculate due dates accurately.`);
+ const message=notificationBody('Missing','DoD Cyber Cert');
+ assert.match(message,/^Sir\/Ma'am,\n\nOur records show that we do not have a current DoD Cyber Cert for your account\./);
+ assert.match(message,/official DoD Cyber Exchange website/);
+ assert.match(message,/Once complete, please send us a copy of your certificate/);
+ assert.match(message,/If you have already submitted this document/);
+ assert.match(message,/will never ask you to provide a password or other login credentials by email/);
+ assert.match(message,/Thank you for your assistance\.$/);
 });
 
 test('adds the official training URL to every actionable DoD Cyber message only',()=>{
  for(const state of['Missing','Due Within 30 Days','Overdue'] as const)assert.equal(notificationBody(state,'DoD Cyber Cert').split(dodCyberTrainingUrl).length,2,state);
  for(const state of['Missing','Due Within 30 Days','Overdue'] as const)assert.equal(notificationBody(state,'User Agreement').includes(dodCyberTrainingUrl),false,state);
+});
+
+test('adds the official CDSE course and free-account note to every Privileged User Training notification',()=>{
+ for(const state of['Missing','Due Within 30 Days','Overdue'] as const){
+  const message=notificationBody(state,'Privileged User Training Cert');
+  assert.equal(message.split(privilegedUserTrainingUrl).length,2,state);
+  assert.match(message,/free account is required to complete the training/i,state);
+ }
+ assert.equal(notificationBody('Missing','DTA Training').includes(privilegedUserTrainingUrl),false);
 });
 
 test('prominently adds the appropriate filename instructions to every notification',()=>{
@@ -23,21 +38,36 @@ test('prominently adds the appropriate filename instructions to every notificati
   const message=notificationBody(state,requirement);
   assert.ok(message.includes(`Format: ${format}`),`${state}: ${requirement}`);
   assert.match(message,/Example: Brown_Jacob_\(LM\)_/);
-  assert.match(message,/IMPORTANT - REQUIRED FILE NAME/);
-  assert.match(message,/FILES THAT DO NOT FOLLOW THIS NAMING STANDARD WILL BE REJECTED/);
-  assert.match(message,/Rename the file before returning it/);
-  assert.match(message,/calculate due dates accurately/i);
+  assert.match(message,/IMPORTANT — REQUIRED FILE NAME/);
+  assert.match(message,/Files that do not follow this naming standard may be returned for correction/);
+  assert.match(message,/accurately track its due date/i);
  }
 });
 
 test('creates the approved overdue-artifact message',()=>{
- assert.match(notificationBody('Overdue','User Agreement'),/^Hello,\n\nOur records indicate your User Agreement is overdue\./);
- assert.match(notificationBody('Overdue','User Agreement'),/IMPORTANT - REQUIRED FILE NAME\nFormat: Last_First_\(ORG\)_User_Agreement_DDMMMYYYY\.pdf\nExample: Brown_Jacob_\(LM\)_User_Agreement_26AUG2026\.pdf/);
+ assert.match(notificationBody('Overdue','User Agreement'),/^Sir\/Ma'am,\n\nOur records show that your User Agreement is overdue\./);
+ assert.match(notificationBody('Overdue','User Agreement'),/IMPORTANT — REQUIRED FILE NAME\n\nFormat: Last_First_\(ORG\)_User_Agreement_DDMMMYYYY\.pdf\nExample: Brown_Jacob_\(LM\)_User_Agreement_26AUG2026\.pdf/);
 });
 
 test('creates the approved due-within-30-days message',()=>{
- assert.match(notificationBody('Due Within 30 Days','Privileged User Training Cert'),/^Hello,\n\nOur records indicate your Privileged User Training Cert is due within 30 days\./);
- assert.match(notificationBody('Due Within 30 Days','Privileged User Training Cert'),/IMPORTANT - REQUIRED FILE NAME\nFormat: Last_First_\(ORG\)_PRIV_User_Training_DDMMMYYYY\.pdf\nExample: Brown_Jacob_\(LM\)_PRIV_User_Training_26AUG2026\.pdf/);
+ const message=notificationBody('Due Within 30 Days','Privileged User Training Cert');
+ assert.match(message,/^Sir\/Ma'am,\n\nOur records show that your Privileged User Training Cert is due within 30 days\./);
+ assert.match(message,/IMPORTANT — REQUIRED FILE NAME\n\nFormat: Last_First_\(ORG\)_PRIV_User_Training_DDMMMYYYY\.pdf\nExample: Brown_Jacob_\(LM\)_PRIV_User_Training_26AUG2026\.pdf/);
+ assert.match(message,/A free account is required to complete the training\./);
+});
+
+test('uses the approved friendly anti-phishing tone for every state and artifact',()=>{
+ const requirements=['SAAR','DoD Cyber Cert','User Agreement','8140 Cert Memo','Privileged User Training Cert','DTA Training'];
+ for(const state of['Missing','Due Within 30 Days','Overdue'] as const)for(const requirement of requirements){
+  if(state!=='Missing'&&requirement==='SAAR')continue;
+  const message=notificationBody(state,requirement);
+  assert.match(message,/^Sir\/Ma'am,/);
+  assert.doesNotMatch(message,/Failure to provide/i);
+  assert.match(message,/please/i);
+  assert.match(message,/If you have already submitted this document/);
+  assert.match(message,/For security, this message will never ask you to provide a password/);
+  assert.match(message,/Thank you for your assistance\.$/);
+ }
 });
 
 test('replaces an invalid artifact selection when the notification status changes',()=>{

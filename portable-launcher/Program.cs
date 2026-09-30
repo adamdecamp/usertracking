@@ -158,7 +158,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "restore" && parts[0] == "POST") response = storage.Restore(systemId, QueryValue(target, "logical"), QueryValue(target, "file"));
                     else if (action == "restore-drill" && parts[0] == "POST") response = storage.RestoreDrill(systemId, QueryValue(target, "logical"), QueryValue(target, "file"));
                     else if (action == "verify" && parts[0] == "GET") response = storage.VerifyLatest(systemId, QueryValue(target, "logical"));
-                    else if (action == "scan" && parts[0] == "GET") response = storage.ScanWithJournal(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"));
+                    else if (action == "scan" && parts[0] == "GET") response = storage.ScanWithJournal(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"), String.Equals(OptionalQueryValue(target, "legacy"), "1", StringComparison.Ordinal));
                     else if (action == "locations" && parts[0] == "GET") response = storage.ListEvidenceLocations(systemId, OptionalQueryValue(target, "organization"));
                     else if (action == "sync-commit" && parts[0] == "POST") response = storage.CommitSyncJournal(systemId, QueryValue(target, "run"));
                     else if (action == "renamer-queue" && parts[0] == "GET") response = storage.ReadRenamerQueue(systemId);
@@ -364,10 +364,10 @@ internal sealed class TrackerContext : ApplicationContext
         bool highlightFilenameStandard = false;
         foreach (string line in lines)
         {
-            if (String.Equals(line, "IMPORTANT - REQUIRED FILE NAME", StringComparison.Ordinal)) highlightFilenameStandard = true;
-            if (line.StartsWith("Rename the file before returning it.", StringComparison.Ordinal)) highlightFilenameStandard = false;
+            if (String.Equals(line, "IMPORTANT - REQUIRED FILE NAME", StringComparison.Ordinal) || String.Equals(line, "IMPORTANT — REQUIRED FILE NAME", StringComparison.Ordinal)) highlightFilenameStandard = true;
+            if (line.StartsWith("Rename the file before returning it.", StringComparison.Ordinal) || line.StartsWith("If you have already submitted this document", StringComparison.Ordinal)) highlightFilenameStandard = false;
             string encoded = WebUtility.HtmlEncode(line);
-            if (String.Equals(line, "https://www.cyber.mil/cyber-awareness-challenge", StringComparison.Ordinal)) encoded = "<a href=\"https://www.cyber.mil/cyber-awareness-challenge\">https://www.cyber.mil/cyber-awareness-challenge</a>";
+            if (String.Equals(line, "https://www.cyber.mil/cyber-awareness-challenge", StringComparison.Ordinal) || String.Equals(line, "https://www.cdse.edu/Training/eLearning/DS-IA112/", StringComparison.Ordinal)) encoded = "<a href=\"" + WebUtility.HtmlEncode(line) + "\">" + WebUtility.HtmlEncode(line) + "</a>";
             if (highlightFilenameStandard && encoded.Length > 0) html.Append("<span style=\"background-color:#fff200;color:#000000;font-weight:bold\">").Append(encoded).Append("</span>");
             else html.Append(encoded);
             html.Append("<br>");

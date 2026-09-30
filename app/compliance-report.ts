@@ -1,4 +1,5 @@
 import {PDFDocument,PageSizes,StandardFonts,rgb,type PDFFont,type PDFPage} from 'pdf-lib';
+import {normalizePrivilegedTypes} from './privileged-type-utils.ts';
 
 export type ComplianceStatus='Current'|'Missing'|'Overdue';
 export type ReportUser={id:string;systemId:string;systemName:string;organization:string;disabled:boolean;roles:string[];privilegedTypes:string[]};
@@ -35,13 +36,13 @@ export function summarizeCompliance(input:ComplianceReportInput){
   users:input.users.length,
   generalUsers:input.users.filter(user=>user.roles.includes('General')).length,
   privilegedUsers:input.users.filter(user=>user.roles.includes('Privileged')).length,
-  privilegedTypes:Array.from(new Set(input.users.flatMap(user=>user.privilegedTypes))).sort(),
+  privilegedTypes:normalizePrivilegedTypes(input.users.flatMap(user=>user.privilegedTypes)).sort(),
   total,current,missing,overdue,exceptions,
   aging,
   byOrganization:breakdown(input.requirements,row=>[row.organization]),
   bySystem:breakdown(input.requirements,row=>[row.systemName]),
   byRole:breakdown(input.requirements,row=>row.roles),
-  byPrivilegedType:breakdown(input.requirements,row=>row.privilegedTypes),
+  byPrivilegedType:breakdown(input.requirements,row=>normalizePrivilegedTypes(row.privilegedTypes)),
   byArtifact:breakdown(input.requirements,row=>[row.artifact]),
  };
 }

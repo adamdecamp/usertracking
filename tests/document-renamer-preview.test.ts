@@ -6,6 +6,7 @@ const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const styles=readFileSync(new URL('../app/globals.css',import.meta.url),'utf8');
 const versions=readFileSync(new URL('../app/version.ts',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
+const operationalPanels=readFileSync(new URL('../app/components/OperationalPanels.tsx',import.meta.url),'utf8');
 
 test('Document Renamer preview reserves a full browser window before asynchronous PDF validation',()=>{
  assert.match(page,/function reservePdfPreviewWindow\(filename:string\)\{const target=window\.open\('about:blank','_blank'\)/);
@@ -30,22 +31,22 @@ test('Document Renamer preview reports loading failures and exposes full-size ac
  assert.match(page,/Download Validated PDF Copy/);
 });
 
-test('SAAR form identity is fallback-only in Document Renamer and Evidence Audit',()=>{
+test('SAAR form identity is fallback-only in Document Renamer',()=>{
  assert.match(page,/applySaarFormFallback\(parsedAnalysis,form\.identity,form\.organization\)/);
  assert.doesNotMatch(page,/first:identity\?\.first\?\?parsedAnalysis\.first/);
- assert.match(page,/identity=identity\?\?fields\.identity/);
- assert.doesNotMatch(page,/identity=fields\.identity\?\?identity/);
 });
 
-test('browser Sync bypasses the unchanged-file cache for every Rework file',()=>{
- assert.match(page,/reworkEvidence=insideOrganizationRework\(path\),cached=!reworkEvidence&&!!previous/);
+test('browser Sync caches unchanged Rework in Daily Sync and revalidates it in Legacy Import',()=>{
+ assert.match(page,/reworkEvidence=insideOrganizationRework\(path\),cached=!\(legacyImport&&reworkEvidence\)&&!!previous/);
 });
 
-test('corrected Rework evidence is normalized, promoted, and clears stale source rejections',()=>{
+test('Legacy Import normalizes corrected Rework while strict promotion clears stale source rejections',()=>{
  const normalizable=page.match(/const normalizableByPath=[\s\S]*?const filenameRenames=/)?.[0]??'';
  const saarPreparation=page.match(/saarPreparations=[\s\S]*?formSaarPreparations=/)?.[0]??'';
  assert.ok(normalizable,'Sync normalization wiring was not found.');
  assert.ok(saarPreparation,'SAAR preparation wiring was not found.');
+ assert.match(normalizable,/if\(legacyImport\)/);
+ assert.match(saarPreparation,/legacyImport\?/);
  assert.doesNotMatch(normalizable,/!insideOrganizationRework/);
  assert.doesNotMatch(saarPreparation,/!insideOrganizationRework/);
  assert.match(page,/normalizedSourcePaths\.add\(scanPathKey\(previousPath\)\)/);
@@ -54,12 +55,13 @@ test('corrected Rework evidence is normalized, promoted, and clears stale source
  assert.match(page,/if\(!promotedSourcePaths\.has\(key\)&&!known\.has\(key\)\)scanResult\.rejected\.push\(rejection\)/);
 });
 
-test('Sync normalizes complete noncanonical ZIP names before routing ambiguous ZIPs to Rework',()=>{
+test('Legacy Import normalizes complete noncanonical ZIP names before routing ambiguous ZIPs to Rework',()=>{
  const invalidZipGate=page.match(/const invalidZipCorrections:[\s\S]*?invalidZipPaths=/)?.[0]??'';
  const normalizable=page.match(/const normalizableByPath=[\s\S]*?const filenameRenames=/)?.[0]??'';
  assert.ok(invalidZipGate,'The invalid ZIP gate was not found.');
- assert.match(invalidZipGate,/zipFilenameNeedsRework\(item\.filename,folderOrganization\)&&!canonicalEvidenceFilename\(item\.filename,folderOrganization\)/);
+ assert.match(invalidZipGate,/legacyImport\?zipFilenameNeedsRework\(item\.filename,folderOrganization\)&&!canonicalEvidenceFilename\(item\.filename,folderOrganization\):!evidenceFilenamePassesStorageGate\(item\.filename,folderOrganization\)/);
  assert.ok(normalizable,'The shared PDF and ZIP normalization collection was not found.');
+ assert.match(normalizable,/if\(legacyImport\)/);
  assert.match(normalizable,/scanResult\.evidence/);
  assert.match(normalizable,/!invalidZipPaths\.has/);
 });
@@ -95,8 +97,8 @@ test('incremental Sync uses a validation-only cache version and reports fast-pat
  assert.match(versions,/export const evidenceValidationCacheVersion=/);
  assert.match(page,/readSyncIndex\(JSON\.parse\(text\),evidenceValidationCacheVersion\)/);
  assert.match(page,/createSyncIndex\(evidenceValidationCacheVersion,files\)/);
- assert.match(page,/scan\?rules=\$\{encodeURIComponent\(evidenceValidationCacheVersion\)\}/);
- assert.match(page,/\$\{scanResult\.scanned\} discovered in \$\{scopeLabel\}; \$\{scanResult\.unchanged\}/);
+ assert.match(page,/scan\?rules=\$\{encodeURIComponent\(evidenceValidationCacheVersion\)\}.*&legacy=\$\{legacyImport\?'1':'0'\}/);
+ assert.match(page,/\$\{modeLabel\}: \$\{scanResult\.scanned\} discovered in \$\{scopeLabel\}; \$\{scanResult\.unchanged\}/);
  assert.match(page,/Daily retention already completed;/);
 });
 
@@ -106,7 +108,6 @@ test('location refresh and discovery workflows use metadata without reopening ev
  assert.match(page,/Refreshing Stale Evidence References[\s\S]*?refreshEvidenceLocations\(pendingSync\.handle/);
  assert.match(page,/async function discoverRenamerPdfs[\s\S]*?refreshEvidenceLocations\(root\)/);
  assert.match(page,/async function openReconciliation[\s\S]*?refreshEvidenceLocations\(root/);
- assert.match(page,/scanEvidence=\{\(progress,signal\)=>refreshEvidenceLocations/);
  assert.doesNotMatch(page,/Refreshing Current Evidence Locations[\s\S]{0,500}?scan\(pendingSync\.handle/);
  assert.doesNotMatch(page,/Refreshing Stale Evidence References[\s\S]{0,500}?scan\(pendingSync\.handle/);
 });
@@ -127,14 +128,37 @@ test('Sync applies the shared Document Renamer analysis to changed noncanonical 
  const manual=page.match(/const batch=remaining\.slice[\s\S]*?saveRenamerQueue/)?.[0]??'';
  assert.ok(shared,'The shared Document Renamer PDF analysis routine was not found.');
  assert.ok(sync,'The Sync Document Renamer stage was not found.');
+ assert.match(sync,/syncRenamerCandidates=legacyImport\?/);
  assert.match(sync,/documentNeedsFilenameNormalization/);
  assert.match(sync,/!insideArchiveTree\(item\.path\)/);
- assert.match(sync,/!item\.unchanged\|\|insideOrganizationRework\(item\.path\)/);
+ assert.doesNotMatch(sync,/!item\.unchanged\|\|insideOrganizationRework\(item\.path\)/);
  assert.match(sync,/analyzeRenamerPdf\(candidate,sourceUsers,h\.name,controller\.signal\)/);
  assert.match(sync,/item\.confidence==='High'/);
  assert.match(sync,/normalizationFailures\.push/);
  assert.match(sync,/renamedDuringSync\+\+/);
  assert.match(manual,/analyzeRenamerPdf\(candidate,users,root\.name\)/);
+});
+
+test('the manual Document Renamer button is removed while Legacy Import retains normalization',()=>{
+ const toolbar=page.slice(page.indexOf('<section className="toolbar">'),page.indexOf('</section>',page.indexOf('<section className="toolbar">')));
+ assert.doesNotMatch(toolbar,/Document Renamer/);
+ assert.doesNotMatch(toolbar,/setModal\('renamer'\)/);
+ assert.match(page,/Sync Document Renamer/);
+ assert.match(page,/Applying Document Renamer Rules/);
+});
+
+test('Reconciliation provides a PDF correction report and the redundant Audit Evidence workflow is absent',()=>{
+ assert.match(page,/async function generateReconciliationReport/);
+ assert.match(operationalPanels,/Generate PDF Report/);
+ assert.doesNotMatch(page,/>Audit Evidence</);
+ assert.doesNotMatch(page,/function EvidenceAuditModal/);
+});
+
+test('paperwork draft preparation is recorded in the User Record and cleared by updates',()=>{
+ assert.match(page,/onRecordNotices\(batch\.notices\.map\(notice=>notice\.user\.id\),state,selectedKind,index\+1,batches\.length\)/);
+ assert.match(page,/Paperwork Notification History/);
+ assert.match(page,/notificationHistory=\(draft\.changes\?\?\[\]\)\.filter\(isComplianceNotificationChange\)/);
+ assert.match(page,/u=clearComplianceNotificationHistory\(u\)/);
 });
 
 test('User Agreement notification templates are launcher-attached and excluded from Sync',()=>{
@@ -154,4 +178,5 @@ test('User Agreement notification templates are launcher-attached and excluded f
  assert.match(launcher,/OUTLOOK DRAFT FAILED/);
  assert.match(launcher,/background-color:#fff200/);
  assert.match(launcher,/cyber-awareness-challenge/);
+ assert.match(launcher,/cdse\.edu\/Training\/eLearning\/DS-IA112/);
 });

@@ -1,3 +1,5 @@
+import {normalizePrivilegedTypes} from './privileged-type-utils.ts';
+
 export const currentManifestVersion=2;
 export const currentBackupVersion=1;
 export const currentAuditVersion=1;
@@ -22,6 +24,7 @@ export function migrateManifestPayload(value:unknown):JsonRecord|undefined{
   }:item);
   input.version=2;
  }
+ if(Array.isArray(input.users))input.users=input.users.map(item=>record(item)&&Array.isArray(item.privilegedTypes)?{...item,privilegedTypes:normalizePrivilegedTypes(item.privilegedTypes.filter((value):value is string=>typeof value==='string'))}:item);
  return input;
 }
 

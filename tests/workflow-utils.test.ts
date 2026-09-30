@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,committedRecordWithExceptions,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,removePreflightArchivedArtifacts,requiresSaarFormClassification,reworkRetentionDisposition,shouldDisableUserFromSaarState,type SyncProvenanceUser} from '../app/workflow-utils.ts';
+import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,recordComplianceNotificationHistory,removePreflightArchivedArtifacts,requiresSaarFormClassification,reworkRetentionDisposition,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -94,6 +94,26 @@ test('does not remove evidence for Rework extraction or unaccepted-file routing'
 test('deduplicates and splits notification recipients by count and encoded length',()=>{
  assert.deepEqual(notificationRecipientBatches(['A@example.mil','a@example.mil','b@example.mil'],1),[['a@example.mil'],['b@example.mil']]);
  assert.deepEqual(notificationRecipientBatches(['one@example.mil','two@example.mil'],40,20),[['one@example.mil'],['two@example.mil']]);
+});
+
+test('automatically selects loose PDFs that are entering the database',()=>{
+ const candidates=[
+  {id:'existing',path:'Organizations/LM/LM DoD Cyber Cert/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf',filename:'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf'},
+  {id:'new-user',path:'Organizations/GOV/GOV User Agreement/Shaw_Vivian_(GOV)_User_Agreement_26AUG2026.pdf',filename:'Shaw_Vivian_(GOV)_User_Agreement_26AUG2026.pdf'},
+  {id:'unmatched',path:'Organizations/NGC/NGC User Agreement/Unknown_Person_(NGC)_User_Agreement_26AUG2026.pdf',filename:'Unknown_Person_(NGC)_User_Agreement_26AUG2026.pdf'},
+ ];
+ const updates=[{id:'update-1',path:candidates[0].path}],discovered=[{last:'Shaw',first:'Vivian',organization:'GOV',artifacts:[{filename:candidates[1].filename}]}];
+ assert.deepEqual(automaticDatabaseCompressionCandidateIds(candidates,updates,['update-1'],discovered),['existing','new-user']);
+ assert.deepEqual(automaticDatabaseCompressionCandidateIds(candidates,updates,[],[]),[]);
+});
+
+test('records paperwork draft dates and clears them when the user record is updated',()=>{
+ const users:{id:string;email:string;roles:string[];changes:NotificationHistoryChange[]}[]=[{id:'u1',email:'jacob@example.mil',roles:['General'],changes:[]},{id:'u2',email:'vivian@example.mil',roles:['General'],changes:[]}],timestamp='2026-09-29T12:00:00.000Z';
+ const recorded=recordComplianceNotificationHistory(users,['u1'],'Missing','User Agreement',timestamp,'DOMAIN\\operator',1,2);
+ assert.equal(recorded[0].changes.at(-1)?.action,complianceNotificationAction);
+ assert.match(recorded[0].changes.at(-1)?.description??'',/Missing User Agreement.*batch 1 of 2/);
+ assert.equal(recorded[1].changes.length,0);
+ assert.deepEqual(clearComplianceNotificationHistory(recorded[0]).changes,[]);
 });
 
 test('commits exception changes without leaking unrelated draft edits',()=>{

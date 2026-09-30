@@ -16,9 +16,11 @@ test('does not start Sync while restoring, mapping, or selecting a system',()=>{
 });
 
 test('offers only entire-system or immediate-organization Sync scope',()=>{
+ assert.match(page,/<option value="daily">Daily Sync — Fast and Strict<\/option>/);
+ assert.match(page,/<option value="legacy">Legacy Import — Historical Recovery<\/option>/);
  assert.match(page,/<option value="system">Entire Information System<\/option>/);
  assert.match(page,/<option value="organization"[^>]*>One Organization<\/option>/);
- assert.match(page,/Deeper subfolders cannot be selected as a separate Sync scope/);
+ assert.match(page,/deeper subfolders cannot be selected as a separate Sync scope/);
  assert.doesNotMatch(page,/onClick=\{\(\)=>void sync\(true\)\}/);
 });
 
@@ -27,14 +29,24 @@ test('allows another scoped Sync while earlier review results are pending',()=>{
  assert.doesNotMatch(openScope,/if\(pendingSync\).*sync-review/);
  assert.match(openScope,/setModal\(null\);setSyncScopeOpen\(true\)/);
  assert.match(page,/Previous Results Remain Available/);
- assert.match(page,/hasPendingResults\?'Start Another Sync':'Start Sync'/);
+ assert.match(page,/hasPendingResults\?`Start Another \$\{syncModeLabel\(syncMode\)\}`:`Start \$\{syncModeLabel\(syncMode\)\}`/);
  assert.match(page,/tracker:start-another-sync/);
  assert.match(page,/>Start Another Sync<\/button>/);
  assert.doesNotMatch(page,/setSyncText\('Review Matches'\)/);
 });
 
 test('passes the validated organization scope to every launcher discovery stage',()=>{
- assert.match(launcher,/ScanWithJournal\([^\r\n]+OptionalQueryValue\(target, "organization"\)/);
+ assert.match(launcher,/ScanWithJournal\([^\r\n]+OptionalQueryValue\(target, "organization"\)[^\r\n]+OptionalQueryValue\(target, "legacy"\)/);
  assert.match(launcher,/ListEvidenceLocations\(systemId, OptionalQueryValue\(target, "organization"\)\)/);
  assert.match(launcher,/ProcessReworkRetention\([^\r\n]+OptionalQueryValue\(target, "organization"\)/);
+});
+
+test('Daily Sync skips legacy recovery while Legacy Import enables it explicitly',()=>{
+ const syncFlow=page.slice(page.indexOf('async function syncMapped'),page.indexOf('async function sync(forceFull'));
+ assert.match(syncFlow,/legacyImport=isLegacyImport\(syncMode\)/);
+ assert.match(syncFlow,/normalizableByPath=new Map[\s\S]*?if\(legacyImport\)/);
+ assert.match(syncFlow,/syncRenamerCandidates=legacyImport\?/);
+ assert.match(syncFlow,/saarPreparations=legacyImport\?/);
+ assert.match(syncFlow,/if\(legacyImport\)\{for\(const item of activeEvidence\)/);
+ assert.match(syncFlow,/requiresSaarFormClassification\(item\.filename\)&&\(legacyImport\|\|!item\.unchanged/);
 });

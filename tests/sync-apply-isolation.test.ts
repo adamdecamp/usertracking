@@ -36,3 +36,16 @@ test('post-apply cleanup discovery reapplies active-folder and strict-filename g
  assert.doesNotMatch(apply,/duplicateArchiveCandidates\(nextUsers,remainingEvidence/);
  assert.doesNotMatch(apply,/selectLoosePdfCleanupCandidates\(remainingEvidence,nextUsers/);
 });
+
+test('Verified Sync automatically compresses only loose PDFs entering the database',()=>{
+ assert.match(apply,/automaticZipIds=automaticDatabaseCompressionCandidateIds\(pendingSync\.zipCandidates,pendingSync\.candidates,approved,discoveredUsers\.map\(item=>item\.record\)\)/);
+ assert.match(apply,/selectedZipIds=new Set\(\[\.\.\.zipIds,\.\.\.automaticZipIds\]\)/);
+ assert.match(apply,/Compressing Verified PDF Evidence/);
+ assert.match(apply,/compressionResults\.get\(scanPathKey\(match\.path\)\)/);
+});
+
+test('successful Sync record updates clear temporary paperwork-notification dates',()=>{
+ assert.match(apply,/updatedUserIds=new Set/);
+ assert.match(apply,/cleanupUpdatedUserIds=new Set/);
+ assert.match(apply,/updatedUserIds\.has\(user\.id\)\?clearComplianceNotificationHistory\(user\):user/);
+});

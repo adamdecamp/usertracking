@@ -352,19 +352,24 @@ internal sealed class PortableStorage : IDisposable
 
     public string Scan(string systemId, string ruleSetVersion, bool fullRescan)
     {
-        Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(ScanWithJournal(systemId, ruleSetVersion, fullRescan, null)));
+        Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(ScanWithJournal(systemId, ruleSetVersion, fullRescan, null, true)));
         return json.Serialize(ObjectArray(envelope["items"]));
     }
 
-    public string ScanWithJournal(string systemId, string ruleSetVersion, bool fullRescan) { return ScanWithJournal(systemId, ruleSetVersion, fullRescan, null); }
+    public string ScanWithJournal(string systemId, string ruleSetVersion, bool fullRescan) { return ScanWithJournal(systemId, ruleSetVersion, fullRescan, null, true); }
 
     public string ScanWithJournal(string systemId, string ruleSetVersion, bool fullRescan, string organization)
+    {
+        return ScanWithJournal(systemId, ruleSetVersion, fullRescan, organization, true);
+    }
+
+    public string ScanWithJournal(string systemId, string ruleSetVersion, bool fullRescan, string organization, bool legacyImport)
     {
         string cleanRuleSet = CleanLine(ruleSetVersion, 100);
         if (String.IsNullOrWhiteSpace(cleanRuleSet)) throw new InvalidDataException("The Sync rule-set version is missing.");
         lock (RootLock(systemId))
         {
-            string root = Root(systemId), cleanOrganization = String.IsNullOrWhiteSpace(organization) ? null : ValidOrganizationName(organization), scanRoot = OrganizationScopeRoot(root, cleanOrganization), journalRuleSet = cleanRuleSet + "|scope=" + (cleanOrganization ?? "system");
+            string root = Root(systemId), cleanOrganization = String.IsNullOrWhiteSpace(organization) ? null : ValidOrganizationName(organization), scanRoot = OrganizationScopeRoot(root, cleanOrganization), journalRuleSet = cleanRuleSet + "|scope=" + (cleanOrganization ?? "system") + "|mode=" + (legacyImport ? "legacy" : "daily");
             RecoverTransactions(root);
             SyncJournalState journal = StartOrResumeSyncJournal(root, journalRuleSet, fullRescan);
             FailAfter("scan-start");
@@ -389,7 +394,7 @@ internal sealed class PortableStorage : IDisposable
                     long journalSize = 0L, journalModified = 0L;
                     if (supportedExtension) try { var journalInfo = new FileInfo(file);journalSize = journalInfo.Length;journalModified = new DateTimeOffset(journalInfo.LastWriteTimeUtc).ToUnixTimeMilliseconds(); } catch { }
                     Dictionary<string, object> resumed;
-                    if (!reworkEvidence && journal.Completed.TryGetValue(relative, out resumed) && resumed.ContainsKey("cacheable") && Convert.ToBoolean(resumed["cacheable"], CultureInfo.InvariantCulture) && JournalItemMatches(resumed, filename, journalSize, journalModified))
+                    if ((!legacyImport || !reworkEvidence) && journal.Completed.TryGetValue(relative, out resumed) && resumed.ContainsKey("cacheable") && Convert.ToBoolean(resumed["cacheable"], CultureInfo.InvariantCulture) && JournalItemMatches(resumed, filename, journalSize, journalModified))
                     {
                         Dictionary<string, object> indexed;bool indexUnchanged = previous.TryGetValue(relative, out indexed) && JournalItemMatches(indexed, filename, journalSize, journalModified);
                         var resumedItem = new Dictionary<string, object>(resumed);resumedItem["unchanged"] = indexUnchanged;resumedItem["resumed"] = true;
@@ -399,7 +404,7 @@ internal sealed class PortableStorage : IDisposable
                         continue;
                     }
                     Dictionary<string, object> indexedItem = null;
-                    bool indexedUnchanged = !reworkEvidence && supportedExtension && previous.TryGetValue(relative, out indexedItem) && JournalItemMatches(indexedItem, filename, journalSize, journalModified);
+                    bool indexedUnchanged = (!legacyImport || !reworkEvidence) && supportedExtension && previous.TryGetValue(relative, out indexedItem) && JournalItemMatches(indexedItem, filename, journalSize, journalModified);
                     if (indexedUnchanged)
                     {
                         var unchangedItem = new Dictionary<string, object>(indexedItem);unchangedItem["unchanged"] = true;
@@ -424,7 +429,7 @@ internal sealed class PortableStorage : IDisposable
                         continue;
                     }
                     Dictionary<string, object> cached = null;
-                    bool unchanged = !reworkEvidence && previous.TryGetValue(relative, out cached) && String.Equals(Convert.ToString(cached["name"], CultureInfo.InvariantCulture), filename, StringComparison.OrdinalIgnoreCase) && Convert.ToInt64(cached["size"], CultureInfo.InvariantCulture) == size && Convert.ToInt64(cached["lastModifiedUnixMs"], CultureInfo.InvariantCulture) == lastModifiedUnixMs;
+                    bool unchanged = (!legacyImport || !reworkEvidence) && previous.TryGetValue(relative, out cached) && String.Equals(Convert.ToString(cached["name"], CultureInfo.InvariantCulture), filename, StringComparison.OrdinalIgnoreCase) && Convert.ToInt64(cached["size"], CultureInfo.InvariantCulture) == size && Convert.ToInt64(cached["lastModifiedUnixMs"], CultureInfo.InvariantCulture) == lastModifiedUnixMs;
                     string validationError = unchanged ? Convert.ToString(cached["error"], CultureInfo.InvariantCulture) : "";
                     bool cacheable = true, encryptedPdf = unchanged && cached.ContainsKey("encryptedPdf") && Convert.ToBoolean(cached["encryptedPdf"], CultureInfo.InvariantCulture), accepted = unchanged ? Convert.ToBoolean(cached["accepted"], CultureInfo.InvariantCulture) : historicalSaar || TryValidateEvidenceFile(file, out validationError, out cacheable, out encryptedPdf);
                     if (!unchanged)

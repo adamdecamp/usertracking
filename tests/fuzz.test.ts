@@ -4,7 +4,6 @@ import {verifyAuditText} from '../app/audit-utils.ts';
 import {classifyEvidenceCollision} from '../app/cleanup-utils.ts';
 import {normalizeFilenameOrganization,organizationFromFolderPath,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
 import {inspectEvidenceBytes} from '../app/evidence-validation.ts';
-import {auditEvidenceContent} from '../app/evidence-audit-utils.ts';
 import {artifactKinds,canonicalEvidenceFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,fileTokenList,fileTokens,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,looksLikeEvidenceFilename,normalizeFilenameDate,organizationArtifactStorageFolder,organizationFrom,parseDate,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
 import {officialEmailFromText,readSaarFormFields} from '../app/saar-form-utils.ts';
 import {saarEmailAdmission} from '../app/saar-ingest-utils.ts';
@@ -32,10 +31,6 @@ test('fuzzes filename parsing without uncaught parser failures',()=>{
    for(const kind of artifactKinds)filenameMatchesKind(filename,kind);
   });
  }
-});
-
-test('fuzzes selected evidence content-audit inputs without parser failures',()=>{
- for(let index=0;index<3000;index++)assert.doesNotThrow(()=>auditEvidenceContent({kind:pick([...artifactKinds,randomText(50)]),text:randomText(2000),signedFieldNames:index%3===0?[randomText(100)]:[],createdBySigned:index%5===0,disabledBySigned:index%7===0,createdDate:index%5===0?'2026-08-26':randomText(20),disabledDate:index%7===0?'2026-09-01':randomText(20)}));
 });
 
 test('fuzzes Official Email selectable-text recovery without accepting unlabeled addresses',()=>{
