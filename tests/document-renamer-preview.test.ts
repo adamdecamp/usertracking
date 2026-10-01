@@ -112,6 +112,13 @@ test('location refresh and discovery workflows use metadata without reopening ev
  assert.doesNotMatch(page,/Refreshing Stale Evidence References[\s\S]{0,500}?scan\(pendingSync\.handle/);
 });
 
+test('Reconciliation scopes findings and hashing to active evidence represented in the database',()=>{
+ assert.match(page,/recordedEvidence=result\.evidence\.filter\(item=>reconciliationIncludesEvidence\(systemRecords,item\)\)/);
+ assert.match(page,/recordedRejected=result\.rejected\.filter\(item=>reconciliationIncludesEvidence\(systemRecords,item\)\)/);
+ assert.match(page,/hashTargets=recordedEvidence\.filter/);
+ assert.match(page,/Locating Recorded Evidence[\s\S]*?processed,total,undefined/);
+});
+
 test('Document Renamer automatically applies unique high-confidence names and verifies by metadata only',()=>{
  assert.match(page,/automatic\?item\.confidence==='High':item\.selected/);
  assert.match(page,/const automatic=await renameBatch\(next,true\),verification=await discoverRenamerPdfs/);

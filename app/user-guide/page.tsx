@@ -297,6 +297,9 @@ export default function Guide() {
           report and tamper-evident audit log without blocking a manual Disable or
           Delete action. Other archive failures, such as permission, integrity, or
           destination-write errors, still retain the user record for safe review.
+          During deletion, the discovery stage reports only its count; individual
+          filenames appear only when evidence belonging to the selected user is
+          actually being archived.
           The request, justification, Windows operator, completion result, archive
           destinations, and any already-missing evidence are recorded.
         </p>
@@ -993,13 +996,16 @@ export default function Guide() {
         <h3>Reconcile the Mapped Folder</h3>
         <p>
           Choose <b>Reconciliation</b> for the selected system to compare the
-          active evidence folders with its manifest. The read-only results
-          identify missing referenced files, evidence whose current SHA-256
-          differs from a recorded manual-upload baseline, orphan evidence,
+          active evidence folders with its manifest. Reconciliation is limited
+          to evidence already reflected in the User Directory database. The
+          read-only results identify missing referenced files, evidence whose
+          current SHA-256 differs from a recorded manual-upload baseline,
           duplicate identities or email addresses, organization conflicts, and
-          rejected evidence. Reconciliation does not move files or change
-          records; use the listed path and issue details to correct the source
-          data, then run Sync again.
+          rejected database-recorded evidence. Unrecorded files and all files
+          in Archive or Rework folders are ignored and cannot create
+          Reconciliation conflicts. Reconciliation does not move files or
+          change records; use the listed path and issue details to correct the
+          source data, then run Sync again.
         </p>
         <p>
           After Reconciliation finishes, choose <b>Generate PDF Report</b> to

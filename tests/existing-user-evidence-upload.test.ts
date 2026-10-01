@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const picker=page.slice(page.indexOf('function EvidenceFilePicker('),page.indexOf('function AddUser('));
 const userModal=page.slice(page.indexOf('function UserModal('),page.indexOf('function MessageAutomation('));
+const deleteArchiveFlow=page.slice(page.indexOf('async function archiveAllUserEvidence('),page.indexOf('function archivedCollisionNameMatches('));
 
 test('shared evidence picker supports drag and drop plus File Explorer',()=>{
  assert.match(picker,/onDrop=\{drop\}/);
@@ -25,4 +26,10 @@ test('updated SAAR workflow supports drag and drop and clears its override',()=>
  assert.match(userModal,/<EvidenceFilePicker kind="Updated SAAR" file=\{saar\}/);
  assert.match(userModal,/onFile=\{file=>\{setSaar\(file\);setAccessOverride\(false\)\}\}/);
  assert.doesNotMatch(userModal,/<label>Updated SAAR<input/);
+});
+
+test('delete-user discovery never displays an unrelated scanned filename as an archive action',()=>{
+ assert.match(deleteArchiveFlow,/scanEvidence\(root,\(processed,total\)=>onProgress\?\.\(processed,total\)\)/);
+ assert.doesNotMatch(deleteArchiveFlow,/scanEvidence\(root,onProgress\)/);
+ assert.match(deleteArchiveFlow,/onProgress\?\.\(processed,matching\.length,item\.filename\)/);
 });

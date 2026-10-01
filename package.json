@@ -1,6 +1,6 @@
 {
   "name": "audit-user-tracker",
-  "version": "1.2.73",
+  "version": "1.2.75",
   "packageManager": "pnpm@11.19.0",
   "private": true,
   "engines": {
