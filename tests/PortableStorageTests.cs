@@ -478,8 +478,8 @@ internal static class PortableStorageTests
         Assert(rejectedNonPdfEntry, "Launcher storage should reject a ZIP containing a non-PDF file.");
         string reportResult = storage.StoreReport("mapping-key", "Compliance-Snapshot_TEST.pdf", PdfBytes());
         Assert(reportResult.Contains("\"sha256\"") && File.Exists(Path.Combine(root, "System", "Reports", "Compliance-Snapshot_TEST.pdf")) && File.Exists(Path.Combine(root, "System", "Reports", "Compliance-Snapshot_TEST.pdf.sha256")), "Compliance reports should be stored with a matching SHA-256 file.");
-        string errorReportResult = storage.StoreErrorReport("mapping-key", "ERR-TEST.txt", "R.A.P.T.O.R Error Entry\r\nDetails: simulated failure");
-        string secondErrorReportResult = storage.StoreErrorReport("mapping-key", "ERR-SECOND.txt", "R.A.P.T.O.R Error Entry\r\nDetails: second simulated failure");
+        string errorReportResult = storage.StoreErrorReport("mapping-key", "ERR-TEST.txt", "R.A.P.T.O.R. Error Entry\r\nDetails: simulated failure");
+        string secondErrorReportResult = storage.StoreErrorReport("mapping-key", "ERR-SECOND.txt", "R.A.P.T.O.R. Error Entry\r\nDetails: second simulated failure");
         string dailyErrorName = "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".txt", dailyErrorPath = Path.Combine(root, "System", "Error Reports", dailyErrorName), dailyErrorText = File.ReadAllText(dailyErrorPath, Encoding.UTF8);
         Assert(errorReportResult.Contains("System/Error Reports/" + dailyErrorName) && secondErrorReportResult.Contains("System/Error Reports/" + dailyErrorName) && dailyErrorText.Contains("simulated failure") && dailyErrorText.Contains("second simulated failure") && Directory.EnumerateFiles(Path.Combine(root, "System", "Error Reports"), "error-report-*.txt").Count() == 1, "Plain-text error entries should append to one UTC-daily Notepad file beneath System/Error Reports.");
 

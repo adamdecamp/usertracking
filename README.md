@@ -1,8 +1,8 @@
-# R.A.P.T.O.R — Role-Based Access Personnel Tracking & Oversight Registry
+# R.A.P.T.O.R. — Role-Based Access Personnel Tracking & Oversight Registry
 
-<img src="public/raptor-icon.png" alt="R.A.P.T.O.R raptor claw and verified document mark" width="96" height="96">
+<img src="public/raptor-icon.png" alt="R.A.P.T.O.R. raptor claw and verified document mark" width="96" height="96">
 
-R.A.P.T.O.R is a portable Windows administrative evidence tracker for information-system users, access documentation, training, and inspection readiness.
+R.A.P.T.O.R. is a portable Windows administrative evidence tracker for information-system users, access documentation, training, and inspection readiness.
 
 A lightweight Windows administrative tool for tracking information-system users, access roles, training requirements, and supporting evidence. The portable application runs locally, opens its interface in the default browser, and stores records and evidence only in a user-selected shared directory.
 

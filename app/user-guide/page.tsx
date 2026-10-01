@@ -19,13 +19,13 @@ export default function Guide() {
     <main className="guide">
       {/* Plain anchor keeps the same guide compatible with the portable Vite build. */}
       {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-      <a href="/">← Return to R.A.P.T.O.R</a>
+      <a href="/">← Return to R.A.P.T.O.R.</a>
       <header>
         <div className="guide-brand">
-          <img src="/raptor-icon.png" alt="R.A.P.T.O.R raptor claw and verified document logo" />
+          <img src="/raptor-icon.png" alt="R.A.P.T.O.R. raptor claw and verified document logo" />
           <div>
             <p>Reference</p>
-            <h1>R.A.P.T.O.R User Guide</h1>
+            <h1>R.A.P.T.O.R. User Guide</h1>
             <p>Role-Based Access Personnel Tracking &amp; Oversight Registry</p>
           </div>
         </div>

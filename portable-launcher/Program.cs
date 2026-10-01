@@ -54,9 +54,9 @@ internal sealed class TrackerContext : ApplicationContext
         listener = new TcpListener(IPAddress.Loopback, Port);
         listener.Start();
         Icon appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Shield;
-        tray = new NotifyIcon { Icon = appIcon, Text = "R.A.P.T.O.R", Visible = true };
+        tray = new NotifyIcon { Icon = appIcon, Text = "R.A.P.T.O.R.", Visible = true };
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Open R.A.P.T.O.R", null, delegate { OpenTracker(); });
+        menu.Items.Add("Open R.A.P.T.O.R.", null, delegate { OpenTracker(); });
         menu.Items.Add("Exit", null, delegate { RequestShutdown("operator-exit"); });
         tray.ContextMenuStrip = menu;
         tray.DoubleClick += delegate { OpenTracker(); };
@@ -199,7 +199,7 @@ internal sealed class TrackerContext : ApplicationContext
                 finally { EndStorageRequest(); if (serializedStorage) storageOperations.Release(); }
             }
             WebAsset asset;
-            if (assets.TryGetValue(path, out asset)) { string cache = path == "/favicon.ico" ? "no-cache, max-age=0" : "public, max-age=31536000, immutable"; await Respond(stream, 200, asset.ContentType, asset.Bytes, parts[0] == "HEAD", cache, "gzip"); return; }
+            if (assets.TryGetValue(path, out asset)) { string cache = path == "/favicon.ico" || path == "/raptor-icon.png" ? "no-cache, max-age=0" : "public, max-age=31536000, immutable"; await Respond(stream, 200, asset.ContentType, asset.Bytes, parts[0] == "HEAD", cache, "gzip"); return; }
             if (path == "/" || path == "/index.html" || !Path.HasExtension(path)) { await Respond(stream, 200, "text/html; charset=utf-8", indexHtml, parts[0] == "HEAD", "no-cache"); return; }
             await Respond(stream, 404, "text/plain", Encoding.UTF8.GetBytes("Not Found"), parts[0] == "HEAD", "no-store");
         }
@@ -339,7 +339,7 @@ internal sealed class TrackerContext : ApplicationContext
             {
                 string failure = CleanError(error.InnerException != null ? error.InnerException.Message : error.Message);
                 RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT FAILED: operation " + operationId + "; " + failure, failure, operationId);
-                try { dispatcher.BeginInvoke(new Action(delegate { MessageBox.Show("Microsoft Outlook could not create the draft. " + failure, "R.A.P.T.O.R", MessageBoxButtons.OK, MessageBoxIcon.Error); })); }
+                try { dispatcher.BeginInvoke(new Action(delegate { MessageBox.Show("Microsoft Outlook could not create the draft. " + failure, "R.A.P.T.O.R.", MessageBoxButtons.OK, MessageBoxIcon.Error); })); }
                 catch { }
             }
             finally
@@ -349,7 +349,7 @@ internal sealed class TrackerContext : ApplicationContext
             }
         }));
         outlookThread.IsBackground = true;
-        outlookThread.Name = "R.A.P.T.O.R Outlook Draft";
+        outlookThread.Name = "R.A.P.T.O.R. Outlook Draft";
         outlookThread.SetApartmentState(ApartmentState.STA);
         try { outlookThread.Start(); }
         catch { Interlocked.Exchange(ref outlookDraftActive, 0);throw; }
@@ -394,7 +394,7 @@ internal sealed class TrackerContext : ApplicationContext
             if (failure == null && auditFailure == null) continue;
             try
             {
-                string now = DateTime.UtcNow.ToString("o"), detail = failure ?? ("The Outlook draft was displayed, but its completion audit could not be recorded. " + auditFailure), report = "R.A.P.T.O.R Error Entry\r\nApplication: Role-Based Access Personnel Tracking & Oversight Registry\r\nGeneration Time UTC: " + now + "\r\nWindows Operator: " + user + "\r\nInformation System ID: " + id + "\r\nContext: Outlook draft outcome.\r\nDetails: " + detail + "\r\nOperation ID: " + operationId;
+                string now = DateTime.UtcNow.ToString("o"), detail = failure ?? ("The Outlook draft was displayed, but its completion audit could not be recorded. " + auditFailure), report = "R.A.P.T.O.R. Error Entry\r\nApplication: Role-Based Access Personnel Tracking & Oversight Registry\r\nGeneration Time UTC: " + now + "\r\nWindows Operator: " + user + "\r\nInformation System ID: " + id + "\r\nContext: Outlook draft outcome.\r\nDetails: " + detail + "\r\nOperation ID: " + operationId;
                 storage.StoreErrorReport(id, "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".txt", report);
             }
             catch { }
@@ -611,6 +611,7 @@ internal sealed class TrackerContext : ApplicationContext
             result.Add(fields[0], new WebAsset { Bytes = LoadResource(fields[1]), ContentType = fields[2] });
         }
         result.Add("/favicon.ico", new WebAsset { Bytes = LoadResource("Tracker.Favicon"), ContentType = "image/x-icon" });
+        result.Add("/raptor-icon.png", new WebAsset { Bytes = LoadResource("Tracker.BrandLogo"), ContentType = "image/png" });
         if (result.Count == 0) throw new InvalidDataException("The embedded asset manifest contains no browser assets.");
         return result;
     }
@@ -633,7 +634,7 @@ internal static class Program
     {
         Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
         try { Application.Run(new TrackerContext()); }
-        catch (SocketException) { MessageBox.Show("R.A.P.T.O.R is already running.", "R.A.P.T.O.R", MessageBoxButtons.OK, MessageBoxIcon.Information); }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "Unable to Start R.A.P.T.O.R", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (SocketException) { MessageBox.Show("R.A.P.T.O.R. is already running.", "R.A.P.T.O.R.", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+        catch (Exception ex) { MessageBox.Show(ex.Message, "Unable to Start R.A.P.T.O.R.", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 }

@@ -115,7 +115,7 @@ internal sealed class PortableStorage : IDisposable
     public PortableStorage(string currentActor, string cachePath = null)
     {
         actor = CleanLine(currentActor, 500);
-        // Keep the legacy cache directory so R.A.P.T.O.R restores existing mappings without migration or remapping.
+        // Keep the legacy cache directory so R.A.P.T.O.R. restores existing mappings without migration or remapping.
         mappingCachePath = String.IsNullOrWhiteSpace(cachePath) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InformationSystemUserTracker", "folder-mappings.json") : Path.GetFullPath(cachePath);
         LoadMappingCache();
     }

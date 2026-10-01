@@ -66,7 +66,7 @@ jobs:
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
-          description: R.A.P.T.O.R - Role-Based Access Personnel Tracking and Oversight Registry
+          description: R.A.P.T.O.R. - Role-Based Access Personnel Tracking and Oversight Registry
           description-url: ${{ github.server_url }}/${{ github.repository }}
 
       - name: Verify signature and refresh checksum
@@ -152,4 +152,4 @@ jobs:
             "artifacts\raptor-user-tracker.spdx.json" `
             --verify-tag `
             --generate-notes `
-            --title "R.A.P.T.O.R ${{ github.ref_name }}"
+            --title "R.A.P.T.O.R. ${{ github.ref_name }}"

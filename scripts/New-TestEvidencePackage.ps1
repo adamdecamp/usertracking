@@ -171,7 +171,7 @@ foreach ($sampleIndex in @(0,35,45)) {
 }
 
 $readme = @'
-R.A.P.T.O.R - ROLE-BASED ACCESS PERSONNEL TRACKING & OVERSIGHT REGISTRY - SYNTHETIC TEST PACKAGE
+R.A.P.T.O.R. - ROLE-BASED ACCESS PERSONNEL TRACKING & OVERSIGHT REGISTRY - SYNTHETIC TEST PACKAGE
 
 This package contains 50 fictional users and no real personnel or compliance data:
 - 35 General users

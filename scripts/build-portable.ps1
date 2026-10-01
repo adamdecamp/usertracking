@@ -66,8 +66,12 @@ for ($index = 0; $index -lt $assetFiles.Count; $index++) {
 [System.IO.File]::WriteAllLines($assetManifest, $assetManifestLines, (New-Object System.Text.UTF8Encoding($false)))
 $faviconSource = Join-Path $projectRoot "public\favicon.ico"
 $faviconCompressed = Join-Path $embeddedRoot "favicon.ico.gz"
-if (-not (Test-Path -LiteralPath $faviconSource)) { throw "The R.A.P.T.O.R browser favicon was not found." }
+if (-not (Test-Path -LiteralPath $faviconSource)) { throw "The R.A.P.T.O.R. browser favicon was not found." }
 Compress-Asset $faviconSource $faviconCompressed
+$brandLogoSource = Join-Path $projectRoot "public\raptor-icon.png"
+$brandLogoCompressed = Join-Path $embeddedRoot "raptor-icon.png.gz"
+if (-not (Test-Path -LiteralPath $brandLogoSource)) { throw "The R.A.P.T.O.R. page logo was not found." }
+Compress-Asset $brandLogoSource $brandLogoCompressed
 
 $compiler = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if (-not (Test-Path -LiteralPath $compiler)) { throw "The Windows C# compiler was not found." }
@@ -76,9 +80,9 @@ $executiveSummary = Join-Path $outputRoot "RAPTOR-Executive-Capability-Summary.p
 $manifest = Join-Path $portableRoot "app.manifest"
 $icon = Join-Path $portableRoot "RAPTOR.ico"
 if (-not (Test-Path -LiteralPath $manifest)) { throw "The Windows application manifest was not found." }
-if (-not (Test-Path -LiteralPath $icon)) { throw "The R.A.P.T.O.R Windows application icon was not found." }
+if (-not (Test-Path -LiteralPath $icon)) { throw "The R.A.P.T.O.R. Windows application icon was not found." }
 $compilerArgs = New-Object System.Collections.Generic.List[string]
-@('/nologo', '/target:winexe', "/out:$executable", "/win32manifest:$manifest", "/win32icon:$icon", '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll', '/reference:System.IO.Compression.dll', '/reference:System.IO.Compression.FileSystem.dll', "/resource:$webRoot\index.html,Tracker.Index", "/resource:$assetManifest,Tracker.AssetManifest", "/resource:$faviconCompressed,Tracker.Favicon") | ForEach-Object { $compilerArgs.Add($_) }
+@('/nologo', '/target:winexe', "/out:$executable", "/win32manifest:$manifest", "/win32icon:$icon", '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll', '/reference:System.IO.Compression.dll', '/reference:System.IO.Compression.FileSystem.dll', "/resource:$webRoot\index.html,Tracker.Index", "/resource:$assetManifest,Tracker.AssetManifest", "/resource:$faviconCompressed,Tracker.Favicon", "/resource:$brandLogoCompressed,Tracker.BrandLogo") | ForEach-Object { $compilerArgs.Add($_) }
 $assetResourceArgs | ForEach-Object { $compilerArgs.Add($_) }
 $compilerArgs.Add((Join-Path $portableRoot "Program.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableStorage.cs"))
