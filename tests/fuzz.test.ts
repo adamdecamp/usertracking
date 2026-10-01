@@ -8,7 +8,7 @@ import {artifactKinds,canonicalEvidenceFilename,disabledSaarFilename,evidenceFil
 import {officialEmailFromText,readSaarFormFields} from '../app/saar-form-utils.ts';
 import {saarEmailAdmission} from '../app/saar-ingest-utils.ts';
 import {readSyncIndex} from '../app/sync-utils.ts';
-import {activeUserProtectsEvidenceFromDeletion,hasActiveDuplicateEvidenceScope,reworkRetentionDisposition,type DeletionEvidenceUser} from '../app/workflow-utils.ts';
+import {activeUserProtectsEvidenceFromDeletion,archiveRetentionDisposition,hasActiveDuplicateEvidenceScope,type DeletionEvidenceUser} from '../app/workflow-utils.ts';
 import {PDFDocument,PDFName,PDFString} from 'pdf-lib';
 
 const configuredSeed=Number(process.env.ISUT_FUZZ_SEED??0x53a91f27);
@@ -20,7 +20,7 @@ const fuzzCharacters=['A','z','0','_','-',',',' ','(',')','.','/','\\','\0','\n'
 function randomText(maxLength=700){const length=Math.floor(random()*maxLength);let value='';for(let index=0;index<length;index++)value+=pick(fuzzCharacters);return value}
 const monthNames=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 function dateToken(value:Date){return`${String(value.getUTCDate()).padStart(2,'0')}${monthNames[value.getUTCMonth()]}${value.getUTCFullYear()}`}
-function expectedRetention(date:Date,asOf:Date,graceDays:number){const archiveAfter=new Date(date);archiveAfter.setUTCFullYear(archiveAfter.getUTCFullYear()+1);archiveAfter.setUTCDate(archiveAfter.getUTCDate()+graceDays);if(asOf<=archiveAfter)return;const supersededBefore=new Date(asOf);supersededBefore.setUTCFullYear(supersededBefore.getUTCFullYear()-5);return date<supersededBefore?'Superseded':'Archive'}
+function expectedArchiveBucket(date:Date,asOf:Date){const supersededBefore=new Date(asOf);supersededBefore.setUTCHours(0,0,0,0);supersededBefore.setUTCFullYear(supersededBefore.getUTCFullYear()-5);return date<supersededBefore?'Superseded':'Archive'}
 
 test('fuzzes filename parsing without uncaught parser failures',()=>{
  for(let index=0;index<5000;index++){
@@ -107,15 +107,15 @@ test('fuzzes DD2875 XFA dataset values without parser failures or markup leakage
  }
 });
 
-test('fuzzes retention boundaries including the legacy 8570 no-grace rule',()=>{
+test('fuzzes explicit archive bucket boundaries without age-triggered compliance removal',()=>{
  const asOf=new Date(Date.UTC(2026,8,10));
  for(let index=0;index<20000;index++){
   const year=2018+Math.floor(random()*9),month=Math.floor(random()*12),day=1+Math.floor(random()*28),date=new Date(Date.UTC(year,month,day)),token=dateToken(date),identity=`User${index}_Test${index}_(ORG)`;
   const standard=randomCase(`${identity}_DoD_Cyber_Cert_${token}.pdf.zip`),legacy=randomCase(`${identity}_8570_Cert_${token}.pdf`),saar=randomCase(`${identity}_GEN_SAAR_${token}.pdf.zip`);
-  assert.equal(reworkRetentionDisposition(standard,asOf),expectedRetention(date,asOf,90),standard);
-  assert.equal(reworkRetentionDisposition(legacy,asOf),expectedRetention(date,asOf,0),legacy);
+  assert.equal(archiveRetentionDisposition(standard,asOf),expectedArchiveBucket(date,asOf),standard);
+  assert.equal(archiveRetentionDisposition(legacy,asOf),expectedArchiveBucket(date,asOf),legacy);
   assert.equal(legacy8570MemoFilename(legacy),true,legacy);
-  assert.equal(reworkRetentionDisposition(saar,asOf),undefined,saar);
+  assert.equal(archiveRetentionDisposition(saar,asOf),expectedArchiveBucket(date,asOf),saar);
  }
 });
 

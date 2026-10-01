@@ -1,4 +1,4 @@
-import {canonicalArtifactKind,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityKey,legacy8570MemoFilename,organizationFrom,parseDate} from './filename-utils.ts';
+import {canonicalArtifactKind,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom,parseDate} from './filename-utils.ts';
 import {resolveSyncProvenanceEvidence} from './provenance-utils.ts';
 
 export type ComplianceException={id:string;artifact:string;reason:string;approvedBy:string;createdAt:string;createdBy:string;expiresOn:string;revokedAt?:string;revokedBy?:string};
@@ -46,11 +46,8 @@ export function activeComplianceException(exceptions:ComplianceException[]|undef
  return exceptions?.filter(item=>item.artifact===artifact&&!item.revokedAt&&Number.isFinite(endOfDay(item.expiresOn))&&endOfDay(item.expiresOn)>=asOf.getTime()).sort((a,b)=>b.expiresOn.localeCompare(a.expiresOn))[0];
 }
 
-export function reworkRetentionDisposition(filename:string,asOf=new Date()):'Archive'|'Superseded'|undefined{
- if(/SAAR/i.test(filename)||filenameMatchesKind(filename,'SAAR'))return;
- const evidenceDate=parseDate(filename);if(!evidenceDate)return;
- const archiveAfter=new Date(evidenceDate);archiveAfter.setUTCFullYear(archiveAfter.getUTCFullYear()+1);if(!legacy8570MemoFilename(filename))archiveAfter.setUTCDate(archiveAfter.getUTCDate()+90);
- const reportingDay=new Date(asOf);reportingDay.setUTCHours(0,0,0,0);if(reportingDay<=archiveAfter)return;
+export function archiveRetentionDisposition(filename:string,asOf=new Date()):'Archive'|'Superseded'{
+ const evidenceDate=parseDate(filename);if(!evidenceDate)return'Archive';
  const fiveYearCutoff=new Date(asOf);fiveYearCutoff.setUTCHours(0,0,0,0);fiveYearCutoff.setUTCFullYear(fiveYearCutoff.getUTCFullYear()-5);
  return evidenceDate<fiveYearCutoff?'Superseded':'Archive';
 }
@@ -58,7 +55,7 @@ export function reworkRetentionDisposition(filename:string,asOf=new Date()):'Arc
 export function removePreflightArchivedArtifacts<T extends{id:string;artifacts:{filename:string;path?:string}[];changes?:{timestamp:string;actor:string;action:string;description:string;rolesBefore:string[];rolesAfter:string[];files:string[]}[];roles:string[]}>(users:T[],moves:RetentionMove[],timestamp:string,actor:string){
  const archivalMoves=moves.filter(move=>!['Unaccepted File Format','Rework Extraction'].includes(move.bucket)),sources=archivalMoves.flatMap(move=>{const source=move.source.replaceAll('\\','/');return source.toLowerCase().endsWith('.pdf.zip')?[source,source.slice(0,-4)]:[source]}),paths=new Set(sources.map(source=>source.toUpperCase())),filenames=new Set(sources.map(source=>source.split('/').at(-1)!.toUpperCase()));
  if(!archivalMoves.length)return users;
- return users.map(user=>{const removed=user.artifacts.filter(artifact=>(!!artifact.path&&paths.has(artifact.path.replaceAll('\\','/').toUpperCase()))||filenames.has(artifact.filename.toUpperCase()));if(!removed.length)return user;return{...user,artifacts:user.artifacts.filter(artifact=>!removed.includes(artifact)),changes:[...(user.changes??[]),{timestamp,actor,action:'Archive Evidence After Retention Gate',description:'Archive Preflight removed evidence from the active record after its retention disposition was applied. The active requirement is now Missing unless another current file is matched during this Sync.',rolesBefore:[...user.roles],rolesAfter:[...user.roles],files:removed.map(artifact=>artifact.filename)}]}});
+ return users.map(user=>{const removed=user.artifacts.filter(artifact=>(!!artifact.path&&paths.has(artifact.path.replaceAll('\\','/').toUpperCase()))||filenames.has(artifact.filename.toUpperCase()));if(!removed.length)return user;return{...user,artifacts:user.artifacts.filter(artifact=>!removed.includes(artifact)),changes:[...(user.changes??[]),{timestamp,actor,action:'Archive Evidence After Administrative Action',description:'A verified administrative archive action removed evidence from the active record. The requirement is Missing unless another usable file is matched during this Sync.',rolesBefore:[...user.roles],rolesAfter:[...user.roles],files:removed.map(artifact=>artifact.filename)}]}});
 }
 
 export function notificationRecipientBatches(values:string[],maxRecipients=40,maxEncodedCharacters=1500){

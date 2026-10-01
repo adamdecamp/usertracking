@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,recordComplianceNotificationHistory,removePreflightArchivedArtifacts,requiresSaarFormClassification,reworkRetentionDisposition,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
+import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,archiveRetentionDisposition,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,recordComplianceNotificationHistory,removePreflightArchivedArtifacts,requiresSaarFormClassification,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -56,25 +56,12 @@ test('returns only an active, unrevoked compliance exception',()=>{
  assert.equal(activeComplianceException(exceptions,'SAAR',new Date('2026-08-28T12:00:00Z')),undefined);
 });
 
-test('archives evidence only after a 90-day overdue grace period without expiring SAARs',()=>{
+test('uses five-year storage buckets only after an explicit archive action',()=>{
  const asOf=new Date('2026-09-01T12:00:00Z');
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_31AUG2025.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_03JUN2025.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_02JUN2025.pdf',asOf),'Archive');
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_User_Agreement_31AUG2020.pdf.zip',asOf),'Superseded');
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_GEN_SAAR_31AUG2019.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_GENSAAR_31AUG2019.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_01SEP2025.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_NO_DATE.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_2024.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_User_Agreement_2020.pdf.zip',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_2025.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_GEN_SAAR_2018.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8140_Memo.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_31AUG2025.pdf',asOf),'Archive');
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_02JUN2025.pdf',asOf),'Archive');
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_01SEP2025.pdf',asOf),undefined);
- assert.equal(reworkRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_31AUG2020.pdf.zip',asOf),'Superseded');
+ assert.equal(archiveRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_31AUG2025.pdf',asOf),'Archive');
+ assert.equal(archiveRetentionDisposition('Brown_Jacob_(LM)_User_Agreement_31AUG2020.pdf.zip',asOf),'Superseded');
+ assert.equal(archiveRetentionDisposition('Brown_Jacob_(LM)_DoD_Cyber_Cert_NO_DATE.pdf',asOf),'Archive');
+ assert.equal(archiveRetentionDisposition('Brown_Jacob_(LM)_8570_Memo_31AUG2020.pdf.zip',asOf),'Superseded');
 });
 
 test('removes preflight-archived evidence from the active record so the requirement becomes Missing',()=>{
@@ -82,7 +69,7 @@ test('removes preflight-archived evidence from the active record so the requirem
  const updated=removePreflightArchivedArtifacts(users,[{source:'LM/User Agreement/Brown_Jacob_(LM)_User_Agreement_01JAN2025.pdf.zip',archived:'LM/LM Archive/2026-09-01/Brown_Jacob_(LM)_User_Agreement_01JAN2025.pdf.zip',bucket:'2026-09-01'}],'2026-09-01T12:00:00.000Z','DOMAIN\\operator');
  assert.deepEqual(updated[0].artifacts.map(item=>item.kind),['SAAR']);
  assert.equal(updated[0].changes.length,1);
- assert.match((updated[0].changes as {description:string}[])[0].description,/active requirement is now Missing/);
+ assert.match((updated[0].changes as {description:string}[])[0].description,/requirement is Missing/);
 });
 
 test('does not remove evidence for Rework extraction or unaccepted-file routing',()=>{

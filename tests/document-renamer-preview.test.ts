@@ -99,7 +99,23 @@ test('incremental Sync uses a validation-only cache version and reports fast-pat
  assert.match(page,/createSyncIndex\(evidenceValidationCacheVersion,files\)/);
  assert.match(page,/scan\?rules=\$\{encodeURIComponent\(evidenceValidationCacheVersion\)\}.*&legacy=\$\{legacyImport\?'1':'0'\}/);
  assert.match(page,/\$\{modeLabel\}: \$\{scanResult\.scanned\} discovered in \$\{scopeLabel\}; \$\{scanResult\.unchanged\}/);
- assert.match(page,/Daily retention already completed;/);
+ assert.match(page,/Daily Archive preflight already completed;/);
+});
+
+test('dashboard reports user-level compliance and age never removes overdue evidence',()=>{
+ assert.match(page,/Compliant Users/);
+ assert.match(page,/Non-Compliant Users/);
+ assert.doesNotMatch(page,/Current Records/);
+ assert.match(page,/required\.every\(k=>statusFor\(u,k,asOf\)==='Current'\)/);
+ assert.match(page,/archiveCandidates=distinctByPath\(duplicateCandidates\),reworkCandidates=distinctByPath\(correctionSources\)/);
+ assert.doesNotMatch(page,/Recognizable filename date is more than 90 days overdue/);
+});
+
+test('Inspection Package is removed while core audit and reporting controls remain',()=>{
+ assert.doesNotMatch(page,/Inspection Package|generateInspectionPackage|inspection-package/);
+ assert.match(page,/>Compliance Snapshot</);
+ assert.match(page,/>View Audit Log</);
+ assert.match(page,/>Release Health</);
 });
 
 test('location refresh and discovery workflows use metadata without reopening every PDF',()=>{

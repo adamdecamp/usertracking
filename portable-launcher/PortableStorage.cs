@@ -809,9 +809,11 @@ internal sealed class PortableStorage : IDisposable
                     if (current.Item4) continue;
                     if (current.Item3 && !archivedSaar && !datedArchiveRepair) continue;
                     if (!current.Item3 && saar && !disabledSaar) { skippedSaar++;continue; }
-                    if (!disabledSaar && !archivedSaar && !datedArchiveRepair && !evidenceDate.HasValue) { undated++;continue; }
-                    DateTime archiveAfter = evidenceDate.HasValue ? evidenceDate.Value.AddYears(1).AddDays(IsLegacy8570Filename(filename) ? 0 : 90) : DateTime.MinValue;
-                    if (!disabledSaar && !archivedSaar && !datedArchiveRepair && archiveAfter >= DateTime.UtcNow.Date) { currentFiles++;continue; }
+                    if (!disabledSaar && !archivedSaar && !datedArchiveRepair)
+                    {
+                        if (evidenceDate.HasValue) currentFiles++; else undated++;
+                        continue;
+                    }
                     try
                     {
                         if (effectiveSource.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
@@ -852,7 +854,6 @@ internal sealed class PortableStorage : IDisposable
     private static bool IsReworkStorageDirectory(string name) { return String.Equals(name, "Rework", StringComparison.OrdinalIgnoreCase) || name.EndsWith(" Rework", StringComparison.OrdinalIgnoreCase); }
     private static bool IsSupersededDirectory(string root, string directory) { return Relative(root, directory).Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries).Any(part => String.Equals(part, "Superseded", StringComparison.OrdinalIgnoreCase)); }
     private static bool IsSaarFilename(string filename) { return (filename ?? "").IndexOf("SAAR", StringComparison.OrdinalIgnoreCase) >= 0; }
-    private static bool IsLegacy8570Filename(string filename) { return !IsSaarFilename(filename) && (filename ?? "").IndexOf("8570", StringComparison.OrdinalIgnoreCase) >= 0; }
     private static bool IsDisabledSaarFilename(string filename) { return IsSaarFilename(filename) && Regex.IsMatch(filename ?? "", @"(?:^|[^A-Za-z0-9])DISABLED(?:[^A-Za-z0-9]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant); }
     private static bool IsOperatorMarkedIncomplete(string filename) { return Regex.IsMatch(filename ?? "", @"(?:^|[^A-Za-z0-9])INCOMPLETE(?:[^A-Za-z0-9]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant); }
     private static bool IsRootControlFile(string root, string path)
@@ -1212,31 +1213,6 @@ internal sealed class PortableStorage : IDisposable
                 if (attempt >= 2) throw;
                 Thread.Sleep(75 * (attempt + 1));
             }
-        }
-    }
-
-    public string StoreInspectionPackage(string systemId, string filename, byte[] bytes)
-    {
-        if (bytes == null || bytes.Length == 0 || bytes.Length > 50L * 1024 * 1024) throw new InvalidDataException("The inspection package is empty or exceeds the 50 MB limit.");
-        string safeName = SafePart(filename, 180);if (!safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Inspection packages must use the ZIP format.");
-        var required = new HashSet<string>(new[] { "compliance-snapshot.pdf", "filtered-users.csv", "evidence-inventory.csv", "audit-chain-verification.json", "release-metadata.json", "active-exceptions.csv" }, StringComparer.OrdinalIgnoreCase);
-        using (var memory = new MemoryStream(bytes, false))
-        using (var archive = new ZipArchive(memory, ZipArchiveMode.Read, true))
-        {
-            if (archive.Entries.Count != required.Count) throw new InvalidDataException("The inspection package must contain exactly the six required inspection files.");
-            foreach (ZipArchiveEntry entry in archive.Entries)
-            {
-                ValidateZipEntryName(entry.FullName);if (!required.Remove(entry.FullName)) throw new InvalidDataException("The inspection package contains an unexpected or duplicate entry.");
-                if (entry.Length <= 0 || entry.Length > 25L * 1024 * 1024) throw new InvalidDataException("An inspection-package entry is empty or exceeds its size limit.");
-                if (entry.FullName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) using (Stream pdf = entry.Open()) ValidatePdfStream(pdf, entry.FullName, entry.Length);
-            }
-            if (required.Count != 0) throw new InvalidDataException("The inspection package is missing a required entry.");
-        }
-        lock (RootLock(systemId))
-        {
-            string directory = SupportDirectory(Root(systemId), "Reports"), path = Path.Combine(directory, safeName), hash = Sha256Bytes(bytes), saved = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
-            AtomicWrite(path, bytes);try { AtomicWrite(path + ".sha256", Encoding.ASCII.GetBytes(hash + "  " + safeName + "\n")); } catch { TryDelete(path);throw; }
-            return json.Serialize(new Dictionary<string, object> { { "filename", safeName }, { "saved", saved }, { "sha256", hash } });
         }
     }
 

@@ -367,10 +367,10 @@ export default function Guide() {
           does not count as the certificate. A SAAR filename date records the
           account creation or disable action; it is not an expiration date. A SAAR
           is therefore either Current or Missing and never becomes Overdue. Other
-          valid evidence, including DTA Training, becomes Overdue after one year. It remains visible as
-          Overdue for up to 90 days. After the 90-day overdue grace period,
-          Archive Preflight moves it to the organization Archive and the active
-          requirement becomes Missing.
+          valid evidence, including DTA Training, becomes Overdue after one year
+          and remains Overdue indefinitely while that usable artifact remains in
+          the active record. Missing means that no usable artifact is recorded;
+          age alone never changes Overdue evidence to Missing.
         </p>
         <p>
           A non-DTA filename containing <code>Responsibilities</code> or{" "}
@@ -632,11 +632,10 @@ export default function Guide() {
           new or changed file before PDF content or form-field extraction. Legacy
           Import additionally revalidates all in-scope Rework; Daily Sync reuses
           unchanged Rework validation. Full Rescan forces the complete preflight regardless of the
-          daily marker. A non-SAAR artifact with either a
-          complete valid evidence date that is more than
-          90 days beyond the one-year currency window is moved to that organization&apos;s
-          dated Archive folder without correcting its filename; if it is older than five years, it
-          moves directly to <code>ORG Archive / Superseded</code>. A SAAR whose
+          daily marker. Archive Preflight does not move active or Rework evidence
+          solely because it is old or overdue. That evidence remains available and
+          reports Overdue until an operator replaces it or performs an explicit
+          archive, duplicate-cleanup, disable, or delete action. A SAAR whose
           filename contains the standalone word <b>DISABLED</b> moves into the
           permanent <code>ORG SAAR Archive</code> during this preflight and is
           used only for the disabled-account history check described above. No SAAR
@@ -648,8 +647,8 @@ export default function Guide() {
           is converted to a ZIP containing exactly that one validated PDF. The
           source PDF is removed only after the ZIP is reopened and verified;
           existing ZIP evidence is not recompressed. Other SAARs never expire,
-          and current Rework files stay in Rework until their filenames are
-          corrected. A year-only, missing, or invalid date never drives an Archive
+          and Rework files stay in Rework until their filenames are corrected or
+          an explicit administrative action is approved. A year-only, missing, or invalid date never drives an Archive
           decision; that file remains in Rework or is preselected for movement to
           Rework. Any file-level retention error is listed at
           the end of Sync without stopping the remaining files. After filename
@@ -865,11 +864,10 @@ export default function Guide() {
           organization&apos;s <code>8140 Certification Memo</code> folder without
           changing its filename. This is a routing-only compatibility rule; it
           does not invent or rewrite identity, organization, or date values. If
-          a legacy 8570 file reaches the end of its one-year current window,
-          Archive Preflight moves it to that organization&apos;s Archive folder without
-          the general 90-day overdue grace period. Evidence older than five years
-          moves to Superseded. True 8140 certification memos keep the standard
-          retention rule.
+          a legacy 8570 file reaches the end of its one-year current window, it
+          remains present and reports Overdue until replaced or explicitly archived.
+          The five-year bucket applies only after an administrative archive action;
+          it does not remove evidence from active compliance tracking.
         </p>
         <p>
           In the portable Windows app, the launcher—not the browser tab—performs
@@ -1057,17 +1055,6 @@ export default function Guide() {
           recorded in each system&apos;s audit chain. The report is
           administrative evidence and does not independently establish control
           effectiveness.
-        </p>
-        <h3>Generate an Inspection Package</h3>
-        <p>
-          Apply the desired User Directory filters and choose{" "}
-          <b>Inspection Package</b>. The app produces one verified ZIP containing
-          the Compliance Snapshot PDF, filtered CSV, evidence inventory with
-          mapped paths and SHA-256 hashes, audit-chain verification receipt,
-          application and rule-set metadata, and active-exceptions CSV. A copy is
-          stored in the selected system&apos;s <code>System/Reports</code> folder with a
-          SHA-256 sidecar, the action is added to the audit chain, and the same ZIP
-          is downloaded for inspection handoff.
         </p>
         <h3>Export Filtered User Directory Results</h3>
         <p>
@@ -1261,12 +1248,13 @@ export default function Guide() {
       </aside>
       <aside>
         <b>Five-Year Archive Retention:</b> Archived evidence keeps its original
-        evidence date. At Sync start, non-SAAR evidence in active or Rework
-        folders that is more than 90 days overdue bypasses filename correction
-        and moves to Archive; evidence older than five years moves directly to the
-        organization&apos;s{" "}
-        <code>ORG Archive / Superseded</code> folder instead of the current
-        dated Archive folder. SAARs remain active or in Rework regardless of age
+        evidence date. Active and Rework evidence is never moved to Archive solely
+        because of age. It stays present and reports Overdue indefinitely until an
+        operator replaces it or approves an explicit archive, duplicate-cleanup,
+        disable, or delete action. Once a non-SAAR file is explicitly archived,
+        evidence older than five years is stored in the organization&apos;s{" "}
+        <code>ORG Archive / Superseded</code> folder instead of the current dated
+        Archive folder. SAARs remain active or in Rework regardless of age
         because they do not expire. A SAAR with a standalone DISABLED marker, or
         a SAAR approved for archival after replacement, moves to the permanent
         <code>ORG SAAR Archive</code>; it never enters Superseded and is never
@@ -1335,14 +1323,13 @@ export default function Guide() {
         <b>Batch Processing Resilience:</b> High-volume read-only work uses
         bounded queues instead of one unlimited batch or one blocking serial
         loop. Current-location refresh, stale-reference retry, Document Renamer
-        candidate discovery, Reconciliation discovery, and inspection-inventory
-        discovery read only filename, path, size, and
+        candidate discovery and Reconciliation discovery read only filename,
+        path, size, and
         modified-time metadata. Only relevant targets are opened afterward;
         <b> Full Rescan</b> is the only operator action that deliberately reopens
         every evidence file. Initial validation gives each changed file a 30-second read limit;
-        duplicate-content checks, provenance hashing, Reconciliation hashing,
-        and Inspection Package inventory hashing process no more than four files
-        at once. Timed-out read-only operations receive no more than one fresh
+        duplicate-content checks, provenance hashing, and Reconciliation hashing
+        process no more than four files at once. Timed-out read-only operations receive no more than one fresh
         retry; deterministic validation failures are not retried. Filename
         normalization processes small bounded batches and records individual read
         failures without discarding completed analysis. Reconciliation exposes

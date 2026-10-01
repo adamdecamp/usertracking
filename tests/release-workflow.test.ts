@@ -35,7 +35,7 @@ test('packages the AUDIT brand and application icons consistently',()=>{
  assert.match(buildScript,/win32icon:\$icon/);
  assert.match(buildScript,/Tracker\.Favicon/);
  assert.match(layout,/favicon\.ico\?v=\$\{iconVersion\}/);
- assert.match(portableIndex,/favicon\.ico\?v=1\.2\.75/);
+ assert.match(portableIndex,/favicon\.ico\?v=1\.2\.76/);
  assert.match(launcher,/path == "\/favicon\.ico" \? "no-cache, max-age=0"/);
  assert.match(page,/archived\.blockingErrors\.length/);
  assert.match(page,/Delete user completed with missing evidence files/);

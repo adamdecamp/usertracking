@@ -35,19 +35,6 @@ internal static class PortableStorageTests
         }
     }
 
-    private static byte[] InspectionZip()
-    {
-        using (var memory = new MemoryStream())
-        {
-            using (var archive = new ZipArchive(memory, ZipArchiveMode.Create, true))
-            {
-                foreach (var item in new Dictionary<string, byte[]> { { "compliance-snapshot.pdf", PdfBytes() }, { "filtered-users.csv", Encoding.UTF8.GetBytes("header\nvalue") }, { "evidence-inventory.csv", Encoding.UTF8.GetBytes("header\nvalue") }, { "audit-chain-verification.json", Encoding.UTF8.GetBytes("{\"healthy\":true}") }, { "release-metadata.json", Encoding.UTF8.GetBytes("{\"version\":1}") }, { "active-exceptions.csv", Encoding.UTF8.GetBytes("header\nnone") } })
-                { ZipArchiveEntry entry = archive.CreateEntry(item.Key, CompressionLevel.Optimal);using (Stream output = entry.Open()) output.Write(item.Value, 0, item.Value.Length); }
-            }
-            return memory.ToArray();
-        }
-    }
-
     private static string Database(string email)
     {
         var system = new Dictionary<string, object> { { "id", "system-1" }, { "name", "Test System" }, { "type", "Administrative" }, { "organization", "GOV" }, { "archived", false } };
@@ -460,20 +447,20 @@ internal static class PortableStorageTests
         var retentionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessReworkRetention("mapping-key"));object[] retentionMoves = (object[])retentionResponse["moved"];
         object[] retentionCompressed = (object[])retentionResponse["compressed"];
         object[] retentionDeleted = (object[])retentionResponse["deleted"];
-        Assert(retentionMoves.Length >= 8, "Archive preflight should move disabled SAARs, repair misplaced archives, move outdated evidence, and reject unsupported active files before the main scan.");
+        Assert(retentionMoves.Length >= 4, "Archive preflight should move disabled SAARs, repair misplaced archives, and reject unsupported active files without removing evidence solely because it is overdue.");
         Assert(retentionMoves.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["bucket"]) == "Unaccepted File Format"), "An unsupported active file should be moved to the organization Rework folder and explicitly classified as an unaccepted format.");
         Assert(retentionCompressed.Length >= 2 && !File.Exists(Path.Combine(looseArchiveDirectory, looseArchivePdf)) && File.Exists(Path.Combine(looseArchiveDirectory, looseArchivePdf + ".zip")) && !File.Exists(Path.Combine(permanentSaarDirectory, loosePermanentSaar)) && File.Exists(Path.Combine(permanentSaarDirectory, loosePermanentSaar + ".zip")), "Every loose PDF already in a dated Archive or permanent SAAR Archive should become a validated one-PDF ZIP before its source PDF is removed.");
         Assert(retentionDeleted.Length == 1 && !File.Exists(incompleteEvidence) && Convert.ToString(((Dictionary<string, object>)retentionDeleted[0])["sha256"]).Length == 64 && Convert.ToBoolean(((Dictionary<string, object>)retentionDeleted[0])["auditRecorded"]), "Operator-marked Incomplete evidence should be deleted before validation and recorded immediately with its SHA-256 audit evidence.");
-        Assert(File.Exists(Path.Combine(root, "NGC", "NGC Archive", DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), oldReworkName)), "A one-to-five-year-old Rework file should move to the organization's dated Archive without changing its filename.");
-        Assert(File.Exists(Path.Combine(root, "NGC", "NGC Archive", "Superseded", supersededReworkName)), "A Rework file older than five years should move directly to the organization's Superseded folder without changing its filename.");
+        Assert(File.Exists(Path.Combine(reworkDirectory, oldReworkName)), "Overdue Rework evidence should remain available for correction instead of being archived by age alone.");
+        Assert(File.Exists(Path.Combine(reworkDirectory, supersededReworkName.Substring(0, supersededReworkName.Length - 4))), "Even very old Rework evidence should remain present after ZIP extraction until an explicit archive, duplicate-cleanup, disable, or delete action occurs.");
         Assert(File.Exists(Path.Combine(reworkDirectory, oldYearOnlyName)), "A year-only filename is incomplete and must stay in Rework instead of driving an Archive decision.");
         Assert(File.Exists(Path.Combine(root, "NGC", "NGC SAAR Archive", disabledSaarName)), "A SAAR with a standalone DISABLED filename marker should move to the permanent organization SAAR Archive before evidence validation.");
         Assert(File.Exists(Path.Combine(root, "NGC", "NGC SAAR Archive", misplacedDisabledSaarName)) && !File.Exists(Path.Combine(existingSupersededDirectory, misplacedDisabledSaarName)), "A SAAR previously placed in Superseded should be recovered into the permanent organization SAAR Archive.");
         Assert(File.Exists(Path.Combine(root, "NGC", "NGC Archive", DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), misplacedAgreementName)) && !File.Exists(Path.Combine(existingSupersededDirectory, misplacedAgreementName)), "Evidence less than five years old should be repaired out of Superseded into the dated organization Archive.");
-        Assert(File.Exists(Path.Combine(root, "NGC", "NGC Archive", DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), activeExpiredName)), "Expired evidence in an active organization folder should be archived before the main scan.");
-        Assert(File.Exists(Path.Combine(root, "NGC", "NGC Archive", DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), expired8570Name)), "An expired legacy 8570 file should move to the organization Archive without changing its filename.");
-        Assert(File.Exists(Path.Combine(root, "NGC", "NGC Archive", DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), grace8570Name + ".zip")), "A legacy 8570 file in the 8140 Certification Memo folder should move to Archive as soon as its one-year currency period ends, without the general 90-day grace period.");
-        Assert(File.Exists(Path.Combine(reworkDirectory, currentReworkName)) && File.Exists(Path.Combine(reworkDirectory, graceReworkName)) && File.Exists(Path.Combine(reworkDirectory, oldYearOnlyName)) && File.Exists(Path.Combine(reworkDirectory, currentYearOnlyName)) && File.Exists(Path.Combine(reworkDirectory, oldSaarReworkName)), "Current evidence, evidence no more than 90 days overdue, incomplete year-only evidence, and SAARs of any age must remain in Rework for filename correction.");
+        Assert(File.Exists(Path.Combine(nestedReworkDirectory, activeExpiredName)), "Overdue evidence in an active or Rework folder should remain present and be reported Overdue indefinitely.");
+        Assert(File.Exists(Path.Combine(nestedReworkDirectory, expired8570Name)), "Legacy 8570 evidence should remain present when overdue instead of being archived by age alone.");
+        Assert(File.Exists(Path.Combine(legacy8570Folder, grace8570Name)), "An overdue legacy 8570 file in the 8140 Certification Memo folder should remain active until explicitly replaced or archived.");
+        Assert(File.Exists(Path.Combine(reworkDirectory, currentReworkName)) && File.Exists(Path.Combine(reworkDirectory, graceReworkName)) && File.Exists(Path.Combine(reworkDirectory, oldYearOnlyName)) && File.Exists(Path.Combine(reworkDirectory, currentYearOnlyName)) && File.Exists(Path.Combine(reworkDirectory, oldSaarReworkName)), "Current, overdue, incomplete year-only, and SAAR evidence must remain available for validation or correction regardless of age.");
         var incrementalRetention = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessReworkRetention("mapping-key", "legacy", false));
         Assert(!Convert.ToBoolean(incrementalRetention["dailyFullSweep"]) && Convert.ToInt32(incrementalRetention["unchangedSkipped"]) > 0, "After the UTC-daily retention sweep, later Sync preflight runs should skip unchanged indexed evidence while continuing to inspect Rework.");
         string organizedSourceRelative = Path.Combine("Organizations", "GOV", "GOV SAAR", evidence), organizedResponseText = storage.OrganizeEvidence("mapping-key", organizedSourceRelative, "SAAR");var organizedResponse = (Dictionary<string, object>)Json.DeserializeObject(organizedResponseText);string organizedRelative = Convert.ToString(organizedResponse["organized"]);
@@ -491,8 +478,6 @@ internal static class PortableStorageTests
         Assert(rejectedNonPdfEntry, "Launcher storage should reject a ZIP containing a non-PDF file.");
         string reportResult = storage.StoreReport("mapping-key", "Compliance-Snapshot_TEST.pdf", PdfBytes());
         Assert(reportResult.Contains("\"sha256\"") && File.Exists(Path.Combine(root, "System", "Reports", "Compliance-Snapshot_TEST.pdf")) && File.Exists(Path.Combine(root, "System", "Reports", "Compliance-Snapshot_TEST.pdf.sha256")), "Compliance reports should be stored with a matching SHA-256 file.");
-        string packageResult = storage.StoreInspectionPackage("mapping-key", "Inspection-Package_TEST.zip", InspectionZip());
-        Assert(packageResult.Contains("\"sha256\"") && File.Exists(Path.Combine(root, "System", "Reports", "Inspection-Package_TEST.zip")) && File.Exists(Path.Combine(root, "System", "Reports", "Inspection-Package_TEST.zip.sha256")), "Inspection packages should contain the required files and be stored with a matching SHA-256 file.");
         string errorReportResult = storage.StoreErrorReport("mapping-key", "ERR-TEST.txt", "AUDIT Error Entry\r\nDetails: simulated failure");
         string secondErrorReportResult = storage.StoreErrorReport("mapping-key", "ERR-SECOND.txt", "AUDIT Error Entry\r\nDetails: second simulated failure");
         string dailyErrorName = "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".txt", dailyErrorPath = Path.Combine(root, "System", "Error Reports", dailyErrorName), dailyErrorText = File.ReadAllText(dailyErrorPath, Encoding.UTF8);
