@@ -66,17 +66,17 @@ for ($index = 0; $index -lt $assetFiles.Count; $index++) {
 [System.IO.File]::WriteAllLines($assetManifest, $assetManifestLines, (New-Object System.Text.UTF8Encoding($false)))
 $faviconSource = Join-Path $projectRoot "public\favicon.ico"
 $faviconCompressed = Join-Path $embeddedRoot "favicon.ico.gz"
-if (-not (Test-Path -LiteralPath $faviconSource)) { throw "The AUDIT browser favicon was not found." }
+if (-not (Test-Path -LiteralPath $faviconSource)) { throw "The R.A.P.T.O.R browser favicon was not found." }
 Compress-Asset $faviconSource $faviconCompressed
 
 $compiler = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if (-not (Test-Path -LiteralPath $compiler)) { throw "The Windows C# compiler was not found." }
-$executable = Join-Path $outputRoot "AUDIT.exe"
-$executiveSummary = Join-Path $outputRoot "AUDIT-Executive-Capability-Summary.pdf"
+$executable = Join-Path $outputRoot "RAPTOR.exe"
+$executiveSummary = Join-Path $outputRoot "RAPTOR-Executive-Capability-Summary.pdf"
 $manifest = Join-Path $portableRoot "app.manifest"
-$icon = Join-Path $portableRoot "AUDIT.ico"
+$icon = Join-Path $portableRoot "RAPTOR.ico"
 if (-not (Test-Path -LiteralPath $manifest)) { throw "The Windows application manifest was not found." }
-if (-not (Test-Path -LiteralPath $icon)) { throw "The AUDIT Windows application icon was not found." }
+if (-not (Test-Path -LiteralPath $icon)) { throw "The R.A.P.T.O.R Windows application icon was not found." }
 $compilerArgs = New-Object System.Collections.Generic.List[string]
 @('/nologo', '/target:winexe', "/out:$executable", "/win32manifest:$manifest", "/win32icon:$icon", '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll', '/reference:System.IO.Compression.dll', '/reference:System.IO.Compression.FileSystem.dll', "/resource:$webRoot\index.html,Tracker.Index", "/resource:$assetManifest,Tracker.AssetManifest", "/resource:$faviconCompressed,Tracker.Favicon") | ForEach-Object { $compilerArgs.Add($_) }
 $assetResourceArgs | ForEach-Object { $compilerArgs.Add($_) }
@@ -89,5 +89,5 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $executable)) { throw "
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $executiveSummary)) { throw "Executive summary PDF generation failed." }
 $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $executable).Hash.ToLowerInvariant()
 $summaryHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $executiveSummary).Hash.ToLowerInvariant()
-Set-Content -LiteralPath (Join-Path $outputRoot "SHA256SUMS.txt") -Encoding ascii -Value @("$hash  AUDIT.exe", "$summaryHash  AUDIT-Executive-Capability-Summary.pdf")
+Set-Content -LiteralPath (Join-Path $outputRoot "SHA256SUMS.txt") -Encoding ascii -Value @("$hash  RAPTOR.exe", "$summaryHash  RAPTOR-Executive-Capability-Summary.pdf")
 Write-Host "Built $executable ($((Get-Item -LiteralPath $executable).Length) bytes)"

@@ -26,25 +26,27 @@ test('retries transient GitHub attestation service failures without weakening th
  assert.match(release,/Retry signed release provenance attestation[\s\S]*?SHA256SUMS\.txt/);
 });
 
-test('packages the AUDIT brand and application icons consistently',()=>{
+test('packages the R.A.P.T.O.R brand and application icons consistently',()=>{
  for(const source of [validation,release,buildScript]){
-  assert.match(source,/AUDIT\.exe/);
-  assert.match(source,/AUDIT-Executive-Capability-Summary\.pdf/);
+  assert.match(source,/RAPTOR\.exe/);
+  assert.match(source,/RAPTOR-Executive-Capability-Summary\.pdf/);
   assert.doesNotMatch(source,/InformationSystemUserTracker\.exe/);
  }
  assert.match(buildScript,/win32icon:\$icon/);
  assert.match(buildScript,/Tracker\.Favicon/);
  assert.match(layout,/favicon\.ico\?v=\$\{iconVersion\}/);
- assert.match(portableIndex,/favicon\.ico\?v=1\.2\.76/);
+ assert.match(portableIndex,/favicon\.ico\?v=1\.2\.77/);
  assert.match(launcher,/path == "\/favicon\.ico" \? "no-cache, max-age=0"/);
  assert.match(page,/archived\.blockingErrors\.length/);
  assert.match(page,/Delete user completed with missing evidence files/);
  assert.match(page,/Disable user completed with missing evidence files/);
- assert.match(page,/<h1>AUDIT<\/h1>/);
- assert.match(page,/Authorized User Documentation &amp; Information Tracker/);
- assert.match(layout,/AUDIT — Authorized User Documentation & Information Tracker/);
- assert.match(guide,/AUDIT User Guide/);
- for(const asset of ['../public/audit-icon.png','../public/favicon.ico','../portable-launcher/AUDIT.ico']){
+ assert.match(page,/<h1>R\.A\.P\.T\.O\.R<\/h1>/);
+ assert.match(page,/Role-Based Access Personnel Tracking &amp; Oversight Registry/);
+ assert.match(page,/src="\/raptor-icon\.png"/);
+ assert.match(layout,/R\.A\.P\.T\.O\.R — Role-Based Access Personnel Tracking & Oversight Registry/);
+ assert.match(guide,/R\.A\.P\.T\.O\.R User Guide/);
+ assert.match(guide,/src="\/raptor-icon\.png"/);
+ for(const asset of ['../public/raptor-icon.png','../public/favicon.ico','../portable-launcher/RAPTOR.ico']){
   const url=new URL(asset,import.meta.url);
   assert.equal(existsSync(url),true,asset);
   assert.ok(statSync(url).size>1000,asset);

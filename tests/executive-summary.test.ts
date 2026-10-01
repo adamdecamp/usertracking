@@ -8,7 +8,7 @@ import {applicationVersion} from '../app/version.ts';
 test('generates a single-page executive capability summary',async()=>{
  const bytes=await createExecutiveSummaryPdf({version:'1.2.3',ruleSetVersion:'test-rules',generatedAtUtc:'2026-08-26T12:00:00.000Z'}),pdf=await PDFDocument.load(bytes);
  assert.equal(pdf.getPageCount(),1);
- assert.equal(pdf.getTitle(),'AUDIT - Executive Capability Summary');
+ assert.equal(pdf.getTitle(),'R.A.P.T.O.R - Executive Capability Summary');
  assert.ok(bytes.length>4000);
 });
 

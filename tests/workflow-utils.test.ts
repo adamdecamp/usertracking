@@ -192,7 +192,7 @@ test('reconciles only database-recorded active evidence',()=>{
  const users=[{id:'u1',last:'Brown',first:'Jacob',email:'shared@example.mil',organization:'LM',artifacts:[{kind:'SAAR',filename:'Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf.zip'}]},{id:'u2',last:'Brown',first:'Jacob',email:'shared@example.mil',organization:'GOV',artifacts:[{kind:'DoD Cyber Cert',filename:'Brown_Jacob_(GOV)_DoD_Cyber_Cert_26AUG2026.pdf.zip',sha256:'a'.repeat(64)}]}];
  const evidence=[{filename:'Brown_Jacob_(GOV)_DoD_Cyber_Cert_26AUG2026.pdf.zip',path:'User Evidence/GOV/Brown_Jacob/cert.zip',sha256:'b'.repeat(64),folderOrganization:'LM'},{filename:'Smith_Jill_(LM)_GEN_SAAR_26AUG2026.pdf.zip',path:'User Evidence/LM/Smith_Jill/file.zip'}];
  const issues=reconcileEvidence(users,evidence,[{filename:'Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf.zip',reason:'Unreadable',path:'User Evidence/LM/Brown_Jacob/saar.zip'},{filename:'bad.pdf',reason:'Unreadable',path:'bad.pdf'}]);
- assert.ok(issues.some(issue=>issue.category==='Missing File'));assert.ok(issues.some(issue=>issue.category==='Content Changed'));assert.ok(issues.some(issue=>issue.category==='Organization Conflict'));assert.ok(issues.some(issue=>issue.category==='Duplicate Identity'));assert.ok(issues.some(issue=>issue.category==='Duplicate Email'));assert.ok(issues.some(issue=>issue.category==='Rejected Evidence'));assert.ok(!issues.some(issue=>issue.category==='Orphan Evidence'));assert.ok(!issues.some(issue=>issue.summary.includes('bad.pdf')));
+ assert.ok(issues.some(issue=>issue.category==='Content Changed'));assert.ok(issues.some(issue=>issue.category==='Organization Conflict'));assert.ok(issues.some(issue=>issue.category==='Duplicate Identity'));assert.ok(issues.some(issue=>issue.category==='Duplicate Email'));assert.ok(issues.some(issue=>issue.category==='Rejected Evidence'));assert.ok(!issues.some(issue=>issue.summary.includes('missing')));assert.ok(!issues.some(issue=>issue.summary.includes('bad.pdf')));
 });
 
 test('reconciliation excludes recorded filenames found only in Archive or Rework',()=>{
@@ -202,11 +202,31 @@ test('reconciliation excludes recorded filenames found only in Archive or Rework
   {filename:'Smith_Jill_(GOV)_GEN_SAAR_26AUG2026.pdf.zip',path:'Organizations/GOV/GOV SAAR/Smith_Jill_(GOV)_GEN_SAAR_26AUG2026.pdf.zip',folderOrganization:'GOV'},
  ];
  const issues=reconcileEvidence(users,evidence,[{filename,reason:'Archive copy unreadable',path:`Organizations/LM/LM Archive/2026-09-30/${filename}`}]);
- assert.deepEqual(issues.map(issue=>issue.category),['Missing File']);
+ assert.deepEqual(issues,[]);
 });
 
-test('reconciliation requires the recorded path when provenance includes one',()=>{
+test('reconciliation reports a conflicting active location instead of treating it as a missing compliance item',()=>{
  const filename='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip',recordedPath=`Organizations/LM/LM DoD Cyber Cert/${filename}`,users=[{id:'u1',last:'Brown',first:'Jacob',email:'jacob@example.mil',organization:'LM',artifacts:[{kind:'DoD Cyber Cert',filename,path:recordedPath}]}];
  const issues=reconcileEvidence(users,[{filename,path:`Organizations/GOV/GOV DoD Cyber Cert/${filename}`,folderOrganization:'GOV'}],[]);
- assert.deepEqual(issues.map(issue=>issue.category),['Missing File']);
+ assert.ok(issues.length>0);assert.ok(issues.every(issue=>issue.category==='Organization Conflict'));
+});
+
+test('reconciliation detects active file collisions without reporting absent artifacts',()=>{
+ const filename='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip',users=[{id:'u1',last:'Brown',first:'Jacob',email:'jacob@example.mil',organization:'LM',artifacts:[{kind:'DoD Cyber Cert',filename,path:`Organizations/LM/LM DoD Cyber Cert/${filename}`,sha256:'a'.repeat(64)},{kind:'User Agreement',filename:'Brown_Jacob_(LM)_User_Agreement_26AUG2026.pdf.zip'}]}],evidence=[
+  {filename,path:`Organizations/LM/LM DoD Cyber Cert/${filename}`,folderOrganization:'LM',sha256:'a'.repeat(64)},
+  {filename,path:`Organizations/LM/Loose/${filename}`,folderOrganization:'LM',sha256:'a'.repeat(64)},
+ ];
+ const issues=reconcileEvidence(users,evidence,[]);
+ assert.equal(issues.filter(issue=>issue.category==='File Collision').length,1);
+ assert.ok(issues.some(issue=>issue.detail.includes('duplicate copies')));
+ assert.ok(!issues.some(issue=>issue.summary.includes('User Agreement')));
+});
+
+test('reconciliation surfaces contradictory Active and Disabled duplicate records',()=>{
+ const users=[
+  {id:'u1',last:'Brown',first:'Jacob',email:'jacob@example.mil',organization:'LM',disabled:false,artifacts:[]},
+  {id:'u2',last:'Brown',first:'Jacob',email:'JACOB@example.mil',organization:'LM',disabled:true,artifacts:[]},
+ ];
+ const issues=reconcileEvidence(users,[],[]);
+ assert.equal(issues.filter(issue=>issue.category==='Account State Conflict').length,1);
 });

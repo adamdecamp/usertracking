@@ -1,4 +1,5 @@
 import "./user-guide.css";
+/* eslint-disable @next/next/no-img-element -- The small static logo must remain compatible with the portable Vite build. */
 
 const formats = [
   ["General System Access Request", "Last_First_(ORG)_GEN_SAAR_DDMMMYYYY"],
@@ -18,11 +19,16 @@ export default function Guide() {
     <main className="guide">
       {/* Plain anchor keeps the same guide compatible with the portable Vite build. */}
       {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-      <a href="/">← Return to AUDIT</a>
+      <a href="/">← Return to R.A.P.T.O.R</a>
       <header>
-        <p>Reference</p>
-        <h1>AUDIT User Guide</h1>
-        <p>Authorized User Documentation &amp; Information Tracker</p>
+        <div className="guide-brand">
+          <img src="/raptor-icon.png" alt="R.A.P.T.O.R raptor claw and verified document logo" />
+          <div>
+            <p>Reference</p>
+            <h1>R.A.P.T.O.R User Guide</h1>
+            <p>Role-Based Access Personnel Tracking &amp; Oversight Registry</p>
+          </div>
+        </div>
       </header>
       <nav>
         {[
@@ -996,11 +1002,15 @@ export default function Guide() {
           Choose <b>Reconciliation</b> for the selected system to compare the
           active evidence folders with its manifest. Reconciliation is limited
           to evidence already reflected in the User Directory database. The
-          read-only results identify missing referenced files, evidence whose
-          current SHA-256 differs from a recorded manual-upload baseline,
-          duplicate identities or email addresses, organization conflicts, and
-          rejected database-recorded evidence. Unrecorded files and all files
-          in Archive or Rework folders are ignored and cannot create
+          read-only results focus on the same recorded filename appearing in
+          multiple active locations, evidence whose current SHA-256 differs
+          from a recorded manual-upload baseline, duplicate identities or
+          email addresses, conflicting Active and Disabled records,
+          organization conflicts, and rejected database-recorded evidence.
+          Missing compliance requirements remain in the User Directory,
+          Compliance Snapshot, CSV export, and notification workflows rather
+          than appearing in Reconciliation. Unrecorded files and all files in
+          Archive or Rework folders are ignored and cannot create
           Reconciliation conflicts. Reconciliation does not move files or
           change records; use the listed path and issue details to correct the
           source data, then run Sync again.

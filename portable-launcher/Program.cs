@@ -54,9 +54,9 @@ internal sealed class TrackerContext : ApplicationContext
         listener = new TcpListener(IPAddress.Loopback, Port);
         listener.Start();
         Icon appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Shield;
-        tray = new NotifyIcon { Icon = appIcon, Text = "AUDIT", Visible = true };
+        tray = new NotifyIcon { Icon = appIcon, Text = "R.A.P.T.O.R", Visible = true };
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Open AUDIT", null, delegate { OpenTracker(); });
+        menu.Items.Add("Open R.A.P.T.O.R", null, delegate { OpenTracker(); });
         menu.Items.Add("Exit", null, delegate { RequestShutdown("operator-exit"); });
         tray.ContextMenuStrip = menu;
         tray.DoubleClick += delegate { OpenTracker(); };
@@ -339,7 +339,7 @@ internal sealed class TrackerContext : ApplicationContext
             {
                 string failure = CleanError(error.InnerException != null ? error.InnerException.Message : error.Message);
                 RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT FAILED: operation " + operationId + "; " + failure, failure, operationId);
-                try { dispatcher.BeginInvoke(new Action(delegate { MessageBox.Show("Microsoft Outlook could not create the draft. " + failure, "AUDIT", MessageBoxButtons.OK, MessageBoxIcon.Error); })); }
+                try { dispatcher.BeginInvoke(new Action(delegate { MessageBox.Show("Microsoft Outlook could not create the draft. " + failure, "R.A.P.T.O.R", MessageBoxButtons.OK, MessageBoxIcon.Error); })); }
                 catch { }
             }
             finally
@@ -349,7 +349,7 @@ internal sealed class TrackerContext : ApplicationContext
             }
         }));
         outlookThread.IsBackground = true;
-        outlookThread.Name = "AUDIT Outlook Draft";
+        outlookThread.Name = "R.A.P.T.O.R Outlook Draft";
         outlookThread.SetApartmentState(ApartmentState.STA);
         try { outlookThread.Start(); }
         catch { Interlocked.Exchange(ref outlookDraftActive, 0);throw; }
@@ -394,7 +394,7 @@ internal sealed class TrackerContext : ApplicationContext
             if (failure == null && auditFailure == null) continue;
             try
             {
-                string now = DateTime.UtcNow.ToString("o"), detail = failure ?? ("The Outlook draft was displayed, but its completion audit could not be recorded. " + auditFailure), report = "AUDIT Error Entry\r\nApplication: Authorized User Documentation & Information Tracker\r\nGeneration Time UTC: " + now + "\r\nWindows Operator: " + user + "\r\nInformation System ID: " + id + "\r\nContext: Outlook draft outcome.\r\nDetails: " + detail + "\r\nOperation ID: " + operationId;
+                string now = DateTime.UtcNow.ToString("o"), detail = failure ?? ("The Outlook draft was displayed, but its completion audit could not be recorded. " + auditFailure), report = "R.A.P.T.O.R Error Entry\r\nApplication: Role-Based Access Personnel Tracking & Oversight Registry\r\nGeneration Time UTC: " + now + "\r\nWindows Operator: " + user + "\r\nInformation System ID: " + id + "\r\nContext: Outlook draft outcome.\r\nDetails: " + detail + "\r\nOperation ID: " + operationId;
                 storage.StoreErrorReport(id, "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".txt", report);
             }
             catch { }
@@ -633,7 +633,7 @@ internal static class Program
     {
         Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
         try { Application.Run(new TrackerContext()); }
-        catch (SocketException) { MessageBox.Show("AUDIT is already running.", "AUDIT", MessageBoxButtons.OK, MessageBoxIcon.Information); }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "Unable to Start AUDIT", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (SocketException) { MessageBox.Show("R.A.P.T.O.R is already running.", "R.A.P.T.O.R", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+        catch (Exception ex) { MessageBox.Show(ex.Message, "Unable to Start R.A.P.T.O.R", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 }
