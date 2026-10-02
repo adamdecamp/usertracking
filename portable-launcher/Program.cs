@@ -101,8 +101,8 @@ internal sealed class TrackerContext : ApplicationContext
             if (String.IsNullOrEmpty(headerBlock)) return;
             string[] lines = headerBlock.Split(new[] { "\r\n" }, StringSplitOptions.None), parts = lines[0].Split(' ');
             if (parts.Length < 2 || (parts[0] != "GET" && parts[0] != "HEAD" && parts[0] != "POST" && parts[0] != "DELETE")) { await Respond(stream, 405, "text/plain", Encoding.UTF8.GetBytes("Method Not Allowed"), false, "no-store"); return; }
-            string host = null, origin = null, operationId = null; long contentLength = 0;
-            for (int i = 1; i < lines.Length; i++) { string line = lines[i]; if (line.StartsWith("Host:", StringComparison.OrdinalIgnoreCase)) host = line.Substring(5).Trim(); if (line.StartsWith("Origin:", StringComparison.OrdinalIgnoreCase)) origin = line.Substring(7).Trim(); if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)) Int64.TryParse(line.Substring(15).Trim(), out contentLength); if (line.StartsWith("X-Tracker-Operation-Id:", StringComparison.OrdinalIgnoreCase)) operationId = line.Substring(23).Trim(); }
+            string host = null, origin = null, operationId = null, accessMode = null; long contentLength = 0;
+            for (int i = 1; i < lines.Length; i++) { string line = lines[i]; if (line.StartsWith("Host:", StringComparison.OrdinalIgnoreCase)) host = line.Substring(5).Trim(); if (line.StartsWith("Origin:", StringComparison.OrdinalIgnoreCase)) origin = line.Substring(7).Trim(); if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)) Int64.TryParse(line.Substring(15).Trim(), out contentLength); if (line.StartsWith("X-Tracker-Operation-Id:", StringComparison.OrdinalIgnoreCase)) operationId = line.Substring(23).Trim(); if (line.StartsWith("X-RAPTOR-Access-Mode:", StringComparison.OrdinalIgnoreCase)) accessMode = line.Substring(21).Trim(); }
             if (!String.Equals(host, "localhost:" + Port, StringComparison.OrdinalIgnoreCase) && !String.Equals(host, "127.0.0.1:" + Port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), parts[0] == "HEAD", "no-store"); return; }
             if ((parts[0] == "POST" || parts[0] == "DELETE") && !String.Equals(origin, "http://localhost:" + Port, StringComparison.OrdinalIgnoreCase) && !String.Equals(origin, "http://127.0.0.1:" + Port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), false, "no-store"); return; }
             if (contentLength < 0 || contentLength > 110L * 1024 * 1024) { await Respond(stream, 413, "text/plain", Encoding.UTF8.GetBytes("Request body is too large."), false, "no-store"); return; }
@@ -112,7 +112,7 @@ internal sealed class TrackerContext : ApplicationContext
             catch (UriFormatException) { }
             if (path == null) { await Respond(stream, 400, "text/plain", Encoding.UTF8.GetBytes("Bad Request"), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/session-user") { string json = "{\"user\":\"" + Json(user) + "\"}"; await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json), parts[0] == "HEAD", "no-store"); return; }
-            if (path == "/api/mappings" && (parts[0] == "GET" || parts[0] == "HEAD")) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(storage.CachedMappings()), parts[0] == "HEAD", "no-store"); return; }
+            if (path == "/api/mappings" && (parts[0] == "GET" || parts[0] == "HEAD")) { bool readOnlyMappings = String.Equals(OptionalQueryValue(target, "mode"), "read-only", StringComparison.Ordinal); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(storage.CachedMappings(!readOnlyMappings)), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/activity" && parts[0] == "POST") { RecordActivity(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/presence" && parts[0] == "POST") { RecordPresence(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/backup-dirty" && parts[0] == "POST") { SetBackupClean(false); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
@@ -127,6 +127,7 @@ internal sealed class TrackerContext : ApplicationContext
                 string tail = path.Substring("/api/storage/".Length); int separator = tail.IndexOf('/');
                 if (separator <= 0) { await Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The storage request is invalid."), false, "no-store"); return; }
                 string systemId = tail.Substring(0, separator), action = tail.Substring(separator + 1);
+                if (String.Equals(accessMode, "read-only", StringComparison.Ordinal) && !ReadOnlyStorageActionAllowed(action, parts[0])) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Read-Only Access cannot modify the mapped information system."), false, "no-store"); return; }
                 bool serializedStorage = StorageActionRequiresSerialization(action);
                 if (serializedStorage && !await storageOperations.WaitAsync(5000)) { await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Storage is busy completing another verified operation. The exclusive session remains active. Wait for that operation to finish and retry; if progress has stopped, use Log Off to terminate and recover the portable launcher."), false, "no-store"); return; }
                 BeginStorageRequest();
@@ -139,6 +140,13 @@ internal sealed class TrackerContext : ApplicationContext
                         string selected = await ChooseFolder();
                         if (selected == null) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"cancelled\":true}"), false, "no-store"); return; }
                         storage.Map(systemId, selected); string manifest = storage.ReadManifest(systemId);
+                        response = "{\"cancelled\":false,\"folderName\":\"" + Json(storage.FolderName(systemId)) + "\",\"manifest\":" + (manifest ?? "null") + "}";
+                    }
+                    else if (action == "select-readonly" && parts[0] == "POST")
+                    {
+                        string selected = await ChooseFolder("Select an Existing R.A.P.T.O.R. Information System Folder", null, false);
+                        if (selected == null) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"cancelled\":true}"), false, "no-store"); return; }
+                        storage.MapReadOnly(systemId, selected); string manifest = storage.ReadManifest(systemId);
                         response = "{\"cancelled\":false,\"folderName\":\"" + Json(storage.FolderName(systemId)) + "\",\"manifest\":" + (manifest ?? "null") + "}";
                     }
                     else if (action == "unarchive-select-folder" && parts[0] == "POST")
@@ -208,6 +216,14 @@ internal sealed class TrackerContext : ApplicationContext
     internal static bool StorageActionRequiresSerialization(string action)
     {
         return !String.Equals(action, "error-report", StringComparison.Ordinal) && !String.Equals(action, "evidence-status", StringComparison.Ordinal) && !String.Equals(action, "outlook-draft", StringComparison.Ordinal) && !action.StartsWith("lease-", StringComparison.Ordinal);
+    }
+
+    internal static bool ReadOnlyStorageActionAllowed(string action, string method)
+    {
+        if (String.Equals(action, "select-readonly", StringComparison.Ordinal) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
+        if ((String.Equals(action, "audit", StringComparison.Ordinal) || String.Equals(action, "audit-batch", StringComparison.Ordinal)) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
+        if (!String.Equals(method, "GET", StringComparison.Ordinal) && !String.Equals(method, "HEAD", StringComparison.Ordinal)) return false;
+        return String.Equals(action, "manifest", StringComparison.Ordinal) || String.Equals(action, "file", StringComparison.Ordinal) || String.Equals(action, "audit-verify", StringComparison.Ordinal) || String.Equals(action, "audit-view", StringComparison.Ordinal) || String.Equals(action, "organizations", StringComparison.Ordinal) || String.Equals(action, "evidence-status", StringComparison.Ordinal);
     }
 
     private Task<string> ChooseFolder() { return ChooseFolder("Select the Shared Folder for This Information System", null, true); }
@@ -282,33 +298,52 @@ internal sealed class TrackerContext : ApplicationContext
 
     private string OpenOutlookDraft(string systemId, byte[] requestBody)
     {
-        if (requestBody == null || requestBody.Length == 0 || requestBody.Length > 32 * 1024) throw new InvalidDataException("The Outlook draft request is empty or too large.");
-        var serializer = new JavaScriptSerializer { MaxJsonLength = 32 * 1024, RecursionLimit = 16 };
+        if (requestBody == null || requestBody.Length == 0 || requestBody.Length > 40 * 1024 * 1024) throw new InvalidDataException("The Outlook draft request is empty or too large.");
+        var serializer = new JavaScriptSerializer { MaxJsonLength = 40 * 1024 * 1024, RecursionLimit = 20 };
         Dictionary<string, object> request;
         try { request = serializer.DeserializeObject(Encoding.UTF8.GetString(requestBody)) as Dictionary<string, object>; }
         catch (Exception error) { throw new InvalidDataException("The Outlook draft request is not valid JSON.", error); }
         if (request == null) throw new InvalidDataException("The Outlook draft request is invalid.");
-        string bcc = request.ContainsKey("bcc") ? Convert.ToString(request["bcc"]) : "", subject = request.ContainsKey("subject") ? Convert.ToString(request["subject"]) : "", body = request.ContainsKey("body") ? Convert.ToString(request["body"]) : "";
+        string to = request.ContainsKey("to") ? Convert.ToString(request["to"]) : "", bcc = request.ContainsKey("bcc") ? Convert.ToString(request["bcc"]) : "", subject = request.ContainsKey("subject") ? Convert.ToString(request["subject"]) : "", body = request.ContainsKey("body") ? Convert.ToString(request["body"]) : "";
+        string attachmentFilename = request.ContainsKey("attachmentFilename") ? Convert.ToString(request["attachmentFilename"]) : "", attachmentText = request.ContainsKey("attachmentText") ? Convert.ToString(request["attachmentText"]) : "";
         bool attachTemplate = request.ContainsKey("attachUserAgreementTemplate") && Convert.ToBoolean(request["attachUserAgreementTemplate"]);
         object[] requestedAuditSystems = request.ContainsKey("auditSystemIds") ? request["auditSystemIds"] as object[] : null;
         string[] auditSystemIds = requestedAuditSystems == null ? new[] { systemId } : requestedAuditSystems.Select(value => Convert.ToString(value)).Where(value => !String.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
         if (auditSystemIds.Length == 0 || auditSystemIds.Length > 40 || !auditSystemIds.Contains(systemId, StringComparer.Ordinal) || auditSystemIds.Any(value => value.Length > 100 || value.IndexOfAny(new[] { '\r', '\n', '\0', '/', '\\' }) >= 0)) throw new InvalidDataException("The Outlook audit-system list is invalid.");
-        if (String.IsNullOrWhiteSpace(bcc) || bcc.Length > 8000 || bcc.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook BCC list is invalid.");
+        if (bcc.Length > 8000 || bcc.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook BCC list is invalid.");
+        if (to.Length > 254 || to.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook To address is invalid.");
         if (String.IsNullOrWhiteSpace(subject) || subject.Length > 200 || subject.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook subject is invalid.");
         if (body.Length > 20000 || body.IndexOf('\0') >= 0) throw new InvalidDataException("The Outlook message body is invalid or too large.");
         string[] recipients = bcc.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries).Select(value => value.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (recipients.Length == 0 || recipients.Length > 40) throw new InvalidDataException("The Outlook draft must contain between 1 and 40 unique BCC recipients.");
+        if (recipients.Length > 40 || (recipients.Length == 0 && String.IsNullOrWhiteSpace(to)) || (recipients.Length > 0 && !String.IsNullOrWhiteSpace(to))) throw new InvalidDataException("The Outlook draft must contain either one To recipient or between 1 and 40 unique BCC recipients.");
         foreach (string recipient in recipients)
         {
             if (recipient.Length > 254) throw new InvalidDataException("An Outlook BCC address is too long.");
             try { var parsed = new System.Net.Mail.MailAddress(recipient);if (!String.Equals(parsed.Address, recipient, StringComparison.OrdinalIgnoreCase)) throw new FormatException(); }
             catch { throw new InvalidDataException("The Outlook BCC list contains an invalid email address."); }
         }
+        if (!String.IsNullOrWhiteSpace(to))
+        {
+            try { var parsed = new System.Net.Mail.MailAddress(to.Trim());if (!String.Equals(parsed.Address, to.Trim(), StringComparison.OrdinalIgnoreCase)) throw new FormatException();to = parsed.Address; }
+            catch { throw new InvalidDataException("The Outlook To address is invalid."); }
+        }
+        bool attachOrganizationSnapshot = !String.IsNullOrEmpty(attachmentText) || !String.IsNullOrEmpty(attachmentFilename);
+        if (attachTemplate && attachOrganizationSnapshot) throw new InvalidDataException("Only one managed attachment may be added to an Outlook draft.");
+        if (attachOrganizationSnapshot)
+        {
+            if (String.IsNullOrWhiteSpace(attachmentText) || Encoding.UTF8.GetByteCount(attachmentText) > 25 * 1024 * 1024) throw new InvalidDataException("The organization status attachment is empty or exceeds 25 MB.");
+            if (String.IsNullOrWhiteSpace(attachmentFilename) || attachmentFilename.Length > 180 || !attachmentFilename.EndsWith(".raptor-status.json", StringComparison.OrdinalIgnoreCase) || !String.Equals(Path.GetFileName(attachmentFilename), attachmentFilename, StringComparison.Ordinal) || attachmentFilename.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) throw new InvalidDataException("The organization status attachment filename is invalid.");
+            Dictionary<string, object> package;
+            try { package = serializer.DeserializeObject(attachmentText) as Dictionary<string, object>; }
+            catch (Exception error) { throw new InvalidDataException("The organization status attachment is not valid JSON.", error); }
+            var payload = package != null && package.ContainsKey("payload") ? package["payload"] as Dictionary<string, object> : null;
+            if (payload == null || !payload.ContainsKey("format") || !String.Equals(Convert.ToString(payload["format"]), "RAPTOR Organization Status", StringComparison.Ordinal)) throw new InvalidDataException("The organization status attachment is not a valid R.A.P.T.O.R. snapshot.");
+        }
         if (Interlocked.CompareExchange(ref outlookDraftActive, 1, 0) != 0) throw new InvalidOperationException("Another Outlook draft is still being prepared. Wait for it to open before trying again.");
         string htmlBody = OutlookHtmlBody(body), operationId = Guid.NewGuid().ToString("N").ToUpperInvariant();
         var outlookThread = new Thread(new ThreadStart(delegate
         {
-            object outlook = null, message = null, attachments = null, attachment = null;
+            object outlook = null, message = null, attachments = null, attachment = null; string temporaryAttachmentPath = null;
             try
             {
                 string attachmentPath = null;
@@ -318,14 +353,22 @@ internal sealed class TrackerContext : ApplicationContext
                     if (!templateLookup.Wait(TimeSpan.FromSeconds(20))) throw new TimeoutException("The User Agreement template could not be validated within 20 seconds. Confirm that the mapped folder is available and try again.");
                     attachmentPath = templateLookup.GetAwaiter().GetResult();
                 }
+                else if (attachOrganizationSnapshot)
+                {
+                    string temporaryDirectory = Path.Combine(Path.GetTempPath(), "RAPTOR", "Organization Status");Directory.CreateDirectory(temporaryDirectory);
+                    temporaryAttachmentPath = Path.Combine(temporaryDirectory, Guid.NewGuid().ToString("N") + "-" + attachmentFilename);
+                    File.WriteAllText(temporaryAttachmentPath, attachmentText, new UTF8Encoding(false));
+                    attachmentPath = temporaryAttachmentPath;
+                }
                 Type outlookType = Type.GetTypeFromProgID("Outlook.Application");
                 if (outlookType == null) throw new InvalidOperationException("Classic Microsoft Outlook is not installed or available to this Windows account.");
                 outlook = Activator.CreateInstance(outlookType);
                 message = outlookType.InvokeMember("CreateItem", BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance, null, outlook, new object[] { 0 });
                 Type messageType = message.GetType();
-                messageType.InvokeMember("BCC", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { String.Join(";", recipients) });
+                if (!String.IsNullOrWhiteSpace(to)) messageType.InvokeMember("To", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { to });
+                else messageType.InvokeMember("BCC", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { String.Join(";", recipients) });
                 messageType.InvokeMember("Subject", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { subject });
-                if (attachTemplate)
+                if (!String.IsNullOrWhiteSpace(attachmentPath))
                 {
                     attachments = messageType.InvokeMember("Attachments", BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, null);
                     attachment = attachments.GetType().InvokeMember("Add", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, attachments, new object[] { attachmentPath, Type.Missing, Type.Missing, Type.Missing });
@@ -333,7 +376,7 @@ internal sealed class TrackerContext : ApplicationContext
                 messageType.InvokeMember("Display", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { false });
                 string signatureHtml = Convert.ToString(messageType.InvokeMember("HTMLBody", BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, null));
                 messageType.InvokeMember("HTMLBody", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { OutlookHtmlWithSignature(htmlBody, signatureHtml) });
-                RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + recipients.Length + " BCC recipients; User Agreement template " + (attachTemplate ? "attached" : "not applicable") + "; operator review required before sending", null, operationId);
+                RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + (String.IsNullOrWhiteSpace(to) ? recipients.Length + " BCC recipients" : "one ISSO To recipient") + "; User Agreement template " + (attachTemplate ? "attached" : "not applicable") + "; organization snapshot " + (attachOrganizationSnapshot ? "attached" : "not applicable") + "; operator review required before sending", null, operationId);
             }
             catch (Exception error)
             {
@@ -345,6 +388,7 @@ internal sealed class TrackerContext : ApplicationContext
             finally
             {
                 ReleaseComObject(attachment);ReleaseComObject(attachments);ReleaseComObject(message);ReleaseComObject(outlook);
+                if (!String.IsNullOrWhiteSpace(temporaryAttachmentPath)) try { File.Delete(temporaryAttachmentPath); } catch { }
                 Interlocked.Exchange(ref outlookDraftActive, 0);
             }
         }));
@@ -353,7 +397,8 @@ internal sealed class TrackerContext : ApplicationContext
         outlookThread.SetApartmentState(ApartmentState.STA);
         try { outlookThread.Start(); }
         catch { Interlocked.Exchange(ref outlookDraftActive, 0);throw; }
-        return "{\"queued\":true,\"operationId\":\"" + operationId + "\",\"attachment\":" + (attachTemplate ? "\"" + Json(PortableStorage.UserAgreementTemplateFilename) + "\"" : "null") + "}";
+        string responseAttachment = attachTemplate ? PortableStorage.UserAgreementTemplateFilename : attachOrganizationSnapshot ? attachmentFilename : null;
+        return "{\"queued\":true,\"operationId\":\"" + operationId + "\",\"attachment\":" + (responseAttachment == null ? "null" : "\"" + Json(responseAttachment) + "\"") + "}";
     }
 
     internal static string OutlookHtmlBody(string body)

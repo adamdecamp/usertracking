@@ -157,7 +157,29 @@ internal sealed class PortableStorage : IDisposable
         SaveMappingCache();
     }
 
-    public string CachedMappings()
+    public void MapReadOnly(string systemId, string path)
+    {
+        ValidateSystemId(systemId);
+        string full = NormalizeRootPath(path);
+        if (!Directory.Exists(full)) throw new DirectoryNotFoundException("The selected system folder is unavailable.");
+        string manifestPath = Path.Combine(full, SystemDirectoryName, ManifestFilename);
+        if (!File.Exists(manifestPath)) throw new FileNotFoundException("The selected folder does not contain an initialized R.A.P.T.O.R. system database.");
+        ValidateDatabase(ReadText(manifestPath, ManifestLimit));
+        lock (mapGate)
+        {
+            roots[systemId] = full;
+            if (!rootLocks.ContainsKey(systemId)) rootLocks[systemId] = new object();
+            if (!leaseLocks.ContainsKey(systemId)) leaseLocks[systemId] = new object();
+            foreach (string duplicate in cachedRoots.Where(item => !String.Equals(item.Key, systemId, StringComparison.Ordinal) && String.Equals(item.Value, full, StringComparison.OrdinalIgnoreCase)).Select(item => item.Key).ToArray()) cachedRoots.Remove(duplicate);
+            cachedRoots[systemId] = full;
+            lastSystemId = systemId;
+        }
+        // The mapping cache is local to this Windows profile. Read-Only mapping never creates,
+        // migrates, repairs, or reorganizes anything inside the selected shared folder.
+        SaveMappingCache();
+    }
+
+    public string CachedMappings(bool initializeSharedFolder = true)
     {
         KeyValuePair<string, string>[] mappings;
         string selected;
@@ -168,10 +190,13 @@ internal sealed class PortableStorage : IDisposable
             try
             {
                 if (!Directory.Exists(mapping.Value)) continue;
-                MigrateSupportDirectories(mapping.Value);
-                Directory.CreateDirectory(Path.Combine(mapping.Value, "Organizations"));
-                Directory.CreateDirectory(Path.Combine(mapping.Value, TemplateDirectoryName));
-                string manifestPath = SystemFile(mapping.Value, ManifestFilename);
+                if (initializeSharedFolder)
+                {
+                    MigrateSupportDirectories(mapping.Value);
+                    Directory.CreateDirectory(Path.Combine(mapping.Value, "Organizations"));
+                    Directory.CreateDirectory(Path.Combine(mapping.Value, TemplateDirectoryName));
+                }
+                string manifestPath = Path.Combine(mapping.Value, SystemDirectoryName, ManifestFilename);
                 if (!File.Exists(manifestPath)) continue;
                 string manifest = ReadText(manifestPath, ManifestLimit);
                 Dictionary<string, object> database = ValidateDatabase(manifest);
@@ -210,7 +235,7 @@ internal sealed class PortableStorage : IDisposable
 
     public string ReadManifest(string systemId)
     {
-        string path = SystemFile(Root(systemId), ManifestFilename);
+        string path = Path.Combine(Root(systemId), SystemDirectoryName, ManifestFilename);
         if (!File.Exists(path)) return null;
         string text = ReadText(path, ManifestLimit);
         ValidateDatabase(text);
@@ -1263,6 +1288,8 @@ internal sealed class PortableStorage : IDisposable
         lock (RootLock(systemId))
         {
             string directory = SupportDirectory(Root(systemId), "Audit Logs");
+            using (FileStream auditLock = AcquireAuditFileLock(directory))
+            {
             AuditState state = VerifyAuditChainWithRetry(directory);
             DateTimeOffset now = DateTimeOffset.UtcNow;
             if (state.LastInstant.HasValue && now < state.LastInstant.Value.Subtract(TimeSpan.FromSeconds(1))) throw new InvalidDataException("The system clock is earlier than the most recent audit entry.");
@@ -1290,6 +1317,21 @@ internal sealed class PortableStorage : IDisposable
                 state.LastTimestamp = timestamp;
             }
             if (currentPath != null) AppendAuditBytes(currentPath, Encoding.UTF8.GetBytes(buffer.ToString()));
+            }
+        }
+    }
+
+    private static FileStream AcquireAuditFileLock(string directory)
+    {
+        string path = Path.Combine(directory, "audit-chain.lock");
+        for (int attempt = 0; ; attempt++)
+        {
+            try { return OpenCompatibleFileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 4096); }
+            catch (IOException)
+            {
+                if (attempt >= 100) throw new IOException("The audit chain is busy with another session. Retry after the other audit entry finishes.");
+                Thread.Sleep(100);
+            }
         }
     }
 

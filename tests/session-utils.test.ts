@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {automaticSaveAllowed,idleTimeoutMs,sessionIdleExpired} from '../app/session-utils.ts';
+import {accessModeCanWrite,automaticSaveAllowed,idleTimeoutMs,sessionIdleExpired} from '../app/session-utils.ts';
 
 test('never expires the operator session while Sync is active',()=>{
  const started=Date.UTC(2026,7,27,12);
@@ -22,4 +22,11 @@ test('defers the automatic save until an operator-initiated Sync has finished',(
  assert.equal(automaticSaveAllowed(true,'active',true),false);
  assert.equal(automaticSaveAllowed(true,'active',false),true);
  assert.equal(automaticSaveAllowed(true,'blocked',false),false);
+ assert.equal(automaticSaveAllowed(true,'active',false,'read-only'),false);
+});
+
+test('only Full Access can mutate shared-system data',()=>{
+ assert.equal(accessModeCanWrite('full'),true);
+ assert.equal(accessModeCanWrite('read-only'),false);
+ assert.equal(accessModeCanWrite('unselected'),false);
 });

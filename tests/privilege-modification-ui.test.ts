@@ -18,3 +18,8 @@ test('privilege modification records type changes rather than requiring a userna
  assert.match(userModal,/changed Privileged User Types from/);
  assert.doesNotMatch(userModal,/changed privileged usernames from/);
 });
+
+test('active compliance exceptions satisfy newly required privilege evidence',()=>{
+ assert.match(userModal,/changeKinds=modify\?newRequired\.filter\(kind=>!baseKinds\.includes\(kind\)&&!originalRequired\.includes\(kind\)&&!exceptionFor\(draft,kind\)\):\[\]/);
+ assert.match(userModal,/changeKinds\.every\(kind=>uploads\[kind\]\)/);
+});

@@ -24,6 +24,9 @@ tests/manual-evidence-storage.test.ts
 tests/operation-timeout.test.ts
 tests/portable-request-utils.test.ts
 tests/launcher-lifecycle.test.ts
+tests/access-mode.test.ts
+tests/organization-status-package.test.ts
+tests/organization-status-ui.test.ts
 tests/release-workflow.test.ts
 tests/pagination-utils.test.ts
 tests/pdf-text-order.test.ts

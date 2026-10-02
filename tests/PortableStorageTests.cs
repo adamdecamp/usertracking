@@ -122,6 +122,7 @@ internal static class PortableStorageTests
         Assert(optionalQueryValue != null, "The launcher must expose its optional archive request-value parser.");
         Assert(Convert.ToString(optionalQueryValue.Invoke(null, new object[] { "/api/storage/system/archive?path=file.pdf&filename=", "filename" })) == "", "An explicitly empty optional archive filename should use the source filename.");
         Assert(optionalQueryValue.Invoke(null, new object[] { "/api/storage/system/archive?path=file.pdf", "filename" }) == null, "A missing optional archive filename must not reject an otherwise valid archive request.");
+        Assert(TrackerContext.ReadOnlyStorageActionAllowed("manifest", "GET") && TrackerContext.ReadOnlyStorageActionAllowed("file", "GET") && TrackerContext.ReadOnlyStorageActionAllowed("audit-batch", "POST") && !TrackerContext.ReadOnlyStorageActionAllowed("manifest", "POST") && !TrackerContext.ReadOnlyStorageActionAllowed("scan", "GET") && !TrackerContext.ReadOnlyStorageActionAllowed("evidence", "POST"), "Read-Only launcher enforcement should allow lookup and session auditing while rejecting every database, evidence, and Sync mutation.");
         string root = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(root);
         RunStorageEnumerationFuzz(Path.GetDirectoryName(root));
@@ -137,6 +138,13 @@ internal static class PortableStorageTests
             compatibilityStorage.ReleaseLease("compatibility-key", "compatibility-session");
         }
         Assert(File.Exists(Path.Combine(compatibilityRoot, "System", "information-system-user-tracker.json")) && !File.Exists(Path.Combine(compatibilityRoot, "information-system-user-tracker.json")) && File.Exists(Path.Combine(compatibilityRoot, "System", "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv")) && Directory.EnumerateFiles(Path.Combine(compatibilityRoot, "System", "Audit Logs"), "audit-*.jsonl").Any(), "Compatible buffered I/O should preserve the manifest, backup, and audit writes beneath the System support folder.");
+        string readOnlyRoot = Path.Combine(root, "read-only-mapping"), readOnlySystem = Path.Combine(readOnlyRoot, "System"), readOnlyCache = Path.Combine(root, "read-only-mappings.json");Directory.CreateDirectory(readOnlySystem);File.WriteAllText(Path.Combine(readOnlySystem, "information-system-user-tracker.json"), Database("reader@example.mil"), Encoding.UTF8);
+        using (var readOnlyStorage = new PortableStorage("DOMAIN\\reader", readOnlyCache))
+        {
+            readOnlyStorage.MapReadOnly("read-only-key", readOnlyRoot);
+            Assert(readOnlyStorage.ReadManifest("read-only-key").Contains("reader@example.mil"), "Read-Only mapping should expose the existing validated manifest.");
+        }
+        Assert(!Directory.Exists(Path.Combine(readOnlyRoot, "Organizations")) && !Directory.Exists(Path.Combine(readOnlyRoot, "Template")) && !Directory.Exists(Path.Combine(readOnlyRoot, "System", "backup")), "Read-Only mapping must not initialize, migrate, repair, or reorganize the selected shared folder.");
         string legacyCache = Path.Combine(root, "legacy-folder-mappings.json");
         File.WriteAllText(legacyCache, "{\"version\":1,\"lastSystemId\":\"legacy\",\"mappings\":[{\"systemId\":\"legacy\",\"path\":\"" + compatibilityRoot.Replace("\\", "\\\\") + "\"}]}", Encoding.UTF8);
         using (var legacyStorage = new PortableStorage("DOMAIN\\operator", legacyCache)) Assert(!legacyStorage.CachedMappings().Contains("legacy"), "Version-1 development mapping caches should be ignored so a clean update cannot restore stale test systems.");

@@ -269,8 +269,11 @@ export default function Guide() {
           evidence still associated with that specific record into the organization Archive folder.
           Evidence reassigned to another active record is protected, including when duplicate
           records share the same name and organization. Supporting
-          artifact statuses are not applicable while the account is disabled, so the
-          User Directory and CSV exports leave those statuses blank. When
+          artifact statuses remain visible while the account is disabled, including
+          Current, Due Within 30 Days, Missing, and Overdue. The User Directory and
+          CSV exports preserve those statuses to support evidence review before a
+          future reactivation. Disabled users remain excluded from active-user
+          compliance totals, reports, and notification emails. When
           disabling without an updated SAAR, an operator may select the documented
           override and must enter a justification. To re-enable a disabled user,
           select that user through the Disabled Users filter and upload a fresh
@@ -284,7 +287,10 @@ export default function Guide() {
           override justification are preserved in the user history and audit log.
           Updated PDF evidence is validated and stored as a ZIP, and newly added
           roles or Privileged User Types require their additional evidence before
-          submission. Manual validation and storage uses bounded stage-specific
+          submission. An active, unexpired compliance exception for a newly
+          required artifact satisfies that privilege-change evidence gate; the
+          exception remains visible and auditable until evidence is supplied or
+          the exception expires. Manual validation and storage uses bounded stage-specific
           safety limits, so a damaged file or interrupted launcher request returns
           an actionable error without a healthy multi-stage upload being cut off by
           one shared timer. If the exact
@@ -929,7 +935,27 @@ export default function Guide() {
           not delete or overwrite evidence.
         </p>
         <p>
-          Only one portable Windows launcher can modify a mapped system folder
+          At launch, choose <b>Read-Only Access</b> or <b>Full Access</b>.
+          Read-Only Access permits concurrent operators to search, filter, open
+          User Records, preview evidence, and view the audit log. It hides
+          administrative actions and the Windows launcher rejects any attempted
+          shared-folder mutation. Read-Only mapping does not initialize,
+          migrate, repair, or reorganize the selected shared folder. Session
+          start, system changes, reconnects, timeouts, and logoff are recorded
+          with the active Windows identity in the tamper-evident audit log.
+        </p>
+        <p>
+          An organization may also choose <b>Open Organization Snapshot</b> at
+          launch. Select a <code>.raptor-status.json</code> file exported by the
+          authoritative tracker. The app verifies its SHA-256 integrity and
+          opens it as an offline Read-Only snapshot without mapping the main
+          shared folder. An organization snapshot contains only one
+          organization, includes both active and disabled users, and excludes
+          evidence documents, shared-folder paths, audit logs, and every other
+          organization.
+        </p>
+        <p>
+          Only one Full Access portable Windows launcher can modify a mapped system folder
           at a time. While the system is active, the launcher holds{" "}
           <code>tracker-exclusive-session.lock</code> open with an exclusive
           Windows file lock. A second computer is denied write access until the
@@ -943,9 +969,12 @@ export default function Guide() {
           advisory.
         </p>
         <p>
-          After 15 minutes without activity, the operator is disconnected and
+          After 15 minutes without activity, a Read-Only operator is disconnected
+          and the session end is audited. Full Access retains the existing
+          protected idle-disconnect behavior. The operator
           must choose <b>Yes, Reconnect Me</b>. Reconnection succeeds only when
-          another operator does not hold the exclusive lock. If ownership is
+          another operator does not hold the exclusive lock for Full Access; a
+          Read-Only reconnect never takes the editor lock. If ownership is
           lost during Clean Up, the current review is preserved and the batch
           stops after the first lease error instead of attempting every remaining
           file. Reconnect retries briefly while a verified storage operation is
@@ -1078,6 +1107,35 @@ export default function Guide() {
           to return to the full directory before exporting all results for the
           selected system.
         </p>
+        <h3>Email an Organization Snapshot to an ISSO</h3>
+        <ol>
+          <li>
+            In the authoritative Full Access session, choose <b>Organization
+            Snapshot</b> in the User Directory.
+          </li>
+          <li>
+            Select exactly one organization and enter that organization&apos;s
+            ISSO email address. The displayed totals include active and disabled
+            users.
+          </li>
+          <li>
+            Choose <b>Download Snapshot</b> for a protected offline copy, or
+            choose <b>Open Outlook Email to ISSO</b>. The portable Windows
+            launcher places the ISSO in the To line and attaches the
+            integrity-protected <code>.raptor-status.json</code> file.
+          </li>
+          <li>
+            Review the draft and recipient before sending. The tracker never
+            sends the email automatically. Snapshot generation and draft
+            preparation are recorded in the authoritative audit log.
+          </li>
+          <li>
+            The ISSO opens the same portable executable, chooses <b>Open
+            Organization Snapshot</b>, and selects the attachment. No access to
+            the main shared system folder is required, and the imported data
+            cannot be used to alter the authoritative database.
+          </li>
+        </ol>
         <h3>Prepare Missing, Due-Soon, or Overdue Notifications</h3>
         <ol>
           <li>

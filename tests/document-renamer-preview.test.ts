@@ -66,10 +66,13 @@ test('both Sync modes normalize complete noncanonical ZIP names before routing a
  assert.match(normalizable,/!invalidZipPaths\.has/);
 });
 
-test('disabled users do not expose actionable supporting-artifact status',()=>{
- assert.match(page,/const status=u\.disabled\?'':statusFor\(u,k\)/);
- assert.match(page,/const filterStatus=user\.disabled\?'':directoryStatusFor\(user,kind,asOf\)/);
- assert.match(page,/if\(u\.disabled\)return <td key=\{kind\} aria-label=\{`\$\{kind\} status not applicable`\}>—<\/td>/);
+test('disabled users retain supporting-artifact status for reactivation review',()=>{
+ assert.match(page,/const status=statusFor\(u,k\)/);
+ assert.match(page,/const filterStatus=directoryStatusFor\(user,kind,asOf\)/);
+ assert.doesNotMatch(page,/u\.disabled\?'':statusFor\(u,k\)/);
+ assert.doesNotMatch(page,/status not applicable/);
+ assert.match(page,/exception=u\.disabled\?undefined:exceptionFor\(u,kind,directoryAsOf\)/);
+ assert.match(page,/remaining\.push\(\{\.\.\.artifact,filename,path:destination\}\)/);
 });
 
 test('DTA Training is an annual DTA requirement throughout the directory workflow',()=>{
