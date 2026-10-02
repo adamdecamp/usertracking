@@ -16,6 +16,9 @@ export type HashedEvidence={filename:string;path:string;sha256:string};
 export type RetentionMove={source:string;archived:string;bucket:string};
 export type DuplicateContentGroup={sha256:string;files:{filename:string;path:string}[]};
 export type SaarAccountState={filename:string;date:Date;disabled:boolean};
+export type ArchivedEvidenceAssociation={filename:string;path:string};
+export type DisabledEvidenceArtifact={kind:string;filename:string;path?:string;sha256?:string};
+export type DisabledEvidenceUser={id:string;last:string;first:string;organization:string;disabled:boolean;artifacts:DisabledEvidenceArtifact[]};
 export type NotificationHistoryChange={timestamp:string;actor:string;action:string;description:string;rolesBefore:string[];rolesAfter:string[];files:string[]};
 export const complianceNotificationAction='Paperwork Notification Draft Prepared';
 export function requiresSaarFormClassification(filename:string){return /\.pdf$/i.test(filename)&&filenameMatchesKind(filename,'SAAR')}
@@ -39,6 +42,23 @@ export function proposedNewUserArtifacts(filenames:string[],user:{last:string;fi
   const filename=identityFiles.filter(item=>filenameMatchesKind(item,kind)&&!!parseDate(item)).sort((left,right)=>(parseDate(right)!.getTime()-parseDate(left)!.getTime())||left.localeCompare(right))[0];
   return filename?{kind,filename}:undefined;
  }).filter((artifact):artifact is{kind:string;filename:string}=>!!artifact);
+}
+
+export function recoverDisabledArchivedArtifacts<T extends DisabledEvidenceUser>(users:T[],archivesByOrganization:Map<string,ArchivedEvidenceAssociation[]>,requiredKindsFor:(user:T)=>string[]){
+ const recovered:{userId:string;kind:string;filename:string;path:string}[]=[];
+ const next=users.map(user=>{
+  if(!user.disabled)return user;
+  const organization=user.organization.trim().toUpperCase(),archive=archivesByOrganization.get(organization)??[],artifacts=[...user.artifacts];
+  for(const kind of requiredKindsFor(user)){
+   const alreadyUsable=artifacts.some(artifact=>canonicalArtifactKind(artifact.kind)===kind&&!!parseDate(artifact.filename)&&(kind!=='SAAR'||user.disabled||!disabledSaarFilename(artifact.filename)));
+   if(alreadyUsable)continue;
+   const candidate=archive.filter(item=>filenameIdentityMatches(item.filename,user)&&filenameMatchesKind(item.filename,kind)&&!!parseDate(item.filename)).sort((left,right)=>parseDate(right.filename)!.getTime()-parseDate(left.filename)!.getTime()||(kind==='SAAR'?Number(disabledSaarFilename(right.filename))-Number(disabledSaarFilename(left.filename)):0)||left.path.localeCompare(right.path))[0];
+   if(!candidate)continue;
+   artifacts.push({kind,filename:candidate.filename,path:candidate.path});recovered.push({userId:user.id,kind,filename:candidate.filename,path:candidate.path});
+  }
+  return artifacts.length===user.artifacts.length?user:{...user,artifacts};
+ });
+ return{users:next,recovered};
 }
 
 export function activeComplianceException(exceptions:ComplianceException[]|undefined,artifact:string,asOf=new Date()){

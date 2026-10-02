@@ -520,6 +520,23 @@ internal sealed class PortableStorage : IDisposable
         }
     }
 
+    public string ListArchivedEvidenceLocations(string systemId, string organization)
+    {
+        lock (RootLock(systemId))
+        {
+            string root = Root(systemId), cleanOrganization = ValidOrganizationName(organization);RecoverTransactions(root);
+            var result = new List<Dictionary<string, object>>();
+            foreach (string file in EnumerateOrganizationArchiveFiles(root, cleanOrganization))
+            {
+                var info = new FileInfo(file);long size = 0L, modified = 0L;
+                try { size = info.Length;modified = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds(); }
+                catch (Exception error) { if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;continue; }
+                result.Add(new Dictionary<string, object> { { "name", CleanLine(Path.GetFileName(file), 500) }, { "path", Relative(root, file).Replace(Path.DirectorySeparatorChar, '/') }, { "size", size }, { "lastModifiedUnixMs", modified } });
+            }
+            return json.Serialize(new Dictionary<string, object> { { "items", result.ToArray() } });
+        }
+    }
+
     public string CommitSyncJournal(string systemId, string runId)
     {
         ValidateSessionId(runId);

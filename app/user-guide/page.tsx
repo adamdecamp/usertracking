@@ -272,7 +272,10 @@ export default function Guide() {
           artifact statuses remain visible while the account is disabled, including
           Current, Due Within 30 Days, Missing, and Overdue. The User Directory and
           CSV exports preserve those statuses to support evidence review before a
-          future reactivation. Disabled users remain excluded from active-user
+          future reactivation. If an older disabled record has lost its evidence
+          associations, Sync performs a metadata-only search of that organization&apos;s
+          Archive folders and restores the newest matching association without moving
+          or reopening the archived file. Disabled users remain excluded from active-user
           compliance totals, reports, and notification emails. When
           disabling without an updated SAAR, an operator may select the documented
           override and must enter a justification. To re-enable a disabled user,

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,archiveRetentionDisposition,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,recordComplianceNotificationHistory,removePreflightArchivedArtifacts,requiresSaarFormClassification,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
+import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,archiveRetentionDisposition,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,recordComplianceNotificationHistory,recoverDisabledArchivedArtifacts,removePreflightArchivedArtifacts,requiresSaarFormClassification,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -171,6 +171,22 @@ test('uses the newest dated SAAR as the mutually exclusive active or disabled ac
 test('gives a same-day disabled SAAR precedence over an active copy',()=>{
  const active='Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf.zip',disabled='Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026_DISABLED.pdf.zip';
  assert.equal(newestSaarAccountState([active,disabled])?.filename,disabled);
+});
+
+test('recovers archived evidence associations and actual statuses for disabled users',()=>{
+ const users:{id:string;last:string;first:string;organization:string;disabled:boolean;artifacts:{kind:string;filename:string;path?:string}[]}[]=[{id:'disabled',last:'Brown',first:'Jacob',organization:'LM',disabled:true,artifacts:[]},{id:'active',last:'Shaw',first:'Vivian',organization:'LM',disabled:false,artifacts:[]}],archives=new Map([['LM',[
+  {filename:'Brown_Jacob_(LM)_GEN_SAAR_DISABLED_26AUG2026.pdf.zip',path:'Organizations/LM/LM SAAR Archive/Brown_Jacob_(LM)_GEN_SAAR_DISABLED_26AUG2026.pdf.zip'},
+  {filename:'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2025.pdf.zip',path:'Organizations/LM/LM Archive/2026-08-27/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2025.pdf.zip'},
+  {filename:'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip',path:'Organizations/LM/LM Archive/2026-08-27/Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip'},
+  {filename:'Brown_Jacob_(LM)_User_Agreement_26AUG2026.pdf.zip',path:'Organizations/LM/LM Archive/2026-08-27/Brown_Jacob_(LM)_User_Agreement_26AUG2026.pdf.zip'},
+  {filename:'Other_User_(LM)_User_Agreement_26AUG2026.pdf.zip',path:'Organizations/LM/LM Archive/2026-08-27/Other_User_(LM)_User_Agreement_26AUG2026.pdf.zip'}
+ ]]]),result=recoverDisabledArchivedArtifacts(users,archives,()=>['SAAR','DoD Cyber Cert','User Agreement']),disabled=result.users[0],active=result.users[1];
+ assert.equal(result.recovered.length,3);
+ assert.equal(disabled.artifacts.length,3);
+ assert.equal(disabled.artifacts.find(artifact=>artifact.kind==='DoD Cyber Cert')?.filename,'Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf.zip');
+ assert.equal(disabled.artifacts.find(artifact=>artifact.kind==='SAAR')?.filename,'Brown_Jacob_(LM)_GEN_SAAR_DISABLED_26AUG2026.pdf.zip');
+ assert.equal(active.artifacts.length,0);
+ assert.equal(recoverDisabledArchivedArtifacts(result.users,archives,()=>['SAAR','DoD Cyber Cert','User Agreement']).recovered.length,0);
 });
 
 test('scopes supporting evidence for a new SAAR user to the same organization',()=>{

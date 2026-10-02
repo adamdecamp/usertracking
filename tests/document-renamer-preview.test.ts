@@ -73,6 +73,10 @@ test('disabled users retain supporting-artifact status for reactivation review',
  assert.doesNotMatch(page,/status not applicable/);
  assert.match(page,/exception=u\.disabled\?undefined:exceptionFor\(u,kind,directoryAsOf\)/);
  assert.match(page,/remaining\.push\(\{\.\.\.artifact,filename,path:destination\}\)/);
+ assert.match(page,/kind!=='SAAR'\|\|u\.disabled\|\|!disabledSaarFilename/);
+ assert.match(page,/recoverDisabledEvidenceStatus\(h,sourceUsers,controller\.signal,organization\)/);
+ assert.match(page,/archive-locations\?organization=/);
+ assert.doesNotMatch(page,/artifacts:user\.artifacts\.filter\(artifact=>!disabledSaarFilename/);
 });
 
 test('DTA Training is an annual DTA requirement throughout the directory workflow',()=>{

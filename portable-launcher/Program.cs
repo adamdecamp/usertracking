@@ -169,6 +169,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "verify" && parts[0] == "GET") response = storage.VerifyLatest(systemId, QueryValue(target, "logical"));
                     else if (action == "scan" && parts[0] == "GET") response = storage.ScanWithJournal(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"), String.Equals(OptionalQueryValue(target, "legacy"), "1", StringComparison.Ordinal));
                     else if (action == "locations" && parts[0] == "GET") response = storage.ListEvidenceLocations(systemId, OptionalQueryValue(target, "organization"));
+                    else if (action == "archive-locations" && parts[0] == "GET") response = storage.ListArchivedEvidenceLocations(systemId, QueryValue(target, "organization"));
                     else if (action == "sync-commit" && parts[0] == "POST") response = storage.CommitSyncJournal(systemId, QueryValue(target, "run"));
                     else if (action == "renamer-queue" && parts[0] == "GET") response = storage.ReadRenamerQueue(systemId);
                     else if (action == "renamer-queue" && parts[0] == "POST") response = storage.SaveRenamerQueue(systemId, requestBody);
@@ -223,7 +224,7 @@ internal sealed class TrackerContext : ApplicationContext
         if (String.Equals(action, "select-readonly", StringComparison.Ordinal) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
         if ((String.Equals(action, "audit", StringComparison.Ordinal) || String.Equals(action, "audit-batch", StringComparison.Ordinal)) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
         if (!String.Equals(method, "GET", StringComparison.Ordinal) && !String.Equals(method, "HEAD", StringComparison.Ordinal)) return false;
-        return String.Equals(action, "manifest", StringComparison.Ordinal) || String.Equals(action, "file", StringComparison.Ordinal) || String.Equals(action, "audit-verify", StringComparison.Ordinal) || String.Equals(action, "audit-view", StringComparison.Ordinal) || String.Equals(action, "organizations", StringComparison.Ordinal) || String.Equals(action, "evidence-status", StringComparison.Ordinal);
+        return String.Equals(action, "manifest", StringComparison.Ordinal) || String.Equals(action, "file", StringComparison.Ordinal) || String.Equals(action, "audit-verify", StringComparison.Ordinal) || String.Equals(action, "audit-view", StringComparison.Ordinal) || String.Equals(action, "organizations", StringComparison.Ordinal) || String.Equals(action, "evidence-status", StringComparison.Ordinal) || String.Equals(action, "archive-locations", StringComparison.Ordinal);
     }
 
     private Task<string> ChooseFolder() { return ChooseFolder("Select the Shared Folder for This Information System", null, true); }
