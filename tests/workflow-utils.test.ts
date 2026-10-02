@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,archiveRetentionDisposition,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reconcileEvidence,recordComplianceNotificationHistory,recoverDisabledArchivedArtifacts,removePreflightArchivedArtifacts,requiresSaarFormClassification,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
+import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,archiveRetentionDisposition,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reactivationSaarEligibility,reconcileEvidence,recordComplianceNotificationHistory,recoverDisabledArchivedArtifacts,removePreflightArchivedArtifacts,requiresSaarFormClassification,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -171,6 +171,16 @@ test('uses the newest dated SAAR as the mutually exclusive active or disabled ac
 test('gives a same-day disabled SAAR precedence over an active copy',()=>{
  const active='Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026.pdf.zip',disabled='Brown_Jacob_(GDMS)_GEN_SAAR_26AUG2026_DISABLED.pdf.zip';
  assert.equal(newestSaarAccountState([active,disabled])?.filename,disabled);
+});
+
+test('requires a strictly newer active SAAR before proposing disabled-user reactivation',()=>{
+ const user={disabled:true,artifacts:[{filename:'Brown_Jacob_(LM)_GEN_SAAR_DISABLED_26AUG2026.pdf.zip'}],changes:[]};
+ const newer=reactivationSaarEligibility(user,'Brown_Jacob_(LM)_GEN_SAAR_27AUG2026.pdf.zip'),sameDay=reactivationSaarEligibility(user,'Brown_Jacob_(LM)_GEN_SAAR_26AUG2026.pdf.zip'),older=reactivationSaarEligibility(user,'Brown_Jacob_(LM)_GEN_SAAR_25AUG2026.pdf.zip');
+ assert.equal(newer.eligible,true);
+ assert.equal(newer.disabledDate?.toISOString(),'2026-08-26T00:00:00.000Z');
+ assert.equal(sameDay.eligible,false);
+ assert.equal(older.eligible,false);
+ assert.equal(reactivationSaarEligibility({disabled:true,artifacts:[],changes:[]},'Brown_Jacob_(LM)_GEN_SAAR_27AUG2026.pdf.zip').eligible,false);
 });
 
 test('recovers archived evidence associations and actual statuses for disabled users',()=>{

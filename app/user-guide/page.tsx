@@ -272,7 +272,9 @@ export default function Guide() {
           artifact statuses remain visible while the account is disabled, including
           Current, Due Within 30 Days, Missing, and Overdue. The User Directory and
           CSV exports preserve those statuses to support evidence review before a
-          future reactivation. If an older disabled record has lost its evidence
+          future reactivation. New supporting documents for a disabled user are
+          matched normally and update that user&apos;s retained compliance dates without
+          changing the account status. If an older disabled record has lost its evidence
           associations, Sync performs a metadata-only search of that organization&apos;s
           Archive folders and restores the newest matching association without moving
           or reopening the archived file. Disabled users remain excluded from active-user
@@ -280,7 +282,11 @@ export default function Guide() {
           disabling without an updated SAAR, an operator may select the documented
           override and must enter a justification. To re-enable a disabled user,
           select that user through the Disabled Users filter and upload a fresh
-          SAAR plus every artifact required for the user&apos;s role. Reactivation may
+          SAAR plus every artifact required for the user&apos;s role. Sync can also flag
+          a disabled account for operator-approved reactivation, but only when the
+          active SAAR date is strictly newer than the recorded disabled SAAR date.
+          The account remains Disabled until the operator selects Approve Reactivation
+           in Sync Review and the SAAR passes provenance verification. Reactivation may
           also use a documented override with a required justification. Overrides,
           comments, and archive results are preserved in the user history and
           tamper-evident audit log. Privilege changes require an updated SAAR by
@@ -611,17 +617,19 @@ export default function Guide() {
           standalone word <b>DISABLED</b>, Sync proposes the user as Disabled,
           creating a historical User Directory record when necessary. An older
           disabled SAAR cannot override a newer active SAAR. A newer active SAAR
-          does not automatically re-enable a disabled user; use the controlled
-          re-enable workflow instead. Archived SAAR files remain archive history
-          and are never attached as current compliance evidence.
+          creates a separate, unchecked reactivation approval item only when its date
+          is later than the disabled date recorded in the User Directory. Supporting
+           evidence updates remain independent and do not reactivate the user. Archived
+           SAAR files remain permanent history and may stay associated with the disabled
+           record without being moved back into an active folder.
         </aside>
         <p>
           Account status is mutually exclusive: one User Directory record cannot
           be both Active and Disabled. Sync may move an Active record to Disabled
           when the newest authoritative SAAR is marked DISABLED, but it never
-          automatically re-enables a Disabled record. A later active SAAR for a
-          Disabled record is an identity conflict that requires the controlled
-          Re-enable User workflow. Official Email is the primary deconfliction
+          automatically re-enables a Disabled record. A later active SAAR must be
+          newer than the recorded disabled SAAR and requires explicit operator approval
+           in Sync Review. Official Email is the primary deconfliction
           value after SAAR extraction. The same Official Email on different
           identities—or on both Active and Disabled records—blocks automatic
           evidence matching or user creation and is shown for operator review.

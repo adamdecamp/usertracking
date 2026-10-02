@@ -19,6 +19,7 @@ export type SaarAccountState={filename:string;date:Date;disabled:boolean};
 export type ArchivedEvidenceAssociation={filename:string;path:string};
 export type DisabledEvidenceArtifact={kind:string;filename:string;path?:string;sha256?:string};
 export type DisabledEvidenceUser={id:string;last:string;first:string;organization:string;disabled:boolean;artifacts:DisabledEvidenceArtifact[]};
+export type ReactivationEvidenceUser={disabled:boolean;artifacts:{filename:string}[];changes?:{files:string[]}[]};
 export type NotificationHistoryChange={timestamp:string;actor:string;action:string;description:string;rolesBefore:string[];rolesAfter:string[];files:string[]};
 export const complianceNotificationAction='Paperwork Notification Draft Prepared';
 export function requiresSaarFormClassification(filename:string){return /\.pdf$/i.test(filename)&&filenameMatchesKind(filename,'SAAR')}
@@ -33,6 +34,15 @@ export function newestSaarAccountState(filenames:string[]):SaarAccountState|unde
  return candidates.sort((left,right)=>right.date.getTime()-left.date.getTime()||Number(right.disabled)-Number(left.disabled)||left.filename.localeCompare(right.filename))[0];
 }
 export function shouldDisableUserFromSaarState(currentlyDisabled:boolean,state:SaarAccountState|undefined){return !currentlyDisabled&&state?.disabled===true}
+
+export function reactivationSaarEligibility(user:ReactivationEvidenceUser,activeFilename:string){
+ const activeState=newestSaarAccountState([activeFilename]),disabledState=newestSaarAccountState([...user.artifacts.map(artifact=>artifact.filename),...(user.changes??[]).flatMap(change=>change.files)].filter(disabledSaarFilename));
+ if(!user.disabled)return{eligible:false,reason:'The user is already active.',activeDate:activeState?.date,disabledDate:disabledState?.date};
+ if(!activeState||activeState.disabled)return{eligible:false,reason:'A valid active SAAR date was not found.',activeDate:activeState?.date,disabledDate:disabledState?.date};
+ if(!disabledState)return{eligible:false,reason:'The disabled account date is missing from the User Directory history.',activeDate:activeState.date};
+ if(activeState.date.getTime()<=disabledState.date.getTime())return{eligible:false,reason:'The active SAAR is not newer than the recorded disabled SAAR.',activeDate:activeState.date,disabledDate:disabledState.date};
+ return{eligible:true,reason:'The active SAAR is newer than the recorded disabled SAAR.',activeDate:activeState.date,disabledDate:disabledState.date};
+}
 
 export function proposedNewUserArtifacts(filenames:string[],user:{last:string;first:string;organization?:string},kinds:string[],saarSource:string){
  const organization=user.organization?.trim().toUpperCase(),sameOrganization=(filename:string)=>!organization||organizationFrom(filename)?.trim().toUpperCase()===organization;
