@@ -39,7 +39,7 @@
     "eslint-config-next": "workspace:16.3.6",
     "react-server-dom-webpack": "19.2.8",
     "typescript": "5.9.3",
-    "vinext": "1.0.0-beta.8",
+    "vinext": "1.0.0",
     "vite": "8.0.16",
     "wrangler": "4.125.0"
   },
