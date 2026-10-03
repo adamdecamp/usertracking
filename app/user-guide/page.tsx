@@ -500,9 +500,13 @@ export default function Guide() {
           in the foreground and authorizes the selected information system&apos;s
           evidence root. Both mapped drive letters and UNC paths are supported.
           If a network share disconnects, reconnect it under the same Windows
-          account and remap when necessary. The launcher retries brief SMB locks
-          and write interruptions, uses write-through temporary files, and
-          verifies replacement bytes before reporting success. If a replacement
+          account and remap when necessary. The launcher applies bounded exponential
+          retries to folder enumeration, metadata reads, evidence validation,
+          hashing, manifest reads, and verified writes. Safe read-only requests also
+          retry temporary busy, throttling, and gateway responses. Reads may wait up
+          to 30 seconds for another storage action; file-changing requests may wait
+          up to two minutes without being duplicated. The launcher uses compatible
+          temporary files and verifies replacement bytes before reporting success. If a replacement
           cannot be verified, the previous file is preserved or restored. If
           that folder already contains a single-system tracker manifest, its
           system and users are loaded before anything is written. Mapping,
@@ -1405,8 +1409,8 @@ export default function Guide() {
         idle clocks restart from zero only after Sync completes, fails, or is
         stopped by the operator, so a large directory scan cannot log off the
         operator merely because it exceeds an idle limit. If the local connection
-        is interrupted, resumable scans and idempotent manifest or CSV saves receive
-        one safe retry. Other file-changing actions are never automatically
+        is interrupted, resumable and read-only launcher requests receive up to four
+        bounded safe retries. File-changing actions are never automatically
         repeated. During new-user ingestion, a complete filename is accepted
         without opening the PDF, and the containing organization folder supplies
         a missing filename organization without a PDF read. Legacy Import opens

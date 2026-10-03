@@ -27,6 +27,8 @@ internal sealed class PortableStorage : IDisposable
     private const int SyncJournalVersion = 1;
     private const int StorageTransactionVersion = 1;
     private const int MappingCacheVersion = 2;
+    private const int NetworkReadAttempts = 6;
+    private const int NetworkWriteAttempts = 7;
     private const string SystemDirectoryName = "System";
     private const string TemplateDirectoryName = "Template";
     private const string ErrorReportsDirectoryName = "Error Reports";
@@ -473,8 +475,8 @@ internal sealed class PortableStorage : IDisposable
                     if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, ManifestFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, ManifestChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase))) continue;
                     bool supportedExtension = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase), historicalSaar = current.Item3 && supportedExtension && LooksLikeSaarFilename(filename);
                     if (current.Item3 && !historicalSaar) continue;
-                    long journalSize = 0L, journalModified = 0L;
-                    if (supportedExtension) try { var journalInfo = new FileInfo(file);journalSize = journalInfo.Length;journalModified = new DateTimeOffset(journalInfo.LastWriteTimeUtc).ToUnixTimeMilliseconds(); } catch { }
+                    long journalSize = 0L, journalModified = 0L;string journalMetadataError;
+                    if (supportedExtension) TryReadFileMetadata(file, out journalSize, out journalModified, out journalMetadataError);
                     Dictionary<string, object> resumed;
                     if ((!legacyImport || !reworkEvidence) && journal.Completed.TryGetValue(relative, out resumed) && resumed.ContainsKey("cacheable") && Convert.ToBoolean(resumed["cacheable"], CultureInfo.InvariantCulture) && JournalItemMatches(resumed, filename, journalSize, journalModified))
                     {
@@ -501,12 +503,10 @@ internal sealed class PortableStorage : IDisposable
                         result.Add(rejected);AppendSyncJournalResult(journal.Path, rejected, "rejected");
                         continue;
                     }
-                    var info = new FileInfo(file);long size, lastModifiedUnixMs;
-                    try { size = info.Length;lastModifiedUnixMs = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds(); }
-                    catch (Exception error)
+                    long size, lastModifiedUnixMs;string metadataError;
+                    if (!TryReadFileMetadata(file, out size, out lastModifiedUnixMs, out metadataError))
                     {
-                        if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;
-                        var rejected = new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", 0L }, { "lastModifiedUnixMs", 0L }, { "accepted", false }, { "error", "File metadata could not be read: " + CleanLine(error.Message, 240) }, { "unchanged", false }, { "cacheable", false } };
+                        var rejected = new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", 0L }, { "lastModifiedUnixMs", 0L }, { "accepted", false }, { "error", "File metadata could not be read after network-aware retries: " + metadataError }, { "unchanged", false }, { "cacheable", false } };
                         result.Add(rejected);AppendSyncJournalResult(journal.Path, rejected, "rejected");
                         continue;
                     }
@@ -516,8 +516,9 @@ internal sealed class PortableStorage : IDisposable
                     bool cacheable = true, encryptedPdf = unchanged && cached.ContainsKey("encryptedPdf") && Convert.ToBoolean(cached["encryptedPdf"], CultureInfo.InvariantCulture), accepted = unchanged ? Convert.ToBoolean(cached["accepted"], CultureInfo.InvariantCulture) : historicalSaar || TryValidateEvidenceFile(file, out validationError, out cacheable, out encryptedPdf);
                     if (!unchanged)
                     {
-                        try { info.Refresh();if (!info.Exists || info.Length != size || new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds() != lastModifiedUnixMs) { accepted = false; validationError = "The evidence file changed during Sync. Run Sync again."; cacheable = false; } }
-                        catch (Exception error) { if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;accepted = false;validationError = "File metadata could not be rechecked after validation: " + CleanLine(error.Message, 220);cacheable = false; }
+                        long verifiedSize, verifiedModified;string verifiedError;
+                        if (!TryReadFileMetadata(file, out verifiedSize, out verifiedModified, out verifiedError)) { accepted = false;validationError = "File metadata could not be rechecked after validation and network-aware retries: " + verifiedError;cacheable = false; }
+                        else if (verifiedSize != size || verifiedModified != lastModifiedUnixMs) { accepted = false; validationError = "The evidence file changed during Sync. Run Sync again."; cacheable = false; }
                     }
                     string cleanName = CleanLine(filename, 500), cleanError = CleanLine(validationError, 300);
                     var item = new Dictionary<string, object> { { "name", cleanName }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", lastModifiedUnixMs }, { "accepted", accepted }, { "error", cleanError }, { "encryptedPdf", encryptedPdf }, { "unchanged", unchanged } };
@@ -560,9 +561,8 @@ internal sealed class PortableStorage : IDisposable
                     string filename = Path.GetFileName(file);
                     if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, ManifestFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, ManifestChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase))) continue;
                     if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;if (filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) skippedZips++;
-                    string relative = Relative(root, file).Replace(Path.DirectorySeparatorChar, '/');var info = new FileInfo(file);long size = 0L, modified = 0L;
-                    try { size = info.Length;modified = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds(); }
-                    catch (Exception error) { if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;result.Add(new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "error", "File metadata could not be read: " + CleanLine(error.Message, 240) } });continue; }
+                    string relative = Relative(root, file).Replace(Path.DirectorySeparatorChar, '/');long size = 0L, modified = 0L;string metadataError;
+                    if (!TryReadFileMetadata(file, out size, out modified, out metadataError)) { result.Add(new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "error", "File metadata could not be read after network-aware retries: " + metadataError } });continue; }
                     result.Add(new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", modified } });
                 }
                 foreach (string directory in EnumerateScanDirectories(root, current.Item1))
@@ -584,9 +584,8 @@ internal sealed class PortableStorage : IDisposable
             var result = new List<Dictionary<string, object>>();
             foreach (string file in EnumerateOrganizationArchiveFiles(root, cleanOrganization))
             {
-                var info = new FileInfo(file);long size = 0L, modified = 0L;
-                try { size = info.Length;modified = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds(); }
-                catch (Exception error) { if (!(error is IOException) && !(error is UnauthorizedAccessException)) throw;continue; }
+                long size = 0L, modified = 0L;string metadataError;
+                if (!TryReadFileMetadata(file, out size, out modified, out metadataError)) continue;
                 result.Add(new Dictionary<string, object> { { "name", CleanLine(Path.GetFileName(file), 500) }, { "path", Relative(root, file).Replace(Path.DirectorySeparatorChar, '/') }, { "size", size }, { "lastModifiedUnixMs", modified } });
             }
             return json.Serialize(new Dictionary<string, object> { { "items", result.ToArray() } });
@@ -2164,7 +2163,7 @@ internal sealed class PortableStorage : IDisposable
         for (int attempt = 0; ; attempt++)
         {
             try { return EnumerateScanFilesOnce(root, directory); }
-            catch (IOException) { if (attempt >= 3) throw;Thread.Sleep(NetworkRetryDelay(attempt)); }
+            catch (IOException) { if (attempt + 1 >= NetworkReadAttempts) throw;Thread.Sleep(NetworkRetryDelay(attempt)); }
         }
     }
 
@@ -2192,7 +2191,7 @@ internal sealed class PortableStorage : IDisposable
         for (int attempt = 0; ; attempt++)
         {
             try { return EnumerateScanDirectoriesOnce(root, directory); }
-            catch (IOException) { if (attempt >= 3) throw;Thread.Sleep(NetworkRetryDelay(attempt)); }
+            catch (IOException) { if (attempt + 1 >= NetworkReadAttempts) throw;Thread.Sleep(NetworkRetryDelay(attempt)); }
         }
     }
 
@@ -2355,15 +2354,15 @@ internal sealed class PortableStorage : IDisposable
 
     private static int NetworkRetryDelay(int attempt)
     {
-        return Math.Min(3000, 250 * (1 << Math.Min(attempt, 4)));
+        return Math.Min(8000, 500 * (1 << Math.Min(attempt, 4)));
     }
 
     private static bool DirectoryExistsWithRetry(string path)
     {
-        for (int attempt = 0; attempt < 4; attempt++)
+        for (int attempt = 0; attempt < NetworkReadAttempts; attempt++)
         {
             if (Directory.Exists(path)) return true;
-            if (attempt < 3) Thread.Sleep(NetworkRetryDelay(attempt));
+            if (attempt + 1 < NetworkReadAttempts) Thread.Sleep(NetworkRetryDelay(attempt));
         }
         return false;
     }
@@ -2400,28 +2399,37 @@ internal sealed class PortableStorage : IDisposable
         error = "";
         cacheable = true;
         encryptedPdf = false;
-        try
+        for (int attempt = 0; attempt < NetworkReadAttempts; attempt++)
         {
-            var info = new FileInfo(path);
-            if (!info.Exists) throw new FileNotFoundException("The evidence file is missing.");
-            if (info.Length > EvidenceLimit) throw new InvalidDataException("The file exceeds the 100 MB evidence limit.");
-            if (path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            try
             {
-                using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) encryptedPdf = ValidatePdfStream(stream, Path.GetFileName(path), info.Length);
-                return true;
+                var info = new FileInfo(path);
+                if (!info.Exists) throw new FileNotFoundException("The evidence file is missing.");
+                if (info.Length > EvidenceLimit) throw new InvalidDataException("The file exceeds the 100 MB evidence limit.");
+                if (path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                {
+                    using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) encryptedPdf = ValidatePdfStream(stream, Path.GetFileName(path), info.Length);
+                    return true;
+                }
+                if (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) encryptedPdf = ValidateEvidenceZip(stream, Path.GetFileName(path));
+                    return true;
+                }
+                error = "Only PDF evidence or a ZIP containing one PDF is accepted.";
+                return false;
             }
-            if (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            catch (InvalidDataException ex) { error = CleanLine(ex.Message, 300); return false; }
+            catch (IOException ex)
             {
-                using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) encryptedPdf = ValidateEvidenceZip(stream, Path.GetFileName(path));
-                return true;
+                cacheable = false;error = CleanLine(ex.Message, 300);
+                if (attempt + 1 >= NetworkReadAttempts) return false;
+                Thread.Sleep(NetworkRetryDelay(attempt));
             }
-            error = "Only PDF evidence or a ZIP containing one PDF is accepted.";
-            return false;
+            catch (UnauthorizedAccessException ex) { cacheable = false;error = CleanLine(ex.Message, 300);return false; }
+            catch (Exception ex) { cacheable = false;error = CleanLine(ex.Message, 300);return false; }
         }
-        catch (InvalidDataException ex) { error = CleanLine(ex.Message, 300); return false; }
-        catch (IOException ex) { cacheable = false;error = CleanLine(ex.Message, 300);return false; }
-        catch (UnauthorizedAccessException ex) { cacheable = false;error = CleanLine(ex.Message, 300);return false; }
-        catch (Exception ex) { cacheable = false;error = CleanLine(ex.Message, 300);return false; }
+        return false;
     }
 
     private static bool ValidateEvidenceZip(Stream stream, string label)
@@ -2507,33 +2515,72 @@ internal sealed class PortableStorage : IDisposable
     private static Dictionary<string, object> ObjectDictionary(object value) { var result = value as Dictionary<string, object>; if (result == null) throw new InvalidDataException("The JSON object is invalid."); return result; }
     private static object[] ObjectArray(object value) { var result = value as object[]; if (result == null) throw new InvalidDataException("The JSON array is invalid."); return result; }
     private static string CleanLine(string value, int max) { if (value == null) return ""; var builder = new StringBuilder(); foreach (char c in value) builder.Append(Char.IsControl(c) ? ' ' : c); string clean = builder.ToString().Trim(); return clean.Length > max ? clean.Substring(0, max) : clean; }
+    private static bool TryReadFileMetadata(string path, out long size, out long modifiedUnixMilliseconds, out string error)
+    {
+        size = 0L;modifiedUnixMilliseconds = 0L;error = "";
+        for (int attempt = 0; attempt < NetworkReadAttempts; attempt++)
+        {
+            try
+            {
+                var info = new FileInfo(path);info.Refresh();
+                if (!info.Exists) throw new FileNotFoundException("The evidence file no longer exists.", path);
+                size = info.Length;modifiedUnixMilliseconds = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds();
+                return true;
+            }
+            catch (IOException ex)
+            {
+                error = CleanLine(ex.Message, 300);
+                if (attempt + 1 >= NetworkReadAttempts) return false;
+                Thread.Sleep(NetworkRetryDelay(attempt));
+            }
+            catch (UnauthorizedAccessException ex) { error = CleanLine(ex.Message, 300);return false; }
+        }
+        return false;
+    }
     private static string ReadText(string path, long limit)
     {
         for (int attempt = 0; ; attempt++)
         {
             try { var info = new FileInfo(path);if (!info.Exists) throw new FileNotFoundException("The requested file is missing.");if (info.Length > limit) throw new InvalidDataException("The requested file exceeds its size limit.");return File.ReadAllText(path, Encoding.UTF8); }
-            catch (IOException) { if (attempt >= 3) throw;Thread.Sleep(NetworkRetryDelay(attempt)); }
+            catch (IOException) { if (attempt + 1 >= NetworkReadAttempts) throw;Thread.Sleep(NetworkRetryDelay(attempt)); }
         }
     }
     private static string EvidencePdfSha256(string path)
     {
-        if (path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) using (Stream input = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) return Sha256Stream(input);
-        if (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        for (int attempt = 0; attempt < NetworkReadAttempts; attempt++)
         {
-            using (Stream input = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            using (var archive = new ZipArchive(input, ZipArchiveMode.Read, false))
+            try
             {
-                ZipArchiveEntry entry = archive.Entries.Single(item => !item.FullName.EndsWith("/", StringComparison.Ordinal) && item.FullName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase));
-                using (Stream pdf = entry.Open()) return Sha256Stream(pdf);
+                if (path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) using (Stream input = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) return Sha256Stream(input);
+                if (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    using (Stream input = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (var archive = new ZipArchive(input, ZipArchiveMode.Read, false))
+                    {
+                        ZipArchiveEntry entry = archive.Entries.Single(item => !item.FullName.EndsWith("/", StringComparison.Ordinal) && item.FullName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase));
+                        using (Stream pdf = entry.Open()) return Sha256Stream(pdf);
+                    }
+                }
+                throw new InvalidDataException("Evidence content hashing accepts only PDF or ZIP evidence.");
             }
+            catch (IOException) { if (attempt + 1 >= NetworkReadAttempts) throw;Thread.Sleep(NetworkRetryDelay(attempt)); }
         }
-        throw new InvalidDataException("Evidence content hashing accepts only PDF or ZIP evidence.");
+        throw new IOException("Evidence content hashing did not complete within the network retry budget.");
     }
 
     private static string Sha256Stream(Stream value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(value)).Replace("-", "").ToLowerInvariant(); } }
     private static string Sha256(string value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(value))).Replace("-", "").ToLowerInvariant(); } }
     private static string Sha256Bytes(byte[] value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(value)).Replace("-", "").ToLowerInvariant(); } }
-    private static string TryFileHash(string path) { try { return File.Exists(path) ? Sha256Bytes(File.ReadAllBytes(path)) : ""; } catch { return ""; } }
+    private static byte[] ReadAllBytesWithRetry(string path, long limit)
+    {
+        for (int attempt = 0; attempt < NetworkReadAttempts; attempt++)
+        {
+            try { var info = new FileInfo(path);info.Refresh();if (!info.Exists) throw new FileNotFoundException("The requested file is missing.", path);if (info.Length > limit) throw new InvalidDataException("The requested file exceeds its size limit.");return File.ReadAllBytes(path); }
+            catch (IOException) { if (attempt + 1 >= NetworkReadAttempts) throw;Thread.Sleep(NetworkRetryDelay(attempt)); }
+        }
+        throw new IOException("The requested file could not be read within the network retry budget.");
+    }
+    private static string TryFileHash(string path) { try { return Sha256Bytes(ReadAllBytesWithRetry(path, ManifestLimit)); } catch { return ""; } }
     private static FileStream OpenCompatibleFileStream(string path, FileMode mode, FileAccess access, FileShare share, int bufferSize)
     {
         return new FileStream(path, mode, access, share, bufferSize, FileOptions.None);
@@ -2544,6 +2591,7 @@ internal sealed class PortableStorage : IDisposable
     }
     private static void AtomicWrite(string path, byte[] bytes)
     {
+        string expectedHash = Sha256Bytes(bytes);
         for (int attempt = 0; ; attempt++)
         {
             string directory = Path.GetDirectoryName(path);
@@ -2564,13 +2612,13 @@ internal sealed class PortableStorage : IDisposable
                     catch (IOException) { VerifiedCopyReplace(temporary, path, previous, bytes); }
                 }
                 else File.Move(temporary, path);
-                if (!String.Equals(Sha256Bytes(File.ReadAllBytes(path)), Sha256Bytes(bytes), StringComparison.OrdinalIgnoreCase)) throw new IOException("The network-share write completed but failed its SHA-256 verification.");
+                if (!String.Equals(Sha256Bytes(ReadAllBytesWithRetry(path, Math.Max(ManifestLimit, bytes.LongLength))), expectedHash, StringComparison.OrdinalIgnoreCase)) throw new IOException("The network-share write completed but failed its SHA-256 verification.");
                 TryDelete(previous);
                 return;
             }
             catch (IOException error)
             {
-                if (attempt >= 4) throw new IOException("Compatible write failed for " + Path.GetFileName(path) + " during create, replace, or verification after network-aware retries. " + CleanLine(error.Message, 300), error);
+                if (attempt + 1 >= NetworkWriteAttempts) throw new IOException("Compatible write failed for " + Path.GetFileName(path) + " during create, replace, or verification after network-aware retries. " + CleanLine(error.Message, 300), error);
                 Thread.Sleep(NetworkRetryDelay(attempt));
             }
             finally { TryDelete(temporary); }
@@ -2582,7 +2630,7 @@ internal sealed class PortableStorage : IDisposable
         try
         {
             File.Copy(temporary, path, true);
-            if (!String.Equals(Sha256Bytes(File.ReadAllBytes(path)), Sha256Bytes(expected), StringComparison.OrdinalIgnoreCase)) throw new IOException("The network-share fallback write failed its SHA-256 verification.");
+            if (!String.Equals(Sha256Bytes(ReadAllBytesWithRetry(path, Math.Max(ManifestLimit, expected.LongLength))), Sha256Bytes(expected), StringComparison.OrdinalIgnoreCase)) throw new IOException("The network-share fallback write failed its SHA-256 verification.");
             TryDelete(temporary);
         }
         catch
@@ -2604,7 +2652,7 @@ internal sealed class PortableStorage : IDisposable
                     stream.Write(expected, 0, expected.Length);
                     FlushCompatible(stream);
                 }
-                byte[] actual = File.ReadAllBytes(path);
+                byte[] actual = ReadAllBytesWithRetry(path, 4096);
                 if (!String.Equals(Sha256Bytes(actual), Sha256Bytes(expected), StringComparison.OrdinalIgnoreCase)) throw new IOException("The mapped-folder probe could not verify the bytes it wrote.");
                 File.Delete(path);
                 return;
@@ -2612,7 +2660,7 @@ internal sealed class PortableStorage : IDisposable
             catch (IOException error)
             {
                 TryDelete(path);
-                if (attempt >= 3) throw new IOException("Mapped-folder compatibility probe failed after network-aware retries while creating, writing, reading, or deleting a temporary file. " + CleanLine(error.Message, 300), error);
+                if (attempt + 1 >= NetworkReadAttempts) throw new IOException("Mapped-folder compatibility probe failed after network-aware retries while creating, writing, reading, or deleting a temporary file. " + CleanLine(error.Message, 300), error);
                 Thread.Sleep(NetworkRetryDelay(attempt));
             }
             catch (Exception error)

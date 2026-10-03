@@ -138,7 +138,7 @@ internal sealed class TrackerContext : ApplicationContext
         using (client)
         using (var stream = client.GetStream())
         {
-            client.ReceiveTimeout = 30000; client.SendTimeout = 30000;
+            client.ReceiveTimeout = 120000; client.SendTimeout = 120000;
             string headerBlock = await ReadHeaderBlock(stream);
             if (String.IsNullOrEmpty(headerBlock)) return;
             string[] lines = headerBlock.Split(new[] { "\r\n" }, StringSplitOptions.None), parts = lines[0].Split(' ');
@@ -170,8 +170,8 @@ internal sealed class TrackerContext : ApplicationContext
                 if (separator <= 0) { await Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The storage request is invalid."), false, "no-store"); return; }
                 string systemId = tail.Substring(0, separator), action = tail.Substring(separator + 1);
                 if (String.Equals(accessMode, "read-only", StringComparison.Ordinal) && !ReadOnlyStorageActionAllowed(action, parts[0])) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Read-Only Access cannot modify the mapped information system."), false, "no-store"); return; }
-                bool serializedStorage = StorageActionRequiresSerialization(action);
-                if (serializedStorage && !await storageOperations.WaitAsync(5000)) { await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Storage is busy completing another verified operation. The exclusive session remains active. Wait for that operation to finish and retry; if progress has stopped, use Log Off to terminate and recover the portable launcher."), false, "no-store"); return; }
+                bool serializedStorage = StorageActionRequiresSerialization(action);int queueWaitMilliseconds = StorageQueueWaitMilliseconds(action, parts[0]);
+                if (serializedStorage && !await storageOperations.WaitAsync(queueWaitMilliseconds)) { await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Storage is busy completing another verified operation after waiting " + (queueWaitMilliseconds / 1000).ToString(System.Globalization.CultureInfo.InvariantCulture) + " seconds. The exclusive session remains active. Safe reads retry automatically; file-changing actions remain uncommitted until their turn begins."), false, "no-store"); return; }
                 BeginStorageRequest();
                 string storageAction = action;
                 try
@@ -260,6 +260,12 @@ internal sealed class TrackerContext : ApplicationContext
     internal static bool StorageActionRequiresSerialization(string action)
     {
         return !String.Equals(action, "error-report", StringComparison.Ordinal) && !String.Equals(action, "evidence-status", StringComparison.Ordinal) && !String.Equals(action, "outlook-draft", StringComparison.Ordinal) && !action.StartsWith("lease-", StringComparison.Ordinal);
+    }
+
+    internal static int StorageQueueWaitMilliseconds(string action, string method)
+    {
+        if (!StorageActionRequiresSerialization(action)) return 0;
+        return String.Equals(method, "GET", StringComparison.Ordinal) || String.Equals(method, "HEAD", StringComparison.Ordinal) ? 30000 : 120000;
     }
 
     internal static bool ReadOnlyStorageActionAllowed(string action, string method)

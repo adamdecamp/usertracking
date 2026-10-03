@@ -20,8 +20,15 @@ test('mapped-drive operations use bounded network-lag retries',()=>{
  const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
  assert.match(storage,/NetworkRetryDelay/);
  assert.match(storage,/EnumerateScanFilesOnce/);
- assert.match(storage,/attempt >= 4/);
+ assert.match(storage,/NetworkReadAttempts/);
  assert.match(page,/stage==='evidence-status'\?90_000:5\*60\*1000/);
+});
+
+test('slow network storage queues safely instead of failing after five seconds',()=>{
+ assert.match(launcher,/StorageQueueWaitMilliseconds\(action, parts\[0\]\)/);
+ assert.match(launcher,/\? 30000 : 120000/);
+ assert.doesNotMatch(launcher,/storageOperations\.WaitAsync\(5000\)/);
+ assert.match(launcher,/client\.ReceiveTimeout = 120000; client\.SendTimeout = 120000/);
 });
 
 test('Sync confirms launcher activity before its first serialized storage request',()=>{

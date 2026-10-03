@@ -40,6 +40,25 @@ test('retries a resumable or idempotent launcher request with bounded network ba
  assert.equal(calls,3);
 });
 
+test('retries temporary busy and gateway responses for safe reads',async()=>{
+ let calls=0;
+ const response=await portableFetch(async()=>{
+  calls++;
+  if(calls===1)return new Response('Storage is busy.',{status:503});
+  if(calls===2)return new Response('Gateway timeout.',{status:504});
+  return new Response('ok',{status:200});
+ },'/api/storage/system/manifest','manifest',undefined,true,0);
+ assert.equal(response.status,200);
+ assert.equal(calls,3);
+});
+
+test('returns the final busy response after the bounded safe-read retry budget',async()=>{
+ let calls=0;
+ const response=await portableFetch(async()=>{calls++;return new Response('Storage is busy.',{status:503})},'/api/storage/system/locations','locations',undefined,true,0);
+ assert.equal(response.status,503);
+ assert.equal(calls,5);
+});
+
 test('does not retry an unsafe launcher write',async()=>{
  let calls=0;
  await assert.rejects(()=>portableFetch(async()=>{calls++;throw new TypeError('Failed to fetch')},'/api/storage/system/archive','archive?path=private',undefined,false,0),/during archive/);
