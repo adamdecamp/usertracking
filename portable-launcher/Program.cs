@@ -43,6 +43,48 @@ internal sealed class TrackerContext : ApplicationContext
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr windowHandle);
 
+    [ComImport, Guid("42F85136-DB7E-439C-85F1-E4075D135FC8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IFileDialog
+    {
+        [PreserveSig] int Show(IntPtr parent);
+        void SetFileTypes(uint count, IntPtr filters);
+        void SetFileTypeIndex(uint index);
+        void GetFileTypeIndex(out uint index);
+        void Advise(IntPtr events, out uint cookie);
+        void Unadvise(uint cookie);
+        void SetOptions(uint options);
+        void GetOptions(out uint options);
+        void SetDefaultFolder(IShellItem folder);
+        void SetFolder(IShellItem folder);
+        void GetFolder(out IShellItem folder);
+        void GetCurrentSelection(out IShellItem item);
+        void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string name);
+        void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+        void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title);
+        void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
+        void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
+        void GetResult(out IShellItem item);
+        void AddPlace(IShellItem item, int alignment);
+        void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string extension);
+        void Close(int result);
+        void SetClientGuid(ref Guid guid);
+        void ClearClientData();
+        void SetFilter(IntPtr filter);
+    }
+
+    [ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellItem
+    {
+        void BindToHandler(IntPtr bindContext, ref Guid handler, ref Guid interfaceId, out IntPtr result);
+        void GetParent(out IShellItem parent);
+        void GetDisplayName(uint displayNameType, out IntPtr name);
+        void GetAttributes(uint mask, out uint attributes);
+        void Compare(IShellItem item, uint hint, out int order);
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+    private static extern void SHCreateItemFromParsingName([MarshalAs(UnmanagedType.LPWStr)] string path, IntPtr bindContext, ref Guid interfaceId, [MarshalAs(UnmanagedType.Interface)] out IShellItem item);
+
     public TrackerContext()
     {
         indexHtml = LoadResource("Tracker.Index");
@@ -149,6 +191,7 @@ internal sealed class TrackerContext : ApplicationContext
                         storage.MapReadOnly(systemId, selected); string manifest = storage.ReadManifest(systemId);
                         response = "{\"cancelled\":false,\"folderName\":\"" + Json(storage.FolderName(systemId)) + "\",\"manifest\":" + (manifest ?? "null") + "}";
                     }
+                    else if (action == "forget" && parts[0] == "POST") { storage.ForgetMapping(systemId); response = "{\"removed\":true}"; }
                     else if (action == "unarchive-select-folder" && parts[0] == "POST")
                     {
                         string selected = await ChooseFolder("Select a Folder of ZIP Evidence to Unarchive", storage.FolderPath(systemId), false);
@@ -234,6 +277,7 @@ internal sealed class TrackerContext : ApplicationContext
         var result = new TaskCompletionSource<string>();
         dispatcher.BeginInvoke(new Action(delegate
         {
+            IFileDialog dialog = null; IShellItem initialFolder = null; IShellItem selectedFolder = null;
             try
             {
                 using (var owner = new Form
@@ -246,17 +290,47 @@ internal sealed class TrackerContext : ApplicationContext
                     StartPosition = FormStartPosition.Manual,
                     TopMost = true
                 })
-                using (var dialog = new FolderBrowserDialog { Description = description, SelectedPath = initialPath ?? "", ShowNewFolderButton = allowCreate })
                 {
                     owner.Show();
                     owner.Activate();
                     owner.BringToFront();
                     SetForegroundWindow(owner.Handle);
-                    DialogResult selected = dialog.ShowDialog(owner);
-                    result.SetResult(selected == DialogResult.OK ? dialog.SelectedPath : null);
+                    Type dialogType = Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"));
+                    if (dialogType == null) throw new InvalidOperationException("Windows Explorer folder selection is unavailable on this computer.");
+                    dialog = (IFileDialog)Activator.CreateInstance(dialogType);
+                    uint options; dialog.GetOptions(out options);
+                    const uint PickFolders = 0x00000020, ForceFileSystem = 0x00000040, PathMustExist = 0x00000800, DontAddToRecent = 0x02000000;
+                    dialog.SetOptions(options | PickFolders | ForceFileSystem | PathMustExist | DontAddToRecent);
+                    dialog.SetTitle(description);
+                    dialog.SetOkButtonLabel("Select Folder");
+                    if (!String.IsNullOrWhiteSpace(initialPath) && Directory.Exists(initialPath))
+                    {
+                        Guid shellItemId = new Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE");
+                        SHCreateItemFromParsingName(initialPath, IntPtr.Zero, ref shellItemId, out initialFolder);
+                        dialog.SetFolder(initialFolder);
+                    }
+                    int shown = dialog.Show(owner.Handle);
+                    if (shown == unchecked((int)0x800704C7)) { result.SetResult(null); return; }
+                    Marshal.ThrowExceptionForHR(shown);
+                    dialog.GetResult(out selectedFolder);
+                    IntPtr pathPointer = IntPtr.Zero;
+                    try
+                    {
+                        selectedFolder.GetDisplayName(0x80058000, out pathPointer);
+                        string selectedPath = pathPointer == IntPtr.Zero ? null : Marshal.PtrToStringUni(pathPointer);
+                        if (String.IsNullOrWhiteSpace(selectedPath) || !Directory.Exists(selectedPath)) throw new DirectoryNotFoundException("The selected Explorer folder is unavailable.");
+                        result.SetResult(selectedPath);
+                    }
+                    finally { if (pathPointer != IntPtr.Zero) Marshal.FreeCoTaskMem(pathPointer); }
                 }
             }
             catch (Exception ex) { result.SetException(ex); }
+            finally
+            {
+                if (selectedFolder != null) Marshal.ReleaseComObject(selectedFolder);
+                if (initialFolder != null) Marshal.ReleaseComObject(initialFolder);
+                if (dialog != null) Marshal.ReleaseComObject(dialog);
+            }
         }));
         return result.Task;
     }
@@ -307,7 +381,9 @@ internal sealed class TrackerContext : ApplicationContext
         if (request == null) throw new InvalidDataException("The Outlook draft request is invalid.");
         string to = request.ContainsKey("to") ? Convert.ToString(request["to"]) : "", bcc = request.ContainsKey("bcc") ? Convert.ToString(request["bcc"]) : "", subject = request.ContainsKey("subject") ? Convert.ToString(request["subject"]) : "", body = request.ContainsKey("body") ? Convert.ToString(request["body"]) : "";
         string attachmentFilename = request.ContainsKey("attachmentFilename") ? Convert.ToString(request["attachmentFilename"]) : "", attachmentText = request.ContainsKey("attachmentText") ? Convert.ToString(request["attachmentText"]) : "";
-        bool attachTemplate = request.ContainsKey("attachUserAgreementTemplate") && Convert.ToBoolean(request["attachUserAgreementTemplate"]);
+        string templateType = request.ContainsKey("templateType") ? Convert.ToString(request["templateType"]) : "";
+        if (String.IsNullOrWhiteSpace(templateType) && request.ContainsKey("attachUserAgreementTemplate") && Convert.ToBoolean(request["attachUserAgreementTemplate"])) templateType = "user-agreement";
+        bool attachTemplate = !String.IsNullOrWhiteSpace(templateType);
         object[] requestedAuditSystems = request.ContainsKey("auditSystemIds") ? request["auditSystemIds"] as object[] : null;
         string[] auditSystemIds = requestedAuditSystems == null ? new[] { systemId } : requestedAuditSystems.Select(value => Convert.ToString(value)).Where(value => !String.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
         if (auditSystemIds.Length == 0 || auditSystemIds.Length > 40 || !auditSystemIds.Contains(systemId, StringComparer.Ordinal) || auditSystemIds.Any(value => value.Length > 100 || value.IndexOfAny(new[] { '\r', '\n', '\0', '/', '\\' }) >= 0)) throw new InvalidDataException("The Outlook audit-system list is invalid.");
@@ -329,6 +405,7 @@ internal sealed class TrackerContext : ApplicationContext
             catch { throw new InvalidDataException("The Outlook To address is invalid."); }
         }
         bool attachOrganizationSnapshot = !String.IsNullOrEmpty(attachmentText) || !String.IsNullOrEmpty(attachmentFilename);
+        if (attachTemplate && !String.Equals(templateType, "user-agreement", StringComparison.Ordinal) && !String.Equals(templateType, "8140-qualification-memo", StringComparison.Ordinal)) throw new InvalidDataException("The Outlook template type is invalid.");
         if (attachTemplate && attachOrganizationSnapshot) throw new InvalidDataException("Only one managed attachment may be added to an Outlook draft.");
         if (attachOrganizationSnapshot)
         {
@@ -350,8 +427,8 @@ internal sealed class TrackerContext : ApplicationContext
                 string attachmentPath = null;
                 if (attachTemplate)
                 {
-                    Task<string> templateLookup = Task.Run(() => storage.ResolveUserAgreementTemplate(systemId));
-                    if (!templateLookup.Wait(TimeSpan.FromSeconds(20))) throw new TimeoutException("The User Agreement template could not be validated within 20 seconds. Confirm that the mapped folder is available and try again.");
+                    Task<string> templateLookup = Task.Run(() => String.Equals(templateType, "8140-qualification-memo", StringComparison.Ordinal) ? storage.Resolve8140QualificationMemoTemplate(systemId) : storage.ResolveUserAgreementTemplate(systemId));
+                    if (!templateLookup.Wait(TimeSpan.FromSeconds(20))) throw new TimeoutException("The requested Template-folder attachment could not be validated within 20 seconds. Confirm that the mapped folder is available and try again.");
                     attachmentPath = templateLookup.GetAwaiter().GetResult();
                 }
                 else if (attachOrganizationSnapshot)
@@ -377,7 +454,7 @@ internal sealed class TrackerContext : ApplicationContext
                 messageType.InvokeMember("Display", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { false });
                 string signatureHtml = Convert.ToString(messageType.InvokeMember("HTMLBody", BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, null));
                 messageType.InvokeMember("HTMLBody", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { OutlookHtmlWithSignature(htmlBody, signatureHtml) });
-                RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + (String.IsNullOrWhiteSpace(to) ? recipients.Length + " BCC recipients" : "one ISSO To recipient") + "; User Agreement template " + (attachTemplate ? "attached" : "not applicable") + "; organization snapshot " + (attachOrganizationSnapshot ? "attached" : "not applicable") + "; operator review required before sending", null, operationId);
+                RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + (String.IsNullOrWhiteSpace(to) ? recipients.Length + " BCC recipients" : "one ISSO To recipient") + "; managed template " + (attachTemplate ? templateType + " attached" : "not applicable") + "; organization snapshot " + (attachOrganizationSnapshot ? "attached" : "not applicable") + "; operator review required before sending", null, operationId);
             }
             catch (Exception error)
             {
@@ -398,7 +475,7 @@ internal sealed class TrackerContext : ApplicationContext
         outlookThread.SetApartmentState(ApartmentState.STA);
         try { outlookThread.Start(); }
         catch { Interlocked.Exchange(ref outlookDraftActive, 0);throw; }
-        string responseAttachment = attachTemplate ? PortableStorage.UserAgreementTemplateFilename : attachOrganizationSnapshot ? attachmentFilename : null;
+        string responseAttachment = attachTemplate ? (String.Equals(templateType, "8140-qualification-memo", StringComparison.Ordinal) ? PortableStorage.QualificationMemoTemplatePattern : PortableStorage.UserAgreementTemplateFilename) : attachOrganizationSnapshot ? attachmentFilename : null;
         return "{\"queued\":true,\"operationId\":\"" + operationId + "\",\"attachment\":" + (responseAttachment == null ? "null" : "\"" + Json(responseAttachment) + "\"") + "}";
     }
 

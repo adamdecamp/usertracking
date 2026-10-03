@@ -67,13 +67,13 @@ async function timedFetch(fetcher:PortableFetcher,url:string,action:string,init:
 }
 
 export async function portableFetch(fetcher:PortableFetcher,url:string,action:string,init?:RequestInit,retrySafe=false,delayMs=200,timeoutMs=120000){
- const attempts=retrySafe?2:1;
+ const attempts=retrySafe?3:1;
  for(let attempt=1;attempt<=attempts;attempt++)try{
   return await timedFetch(fetcher,url,action,init,timeoutMs);
  }catch(error){
   if(aborted(error,init?.signal))throw error;
-  if(attempt<attempts){await wait(delayMs,init?.signal);continue}
-  const stage=portableActionLabel(action),suffix=attempts===1?'':' after one safe retry';
+  if(attempt<attempts){await wait(Math.min(5000,delayMs*Math.pow(3,attempt-1)),init?.signal);continue}
+  const stage=portableActionLabel(action),suffix=attempts===1?'':` after ${attempts-1} safe retries`;
   if(error instanceof PortableRequestTimeoutError)throw error;
   throw new Error(`The local Windows launcher stopped responding during ${stage}${suffix}. The browser connection may have been interrupted or the launcher may have exited. Reopen the application if its system-tray icon is no longer present.`,{cause:error});
  }

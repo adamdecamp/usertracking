@@ -3,9 +3,18 @@ export type NotificationState='Missing'|'Due Within 30 Days'|'Overdue';
 export const dodCyberTrainingUrl='https://www.cyber.mil/cyber-awareness-challenge';
 export const privilegedUserTrainingUrl='https://www.cdse.edu/Training/eLearning/DS-IA112/';
 export const userAgreementTemplateFilename='Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf';
+export const qualificationMemoTemplatePattern='8140_Qualification_Memo DDMMMYYYY.pdf';
+
+export type NotificationTemplate='user-agreement'|'8140-qualification-memo'|null;
 
 export function notificationUsesUserAgreementTemplate(state:NotificationState,requirement:string){
  return requirement==='User Agreement'&&['Missing','Due Within 30 Days','Overdue'].includes(state);
+}
+
+export function notificationTemplateFor(state:NotificationState,requirement:string):NotificationTemplate{
+ if(notificationUsesUserAgreementTemplate(state,requirement))return'user-agreement';
+ if(requirement==='8140 Cert Memo'&&['Missing','Due Within 30 Days','Overdue'].includes(state))return'8140-qualification-memo';
+ return null;
 }
 
 export function availableNotificationKinds(state:NotificationState,kinds:readonly string[]){
@@ -29,8 +38,8 @@ export function notificationBody(state:NotificationState,requirement:string){
  };
  const fallback=`Last_First_(ORG)_${requirement.replace(/[^A-Za-z0-9]+/g,'_')}_DDMMMYYYY.pdf`;
  const filenameStandard=filenameByRequirement[requirement]??{format:fallback,example:fallback.replace('Last_First_(ORG)','Brown_Jacob_(LM)').replace('DDMMMYYYY','26AUG2026')};
- const trainingInstruction=requirement==='DoD Cyber Cert'?`\n\nPlease complete the DoD Cyber Awareness Challenge at the official DoD Cyber Exchange website:\n${dodCyberTrainingUrl}`:requirement==='Privileged User Training Cert'?`\n\nPlease complete the CDSE Privileged User Cybersecurity Responsibilities training at the official CDSE website:\n${privilegedUserTrainingUrl}\n\nA free account is required to complete the training.`:'';
- const trainingRequirement=['DoD Cyber Cert','Privileged User Training Cert','DTA Training'].includes(requirement),responseRequest=trainingRequirement?'Once complete, please send us a copy of your certificate using the filename format below.':requirement==='User Agreement'?'Please complete and return the User Agreement using the filename format below.':requirement==='SAAR'?'Please complete and return the SAAR using the filename format below.':`Please send us a current copy of your ${requirement} using the filename format below.`;
+ const trainingInstruction=requirement==='DoD Cyber Cert'?`\n\nPlease complete the DoD Cyber Awareness Challenge at the official DoD Cyber Exchange website:\n${dodCyberTrainingUrl}`:requirement==='Privileged User Training Cert'?`\n\nPlease complete the CDSE Privileged User Cybersecurity Responsibilities training at the official CDSE website:\n${privilegedUserTrainingUrl}\n\nA free account is required to complete the training.`:requirement==='8140 Cert Memo'?`\n\nPlease complete and return the attached 8140 Qualification Memo. If you are using certifications to satisfy the requirement, do not attach the certification; enter the certification information on the memo instead.`:'';
+ const trainingRequirement=['DoD Cyber Cert','Privileged User Training Cert','DTA Training'].includes(requirement),responseRequest=trainingRequirement?'Once complete, please send us a copy of your certificate using the filename format below.':requirement==='User Agreement'?'Please complete and return the User Agreement using the filename format below.':requirement==='SAAR'?'Please complete and return the SAAR using the filename format below.':requirement==='8140 Cert Memo'?'Please return the completed qualification memo using the filename format below.':`Please send us a current copy of your ${requirement} using the filename format below.`;
  const filenameInstruction=`\n\nUsing this format helps us associate the document with the correct account and accurately track its due date.\n\nIMPORTANT — REQUIRED FILE NAME\n\nFormat: ${filenameStandard.format}\nExample: ${filenameStandard.example}\n\nFiles that do not follow this naming standard may be returned for correction.`;
  return `Sir/Ma'am,\n\n${issue}${trainingInstruction}\n\n${responseRequest}${filenameInstruction}\n\nIf you have already submitted this document, please let us know so we can verify that it was received and properly recorded. Keeping this requirement current helps prevent an interruption to your system access.\n\nFor security, this message will never ask you to provide a password or other login credentials by email.\n\nThank you for your assistance.`;
 }

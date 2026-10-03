@@ -9,6 +9,21 @@ test('the portable page sends presence immediately and throughout an open sessio
  assert.match(page,/startPortablePresenceHeartbeat\(\(\)=>launcherPost\('\/api\/presence',true\)\)/);
 });
 
+test('folder mapping uses the foreground Windows Explorer folder picker',()=>{
+ assert.match(launcher,/Type\.GetTypeFromCLSID/);
+ assert.match(launcher,/PickFolders = 0x00000020/);
+ assert.match(launcher,/SetForegroundWindow\(owner\.Handle\)/);
+ assert.doesNotMatch(launcher,/new FolderBrowserDialog/);
+});
+
+test('mapped-drive operations use bounded network-lag retries',()=>{
+ const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
+ assert.match(storage,/NetworkRetryDelay/);
+ assert.match(storage,/EnumerateScanFilesOnce/);
+ assert.match(storage,/attempt >= 4/);
+ assert.match(page,/stage==='evidence-status'\?90_000:5\*60\*1000/);
+});
+
 test('Sync confirms launcher activity before its first serialized storage request',()=>{
  assert.match(page,/setSyncRunning\(true\);await launcherPost\('\/api\/activity',true\);const launcherKeepAlive/);
 });
@@ -47,5 +62,5 @@ test('reconnection waits for an in-flight verified storage operation before acti
  assert.match(page,/async function readManifestAfterStorageSettles/);
  const reconnect=page.slice(page.indexOf('async function reconnect'),page.indexOf('async function openRestore'));
  assert.match(reconnect,/await readManifestAfterStorageSettles\(root\)/);
- assert.ok(reconnect.indexOf('await readManifestAfterStorageSettles(root)')<reconnect.indexOf("setSessionState('active')"));
+ assert.ok(reconnect.indexOf('await readManifestAfterStorageSettles(root)')<reconnect.lastIndexOf("setSessionState('active')"));
 });

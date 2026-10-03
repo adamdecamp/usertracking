@@ -28,6 +28,7 @@ tests/access-mode.test.ts
 tests/organization-status-package.test.ts
 tests/organization-status-ui.test.ts
 tests/release-workflow.test.ts
+tests/braces-security-backport.test.ts
 tests/pagination-utils.test.ts
 tests/pdf-text-order.test.ts
 tests/privilege-modification-ui.test.ts

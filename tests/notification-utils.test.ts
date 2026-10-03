@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {availableNotificationKinds,dodCyberTrainingUrl,notificationBody,notificationKindForState,notificationUsesUserAgreementTemplate,privilegedUserTrainingUrl,userAgreementTemplateFilename} from '../app/notification-utils.ts';
+import {availableNotificationKinds,dodCyberTrainingUrl,notificationBody,notificationKindForState,notificationTemplateFor,notificationUsesUserAgreementTemplate,privilegedUserTrainingUrl,qualificationMemoTemplatePattern,userAgreementTemplateFilename} from '../app/notification-utils.ts';
 
 test('creates the approved missing-artifact message',()=>{
  const message=notificationBody('Missing','DoD Cyber Cert');
@@ -85,4 +85,16 @@ test('attaches only the exact User Agreement template for every actionable notic
  assert.equal(notificationUsesUserAgreementTemplate('Due Within 30 Days','User Agreement'),true);
  assert.equal(notificationUsesUserAgreementTemplate('Missing','DoD Cyber Cert'),false);
  assert.equal(notificationUsesUserAgreementTemplate('Due Within 30 Days','DoD Cyber Cert'),false);
+});
+
+test('attaches the dated 8140 qualification memo and explains certification handling',()=>{
+ assert.equal(qualificationMemoTemplatePattern,'8140_Qualification_Memo DDMMMYYYY.pdf');
+ for(const state of['Missing','Due Within 30 Days','Overdue'] as const){
+  assert.equal(notificationTemplateFor(state,'8140 Cert Memo'),'8140-qualification-memo');
+  const message=notificationBody(state,'8140 Cert Memo');
+  assert.match(message,/do not attach the certification/i);
+  assert.match(message,/enter the certification information on the memo/i);
+ }
+ assert.equal(notificationTemplateFor('Missing','User Agreement'),'user-agreement');
+ assert.equal(notificationTemplateFor('Missing','DoD Cyber Cert'),null);
 });

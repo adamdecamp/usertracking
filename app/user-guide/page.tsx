@@ -119,8 +119,11 @@ export default function Guide() {
       <section id="systems">
         <h2>2. Manage Information Systems</h2>
         <p>
-          Use <b>Manage Systems</b> to add a system, set its type and
-          organization, map its shared folder, archive it, or unarchive it.
+          Use <b>Manage Systems</b> to add a system; edit its name, type, and
+          organization; map its shared folder; archive it; unarchive it; or delete
+          its registration. Deleting a system removes it and its linked users from
+          the current app view, but deliberately retains the mapped folder,
+          evidence, database, and backups so it can be mapped again if needed.
           Every system folder contains only that system&apos;s users, evidence,
           manifest, audit logs, and backups. The portable app remembers valid
           mappings for the current Windows account, so normally each folder is
@@ -493,8 +496,8 @@ export default function Guide() {
       <section id="sync">
         <h2>5. Shared-Folder Sync, Audit Logs, and Backups</h2>
         <p>
-          <b>Map System Folder</b> opens the native Windows folder selector in
-          the foreground and authorizes the selected information system&apos;s
+          <b>Map System Folder</b> opens the modern Windows Explorer folder picker
+          in the foreground and authorizes the selected information system&apos;s
           evidence root. Both mapped drive letters and UNC paths are supported.
           If a network share disconnects, reconnect it under the same Windows
           account and remap when necessary. The launcher retries brief SMB locks
@@ -528,7 +531,10 @@ export default function Guide() {
           supplied User Management templates and is excluded from Sync. For User
           Agreement notification attachments, the only recognized file is{" "}
           <code>Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf</code>. Other files
-          in that folder are ignored by this automation.
+          in that folder are ignored by that automation. For 8140 Certification
+          Memo notices, use <code>8140_Qualification_Memo DDMMMYYYY.pdf</code>.
+          If more than one strictly named 8140 template is present, the newest
+          filename date is attached.
         </p>
         <p>
           The <b>Processing Status</b> panel appears during Sync, verified
@@ -907,7 +913,8 @@ export default function Guide() {
         <p>
           Tracker-owned support folders and operational JSON files are grouped
           beneath the mapped system&apos;s top-level <code>System</code> folder:
-          the database manifest, Sync index, document-renamer queue, session
+          the database manifest and its SHA-256 checksum, Sync index,
+          document-renamer queue, session
           metadata, Audit Logs, Error
           Reports, backup, Reports, Sync Journals, Storage Transactions, and Archive
           Review. Existing top-level copies are migrated into this structure
@@ -938,12 +945,13 @@ export default function Guide() {
         </p>
         <p>
           The storage-health strip shows <b>Last Saved</b>, <b>Last Backup</b>,
-          and <b>Last Sync</b> for the selected system. Green means the manifest
-          and backup are current; amber means a save or verification is in
-          progress; red means the mapped folder needs attention. Choose{" "}
-          <b>Verify Backup</b> to validate the current manifest, newest JSON
-          snapshot, and complete audit hash chain. A verification failure does
-          not delete or overwrite evidence.
+          and <b>Last Sync</b> for the selected system. Green means the live
+          database checksum, manifest, and backup are current; amber means a
+          save or verification is in progress; red means the mapped folder
+          needs attention. Choose <b>Verify Storage</b> to validate the live
+          database SHA-256 checksum, newest JSON snapshot, and complete audit
+          hash chain. A verification failure does not delete or overwrite
+          evidence.
         </p>
         <p>
           At launch, choose <b>Read-Only Access</b> or <b>Full Access</b>.
@@ -954,6 +962,10 @@ export default function Guide() {
           migrate, repair, or reorganize the selected shared folder. Session
           start, system changes, reconnects, timeouts, and logoff are recorded
           with the active Windows identity in the tamper-evident audit log.
+          Full Access verifies the live database checksum, newest backup, and
+          audit chain before editing is enabled. If that startup health check
+          fails, the app preserves the records and opens the system Read-Only
+          so the operator can inspect the issue without making changes.
         </p>
         <p>
           An organization may also choose <b>Open Organization Snapshot</b> at
@@ -996,9 +1008,12 @@ export default function Guide() {
           JSON snapshot in the selected system&apos;s <code>System/backup</code>{" "}
           folder, alongside the daily CSV report. Every JSON snapshot has a
           matching <code>.sha256</code> file and includes the system, users,
-          artifact references, and administrative change histories. Unchanged
-          data is not duplicated, at least one snapshot is retained for each
-          active day, and the newest 30 snapshots are kept.
+          artifact references, and administrative change histories. The live
+          database manifest also has its own SHA-256 sidecar, written as part
+          of the same recoverable transaction. Interrupted writes repair that
+          sidecar only after the verified manifest is recovered. Unchanged data
+          is not duplicated, at least one snapshot is retained for each active
+          day, and the newest 30 snapshots are kept.
         </p>
         <p>
           Use <b>Restore Backup</b> to review available snapshots. The launcher
@@ -1167,7 +1182,8 @@ export default function Guide() {
             excluded.
           </li>
           <li>
-            Open each numbered Outlook batch. Recipient count and
+            Open each numbered Outlook batch. Batches are separated by information
+            system, and the corresponding System Name appears in the subject line. Recipient count and
             encoded-address length are bounded to avoid oversized{" "}
             <code>mailto:</code> links, and every opened batch receives its own
             audit entry in each affected system. Each affected User Record also
@@ -1182,6 +1198,14 @@ export default function Guide() {
             <code>Template/Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf</code>{" "}
             file. Classic Microsoft
             Outlook must be available to create an attachment-bearing draft.
+          </li>
+          <li>
+            For Missing, Due Within 30 Days, or Overdue 8140 Certification Memo
+            notices, the launcher attaches the newest strictly named{" "}
+            <code>Template/8140_Qualification_Memo DDMMMYYYY.pdf</code>. The message
+            explains that users satisfying the requirement with certifications
+            should enter the certification information on the memo and should not
+            attach the certification itself.
           </li>
           <li>
             Missing, due-within-30-days, and overdue drafts prominently display the
@@ -1234,11 +1258,12 @@ export default function Guide() {
           history. Unarchive the system to restore normal editing.
         </p>
         <p>
-          Choose <b>Release Health</b> to verify the current database, newest
-          backup, and complete audit chain and to download a SHA-256 integrity
-          record containing the application version, rule-set version, Windows
-          operator, mapped folder, verified backup, and audit head hash. The
-          checksum is an integrity control, not a digital signature.
+          Choose <b>Release Health</b> to verify the current database, its live
+          SHA-256 checksum, newest backup, and complete audit chain and to
+          download an integrity record containing the application version,
+          rule-set version, Windows operator, mapped folder, live database
+          hash, verified backup, and audit head hash. The checksum is an
+          integrity control, not a digital signature.
         </p>
       </section>
       <aside>

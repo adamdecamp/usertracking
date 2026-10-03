@@ -137,14 +137,14 @@ internal static class PortableStorageTests
             compatibilityStorage.AppendAudit("compatibility-key", "COMPATIBILITY WRITE TEST");
             compatibilityStorage.ReleaseLease("compatibility-key", "compatibility-session");
         }
-        Assert(File.Exists(Path.Combine(compatibilityRoot, "System", "information-system-user-tracker.json")) && !File.Exists(Path.Combine(compatibilityRoot, "information-system-user-tracker.json")) && File.Exists(Path.Combine(compatibilityRoot, "System", "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv")) && Directory.EnumerateFiles(Path.Combine(compatibilityRoot, "System", "Audit Logs"), "audit-*.jsonl").Any(), "Compatible buffered I/O should preserve the manifest, backup, and audit writes beneath the System support folder.");
+        Assert(File.Exists(Path.Combine(compatibilityRoot, "System", "information-system-user-tracker.json")) && File.Exists(Path.Combine(compatibilityRoot, "System", "information-system-user-tracker.json.sha256")) && !File.Exists(Path.Combine(compatibilityRoot, "information-system-user-tracker.json")) && File.Exists(Path.Combine(compatibilityRoot, "System", "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv")) && Directory.EnumerateFiles(Path.Combine(compatibilityRoot, "System", "Audit Logs"), "audit-*.jsonl").Any(), "Compatible buffered I/O should preserve the manifest, live checksum, backup, and audit writes beneath the System support folder.");
         string readOnlyRoot = Path.Combine(root, "read-only-mapping"), readOnlySystem = Path.Combine(readOnlyRoot, "System"), readOnlyCache = Path.Combine(root, "read-only-mappings.json");Directory.CreateDirectory(readOnlySystem);File.WriteAllText(Path.Combine(readOnlySystem, "information-system-user-tracker.json"), Database("reader@example.mil"), Encoding.UTF8);
         using (var readOnlyStorage = new PortableStorage("DOMAIN\\reader", readOnlyCache))
         {
             readOnlyStorage.MapReadOnly("read-only-key", readOnlyRoot);
             Assert(readOnlyStorage.ReadManifest("read-only-key").Contains("reader@example.mil"), "Read-Only mapping should expose the existing validated manifest.");
         }
-        Assert(!Directory.Exists(Path.Combine(readOnlyRoot, "Organizations")) && !Directory.Exists(Path.Combine(readOnlyRoot, "Template")) && !Directory.Exists(Path.Combine(readOnlyRoot, "System", "backup")), "Read-Only mapping must not initialize, migrate, repair, or reorganize the selected shared folder.");
+        Assert(!Directory.Exists(Path.Combine(readOnlyRoot, "Organizations")) && !Directory.Exists(Path.Combine(readOnlyRoot, "Template")) && !Directory.Exists(Path.Combine(readOnlyRoot, "System", "backup")) && !File.Exists(Path.Combine(readOnlySystem, "information-system-user-tracker.json.sha256")), "Read-Only mapping must not initialize, migrate, repair, checksum, or reorganize the selected shared folder.");
         string legacyCache = Path.Combine(root, "legacy-folder-mappings.json");
         File.WriteAllText(legacyCache, "{\"version\":1,\"lastSystemId\":\"legacy\",\"mappings\":[{\"systemId\":\"legacy\",\"path\":\"" + compatibilityRoot.Replace("\\", "\\\\") + "\"}]}", Encoding.UTF8);
         using (var legacyStorage = new PortableStorage("DOMAIN\\operator", legacyCache)) Assert(!legacyStorage.CachedMappings().Contains("legacy"), "Version-1 development mapping caches should be ignored so a clean update cannot restore stale test systems.");
@@ -158,13 +158,17 @@ internal static class PortableStorageTests
         storage.Map("mapping-key", root);
         Assert(!File.Exists(Path.Combine(root, "information-system-user-tracker.json")) && File.Exists(Path.Combine(root, "System", "information-system-user-tracker.json")) && !File.Exists(Path.Combine(root, "tracker-document-renamer-queue.json")) && File.Exists(Path.Combine(root, "System", "tracker-document-renamer-queue.json")) && !File.Exists(Path.Combine(root, "tracker-active-session.json")) && File.Exists(Path.Combine(root, "System", "tracker-active-session.json")), "Mapping should migrate legacy operational JSON files into System without losing them.");
         Assert(Directory.Exists(Path.Combine(root, "Organizations")), "Mapping should create the top-level Organizations folder.");
-        string templateDirectory = Path.Combine(root, "Template"), agreementTemplate = Path.Combine(templateDirectory, "Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf");
+        string templateDirectory = Path.Combine(root, "Template"), agreementTemplate = Path.Combine(templateDirectory, "Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf"), olderQualificationMemo = Path.Combine(templateDirectory, "8140_Qualification_Memo 01JAN2026.pdf"), currentQualificationMemo = Path.Combine(templateDirectory, "8140_Qualification_Memo 26AUG2026.pdf");
         Assert(Directory.Exists(templateDirectory), "Mapping should create the top-level Template folder.");
         File.WriteAllBytes(Path.Combine(templateDirectory, "Ignore_Me.pdf"), PdfBytes());
         bool missingAgreementTemplate = false;try { storage.ResolveUserAgreementTemplate("mapping-key"); } catch (FileNotFoundException) { missingAgreementTemplate = true; }
         Assert(missingAgreementTemplate, "Unrelated Template-folder files must not be selected as the User Agreement attachment.");
         File.WriteAllBytes(agreementTemplate, PdfBytes());
         Assert(String.Equals(storage.ResolveUserAgreementTemplate("mapping-key"), agreementTemplate, StringComparison.OrdinalIgnoreCase), "Only the exact User Agreement template filename should resolve for Outlook attachment.");
+        bool missingQualificationMemo = false;try { storage.Resolve8140QualificationMemoTemplate("mapping-key"); } catch (FileNotFoundException) { missingQualificationMemo = true; }
+        Assert(missingQualificationMemo, "Unrelated Template-folder files must not be selected as the 8140 Qualification Memo attachment.");
+        File.WriteAllBytes(olderQualificationMemo, PdfBytes());File.WriteAllBytes(currentQualificationMemo, PdfBytes());
+        Assert(String.Equals(storage.Resolve8140QualificationMemoTemplate("mapping-key"), currentQualificationMemo, StringComparison.OrdinalIgnoreCase), "The newest strictly named 8140 Qualification Memo template should resolve for Outlook attachment.");
         Assert(storage.CreateOrganization("mapping-key", "GOV").Contains("\"organization\":\"GOV\"") && storage.ListOrganizations("mapping-key").Contains("GOV"), "The launcher should create and list organization folders beneath Organizations.");
         foreach (string documentFolder in new[] { "GOV SAAR", "GOV User Agreement", "GOV DoD Cyber Cert", "GOV 8140 Certification Memo", "GOV Privileged User Training", "GOV DTA Training" })
             Assert(Directory.Exists(Path.Combine(root, "Organizations", "GOV", documentFolder)), "Creating an organization should create its organization-prefixed " + documentFolder + " folder.");
@@ -184,6 +188,10 @@ internal static class PortableStorageTests
 
         storage.SaveManifest("mapping-key", Database("first@example.mil"));
         string manifestPathForLockTest = Path.Combine(root, "System", "information-system-user-tracker.json");
+        string manifestChecksumPath = manifestPathForLockTest + ".sha256", manifestHash = Sha256(File.ReadAllBytes(manifestPathForLockTest));
+        Assert(File.Exists(manifestChecksumPath) && File.ReadAllText(manifestChecksumPath, Encoding.ASCII).Trim() == manifestHash + "  information-system-user-tracker.json", "Every live database save should create a matching SHA-256 sidecar.");
+        bool manifestChecksumInterruptionObserved = false;try { PortableStorage.FailAfterStageForTests = "manifest-write-before-checksum";storage.SaveManifest("mapping-key", Database("first@example.mil")); } catch (IOException) { manifestChecksumInterruptionObserved = true; } finally { PortableStorage.FailAfterStageForTests = null; }
+        Assert(manifestChecksumInterruptionObserved, "The manifest integrity recovery test must interrupt after the database write and before its checksum write.");storage.Map("mapping-key", root);manifestHash = Sha256(File.ReadAllBytes(manifestPathForLockTest));Assert(File.ReadAllText(manifestChecksumPath, Encoding.ASCII).Trim() == manifestHash + "  information-system-user-tracker.json" && !Directory.EnumerateFiles(Path.Combine(root, "System", "Storage Transactions"), "transaction-*.json").Any(), "Mapping should recover an interrupted database save by rebuilding the checksum for the verified transaction destination.");
         var manifestBlocker = new FileStream(manifestPathForLockTest, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         var releaseManifestBlocker = new Thread(new ThreadStart(delegate { Thread.Sleep(100); manifestBlocker.Dispose(); }));
         releaseManifestBlocker.Start();
@@ -214,7 +222,7 @@ internal static class PortableStorageTests
         object[] secondItems = (object[])Json.DeserializeObject(storage.ListBackups("mapping-key", "system-1"));
         Assert(secondItems.Length == 2, "A distinct database state should create a second snapshot.");
         string restored = storage.Restore("mapping-key", "system-1", firstFilename);
-        Assert(restored.Contains("first@example.mil") && !restored.Contains("second@example.mil"), "Restore should replace the manifest with the selected snapshot.");
+        Assert(restored.Contains("first@example.mil") && !restored.Contains("second@example.mil") && File.ReadAllText(manifestChecksumPath, Encoding.ASCII).Trim() == Sha256(File.ReadAllBytes(manifestPathForLockTest)) + "  information-system-user-tracker.json", "Restore should replace the manifest with the selected snapshot and its matching live checksum.");
 
         byte[] storedEvidenceBytes = EvidenceZip("Shaw_Vivian_SAAR_24AUG2026.pdf", PdfBytes());
         string evidence = storage.StoreEvidence("mapping-key", "GOV", "SAAR", "Shaw_Vivian_SAAR_24AUG2026.pdf.zip", storedEvidenceBytes);
@@ -549,8 +557,12 @@ internal static class PortableStorageTests
         Assert(competingStorage.AcquireLease("mapping-key", "session-4"), "An expired exclusive lock should be recoverable without deleting its lock file.");
         competingStorage.ReleaseLease("mapping-key", "session-4");
 
+        File.Delete(manifestChecksumPath);
         string verification = storage.VerifyLatest("mapping-key", "system-1");
-        Assert(verification.Contains("\"healthy\":true"), "The latest database and backup should verify.");
+        Assert(verification.Contains("\"healthy\":true") && verification.Contains("\"checksumInitialized\":true") && File.Exists(manifestChecksumPath), "Startup verification should establish a legacy live-database checksum only when the verified backup matches.");
+        byte[] verifiedManifestBytes = File.ReadAllBytes(manifestPathForLockTest), verifiedChecksumBytes = File.ReadAllBytes(manifestChecksumPath);File.AppendAllText(manifestPathForLockTest, "tampered");bool rejectedTamperedManifest = false;
+        try { storage.ReadManifest("mapping-key"); } catch (InvalidDataException) { rejectedTamperedManifest = true; }
+        Assert(rejectedTamperedManifest, "A live database changed without a matching checksum must be rejected before it is read.");File.WriteAllBytes(manifestPathForLockTest, verifiedManifestBytes);File.WriteAllBytes(manifestChecksumPath, verifiedChecksumBytes);
         object[] items = (object[])Json.DeserializeObject(storage.ListBackups("mapping-key", "system-1"));
         string latest = Convert.ToString(((Dictionary<string, object>)items[0])["filename"]);
         File.AppendAllText(Path.Combine(root, "System", "backup", latest), "tampered");

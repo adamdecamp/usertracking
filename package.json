@@ -1,6 +1,6 @@
 {
   "name": "raptor-user-tracker",
-  "version": "1.2.82",
+  "version": "1.2.84",
   "packageManager": "pnpm@11.19.0",
   "private": true,
   "engines": {
@@ -11,7 +11,7 @@
     "prebuild": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-BuildGate.ps1",
     "build": "vinext build",
     "start": "vinext start",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern vendor",
     "test:regression": "node ./scripts/run-regression.mjs",
     "test:fuzz": "node --experimental-strip-types --test tests/fuzz.test.ts",
     "test": "pnpm run test:regression && pnpm run test:fuzz",
@@ -20,6 +20,7 @@
   "dependencies": {
     "fflate": "0.8.3",
     "next": "16.3.6",
+    "pako": "1.0.11",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "6.3.289",
     "react": "19.2.8",
@@ -33,8 +34,9 @@
     "@types/react-dom": "19.2.5",
     "@vitejs/plugin-react": "6.1.0",
     "@vitejs/plugin-rsc": "0.5.34",
+    "braces": "workspace:3.0.4",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.3.6",
+    "eslint-config-next": "workspace:16.3.6",
     "react-server-dom-webpack": "19.2.8",
     "typescript": "5.9.3",
     "vinext": "1.0.0-beta.8",

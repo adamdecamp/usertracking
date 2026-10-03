@@ -12,7 +12,7 @@ test('manual evidence storage uses bounded stages instead of one composite two-m
  assert.doesNotMatch(artifact,/withOperationTimeout/);
  assert.doesNotMatch(artifact,/standardArtifactFile/);
  assert.match(store,/const sha256=await sha256Bytes\(writeBytes\),path=evidenceStoragePath/);
- assert.match(page,/stage==='evidence'\?5\*60\*1000/);
+ assert.match(page,/stage==='evidence'\|\|stage==='file'\?5\*60\*1000/);
 });
 
 test('a late portable write is reconciled from its exact path and SHA-256 receipt',()=>{

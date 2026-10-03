@@ -29,15 +29,15 @@ test('adds an operation ID exactly once to launcher errors',()=>{
  assert.equal(portableErrorMessage('Storage failed. Operation ID: abc-123.','abc-123'),'Storage failed. Operation ID: abc-123.');
 });
 
-test('retries a resumable or idempotent launcher request once',async()=>{
+test('retries a resumable or idempotent launcher request with bounded network backoff',async()=>{
  let calls=0;
  const response=await portableFetch(async()=>{
   calls++;
-  if(calls===1)throw new TypeError('Failed to fetch');
+  if(calls<3)throw new TypeError('Failed to fetch');
   return new Response('ok',{status:200});
  },'/api/storage/system/scan','scan?rules=1',undefined,true,0);
  assert.equal(response.status,200);
- assert.equal(calls,2);
+ assert.equal(calls,3);
 });
 
 test('does not retry an unsafe launcher write',async()=>{

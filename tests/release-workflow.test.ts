@@ -36,7 +36,7 @@ test('packages the R.A.P.T.O.R. brand and application icons consistently',()=>{
  assert.match(buildScript,/Tracker\.Favicon/);
  assert.match(buildScript,/Tracker\.BrandLogo/);
  assert.match(layout,/favicon\.ico\?v=\$\{iconVersion\}/);
- assert.match(portableIndex,/favicon\.ico\?v=1\.2\.82/);
+ assert.match(portableIndex,/favicon\.ico\?v=1\.2\.84/);
  assert.match(launcher,/path == "\/favicon\.ico" \|\| path == "\/raptor-icon\.png"/);
  assert.match(launcher,/result\.Add\("\/raptor-icon\.png", new WebAsset \{ Bytes = LoadResource\("Tracker\.BrandLogo"\), ContentType = "image\/png" \}\)/);
  assert.match(page,/archived\.blockingErrors\.length/);

@@ -31,14 +31,16 @@ internal sealed class PortableStorage : IDisposable
     private const string TemplateDirectoryName = "Template";
     private const string ErrorReportsDirectoryName = "Error Reports";
     internal const string UserAgreementTemplateFilename = "Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf";
+    internal const string QualificationMemoTemplatePattern = "8140_Qualification_Memo DDMMMYYYY.pdf";
     private const string ManifestFilename = "information-system-user-tracker.json";
+    private const string ManifestChecksumFilename = ManifestFilename + ".sha256";
     private static readonly string[] SupportDirectoryNames = new[] { "Audit Logs", "backup", "Archive Review", "Reports", "Sync Journals", "Storage Transactions", ErrorReportsDirectoryName };
     private static readonly string[] ArtifactDirectoryNames = new[] { "SAAR", "User Agreement", "DoD Cyber Cert", "8140 Certification Memo", "Privileged User Training", "DTA Training" };
     private const string SyncIndexFilename = "tracker-sync-index.json";
     private const string SyncIndexChecksumFilename = "tracker-sync-index.json.sha256";
     private const string RetentionMarkerFilename = "retention-preflight-date.txt";
     private const string RenamerQueueFilename = "tracker-document-renamer-queue.json";
-    private static readonly string[] OperationalRootFiles = new[] { ManifestFilename, SyncIndexFilename, SyncIndexChecksumFilename, RenamerQueueFilename, "tracker-active-session.json" };
+    private static readonly string[] OperationalRootFiles = new[] { ManifestFilename, ManifestChecksumFilename, SyncIndexFilename, SyncIndexChecksumFilename, RenamerQueueFilename, "tracker-active-session.json" };
     private static readonly string AuditGenesisHash = new string('0', 64);
     private readonly Dictionary<string, string> roots = new Dictionary<string, string>(StringComparer.Ordinal);
     private readonly Dictionary<string, string> cachedRoots = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -124,7 +126,7 @@ internal sealed class PortableStorage : IDisposable
     {
         ValidateSystemId(systemId);
         string full = NormalizeRootPath(path);
-        if (!Directory.Exists(full)) throw new DirectoryNotFoundException("The selected system folder is unavailable.");
+        if (!DirectoryExistsWithRetry(full)) throw new DirectoryNotFoundException("The selected system folder is unavailable after network-aware retries.");
         ProbeMappedFolder(full);
         MigrateSupportDirectories(full);
         Directory.CreateDirectory(Path.Combine(full, "Organizations"));
@@ -161,9 +163,10 @@ internal sealed class PortableStorage : IDisposable
     {
         ValidateSystemId(systemId);
         string full = NormalizeRootPath(path);
-        if (!Directory.Exists(full)) throw new DirectoryNotFoundException("The selected system folder is unavailable.");
+        if (!DirectoryExistsWithRetry(full)) throw new DirectoryNotFoundException("The selected system folder is unavailable after network-aware retries.");
         string manifestPath = Path.Combine(full, SystemDirectoryName, ManifestFilename);
         if (!File.Exists(manifestPath)) throw new FileNotFoundException("The selected folder does not contain an initialized R.A.P.T.O.R. system database.");
+        VerifyManifestChecksum(manifestPath, true);
         ValidateDatabase(ReadText(manifestPath, ManifestLimit));
         lock (mapGate)
         {
@@ -198,6 +201,7 @@ internal sealed class PortableStorage : IDisposable
                 }
                 string manifestPath = Path.Combine(mapping.Value, SystemDirectoryName, ManifestFilename);
                 if (!File.Exists(manifestPath)) continue;
+                VerifyManifestChecksum(manifestPath, true);
                 string manifest = ReadText(manifestPath, ManifestLimit);
                 Dictionary<string, object> database = ValidateDatabase(manifest);
                 object[] systems = ObjectArray(database["systems"]);
@@ -222,6 +226,23 @@ internal sealed class PortableStorage : IDisposable
     public string FolderName(string systemId) { return new DirectoryInfo(Root(systemId)).Name; }
     public string FolderPath(string systemId) { return Root(systemId); }
 
+    public void ForgetMapping(string systemId)
+    {
+        ValidateSystemId(systemId);
+        HeldLease held = null;
+        lock (mapGate)
+        {
+            roots.Remove(systemId);
+            cachedRoots.Remove(systemId);
+            rootLocks.Remove(systemId);
+            leaseLocks.Remove(systemId);
+            if (heldLeases.TryGetValue(systemId, out held)) heldLeases.Remove(systemId);
+            if (String.Equals(lastSystemId, systemId, StringComparison.Ordinal)) lastSystemId = cachedRoots.Keys.FirstOrDefault() ?? "";
+        }
+        if (held != null) DisposeLease(held, true);
+        SaveMappingCache();
+    }
+
     public string ResolveUserAgreementTemplate(string systemId)
     {
         string directory = Path.Combine(Root(systemId), TemplateDirectoryName);
@@ -233,10 +254,30 @@ internal sealed class PortableStorage : IDisposable
         return path;
     }
 
+    public string Resolve8140QualificationMemoTemplate(string systemId)
+    {
+        string directory = Path.Combine(Root(systemId), TemplateDirectoryName);
+        Directory.CreateDirectory(directory);
+        var matches = new List<KeyValuePair<DateTime, string>>();
+        foreach (string path in Directory.GetFiles(directory, "*.pdf", SearchOption.TopDirectoryOnly))
+        {
+            Match match = Regex.Match(Path.GetFileName(path), @"^8140_Qualification_Memo (\d{2}[A-Za-z]{3}\d{4})\.pdf$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            DateTime date;
+            if (!match.Success || !DateTime.TryParseExact(match.Groups[1].Value, "ddMMMyyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out date)) continue;
+            matches.Add(new KeyValuePair<DateTime, string>(date, path));
+        }
+        if (matches.Count == 0) throw new FileNotFoundException("Place the 8140 Qualification Memo template in Template using " + QualificationMemoTemplatePattern + ". Other Template-folder files are ignored.");
+        string selected = matches.OrderByDescending(item => item.Key).ThenByDescending(item => item.Value, StringComparer.OrdinalIgnoreCase).First().Value;
+        string validationError;
+        if (!TryValidateEvidenceFile(selected, out validationError)) throw new InvalidDataException("The 8140 Qualification Memo template is not a readable PDF. Replace Template\\" + Path.GetFileName(selected) + " before preparing the notification.");
+        return selected;
+    }
+
     public string ReadManifest(string systemId)
     {
         string path = Path.Combine(Root(systemId), SystemDirectoryName, ManifestFilename);
         if (!File.Exists(path)) return null;
+        VerifyManifestChecksum(path, true);
         string text = ReadText(path, ManifestLimit);
         ValidateDatabase(text);
         return text;
@@ -254,7 +295,7 @@ internal sealed class PortableStorage : IDisposable
             RecoverTransactions(root);
             byte[] manifestBytes = Encoding.UTF8.GetBytes(canonical);
             string destinationHash = Sha256Bytes(manifestBytes), transaction = BeginTransaction(root, "manifest-write", manifest, manifest, TryFileHash(manifest), destinationHash);
-            try { AtomicWrite(manifest, manifestBytes);FailAfter("manifest-write");CompleteTransaction(transaction); }
+            try { AtomicWrite(manifest, manifestBytes);FailAfter("manifest-write-before-checksum");WriteManifestChecksum(manifest, destinationHash);FailAfter("manifest-write");CompleteTransaction(transaction); }
             catch { if (!String.Equals(TryFileHash(manifest), destinationHash, StringComparison.OrdinalIgnoreCase)) CompleteTransaction(transaction);throw; }
             string backupDirectory = SupportDirectory(root, "backup");
             string backupCreated = CreateSnapshot(backupDirectory, database, false);
@@ -318,7 +359,10 @@ internal sealed class PortableStorage : IDisposable
             string now = DateTime.UtcNow.ToString("o");
             restored["updated"] = now;
             string restoredText = json.Serialize(restored);
-            AtomicWrite(manifestPath, Encoding.UTF8.GetBytes(restoredText));
+            byte[] restoredBytes = Encoding.UTF8.GetBytes(restoredText);
+            string destinationHash = Sha256Bytes(restoredBytes), transaction = BeginTransaction(Root(systemId), "manifest-write", manifestPath, manifestPath, TryFileHash(manifestPath), destinationHash);
+            try { AtomicWrite(manifestPath, restoredBytes);FailAfter("manifest-write-before-checksum");WriteManifestChecksum(manifestPath, destinationHash);CompleteTransaction(transaction); }
+            catch { if (!String.Equals(TryFileHash(manifestPath), destinationHash, StringComparison.OrdinalIgnoreCase)) CompleteTransaction(transaction);throw; }
             CreateSnapshot(directory, restored, true);
             return restoredText;
         }
@@ -347,14 +391,25 @@ internal sealed class PortableStorage : IDisposable
         ValidateSystemId(logicalSystemId);
         string manifestPath = SystemFile(Root(systemId), ManifestFilename), directory = SupportDirectory(Root(systemId), "backup");
         if (!File.Exists(manifestPath)) throw new FileNotFoundException("The current database manifest is missing.");
-        ValidateDatabase(ReadText(manifestPath, ManifestLimit));
+        string manifestText = ReadText(manifestPath, ManifestLimit);
+        Dictionary<string, object> manifestDatabase = ValidateDatabase(manifestText);
         string latest = SnapshotPaths(directory).FirstOrDefault();
         if (latest == null) throw new FileNotFoundException("No JSON backup snapshot is available.");
         Dictionary<string, object> envelope = VerifySnapshot(latest), database = ObjectDictionary(envelope["database"]);
         object[] systems = ObjectArray(database["systems"]);
         if (systems.Length != 1 || !String.Equals(Convert.ToString(ObjectDictionary(systems[0])["id"]), logicalSystemId, StringComparison.Ordinal)) throw new InvalidDataException("The latest backup belongs to a different information system.");
         AuditState audit = VerifyAuditChain(SupportDirectory(Root(systemId), "Audit Logs"));
-        return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "saved", File.GetLastWriteTimeUtc(manifestPath).ToString("o") }, { "backup", Convert.ToString(envelope["created"]) }, { "filename", Path.GetFileName(latest) }, { "auditHealthy", true }, { "auditEntries", audit.Entries }, { "auditHeadHash", audit.HeadHash } });
+        bool checksumInitialized = false;
+        string manifestSha256;
+        if (File.Exists(manifestPath + ".sha256")) manifestSha256 = VerifyManifestChecksum(manifestPath, false);
+        else
+        {
+            if (!String.Equals(StateHash(manifestDatabase), StateHash(database), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The live database has no integrity checksum and does not match the newest verified backup. Full Access is blocked until an operator restores a verified backup.");
+            manifestSha256 = TryFileHash(manifestPath);
+            WriteManifestChecksum(manifestPath, manifestSha256);
+            checksumInitialized = true;
+        }
+        return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "saved", File.GetLastWriteTimeUtc(manifestPath).ToString("o") }, { "backup", Convert.ToString(envelope["created"]) }, { "filename", Path.GetFileName(latest) }, { "auditHealthy", true }, { "auditEntries", audit.Entries }, { "auditHeadHash", audit.HeadHash }, { "manifestSha256", manifestSha256 }, { "checksumInitialized", checksumInitialized } });
     }
 
     public void FinalizeMappedBackups()
@@ -367,6 +422,7 @@ internal sealed class PortableStorage : IDisposable
             {
                 string root = Root(id), manifest = SystemFile(root, ManifestFilename);
                 if (!File.Exists(manifest)) continue;
+                VerifyManifestChecksum(manifest, true);
                 Dictionary<string, object> database = ValidateDatabase(ReadText(manifest, ManifestLimit));
                 string backupDirectory = SupportDirectory(root, "backup");
                 CreateSnapshot(backupDirectory, database, false);
@@ -414,7 +470,7 @@ internal sealed class PortableStorage : IDisposable
                     if (result.Count >= 100000) throw new InvalidDataException("File scan limit exceeded.");
                     string filename = Path.GetFileName(file), relative = Relative(root, file).Replace(Path.DirectorySeparatorChar, '/');
                     bool reworkEvidence = IsOrganizationReworkEvidencePath(relative);
-                    if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase))) continue;
+                    if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, ManifestFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, ManifestChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase))) continue;
                     bool supportedExtension = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase), historicalSaar = current.Item3 && supportedExtension && LooksLikeSaarFilename(filename);
                     if (current.Item3 && !historicalSaar) continue;
                     long journalSize = 0L, journalModified = 0L;
@@ -502,7 +558,7 @@ internal sealed class PortableStorage : IDisposable
                 {
                     if (result.Count >= 100000) throw new InvalidDataException("Evidence location limit exceeded.");
                     string filename = Path.GetFileName(file);
-                    if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase))) continue;
+                    if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, ManifestFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, ManifestChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase))) continue;
                     if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;if (filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) skippedZips++;
                     string relative = Relative(root, file).Replace(Path.DirectorySeparatorChar, '/');var info = new FileInfo(file);long size = 0L, modified = 0L;
                     try { size = info.Length;modified = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds(); }
@@ -902,7 +958,7 @@ internal sealed class PortableStorage : IDisposable
     {
         if (!String.Equals(Path.GetDirectoryName(path).TrimEnd(Path.DirectorySeparatorChar), root.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)) return false;
         string name = Path.GetFileName(path);
-        return String.Equals(name, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "information-system-user-tracker.json", StringComparison.OrdinalIgnoreCase) || String.Equals(name, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(name, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(name, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase);
+        return String.Equals(name, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(name, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(name, ManifestFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(name, ManifestChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(name, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(name, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(name, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase);
     }
     private static Dictionary<string, object> RetentionError(string root, string path, string message) { return new Dictionary<string, object> { { "path", Relative(root, path).Replace(Path.DirectorySeparatorChar, '/') }, { "message", message } }; }
     private static string UniqueDestination(string directory, string filename)
@@ -1590,6 +1646,33 @@ internal sealed class PortableStorage : IDisposable
         return Directory.EnumerateFiles(directory, "user-tracker-*.json", SearchOption.TopDirectoryOnly).OrderByDescending(path => Path.GetFileName(path), StringComparer.Ordinal);
     }
 
+    private static string ManifestChecksumText(string hash)
+    {
+        return hash.ToLowerInvariant() + "  " + ManifestFilename + Environment.NewLine;
+    }
+
+    private static void WriteManifestChecksum(string manifestPath, string hash)
+    {
+        if (String.IsNullOrWhiteSpace(hash) || !Regex.IsMatch(hash, "^[a-fA-F0-9]{64}$")) throw new InvalidDataException("The database manifest SHA-256 value is invalid.");
+        AtomicWrite(manifestPath + ".sha256", Encoding.ASCII.GetBytes(ManifestChecksumText(hash)));
+    }
+
+    private static string VerifyManifestChecksum(string manifestPath, bool allowMissing)
+    {
+        string checksumPath = manifestPath + ".sha256";
+        if (!File.Exists(checksumPath))
+        {
+            if (allowMissing) return null;
+            throw new FileNotFoundException("The live database integrity checksum is missing.");
+        }
+        string checksum = ReadText(checksumPath, 1024).Trim();
+        Match match = Regex.Match(checksum, "^([a-fA-F0-9]{64})\\s{2}" + Regex.Escape(ManifestFilename) + "$");
+        if (!match.Success) throw new InvalidDataException("The live database integrity checksum file is invalid.");
+        string expected = match.Groups[1].Value.ToLowerInvariant(), actual = Sha256Bytes(File.ReadAllBytes(manifestPath));
+        if (!String.Equals(expected, actual, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The live database failed its SHA-256 integrity check. Full Access is blocked until an operator restores a verified backup.");
+        return actual;
+    }
+
     private Dictionary<string, object> ValidateDatabase(string text)
     {
         if (Encoding.UTF8.GetByteCount(text) > ManifestLimit) throw new InvalidDataException("The database manifest exceeds the 50 MB safety limit.");
@@ -1786,7 +1869,7 @@ internal sealed class PortableStorage : IDisposable
             {
                 if (!File.Exists(destination)) { CompleteTransaction(path);continue; }
                 string currentHash = Sha256Bytes(File.ReadAllBytes(destination));
-                if ((!String.IsNullOrEmpty(destinationHash) && String.Equals(currentHash, destinationHash, StringComparison.OrdinalIgnoreCase)) || (!String.IsNullOrEmpty(sourceHash) && String.Equals(currentHash, sourceHash, StringComparison.OrdinalIgnoreCase))) { CompleteTransaction(path);continue; }
+                if ((!String.IsNullOrEmpty(destinationHash) && String.Equals(currentHash, destinationHash, StringComparison.OrdinalIgnoreCase)) || (!String.IsNullOrEmpty(sourceHash) && String.Equals(currentHash, sourceHash, StringComparison.OrdinalIgnoreCase))) { WriteManifestChecksum(destination, currentHash);CompleteTransaction(path);continue; }
                 throw new InvalidDataException("An interrupted manifest transaction could not be reconciled safely.");
             }
             bool sourceExists = File.Exists(source), destinationExists = File.Exists(destination);
@@ -2078,6 +2161,15 @@ internal sealed class PortableStorage : IDisposable
 
     private static string[] EnumerateScanFiles(string root, string directory)
     {
+        for (int attempt = 0; ; attempt++)
+        {
+            try { return EnumerateScanFilesOnce(root, directory); }
+            catch (IOException) { if (attempt >= 3) throw;Thread.Sleep(NetworkRetryDelay(attempt)); }
+        }
+    }
+
+    private static string[] EnumerateScanFilesOnce(string root, string directory)
+    {
         if (ForceShellEnumerationForTests) return EnumerateShellScanEntries(root, directory, false);
         if (ForceNativeEnumerationForTests) return EnumerateNativeScanEntries(root, directory, false);
         try { return Directory.GetFiles(directory, "*", SearchOption.TopDirectoryOnly); }
@@ -2096,6 +2188,15 @@ internal sealed class PortableStorage : IDisposable
     }
 
     private static string[] EnumerateScanDirectories(string root, string directory)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try { return EnumerateScanDirectoriesOnce(root, directory); }
+            catch (IOException) { if (attempt >= 3) throw;Thread.Sleep(NetworkRetryDelay(attempt)); }
+        }
+    }
+
+    private static string[] EnumerateScanDirectoriesOnce(string root, string directory)
     {
         if (ForceShellEnumerationForTests) return EnumerateShellScanEntries(root, directory, true);
         if (ForceNativeEnumerationForTests) return EnumerateNativeScanEntries(root, directory, true);
@@ -2252,6 +2353,21 @@ internal sealed class PortableStorage : IDisposable
         return new IOException("Scan failed while " + stage + " at " + location + ". " + CleanLine(error.Message, 300), error);
     }
 
+    private static int NetworkRetryDelay(int attempt)
+    {
+        return Math.Min(3000, 250 * (1 << Math.Min(attempt, 4)));
+    }
+
+    private static bool DirectoryExistsWithRetry(string path)
+    {
+        for (int attempt = 0; attempt < 4; attempt++)
+        {
+            if (Directory.Exists(path)) return true;
+            if (attempt < 3) Thread.Sleep(NetworkRetryDelay(attempt));
+        }
+        return false;
+    }
+
     private static string NormalizeRootPath(string path)
     {
         if (String.IsNullOrWhiteSpace(path) || path.StartsWith(@"\\?\", StringComparison.Ordinal) || path.StartsWith(@"\\.\", StringComparison.Ordinal)) throw new InvalidDataException("The selected system folder path is invalid.");
@@ -2391,7 +2507,14 @@ internal sealed class PortableStorage : IDisposable
     private static Dictionary<string, object> ObjectDictionary(object value) { var result = value as Dictionary<string, object>; if (result == null) throw new InvalidDataException("The JSON object is invalid."); return result; }
     private static object[] ObjectArray(object value) { var result = value as object[]; if (result == null) throw new InvalidDataException("The JSON array is invalid."); return result; }
     private static string CleanLine(string value, int max) { if (value == null) return ""; var builder = new StringBuilder(); foreach (char c in value) builder.Append(Char.IsControl(c) ? ' ' : c); string clean = builder.ToString().Trim(); return clean.Length > max ? clean.Substring(0, max) : clean; }
-    private static string ReadText(string path, long limit) { var info = new FileInfo(path); if (!info.Exists) throw new FileNotFoundException("The requested file is missing."); if (info.Length > limit) throw new InvalidDataException("The requested file exceeds its size limit."); return File.ReadAllText(path, Encoding.UTF8); }
+    private static string ReadText(string path, long limit)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try { var info = new FileInfo(path);if (!info.Exists) throw new FileNotFoundException("The requested file is missing.");if (info.Length > limit) throw new InvalidDataException("The requested file exceeds its size limit.");return File.ReadAllText(path, Encoding.UTF8); }
+            catch (IOException) { if (attempt >= 3) throw;Thread.Sleep(NetworkRetryDelay(attempt)); }
+        }
+    }
     private static string EvidencePdfSha256(string path)
     {
         if (path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) using (Stream input = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) return Sha256Stream(input);
@@ -2447,8 +2570,8 @@ internal sealed class PortableStorage : IDisposable
             }
             catch (IOException error)
             {
-                if (attempt >= 2) throw new IOException("Compatible write failed for " + Path.GetFileName(path) + " during create, replace, or verification. " + CleanLine(error.Message, 300), error);
-                Thread.Sleep(75 * (attempt + 1));
+                if (attempt >= 4) throw new IOException("Compatible write failed for " + Path.GetFileName(path) + " during create, replace, or verification after network-aware retries. " + CleanLine(error.Message, 300), error);
+                Thread.Sleep(NetworkRetryDelay(attempt));
             }
             finally { TryDelete(temporary); }
         }
@@ -2470,23 +2593,33 @@ internal sealed class PortableStorage : IDisposable
     }
     private static void ProbeMappedFolder(string root)
     {
-        string path = Path.Combine(root, ".isut-map-probe-" + Guid.NewGuid().ToString("N") + ".tmp");
         byte[] expected = Encoding.ASCII.GetBytes("ISUT-MAPPED-FOLDER-PROBE");
-        try
+        for (int attempt = 0; ; attempt++)
         {
-            using (var stream = OpenCompatibleFileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096))
+            string path = Path.Combine(root, ".isut-map-probe-" + Guid.NewGuid().ToString("N") + ".tmp");
+            try
             {
-                stream.Write(expected, 0, expected.Length);
-                FlushCompatible(stream);
+                using (var stream = OpenCompatibleFileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096))
+                {
+                    stream.Write(expected, 0, expected.Length);
+                    FlushCompatible(stream);
+                }
+                byte[] actual = File.ReadAllBytes(path);
+                if (!String.Equals(Sha256Bytes(actual), Sha256Bytes(expected), StringComparison.OrdinalIgnoreCase)) throw new IOException("The mapped-folder probe could not verify the bytes it wrote.");
+                File.Delete(path);
+                return;
             }
-            byte[] actual = File.ReadAllBytes(path);
-            if (!String.Equals(Sha256Bytes(actual), Sha256Bytes(expected), StringComparison.OrdinalIgnoreCase)) throw new IOException("The mapped-folder probe could not verify the bytes it wrote.");
-            File.Delete(path);
-        }
-        catch (Exception error)
-        {
-            TryDelete(path);
-            throw new IOException("Mapped-folder compatibility probe failed while creating, writing, reading, or deleting a temporary file. " + CleanLine(error.Message, 300), error);
+            catch (IOException error)
+            {
+                TryDelete(path);
+                if (attempt >= 3) throw new IOException("Mapped-folder compatibility probe failed after network-aware retries while creating, writing, reading, or deleting a temporary file. " + CleanLine(error.Message, 300), error);
+                Thread.Sleep(NetworkRetryDelay(attempt));
+            }
+            catch (Exception error)
+            {
+                TryDelete(path);
+                throw new IOException("Mapped-folder compatibility probe failed while creating, writing, reading, or deleting a temporary file. " + CleanLine(error.Message, 300), error);
+            }
         }
     }
     private static void TryDelete(string path) { try { if (File.Exists(path)) File.Delete(path); } catch { } }

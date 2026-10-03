@@ -198,12 +198,15 @@ test('paperwork draft preparation is recorded in the User Record and cleared by 
  assert.match(page,/u=clearComplianceNotificationHistory\(u\)/);
 });
 
-test('User Agreement notification templates are launcher-attached and excluded from Sync',()=>{
+test('User Agreement and 8140 notification templates are launcher-attached and excluded from Sync',()=>{
  assert.match(page,/getDirectoryHandle\('Template',\{create:true\}\)/);
  assert.match(page,/\['system','template','error reports'/);
- assert.match(page,/notificationUsesUserAgreementTemplate\(state,selectedKind\)/);
+ assert.match(page,/notificationTemplateFor\(state,selectedKind\)/);
  assert.match(page,/portableRequest\(draftRoot,'outlook-draft'/);
- assert.match(page,/attachUserAgreementTemplate:attachAgreementTemplate/);
+ assert.match(page,/templateType,auditSystemIds:systemIds/);
+ assert.match(page,/Action Required: \$\{systemName\}/);
+ assert.match(page,/qualificationMemoTemplatePattern/);
+ assert.match(launcher,/Resolve8140QualificationMemoTemplate/);
  assert.match(page,/auditSystemIds:systemIds/);
  assert.match(page,/disabled=\{draftBusyIndex!==null\}/);
  assert.match(page,/Each system receives its own draft with Template\//);
@@ -216,4 +219,13 @@ test('User Agreement notification templates are launcher-attached and excluded f
  assert.match(launcher,/background-color:#fff200/);
  assert.match(launcher,/cyber-awareness-challenge/);
  assert.match(launcher,/cdse\.edu\/Training\/eLearning\/DS-IA112/);
+});
+
+test('Manage Systems supports verified editing and recoverable deletion',()=>{
+ assert.match(page,/async function updateInformationSystem/);
+ assert.match(page,/async function deleteInformationSystem/);
+ assert.match(page,/DELETE SYSTEM REGISTRATION/);
+ assert.match(page,/Delete System/);
+ assert.match(page,/mapped folder, evidence, database, and backups will be retained/i);
+ assert.match(launcher,/action == "forget"/);
 });
