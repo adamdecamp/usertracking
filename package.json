@@ -1,6 +1,6 @@
 {
   "name": "raptor-user-tracker",
-  "version": "1.2.89",
+  "version": "1.2.90",
   "packageManager": "pnpm@11.19.0",
   "private": true,
   "engines": {
