@@ -3,6 +3,7 @@ tests/evidence-validation.test.ts
 tests/evidence-audit-utils.test.ts
 tests/audit-utils.test.ts
 tests/compliance-report.test.ts
+tests/compliance-rules.test.ts
 tests/executive-summary.test.ts
 tests/cleanup-utils.test.ts
 tests/concurrency-utils.test.ts

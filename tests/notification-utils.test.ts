@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {availableNotificationKinds,dodCyberTrainingUrl,notificationBody,notificationKindForState,notificationTemplateFor,notificationUsesUserAgreementTemplate,privilegedUserTrainingUrl,qualificationMemoTemplatePattern,userAgreementTemplateFilename} from '../app/notification-utils.ts';
+import {annualRevalidationNotice,availableNotificationKinds,dodCyberTrainingUrl,notificationBody,notificationKindForState,notificationTemplateFor,notificationUsesUserAgreementTemplate,privilegedUserTrainingUrl,qualificationMemoTemplatePattern,userAgreementTemplateFilename} from '../app/notification-utils.ts';
 
 test('creates the approved missing-artifact message',()=>{
  const message=notificationBody('Missing','DoD Cyber Cert');
@@ -67,6 +67,15 @@ test('uses the approved friendly anti-phishing tone for every state and artifact
   assert.match(message,/If you have already submitted this document/);
   assert.match(message,/For security, this message will never ask you to provide a password/);
   assert.match(message,/Thank you for your assistance\.$/);
+ }
+});
+
+test('states the annual revalidation policy in every automated email',()=>{
+ const requirements=['SAAR','DoD Cyber Cert','User Agreement','8140 Cert Memo','Privileged User Training Cert','DTA Training'];
+ assert.equal(annualRevalidationNotice,'DoD Cyber Certifications, 8140 Certification Memos, DTA Training, Privileged User Training, and User Agreements must be revalidated annually.');
+ for(const state of['Missing','Due Within 30 Days','Overdue'] as const)for(const requirement of requirements){
+  if(state!=='Missing'&&requirement==='SAAR')continue;
+  assert.equal(notificationBody(state,requirement).split(annualRevalidationNotice).length,2,`${state}: ${requirement}`);
  }
 });
 

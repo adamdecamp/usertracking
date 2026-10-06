@@ -2,8 +2,8 @@ export class OperationTimeoutError extends Error{
  constructor(message:string){super(message);this.name='OperationTimeoutError'}
 }
 
-export function withOperationTimeout<T>(operation:(signal:AbortSignal)=>Promise<T>,options:{timeoutMs:number;message:string;signal?:AbortSignal}){
- const timeoutMs=Math.max(1,Math.min(Math.trunc(options.timeoutMs),120000)),controller=new AbortController();
+export function withOperationTimeout<T>(operation:(signal:AbortSignal)=>Promise<T>,options:{timeoutMs:number;message:string;signal?:AbortSignal;maxTimeoutMs?:number}){
+ const maximum=Math.max(1,Math.min(Math.trunc(options.maxTimeoutMs??120000),30*60*1000)),timeoutMs=Math.max(1,Math.min(Math.trunc(options.timeoutMs),maximum)),controller=new AbortController();
  return new Promise<T>((resolve,reject)=>{
   if(options.signal?.aborted){const error=new Error('Sync stopped by the operator.');error.name='AbortError';reject(error);return}
   let settled=false;

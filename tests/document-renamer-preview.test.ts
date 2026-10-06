@@ -89,7 +89,7 @@ test('disabled users retain supporting-artifact status for reactivation review',
 test('DTA Training is an annual DTA requirement throughout the directory workflow',()=>{
  assert.match(page,/\['DTA Training','DTA Training'\]/);
  assert.match(page,/hasPrivilegedType\(u,'DTA'\)\)out\.push\('DTA Training'\)/);
- assert.match(page,/if\(kind==='SAAR'\)return'Current';const due=new Date\(d\);due\.setUTCFullYear\(due\.getUTCFullYear\(\)\+1\)/);
+ assert.match(page,/return evidenceStatusAt\(kind,d,asOf\)/);
  assert.match(page,/\['8140 Cert Memo','Privileged User Training Cert','DTA Training'\]/);
 });
 
@@ -206,13 +206,17 @@ test('User Agreement and 8140 notification templates are launcher-attached and e
  assert.match(page,/templateType,auditSystemIds:systemIds/);
  assert.match(page,/Action Required: \$\{systemName\}/);
  assert.match(page,/qualificationMemoTemplatePattern/);
- assert.match(launcher,/Resolve8140QualificationMemoTemplate/);
+ assert.match(launcher,/StageOutlookTemplateAttachment/);
+ assert.match(launcher,/temporaryAttachmentPath = templateLookup\.GetAwaiter\(\)\.GetResult\(\)/);
  assert.match(page,/auditSystemIds:systemIds/);
  assert.match(page,/disabled=\{draftBusyIndex!==null\}/);
  assert.match(page,/Each system receives its own draft with Template\//);
  assert.match(launcher,/outlookThread\.SetApartmentState\(ApartmentState\.STA\)/);
  assert.match(launcher,/Interlocked\.CompareExchange\(ref outlookDraftActive/);
- assert.match(launcher,/templateLookup\.Wait\(TimeSpan\.FromSeconds\(20\)\)/);
+ assert.match(launcher,/templateLookup\.Wait\(TimeSpan\.FromMinutes\(5\)\)/);
+ assert.match(page,/A slow network share may take several minutes/);
+ assert.match(page,/isPortableRoot\(h\)\?portableNetworkWriteTimeoutMs:120000/);
+ assert.doesNotMatch(page,/Saving the paperwork notification history exceeded the two-minute safety limit/);
  assert.match(launcher,/OutlookHtmlWithSignature\(htmlBody, signatureHtml\)/);
  assert.match(launcher,/OUTLOOK DRAFT DISPLAYED/);
  assert.match(launcher,/OUTLOOK DRAFT FAILED/);

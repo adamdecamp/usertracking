@@ -250,9 +250,12 @@ internal sealed class PortableStorage : IDisposable
         string directory = Path.Combine(Root(systemId), TemplateDirectoryName);
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, UserAgreementTemplateFilename);
-        if (!File.Exists(path)) throw new FileNotFoundException("Place the User Agreement template at Template\\" + UserAgreementTemplateFilename + ". Other Template-folder files are ignored.");
         string validationError;
-        if (!TryValidateEvidenceFile(path, out validationError) || !path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The User Agreement template is not a readable PDF. Replace Template\\" + UserAgreementTemplateFilename + " before preparing the notification.");
+        if (!TryValidateEvidenceFile(path, out validationError) || !path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            if (validationError.IndexOf("missing", StringComparison.OrdinalIgnoreCase) >= 0) throw new FileNotFoundException("Place the User Agreement template at Template\\" + UserAgreementTemplateFilename + ". Other Template-folder files are ignored.");
+            throw new InvalidDataException("The User Agreement template is not a readable PDF. Replace Template\\" + UserAgreementTemplateFilename + " before preparing the notification. " + validationError);
+        }
         return path;
     }
 
@@ -261,18 +264,45 @@ internal sealed class PortableStorage : IDisposable
         string directory = Path.Combine(Root(systemId), TemplateDirectoryName);
         Directory.CreateDirectory(directory);
         var matches = new List<KeyValuePair<DateTime, string>>();
-        foreach (string path in Directory.GetFiles(directory, "*.pdf", SearchOption.TopDirectoryOnly))
+        string placeholder = null;
+        foreach (string path in EnumerateScanFiles(Root(systemId), directory).Where(path => path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)))
         {
-            Match match = Regex.Match(Path.GetFileName(path), @"^8140_Qualification_Memo (\d{2}[A-Za-z]{3}\d{4})\.pdf$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            string filename = Path.GetFileName(path);
+            Match match = Regex.Match(filename, @"^8140[_ ]Qualification[_ ]Memo[ _-]+(\d{2}[A-Za-z]{3}\d{4})\.pdf$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
             DateTime date;
-            if (!match.Success || !DateTime.TryParseExact(match.Groups[1].Value, "ddMMMyyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out date)) continue;
-            matches.Add(new KeyValuePair<DateTime, string>(date, path));
+            if (match.Success && DateTime.TryParseExact(match.Groups[1].Value, "ddMMMyyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out date)) matches.Add(new KeyValuePair<DateTime, string>(date, path));
+            else if (Regex.IsMatch(filename, @"^8140[_ ]Qualification[_ ]Memo[ _-]+DDMMMYYYY\.pdf$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) placeholder = path;
         }
-        if (matches.Count == 0) throw new FileNotFoundException("Place the 8140 Qualification Memo template in Template using " + QualificationMemoTemplatePattern + ". Other Template-folder files are ignored.");
-        string selected = matches.OrderByDescending(item => item.Key).ThenByDescending(item => item.Value, StringComparer.OrdinalIgnoreCase).First().Value;
+        string selected = matches.Count > 0 ? matches.OrderByDescending(item => item.Key).ThenByDescending(item => item.Value, StringComparer.OrdinalIgnoreCase).First().Value : placeholder;
+        if (String.IsNullOrWhiteSpace(selected)) throw new FileNotFoundException("Place the 8140 Qualification Memo template in Template using " + QualificationMemoTemplatePattern + " (for example, 8140_Qualification_Memo 06OCT2026.pdf). Spaces, underscores, or a hyphen before the date are accepted. Other Template-folder files are ignored.");
         string validationError;
-        if (!TryValidateEvidenceFile(selected, out validationError)) throw new InvalidDataException("The 8140 Qualification Memo template is not a readable PDF. Replace Template\\" + Path.GetFileName(selected) + " before preparing the notification.");
+        if (!TryValidateEvidenceFile(selected, out validationError)) throw new InvalidDataException("The 8140 Qualification Memo template is not a readable PDF. Replace Template\\" + Path.GetFileName(selected) + " before preparing the notification. " + validationError);
         return selected;
+    }
+
+    public string StageOutlookTemplateAttachment(string systemId, string templateType)
+    {
+        string source;
+        if (String.Equals(templateType, "8140-qualification-memo", StringComparison.Ordinal)) source = Resolve8140QualificationMemoTemplate(systemId);
+        else if (String.Equals(templateType, "user-agreement", StringComparison.Ordinal)) source = ResolveUserAgreementTemplate(systemId);
+        else throw new InvalidDataException("The requested Outlook template type is invalid.");
+        byte[] bytes = ReadAllBytesWithRetry(source, EvidenceLimit);
+        string directory = Path.Combine(Path.GetTempPath(), "RAPTOR", "Outlook Attachments", Guid.NewGuid().ToString("N")), destination = Path.Combine(directory, Path.GetFileName(source));
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllBytes(destination, bytes);
+            string validationError;
+            if (!TryValidateEvidenceFile(destination, out validationError)) throw new InvalidDataException("The locally staged Outlook attachment did not pass PDF validation. " + validationError);
+            if (!String.Equals(Sha256Bytes(bytes), Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The locally staged Outlook attachment failed its SHA-256 integrity check.");
+            return destination;
+        }
+        catch
+        {
+            try { if (File.Exists(destination)) File.Delete(destination); } catch { }
+            try { if (Directory.Exists(directory)) Directory.Delete(directory, false); } catch { }
+            throw;
+        }
     }
 
     public string ReadManifest(string systemId)

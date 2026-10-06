@@ -433,9 +433,10 @@ internal sealed class TrackerContext : ApplicationContext
                 string attachmentPath = null;
                 if (attachTemplate)
                 {
-                    Task<string> templateLookup = Task.Run(() => String.Equals(templateType, "8140-qualification-memo", StringComparison.Ordinal) ? storage.Resolve8140QualificationMemoTemplate(systemId) : storage.ResolveUserAgreementTemplate(systemId));
-                    if (!templateLookup.Wait(TimeSpan.FromSeconds(20))) throw new TimeoutException("The requested Template-folder attachment could not be validated within 20 seconds. Confirm that the mapped folder is available and try again.");
-                    attachmentPath = templateLookup.GetAwaiter().GetResult();
+                    Task<string> templateLookup = Task.Run(() => storage.StageOutlookTemplateAttachment(systemId, templateType));
+                    if (!templateLookup.Wait(TimeSpan.FromMinutes(5))) throw new TimeoutException("The requested Template-folder attachment could not be validated within five minutes. Confirm that the mapped folder is available and try again.");
+                    temporaryAttachmentPath = templateLookup.GetAwaiter().GetResult();
+                    attachmentPath = temporaryAttachmentPath;
                 }
                 else if (attachOrganizationSnapshot)
                 {
@@ -472,7 +473,11 @@ internal sealed class TrackerContext : ApplicationContext
             finally
             {
                 ReleaseComObject(attachment);ReleaseComObject(attachments);ReleaseComObject(message);ReleaseComObject(outlook);
-                if (!String.IsNullOrWhiteSpace(temporaryAttachmentPath)) try { File.Delete(temporaryAttachmentPath); } catch { }
+                if (!String.IsNullOrWhiteSpace(temporaryAttachmentPath))
+                {
+                    try { File.Delete(temporaryAttachmentPath); } catch { }
+                    try { string temporaryDirectory = Path.GetDirectoryName(temporaryAttachmentPath);if (!String.IsNullOrWhiteSpace(temporaryDirectory) && Directory.Exists(temporaryDirectory)) Directory.Delete(temporaryDirectory, false); } catch { }
+                }
                 Interlocked.Exchange(ref outlookDraftActive, 0);
             }
         }));

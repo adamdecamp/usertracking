@@ -390,10 +390,11 @@ export default function Guide() {
           <code>_cyber</code> in a privileged SAAR is only an account type and
           does not count as the certificate. A SAAR filename date records the
           account creation or disable action; it is not an expiration date. A SAAR
-          is therefore either Current or Missing and never becomes Overdue. Other
-          valid evidence, including DTA Training, becomes Overdue after one year
-          and remains Overdue indefinitely while that usable artifact remains in
-          the active record. Missing means that no usable artifact is recorded;
+          is therefore either Current or Missing and never becomes Overdue. DoD
+          Cyber Certifications, 8140 Certification Memos, DTA Training,
+          Privileged User Training, and User Agreements expire after one year and
+          require annual revalidation. They remain Overdue indefinitely while that
+          usable artifact remains in the active record. Missing means that no usable artifact is recorded;
           age alone never changes Overdue evidence to Missing.
         </p>
         <p>
@@ -536,9 +537,12 @@ export default function Guide() {
           Agreement notification attachments, the only recognized file is{" "}
           <code>Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf</code>. Other files
           in that folder are ignored by that automation. For 8140 Certification
-          Memo notices, use <code>8140_Qualification_Memo DDMMMYYYY.pdf</code>.
-          If more than one strictly named 8140 template is present, the newest
-          filename date is attached.
+          Memo notices, use <code>8140_Qualification_Memo DDMMMYYYY.pdf</code>,
+          for example <code>8140_Qualification_Memo 06OCT2026.pdf</code>. A
+          space, underscore, or hyphen is accepted before the date. If more
+          than one dated 8140 template is present, the newest filename date is
+          attached. The literal placeholder filename remains a fallback when
+          no dated template is present.
         </p>
         <p>
           The <b>Processing Status</b> panel appears during Sync, verified
@@ -1205,8 +1209,11 @@ export default function Guide() {
           </li>
           <li>
             For Missing, Due Within 30 Days, or Overdue 8140 Certification Memo
-            notices, the launcher attaches the newest strictly named{" "}
-            <code>Template/8140_Qualification_Memo DDMMMYYYY.pdf</code>. The message
+            notices, the launcher attaches the newest dated{" "}
+            <code>Template/8140_Qualification_Memo DDMMMYYYY.pdf</code> template.
+            The launcher validates it, copies it to a SHA-256-verified local
+            temporary path, and attaches that local copy so Outlook does not
+            have to read the attachment directly from a laggy shared drive. The message
             explains that users satisfying the requirement with certifications
             should enter the certification information on the memo and should not
             attach the certification itself.
@@ -1230,6 +1237,11 @@ export default function Guide() {
             required to complete the training.
           </li>
           <li>
+            Every automated email states that DoD Cyber Certifications, 8140
+            Certification Memos, DTA Training, Privileged User Training, and User
+            Agreements must be revalidated annually.
+          </li>
+          <li>
             Every automated message uses the <b>Sir/Ma&apos;am</b> salutation,
             explains why the recipient is being contacted, invites the recipient
             to report an earlier submission, and states that the message will never
@@ -1249,8 +1261,10 @@ export default function Guide() {
           is queued separately so a slow Outlook startup or attachment operation does
           not leave the tracker waiting indefinitely; Outlook displays an error if it
           cannot complete the draft. The launcher prevents overlapping draft requests,
-          limits User Agreement template validation to 20 seconds, preserves the
-          operator&apos;s configured Outlook signature, makes the DoD Cyber training URL
+          gives network-backed notification-history, manifest, and backup writes a
+          bounded ten-minute window, and uses retry-aware Template-folder attachment
+          validation for up to five minutes. It preserves the operator&apos;s configured
+          Outlook signature and makes the DoD Cyber training URL
           clickable, and records whether the draft was displayed or failed. Failures
           are also appended to the UTC-daily text error report.
         </aside>
@@ -1448,8 +1462,9 @@ export default function Guide() {
         audit files are verified in chronological order with a 30-second read
         limit per daily file; verification fails closed instead of hanging or
         extending an unverified chain. Launcher storage requests use bounded
-        safety limits: two minutes for ordinary reads or writes and 30 minutes
-        for resumable directory scans and Archive preflight. File-changing
+        safety limits: two minutes for ordinary reads or writes, ten minutes for
+        network-backed database and backup writes, and 30 minutes for resumable
+        directory scans and Archive preflight. File-changing
         Clean Up and Sync filename-normalization actions have a two-minute per-file
         watchdog, continue with later files after a failure, and list the
         affected item in the final review.

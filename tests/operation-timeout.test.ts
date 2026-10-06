@@ -28,3 +28,7 @@ test('does not retry a deterministic read failure',async()=>{
  await assert.rejects(withReadRetry(async()=>{attempts++;throw new Error('invalid PDF')},{timeoutMs:50,message:'timed out'}),/invalid PDF/);
  assert.equal(attempts,1);
 });
+
+test('supports an explicitly bounded extended network-operation limit',async()=>{
+ await assert.rejects(withOperationTimeout(()=>new Promise(()=>undefined),{timeoutMs:50,maxTimeoutMs:10,message:'extended network operation timed out'}),error=>error instanceof OperationTimeoutError&&error.message==='extended network operation timed out');
+});
