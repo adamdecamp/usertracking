@@ -32,7 +32,32 @@ test('slow network storage queues safely instead of failing after five seconds',
 });
 
 test('Sync confirms launcher activity before its first serialized storage request',()=>{
- assert.match(page,/setSyncRunning\(true\);await launcherPost\('\/api\/activity',true\);const launcherKeepAlive/);
+ assert.match(page,/setSyncRunning\(true\);await setLauncherLongOperation\(true,true\);const launcherKeepAlive/);
+});
+
+test('long scans and verified updates hold the launcher and browser session active end to end',()=>{
+ assert.match(launcher,/\/api\/operation-active/);
+ assert.match(launcher,/\/api\/operation-idle/);
+ assert.match(launcher,/activeStorageRequests > 0 \|\| longOperationActive/);
+ assert.match(launcher,/lastLongOperationHeartbeatUtc >= TimeSpan\.FromMinutes\(5\)/);
+ const apply=page.slice(page.indexOf('async function applyVerifiedSync'),page.indexOf('function resetFilters'));
+ assert.match(apply,/syncInProgress\.current=true/);
+ assert.match(apply,/setLauncherLongOperation\(true,true\)/);
+ assert.match(apply,/finally\{window\.clearInterval\(launcherKeepAlive\);syncInProgress\.current=false/);
+ assert.match(page,/stage==='scan'\|\|stage==='rework-retention'\?4\*60\*60\*1000/);
+});
+
+test('evidence that fails canonical folder routing cannot enter database matching',()=>{
+ const sync=page.slice(page.indexOf('async function syncMapped'),page.indexOf('async function sync(forceFull'));
+ assert.match(sync,/organizationFailurePaths\.add\(scanPathKey\(source\)\)/);
+ assert.match(sync,/!organizationFailurePaths\.has\(scanPathKey\(item\.path\)\)/);
+ assert.ok(sync.indexOf('organizationFailurePaths.add')<sync.indexOf('const activeEvidence='));
+});
+
+test('same-year supporting evidence can propose a missing-SAAR user in either Sync mode',()=>{
+ const sync=page.slice(page.indexOf('async function syncMapped'),page.indexOf('async function sync(forceFull'));
+ assert.match(sync,/sameYearSupportingEvidenceEligible\(item\.filename,scanDate\)/);
+ assert.doesNotMatch(sync,/if\(legacyImport\)\{for\(const item of activeEvidence\)/);
 });
 
 test('a live heartbeat cancels only a pending browser-closed shutdown',()=>{

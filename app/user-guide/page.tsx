@@ -577,12 +577,14 @@ export default function Guide() {
         <aside>
           <b>Daily Sync vs. Legacy Import:</b> Daily Sync is the normal operating
           mode. It safely normalizes recognizable filename dates, organizations, and
-          artifact wording, creates new users only from a valid SAAR, reuses validated
+          artifact wording, creates new users from a valid SAAR or from strictly
+          formatted supporting evidence dated in the current scan year, reuses validated
           unchanged Rework evidence, and limits PDF-assisted renaming to new, changed,
           or moved files. Legacy Import adds a full historical PDF-renaming sweep,
           bounded SAAR filename-field recovery, complete Rework revalidation, and
-          carefully reviewed user proposals from supporting
-          evidence when an old repository has no matching SAAR. Both modes retain
+          additional historical recovery. Both modes can propose a missing-SAAR user
+          from same-year supporting evidence, but neither mode lets older supporting
+          evidence create an account record without a SAAR. Both modes retain
           strict final storage gates, audit logging, retention, compression,
           collision review, and operator verification before database changes.
         </aside>
@@ -879,8 +881,10 @@ export default function Guide() {
           It never invents or silently substitutes an address.
         </p>
         <p>
-          A correctly named supporting artifact may create a proposed minimal
-          user record even when no usable SAAR exists. Sync reads the ordered{" "}
+          A correctly named supporting artifact dated in the same calendar year as
+          the Sync may create a proposed minimal user record even when no usable SAAR
+          exists. Older supporting evidence cannot seed a new record in Daily Sync.
+          Sync reads the ordered{" "}
           <code>Last_First</code> identity, authoritative organization folder,
           document type, and valid date from the filename. The proposed record
           keeps Official Email blank, marks SAAR as Missing, and includes the
@@ -1414,15 +1418,19 @@ export default function Guide() {
       </aside>
       <aside>
         <b>Long Sync Sessions:</b> While Sync is active, the tracker suspends
-        the browser-session idle disconnect and keeps the portable Windows
-        launcher active. Every active launcher storage operation counts as browser
-        presence, including a long directory scan. Exclusive lease renewal uses a
+          the browser-session idle disconnect and keeps the portable Windows
+          launcher active. A renewable long-operation hold covers the complete scan,
+          review application, update, and cleanup sequence, including the gaps between
+          individual storage requests. Every active launcher storage operation also counts as browser
+          presence. Exclusive lease renewal uses a
         separate launcher path, and automatic manifest or backup saves pause until
         Sync finishes. Only one lease-renewal request may be outstanding, preventing
         long scans from building a queue of redundant requests. The
         idle clocks restart from zero only after Sync completes, fails, or is
         stopped by the operator, so a large directory scan cannot log off the
-        operator merely because it exceeds an idle limit. If the local connection
+          operator merely because it exceeds an idle limit. The hold automatically
+          expires only if its browser heartbeat disappears for five minutes, preventing
+          a crashed browser from leaving a permanent lock. If the local connection
         is interrupted, resumable and read-only launcher requests receive up to four
         bounded safe retries. File-changing actions are never automatically
         repeated. During new-user ingestion, a complete filename is accepted

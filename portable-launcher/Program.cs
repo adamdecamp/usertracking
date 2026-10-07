@@ -38,6 +38,8 @@ internal sealed class TrackerContext : ApplicationContext
     private bool backupClean = true;
     private bool shutdownReady;
     private int activeStorageRequests;
+    private bool longOperationActive;
+    private DateTime lastLongOperationHeartbeatUtc = DateTime.MinValue;
     private int outlookDraftActive;
 
     [DllImport("user32.dll")]
@@ -157,6 +159,8 @@ internal sealed class TrackerContext : ApplicationContext
             if (path == "/api/mappings" && (parts[0] == "GET" || parts[0] == "HEAD")) { bool readOnlyMappings = String.Equals(OptionalQueryValue(target, "mode"), "read-only", StringComparison.Ordinal); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(storage.CachedMappings(!readOnlyMappings)), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/activity" && parts[0] == "POST") { RecordActivity(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/presence" && parts[0] == "POST") { RecordPresence(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
+            if (path == "/api/operation-active" && parts[0] == "POST") { SetLongOperation(true); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
+            if (path == "/api/operation-idle" && parts[0] == "POST") { SetLongOperation(false); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/backup-dirty" && parts[0] == "POST") { SetBackupClean(false); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/backup-complete" && parts[0] == "POST") { SetBackupClean(true); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/backup-failed" && parts[0] == "POST") { SetBackupClean(false); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
@@ -648,6 +652,23 @@ internal sealed class TrackerContext : ApplicationContext
         }
     }
 
+    private void SetLongOperation(bool active)
+    {
+        lock (lifecycleGate)
+        {
+            longOperationActive = active;
+            lastLongOperationHeartbeatUtc = active ? DateTime.UtcNow : DateTime.MinValue;
+            lastActivityUtc = DateTime.UtcNow;
+            lastPresenceUtc = lastActivityUtc;
+            if (active && shutdownReason == "browser-closed")
+            {
+                shutdownRequestedUtc = null;
+                shutdownReason = null;
+                shutdownReady = false;
+            }
+        }
+    }
+
     private void SetBackupClean(bool clean) { lock (lifecycleGate) { backupClean = clean; } }
 
     private void RequestShutdown(string reason)
@@ -681,32 +702,37 @@ internal sealed class TrackerContext : ApplicationContext
     {
         lock (lifecycleGate)
         {
-            return "{\"shutdownRequested\":" + (shutdownRequestedUtc.HasValue ? "true" : "false") + ",\"reason\":\"" + Json(shutdownReason ?? "") + "\",\"backupClean\":" + (backupClean ? "true" : "false") + ",\"activeStorageRequests\":" + activeStorageRequests.ToString() + "}";
+            return "{\"shutdownRequested\":" + (shutdownRequestedUtc.HasValue ? "true" : "false") + ",\"reason\":\"" + Json(shutdownReason ?? "") + "\",\"backupClean\":" + (backupClean ? "true" : "false") + ",\"activeStorageRequests\":" + activeStorageRequests.ToString() + ",\"longOperationActive\":" + (longOperationActive ? "true" : "false") + "}";
         }
     }
 
     private void EvaluateLifecycle()
     {
         bool storageBusy;
-        lock (lifecycleGate) storageBusy = activeStorageRequests > 0;
+        lock (lifecycleGate)
+        {
+            if (longOperationActive && DateTime.UtcNow - lastLongOperationHeartbeatUtc >= TimeSpan.FromMinutes(5)) longOperationActive = false;
+            storageBusy = activeStorageRequests > 0 || longOperationActive;
+        }
         if (!storageBusy) storage.ExpireLeases(TimeSpan.FromMinutes(3));
         bool shouldExit = false, finalize = false;
         lock (lifecycleGate)
         {
             DateTime now = DateTime.UtcNow;
-            if (activeStorageRequests > 0)
+            bool operationBusy = activeStorageRequests > 0 || longOperationActive;
+            if (operationBusy)
             {
                 lastPresenceUtc = now;
                 lastActivityUtc = now;
             }
-            if (activeStorageRequests == 0 && !shutdownRequestedUtc.HasValue && now - lastPresenceUtc >= TimeSpan.FromSeconds(90))
+            if (!operationBusy && !shutdownRequestedUtc.HasValue && now - lastPresenceUtc >= TimeSpan.FromSeconds(90))
             {
                 shutdownRequestedUtc = now;
                 shutdownReason = "browser-closed";
                 shutdownReady = false;
                 finalize = true;
             }
-            else if (activeStorageRequests == 0 && !shutdownRequestedUtc.HasValue && now - lastActivityUtc >= TimeSpan.FromMinutes(60))
+            else if (!operationBusy && !shutdownRequestedUtc.HasValue && now - lastActivityUtc >= TimeSpan.FromMinutes(60))
             {
                 shutdownRequestedUtc = now;
                 shutdownReason = "idle";

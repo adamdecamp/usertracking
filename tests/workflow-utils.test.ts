@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,archiveRetentionDisposition,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reactivationSaarEligibility,reconcileEvidence,recordComplianceNotificationHistory,recoverDisabledArchivedArtifacts,removePreflightArchivedArtifacts,requiresSaarFormClassification,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
+import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,archiveRetentionDisposition,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reactivationSaarEligibility,reconcileEvidence,recordComplianceNotificationHistory,recoverDisabledArchivedArtifacts,removePreflightArchivedArtifacts,requiresSaarFormClassification,sameYearSupportingEvidenceEligible,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -181,6 +181,14 @@ test('requires a strictly newer active SAAR before proposing disabled-user react
  assert.equal(sameDay.eligible,false);
  assert.equal(older.eligible,false);
  assert.equal(reactivationSaarEligibility({disabled:true,artifacts:[],changes:[]},'Brown_Jacob_(LM)_GEN_SAAR_27AUG2026.pdf.zip').eligible,false);
+});
+
+test('permits SAAR-missing user discovery only from same-calendar-year supporting evidence',()=>{
+ const scanDate=new Date('2026-10-07T18:00:00.000Z');
+ assert.equal(sameYearSupportingEvidenceEligible('Brown_Jacob_(LM)_Privileged_User_Training_Cert_06OCT2026.pdf.zip',scanDate),true);
+ assert.equal(sameYearSupportingEvidenceEligible('Brown_Jacob_(LM)_8140_Cert_Memo_31DEC2025.pdf',scanDate),false);
+ assert.equal(sameYearSupportingEvidenceEligible('Brown_Jacob_(LM)_GEN_SAAR_06OCT2026.pdf',scanDate),false);
+ assert.equal(sameYearSupportingEvidenceEligible('Brown_Jacob_(LM)_User_Agreement_2026.pdf',scanDate),false);
 });
 
 test('recovers archived evidence associations and actual statuses for disabled users',()=>{

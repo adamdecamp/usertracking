@@ -44,6 +44,11 @@ export function reactivationSaarEligibility(user:ReactivationEvidenceUser,active
  return{eligible:true,reason:'The active SAAR is newer than the recorded disabled SAAR.',activeDate:activeState.date,disabledDate:disabledState.date};
 }
 
+export function sameYearSupportingEvidenceEligible(filename:string,scanDate=new Date()){
+ const date=parseDate(filename);
+ return !!date&&!filenameMatchesKind(filename,'SAAR')&&date.getUTCFullYear()===scanDate.getUTCFullYear();
+}
+
 export function proposedNewUserArtifacts(filenames:string[],user:{last:string;first:string;organization?:string},kinds:string[],saarSource:string){
  const organization=user.organization?.trim().toUpperCase(),sameOrganization=(filename:string)=>!organization||organizationFrom(filename)?.trim().toUpperCase()===organization;
  const identityFiles=filenames.filter(filename=>filenameIdentityMatches(filename,user)&&sameOrganization(filename));
