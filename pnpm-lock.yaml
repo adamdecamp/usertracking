@@ -144,8 +144,8 @@ importers:
   vendor/next-eslint-plugin:
     dependencies:
       '@eslint-community/eslint-utils':
-        specifier: 4.9.1
-        version: 4.9.1(eslint@9.39.4(jiti@2.7.0)(supports-color@10.2.2))
+        specifier: 4.10.1
+        version: 4.10.1(eslint@9.39.4(jiti@2.7.0)(supports-color@10.2.2))
       fast-glob:
         specifier: 3.3.1
         version: 3.3.1
