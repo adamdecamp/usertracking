@@ -7,6 +7,7 @@ const release=readFileSync(new URL('../.github/workflows/signed-release.yml',imp
 const buildScript=readFileSync(new URL('../scripts/build-portable.ps1',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const portableIndex=readFileSync(new URL('../portable/index.html',import.meta.url),'utf8');
+const packageData=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as{version:string};
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const layout=readFileSync(new URL('../app/layout.tsx',import.meta.url),'utf8');
 const guide=readFileSync(new URL('../app/user-guide/page.tsx',import.meta.url),'utf8');
@@ -36,7 +37,7 @@ test('packages the R.A.P.T.O.R. brand and application icons consistently',()=>{
  assert.match(buildScript,/Tracker\.Favicon/);
  assert.match(buildScript,/Tracker\.BrandLogo/);
  assert.match(layout,/favicon\.ico\?v=\$\{iconVersion\}/);
- assert.match(portableIndex,/favicon\.ico\?v=1\.2\.91/);
+ assert.ok(portableIndex.includes(`/favicon.ico?v=${packageData.version}`));
  assert.match(launcher,/path == "\/favicon\.ico" \|\| path == "\/raptor-icon\.png"/);
  assert.match(launcher,/result\.Add\("\/raptor-icon\.png", new WebAsset \{ Bytes = LoadResource\("Tracker\.BrandLogo"\), ContentType = "image\/png" \}\)/);
  assert.match(page,/archived\.blockingErrors\.length/);

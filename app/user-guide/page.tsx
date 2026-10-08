@@ -244,11 +244,14 @@ export default function Guide() {
           filter to its default. The User Record displays Privileged User Types.
           During Modify Privileges, enter one or more types directly, separated by
           commas; a leading underscore such as <code>_admin</code> or <code>_dta</code>
-          is optional. The directory displays only document categories required by
-          every user currently shown. Every user requires one consolidated User
-          Agreement. All Privileged users additionally require the 8140 memo and
-          Privileged User Training certificate. Privileged users with DTA type
-          also require DTA training. Open a User Record and choose{" "}
+          is optional. The directory displays each document category required by
+          at least one user currently shown and marks nonapplicable cells as N/A.
+          Every user requires one consolidated User Agreement. Privileged users
+          require the Privileged User Training certificate. The 8140 memo applies
+          to non-DTA privileged types; a DTA-only privileged user is marked N/A for
+          the 8140 memo and requires DTA Training. A user with DTA plus another
+          privileged type still requires the 8140 memo for the other privileged
+          role. Open a User Record and choose{" "}
           <b>Edit User Information</b> to correct Official Email, Last Name, First
           Name, Middle Initial, or organization. The app validates replacement
           email addresses and rejects an address assigned to another record in the
@@ -258,6 +261,8 @@ export default function Guide() {
           evidence date stops the edit without overwriting a file. Disabled names
           and organizations stay locked as historical identities until the user is
           re-enabled, while Official Email and Middle Initial remain correctable.
+          Because SAARs do not expire, their displayed status is <b>Present</b> or
+          <b>Missing</b> rather than Current or Overdue.
           Every successful edit updates the manifest and backup and records the old
           and new values in the change history and tamper-evident audit log. Open a
           User Record to replace evidence, disable or enable access, modify

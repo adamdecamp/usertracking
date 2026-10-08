@@ -67,7 +67,8 @@ test('both Sync modes normalize complete noncanonical ZIP names before routing a
 });
 
 test('disabled users retain supporting-artifact status for reactivation review',()=>{
- assert.match(page,/const status=statusFor\(u,k\)/);
+ assert.match(page,/const status=statusFor\(u,kind,directoryAsOf\)/);
+ assert.match(page,/<Status kind=\{kind\} value=\{status\}/);
  assert.match(page,/const filterStatus=directoryStatusFor\(user,kind,asOf\)/);
  assert.doesNotMatch(page,/u\.disabled\?'':statusFor\(u,k\)/);
  assert.doesNotMatch(page,/status not applicable/);
@@ -88,7 +89,9 @@ test('disabled users retain supporting-artifact status for reactivation review',
 
 test('DTA Training is an annual DTA requirement throughout the directory workflow',()=>{
  assert.match(page,/\['DTA Training','DTA Training'\]/);
- assert.match(page,/hasPrivilegedType\(u,'DTA'\)\)out\.push\('DTA Training'\)/);
+ assert.match(page,/const requiredKinds=\(u:UserRecord\)=>requiredKindsForUser\(u\)/);
+ assert.match(page,/visible\.some\(u=>requirementAppliesToUser\(u,kind\)\)/);
+ assert.match(page,/status not-applicable">N\/A/);
  assert.match(page,/return evidenceStatusAt\(kind,d,asOf\)/);
  assert.match(page,/\['8140 Cert Memo','Privileged User Training Cert','DTA Training'\]/);
 });
