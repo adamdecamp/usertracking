@@ -1,5 +1,6 @@
 import {canonicalArtifactKind,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom,parseDate} from './filename-utils.ts';
 import {resolveSyncProvenanceEvidence} from './provenance-utils.ts';
+import {normalizePrivilegedTypes} from './privileged-type-utils.ts';
 
 export type ComplianceException={id:string;artifact:string;reason:string;approvedBy:string;createdAt:string;createdBy:string;expiresOn:string;revokedAt?:string;revokedBy?:string};
 export type ReconciliationUser={id:string;last:string;first:string;email:string;organization:string;disabled?:boolean;artifacts:{kind:string;filename:string;sha256?:string;path?:string}[]};
@@ -19,7 +20,7 @@ export type SaarAccountState={filename:string;date:Date;disabled:boolean};
 export type ArchivedEvidenceAssociation={filename:string;path:string};
 export type DisabledEvidenceArtifact={kind:string;filename:string;path?:string;sha256?:string};
 export type DisabledEvidenceUser={id:string;last:string;first:string;organization:string;disabled:boolean;artifacts:DisabledEvidenceArtifact[]};
-export type ReactivationEvidenceUser={disabled:boolean;artifacts:{filename:string}[];changes?:{files:string[]}[]};
+export type ReactivationEvidenceUser={disabled:boolean;artifacts:{filename:string}[];changes?:{timestamp?:string;action?:string;description?:string;files:string[]}[]};
 export type NotificationHistoryChange={timestamp:string;actor:string;action:string;description:string;rolesBefore:string[];rolesAfter:string[];files:string[]};
 export const complianceNotificationAction='Paperwork Notification Draft Prepared';
 export function requiresSaarFormClassification(filename:string){return /\.pdf$/i.test(filename)&&filenameMatchesKind(filename,'SAAR')}
@@ -35,8 +36,26 @@ export function newestSaarAccountState(filenames:string[]):SaarAccountState|unde
 }
 export function shouldDisableUserFromSaarState(currentlyDisabled:boolean,state:SaarAccountState|undefined){return !currentlyDisabled&&state?.disabled===true}
 
+export function saarAccountMetadata(role:'General'|'Privileged',privilegedTypes:Iterable<string>){
+ const roles=[role],types=role==='Privileged'?normalizePrivilegedTypes(privilegedTypes):[];
+ return{roles,privilegedTypes:types};
+}
+
+export function saarAccountMetadataChanged(user:{roles:Iterable<string>;privilegedTypes:Iterable<string>},role:'General'|'Privileged',privilegedTypes:Iterable<string>){
+ const detected=saarAccountMetadata(role,privilegedTypes),currentRoles=Array.from(user.roles),currentTypes=normalizePrivilegedTypes(user.privilegedTypes);
+ return currentRoles.length!==1||currentRoles[0]!==role||currentTypes.length!==detected.privilegedTypes.length||currentTypes.some(value=>!detected.privilegedTypes.includes(value));
+}
+
+function disabledDateFromHistory(user:ReactivationEvidenceUser){
+ const candidates=(user.changes??[]).filter(change=>{
+  const description=`${change.action??''} ${change.description??''}`.toUpperCase();
+  return !/RE[ -]?ENABL/.test(description)&&/\bDISABL(?:E|ED|ING)\b/.test(description);
+ }).map(change=>new Date(change.timestamp??'')).filter(date=>Number.isFinite(date.getTime()));
+ return candidates.sort((left,right)=>right.getTime()-left.getTime())[0];
+}
+
 export function reactivationSaarEligibility(user:ReactivationEvidenceUser,activeFilename:string){
- const activeState=newestSaarAccountState([activeFilename]),disabledState=newestSaarAccountState([...user.artifacts.map(artifact=>artifact.filename),...(user.changes??[]).flatMap(change=>change.files)].filter(disabledSaarFilename));
+ const activeState=newestSaarAccountState([activeFilename]),disabledFileState=newestSaarAccountState([...user.artifacts.map(artifact=>artifact.filename),...(user.changes??[]).flatMap(change=>change.files)].filter(disabledSaarFilename)),historyDate=disabledDateFromHistory(user),disabledState=historyDate&&(!disabledFileState||historyDate.getTime()>disabledFileState.date.getTime())?{filename:'Recorded disable action',date:historyDate,disabled:true}:disabledFileState;
  if(!user.disabled)return{eligible:false,reason:'The user is already active.',activeDate:activeState?.date,disabledDate:disabledState?.date};
  if(!activeState||activeState.disabled)return{eligible:false,reason:'A valid active SAAR date was not found.',activeDate:activeState?.date,disabledDate:disabledState?.date};
  if(!disabledState)return{eligible:false,reason:'The disabled account date is missing from the User Directory history.',activeDate:activeState.date};

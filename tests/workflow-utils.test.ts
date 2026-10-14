@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,archiveRetentionDisposition,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reactivationSaarEligibility,reconcileEvidence,recordComplianceNotificationHistory,recoverDisabledArchivedArtifacts,removePreflightArchivedArtifacts,requiresSaarFormClassification,sameYearSupportingEvidenceEligible,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
+import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,archiveRetentionDisposition,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reactivationSaarEligibility,reconcileEvidence,recordComplianceNotificationHistory,recoverDisabledArchivedArtifacts,removePreflightArchivedArtifacts,requiresSaarFormClassification,saarAccountMetadata,saarAccountMetadataChanged,sameYearSupportingEvidenceEligible,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -181,6 +181,28 @@ test('requires a strictly newer active SAAR before proposing disabled-user react
  assert.equal(sameDay.eligible,false);
  assert.equal(older.eligible,false);
  assert.equal(reactivationSaarEligibility({disabled:true,artifacts:[],changes:[]},'Brown_Jacob_(LM)_GEN_SAAR_27AUG2026.pdf.zip').eligible,false);
+});
+
+test('uses a recorded disable action timestamp when the disabled SAAR filename is unavailable',()=>{
+ const user={disabled:true,artifacts:[],changes:[{timestamp:'2026-08-26T18:45:00.000Z',action:'disabled user under documented override',description:'Administrative disable',files:[]}]};
+ const newer=reactivationSaarEligibility(user,'Brown_Jacob_(LM)_GEN_SAAR_27AUG2026.pdf.zip'),older=reactivationSaarEligibility(user,'Brown_Jacob_(LM)_GEN_SAAR_25AUG2026.pdf.zip');
+ assert.equal(newer.eligible,true);assert.equal(newer.disabledDate?.toISOString(),'2026-08-26T18:45:00.000Z');assert.equal(older.eligible,false);
+});
+
+test('does not mistake a re-enable history entry for the disable date',()=>{
+ const user={disabled:true,artifacts:[],changes:[{timestamp:'2026-08-26T18:45:00.000Z',action:'Re-enabled user',description:'Earlier reactivation',files:[]}]};
+ assert.equal(reactivationSaarEligibility(user,'Brown_Jacob_(LM)_GEN_SAAR_27AUG2026.pdf.zip').eligible,false);
+});
+
+test('normalizes and detects account metadata from a privileged SAAR',()=>{
+ assert.deepEqual(saarAccountMetadata('Privileged',['_dev','DEV']),{roles:['Privileged'],privilegedTypes:['DEV']});
+ assert.equal(saarAccountMetadataChanged({roles:['General'],privilegedTypes:[]},'Privileged',['dev']),true);
+ assert.equal(saarAccountMetadataChanged({roles:['Privileged'],privilegedTypes:['DEV']},'Privileged',['_dev']),false);
+ assert.deepEqual(saarAccountMetadata('General',['DEV']),{roles:['General'],privilegedTypes:[]});
+ for(const type of ['DADM','ADM','PADM','CYBER','DTA','DEV','CDA','CCL']){
+  assert.deepEqual(saarAccountMetadata('Privileged',[`_${type.toLowerCase()}`]),{roles:['Privileged'],privilegedTypes:[type]});
+  assert.equal(saarAccountMetadataChanged({roles:['General'],privilegedTypes:[]},'Privileged',[`_${type}`]),true);
+ }
 });
 
 test('permits SAAR-missing user discovery only from same-calendar-year supporting evidence',()=>{

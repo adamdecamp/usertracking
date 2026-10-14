@@ -274,7 +274,10 @@ export default function Guide() {
           Each existing-user evidence
           card accepts drag and drop or File Explorer selection for a PDF or a ZIP
           containing exactly one PDF. The Updated SAAR control uses the same upload
-          methods and validation. Access and privilege changes
+          methods and validation. Either selection method immediately runs the
+          Document Renamer filename gate, shows the canonical stored filename, and
+          rejects an upload when the user identity, organization, account type, or
+          complete evidence date cannot produce a valid name. Access and privilege changes
           require an updated SAAR by default. The date recorded for a SAAR is the
           date the account was created or disabled; it is never an expiration date,
           and SAARs are never classified as Overdue. Disabling or deleting a user moves only
@@ -308,10 +311,13 @@ export default function Guide() {
           override justification are preserved in the user history and audit log.
           Updated PDF evidence is validated and stored as a ZIP, and newly added
           roles or Privileged User Types require their additional evidence before
-          submission. An active, unexpired compliance exception for a newly
-          required artifact satisfies that privilege-change evidence gate; the
-          exception remains visible and auditable until evidence is supplied or
-          the exception expires. Manual validation and storage uses bounded stage-specific
+          submission. A verified updated SAAR can elevate the account even when
+          newly required annual supporting evidence is not supplied; each absent
+          requirement remains visibly Missing and the Administrative Change History
+          records the gap. An active, unexpired compliance exception remains visible
+          and auditable until evidence is supplied or the exception expires. Exceptions for multiple missing requirements are
+          cumulative: recording a second document exception does not replace the first.
+          Manual validation and storage uses bounded stage-specific
           safety limits, so a damaged file or interrupted launcher request returns
           an actionable error without a healthy multi-stage upload being cut off by
           one shared timer. If the exact
@@ -649,7 +655,10 @@ export default function Guide() {
           creating a historical User Directory record when necessary. An older
           disabled SAAR cannot override a newer active SAAR. A newer active SAAR
           creates a separate, unchecked reactivation approval item only when its date
-          is later than the disabled date recorded in the User Directory. Supporting
+          is later than the disabled date recorded in the User Directory. When a
+          disabled SAAR filename is unavailable, the timestamp of the latest recorded
+          disable action in Administrative Change History supplies that comparison date.
+          Supporting
            evidence updates remain independent and do not reactivate the user. Archived
            SAAR files remain permanent history and may stay associated with the disabled
            record without being moved back into an active folder.
@@ -664,6 +673,14 @@ export default function Guide() {
           value after SAAR extraction. The same Official Email on different
           identities—or on both Active and Disabled records—blocks automatic
           evidence matching or user creation and is shown for operator review.
+        </p>
+        <p>
+          A verified SAAR for an existing user also controls the account role and
+          Privileged User Type. For example, an approved{" "}
+          <code>PRIV_DEV_SAAR</code> update changes a General record to Privileged
+          with <code>_DEV</code> after the SAAR passes provenance verification. The
+          detected account change is displayed in Sync Review and written to both
+          Administrative Change History and the audit log.
         </p>
         <p>
           Daily Sync and Legacy Import automatically rename a recognized nonstandard

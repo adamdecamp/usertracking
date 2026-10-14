@@ -298,6 +298,14 @@ test('admits only complete GEN or PRIV SAAR filenames for automatic new-user dis
  assert.deepEqual(validateNewUserSaarFilename('Brown, Jacob (LM) PRIV admin SAAR 26AUG2026.pdf'),{
   valid:true,identity:{last:'Brown',first:'Jacob'},organization:'LM',role:'Privileged',privilegedTypes:['ADMIN'],
  });
+ for(const type of ['DADM','ADM','PADM','CYBER','DTA','DEV','CDA','CCL']){
+  assert.deepEqual(validateNewUserSaarFilename(`Brown_Jacob_(LM)_PRIV_${type}_SAAR_26AUG2026.pdf`),{
+   valid:true,identity:{last:'Brown',first:'Jacob'},organization:'LM',role:'Privileged',privilegedTypes:[type],
+  });
+  assert.deepEqual(validateNewUserSaarFilename(`Brown_Jacob_(LM)_priv_${type.toLowerCase()}_saar_26aug2026.pdf`),{
+   valid:true,identity:{last:'Brown',first:'Jacob'},organization:'LM',role:'Privileged',privilegedTypes:[type],
+  });
+ }
 });
 
 test('rejects template and incomplete SAAR filenames before automatic new-user discovery',()=>{

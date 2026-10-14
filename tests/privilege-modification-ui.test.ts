@@ -21,5 +21,20 @@ test('privilege modification records type changes rather than requiring a userna
 
 test('active compliance exceptions satisfy newly required privilege evidence',()=>{
  assert.match(userModal,/changeKinds=modify\?newRequired\.filter\(kind=>!baseKinds\.includes\(kind\)&&!originalRequired\.includes\(kind\)&&!exceptionFor\(draft,kind\)\):\[\]/);
- assert.match(userModal,/changeKinds\.every\(kind=>uploads\[kind\]\)/);
+ assert.doesNotMatch(userModal,/changeKinds\.every\(kind=>uploads\[kind\]\)/);
+ assert.match(userModal,/missingChangeKinds=changeKinds\.filter\(kind=>!uploads\[kind\]\)/);
+ assert.match(userModal,/left newly required evidence Missing/);
+ assert.match(userModal,/will remain Missing and will not block this account upgrade/);
+});
+
+test('multiple compliance exceptions accumulate from the current draft instead of replacing one another',()=>{
+ assert.match(userModal,/exceptions=\[\.\.\.\(draft\.exceptions\?\?\[\]\),item\]/);
+ assert.match(userModal,/const exceptions=\(draft\.exceptions\?\?\[\]\)\.map/);
+ assert.doesNotMatch(userModal,/exceptions=\[\.\.\.\(user\.exceptions\?\?\[\]\),item\]/);
+});
+
+test('verified SAAR Sync candidates carry detected account roles and privileged types',()=>{
+ assert.match(page,/roles:detectedAccount\.roles,privilegedTypes:detectedAccount\.privilegedTypes/);
+ assert.match(page,/action:'Update account role from verified SAAR'/);
+ assert.match(page,/verifiedTouchedArtifactKeys\.has\(`\$\{user\.id\}:SAAR`\)/);
 });
