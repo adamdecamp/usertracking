@@ -132,8 +132,7 @@ internal static class PortableStorageTests
         {
             compatibilityStorage.Map("compatibility-key", compatibilityRoot);
             Assert(compatibilityStorage.AcquireLease("compatibility-key", "compatibility-session"), "A filesystem that rejects write-through options should still acquire an exclusive lease using compatible buffered I/O.");
-            compatibilityStorage.SaveManifest("compatibility-key", Database("compatibility@example.mil"));
-            compatibilityStorage.SaveCsv("compatibility-key", Encoding.UTF8.GetBytes("header\nvalue"));
+            compatibilityStorage.SaveSystemState("compatibility-key", Encoding.UTF8.GetBytes("{\"database\":" + Database("compatibility@example.mil") + ",\"csv\":\"header\\nvalue\"}"));
             compatibilityStorage.AppendAudit("compatibility-key", "COMPATIBILITY WRITE TEST");
             compatibilityStorage.ReleaseLease("compatibility-key", "compatibility-session");
         }
@@ -148,7 +147,7 @@ internal static class PortableStorageTests
         string legacyCache = Path.Combine(root, "legacy-folder-mappings.json");
         File.WriteAllText(legacyCache, "{\"version\":1,\"lastSystemId\":\"legacy\",\"mappings\":[{\"systemId\":\"legacy\",\"path\":\"" + compatibilityRoot.Replace("\\", "\\\\") + "\"}]}", Encoding.UTF8);
         using (var legacyStorage = new PortableStorage("DOMAIN\\operator", legacyCache)) Assert(!legacyStorage.CachedMappings().Contains("legacy"), "Version-1 development mapping caches should be ignored so a clean update cannot restore stale test systems.");
-        string mappingCache = Path.Combine(root, "local-folder-mappings.json");
+        string localCacheRoot = Path.Combine(Path.GetDirectoryName(root), Path.GetFileName(root) + "-local-cache"), mappingCache = Path.Combine(localCacheRoot, "local-folder-mappings.json"), performanceCacheRoot = Path.Combine(localCacheRoot, "performance-cache");
         string legacyAuditDirectory = Path.Combine(root, "Audit Logs");Directory.CreateDirectory(legacyAuditDirectory);File.WriteAllText(Path.Combine(legacyAuditDirectory, "audit-2020-01-01.txt"), "legacy audit record", Encoding.UTF8);
         string legacyErrorDirectory = Path.Combine(root, "Error Reports");Directory.CreateDirectory(legacyErrorDirectory);File.WriteAllText(Path.Combine(legacyErrorDirectory, "legacy-error.txt"), "legacy error record", Encoding.UTF8);
         File.WriteAllText(Path.Combine(root, "information-system-user-tracker.json"), Database("legacy-layout@example.mil"), Encoding.UTF8);
@@ -282,6 +281,7 @@ internal static class PortableStorageTests
         }
         finally { PortableStorage.ForceNativeEnumerationForTests = false; }
         Assert(File.Exists(Path.Combine(root, "System", "tracker-sync-index.json")) && File.Exists(Path.Combine(root, "System", "tracker-sync-index.json.sha256")) && !File.Exists(Path.Combine(root, "tracker-sync-index.json")), "A successful scan should store a checksum-protected shared Sync index beneath System.");
+        Assert(Directory.EnumerateFiles(performanceCacheRoot, "tracker-sync-index.json", SearchOption.AllDirectories).Any(), "A successful scan should mirror the verified Sync index into the per-Windows-user local performance cache.");
         object[] cachedScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", false));
         Dictionary<string, object> cachedEvidenceItem = cachedScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
         Assert(Convert.ToBoolean(cachedEvidenceItem["unchanged"]), "A later scan should skip unchanged evidence content validation.");
@@ -514,9 +514,10 @@ internal static class PortableStorageTests
         Assert(journalRun == Convert.ToString(journalResumedObject["runId"]) && Convert.ToInt32(journalResumedObject["resumedFiles"]) > 0, "An uncommitted Sync journal should resume completed file validation after restart or reconnect.");
         storage.CommitSyncJournal("mapping-key", journalRun);Assert(storage.CommitSyncJournal("mapping-key", journalRun).Contains("\"committed\":true"), "Sync journal commit should be safely repeatable.");
         string incrementalScan = storage.ScanWithJournal("mapping-key", "journal-rules", false);var incrementalScanObject = (Dictionary<string, object>)Json.DeserializeObject(incrementalScan);string incrementalRun = Convert.ToString(incrementalScanObject["runId"]);object[] incrementalItems = (object[])incrementalScanObject["items"];
-        var unchangedPaths = new HashSet<string>(incrementalItems.Cast<Dictionary<string, object>>().Where(item => item.ContainsKey("unchanged") && Convert.ToBoolean(item["unchanged"])).Select(item => Convert.ToString(item["path"])), StringComparer.OrdinalIgnoreCase);var incrementalJournalPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);string incrementalJournalPath = Path.Combine(root, "System", "Sync Journals", "sync-" + incrementalRun + ".jsonl");
+        var unchangedPaths = new HashSet<string>(incrementalItems.Cast<Dictionary<string, object>>().Where(item => item.ContainsKey("unchanged") && Convert.ToBoolean(item["unchanged"])).Select(item => Convert.ToString(item["path"])), StringComparer.OrdinalIgnoreCase);var incrementalJournalPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);string incrementalJournalPath = Directory.EnumerateFiles(performanceCacheRoot, "sync-" + incrementalRun + ".jsonl", SearchOption.AllDirectories).Single();
         foreach (string line in File.ReadLines(incrementalJournalPath, Encoding.UTF8)) { var entry = (Dictionary<string, object>)Json.DeserializeObject(line);if (entry.ContainsKey("type") && Convert.ToString(entry["type"]) == "file" && entry.ContainsKey("path")) incrementalJournalPaths.Add(Convert.ToString(entry["path"])); }
-        Assert(unchangedPaths.Count > 0 && !unchangedPaths.Overlaps(incrementalJournalPaths), "Unchanged indexed evidence should be returned from the fast metadata pass without two durable journal writes per file.");storage.CommitSyncJournal("mapping-key", incrementalRun);
+        Assert(unchangedPaths.Count > 0 && !unchangedPaths.Overlaps(incrementalJournalPaths), "Unchanged indexed evidence should be returned from the fast metadata pass without two durable journal writes per file.");
+        Assert(incrementalJournalPath.IndexOf(Path.Combine("performance-cache", ""), StringComparison.OrdinalIgnoreCase) >= 0 && !File.Exists(Path.Combine(root, "System", "Sync Journals", "sync-" + incrementalRun + ".jsonl")), "Resumable Sync journals should remain in the per-Windows-user local performance cache instead of adding per-file writes to the shared drive.");storage.CommitSyncJournal("mapping-key", incrementalRun);
         string interruptedRelative = Path.Combine("GOV", "Transaction_User_(GOV)_User_Agreement_24AUG2026.pdf"), interruptedPath = Path.Combine(root, interruptedRelative), interruptedTarget = "Transaction_User_(GOV)_User_Agreement_25AUG2026.pdf";Directory.CreateDirectory(Path.GetDirectoryName(interruptedPath));File.WriteAllBytes(interruptedPath, PdfBytes());
         bool interruptionObserved = false;try { PortableStorage.FailAfterStageForTests = "rename-move";storage.NormalizeEvidenceFilename("mapping-key", interruptedRelative, interruptedTarget); } catch (IOException) { interruptionObserved = true; } finally { PortableStorage.FailAfterStageForTests = null; }
         Assert(interruptionObserved, "The transaction recovery test must simulate a crash after a completed move.");storage.Map("mapping-key", root);Assert(!File.Exists(interruptedPath) && File.Exists(Path.Combine(Path.GetDirectoryName(interruptedPath), interruptedTarget)) && !Directory.EnumerateFiles(Path.Combine(root, "System", "Storage Transactions"), "transaction-*.json").Any(), "Mapping after an interrupted rename should reconcile the durable transaction without duplicating or losing the file.");

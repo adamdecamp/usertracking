@@ -115,7 +115,7 @@ test('incremental Sync uses a validation-only cache version and reports fast-pat
  assert.match(page,/readSyncIndex\(JSON\.parse\(text\),evidenceValidationCacheVersion\)/);
  assert.match(page,/createSyncIndex\(evidenceValidationCacheVersion,files\)/);
  assert.match(page,/scan\?rules=\$\{encodeURIComponent\(evidenceValidationCacheVersion\)\}.*&legacy=\$\{legacyImport\?'1':'0'\}/);
- assert.match(page,/\$\{modeLabel\}: \$\{scanResult\.scanned\} discovered in \$\{scopeLabel\}; \$\{scanResult\.unchanged\}/);
+ assert.match(page,/\$\{modeLabel\}: \$\{scanResult\.scanned\} discovered in \$\{scopeLabel\} in \$\{\(scanDurationMs\/1000\)\.toFixed\(1\)\} seconds; \$\{scanResult\.unchanged\}/);
  assert.match(page,/Daily Archive preflight already completed;/);
 });
 

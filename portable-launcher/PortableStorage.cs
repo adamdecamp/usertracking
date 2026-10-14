@@ -25,6 +25,8 @@ internal sealed class PortableStorage : IDisposable
     private const int AuditVersion = 1;
     private const int SyncIndexVersion = 1;
     private const int SyncJournalVersion = 1;
+    private const int SyncJournalBatchEntryLimit = 64;
+    private const int SyncJournalBatchByteLimit = 64 * 1024;
     private const int StorageTransactionVersion = 1;
     private const int MappingCacheVersion = 2;
     private const int NetworkReadAttempts = 6;
@@ -114,6 +116,32 @@ internal sealed class PortableStorage : IDisposable
         public string RuleSetVersion;
         public int ResumedFiles;
         public readonly Dictionary<string, Dictionary<string, object>> Completed = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed class SyncJournalWriter : IDisposable
+    {
+        private readonly PortableStorage owner;
+        private readonly string path;
+        private readonly List<string> lines = new List<string>();
+        private int byteCount;
+
+        public SyncJournalWriter(PortableStorage value, string journalPath) { owner = value; path = journalPath; }
+
+        public void Append(Dictionary<string, object> item)
+        {
+            string line = owner.json.Serialize(item) + Environment.NewLine;
+            lines.Add(line);byteCount += Encoding.UTF8.GetByteCount(line);
+            if (lines.Count >= SyncJournalBatchEntryLimit || byteCount >= SyncJournalBatchByteLimit) Flush();
+        }
+
+        public void Flush()
+        {
+            if (lines.Count == 0) return;
+            owner.AppendSyncJournalLines(path, lines, byteCount);
+            lines.Clear();byteCount = 0;
+        }
+
+        public void Dispose() { Flush(); }
     }
 
     public PortableStorage(string currentActor, string cachePath = null)
@@ -347,6 +375,22 @@ internal sealed class PortableStorage : IDisposable
         }
     }
 
+    public string SaveSystemState(string systemId, byte[] bytes)
+    {
+        if (bytes == null || bytes.LongLength <= 0 || bytes.LongLength > ManifestLimit * 2) throw new InvalidDataException("The combined database commit is empty or exceeds the 100 MB safety limit.");
+        Dictionary<string, object> envelope;
+        try { envelope = ObjectDictionary(json.DeserializeObject(Encoding.UTF8.GetString(bytes))); }
+        catch (Exception) { throw new InvalidDataException("The combined database commit is invalid JSON."); }
+        if (!envelope.ContainsKey("database") || !envelope.ContainsKey("csv")) throw new InvalidDataException("The combined database commit is missing its database or CSV backup.");
+        Dictionary<string, object> database = ObjectDictionary(envelope["database"]);
+        string csv = Convert.ToString(envelope["csv"], CultureInfo.InvariantCulture) ?? "";
+        byte[] csvBytes = Encoding.UTF8.GetBytes(csv);
+        if (csvBytes.LongLength > ManifestLimit) throw new InvalidDataException("The CSV backup exceeds the 50 MB safety limit.");
+        Dictionary<string, object> result = ObjectDictionary(json.DeserializeObject(SaveManifest(systemId, json.Serialize(database))));
+        result["csvSaved"] = SaveCsv(systemId, csvBytes);
+        return json.Serialize(result);
+    }
+
     public string ListBackups(string systemId, string logicalSystemId)
     {
         ValidateSystemId(logicalSystemId);
@@ -486,6 +530,8 @@ internal sealed class PortableStorage : IDisposable
             string root = Root(systemId), cleanOrganization = String.IsNullOrWhiteSpace(organization) ? null : ValidOrganizationName(organization), scanRoot = OrganizationScopeRoot(root, cleanOrganization), journalRuleSet = cleanRuleSet + "|scope=" + (cleanOrganization ?? "system") + "|mode=" + (legacyImport ? "legacy" : "daily");
             RecoverTransactions(root);
             SyncJournalState journal = StartOrResumeSyncJournal(root, journalRuleSet, fullRescan);
+            using (var journalWriter = new SyncJournalWriter(this, journal.Path))
+            {
             FailAfter("scan-start");
             Dictionary<string, Dictionary<string, object>> allPrevious = LoadSyncIndex(root, cleanRuleSet), previous = fullRescan ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : allPrevious;
             var result = new List<Dictionary<string, object>>();
@@ -505,8 +551,8 @@ internal sealed class PortableStorage : IDisposable
                     if (current.Item2 == 0 && (String.Equals(filename, "tracker-active-session.json", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, "tracker-exclusive-session.lock", StringComparison.OrdinalIgnoreCase) || String.Equals(filename, ManifestFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, ManifestChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, SyncIndexChecksumFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(filename, RenamerQueueFilename, StringComparison.OrdinalIgnoreCase))) continue;
                     bool supportedExtension = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase), historicalSaar = current.Item3 && supportedExtension && LooksLikeSaarFilename(filename);
                     if (current.Item3 && !historicalSaar) continue;
-                    long journalSize = 0L, journalModified = 0L;string journalMetadataError;
-                    if (supportedExtension) TryReadFileMetadata(file, out journalSize, out journalModified, out journalMetadataError);
+                    long journalSize = 0L, journalModified = 0L;string journalMetadataError = "";
+                    bool journalMetadataRead = !supportedExtension || TryReadFileMetadata(file, out journalSize, out journalModified, out journalMetadataError);
                     Dictionary<string, object> resumed;
                     if ((!legacyImport || !reworkEvidence) && journal.Completed.TryGetValue(relative, out resumed) && resumed.ContainsKey("cacheable") && Convert.ToBoolean(resumed["cacheable"], CultureInfo.InvariantCulture) && JournalItemMatches(resumed, filename, journalSize, journalModified))
                     {
@@ -525,19 +571,19 @@ internal sealed class PortableStorage : IDisposable
                         result.Add(unchangedItem);next.Add(IndexItem(unchangedItem));
                         continue;
                     }
-                    AppendSyncJournal(journal.Path, new Dictionary<string, object> { { "type", "file" }, { "state", "pending" }, { "path", relative }, { "name", CleanLine(filename, 500) }, { "size", journalSize }, { "lastModifiedUnixMs", journalModified }, { "timestampUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) } });
+                    journalWriter.Append(new Dictionary<string, object> { { "type", "file" }, { "state", "pending" }, { "path", relative }, { "name", CleanLine(filename, 500) }, { "size", journalSize }, { "lastModifiedUnixMs", journalModified }, { "timestampUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) } });
                     FailAfter("scan-file-pending");
                     if (!supportedExtension)
                     {
                         var rejected = new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", journalSize }, { "lastModifiedUnixMs", journalModified }, { "accepted", false }, { "error", "Only PDF evidence or a ZIP containing one PDF is accepted." }, { "unchanged", false }, { "cacheable", true } };
-                        result.Add(rejected);AppendSyncJournalResult(journal.Path, rejected, "rejected");
+                        result.Add(rejected);AppendSyncJournalResult(journalWriter, rejected, "rejected");
                         continue;
                     }
-                    long size, lastModifiedUnixMs;string metadataError;
-                    if (!TryReadFileMetadata(file, out size, out lastModifiedUnixMs, out metadataError))
+                    long size = journalSize, lastModifiedUnixMs = journalModified;string metadataError = journalMetadataError;
+                    if (!journalMetadataRead)
                     {
                         var rejected = new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", 0L }, { "lastModifiedUnixMs", 0L }, { "accepted", false }, { "error", "File metadata could not be read after network-aware retries: " + metadataError }, { "unchanged", false }, { "cacheable", false } };
-                        result.Add(rejected);AppendSyncJournalResult(journal.Path, rejected, "rejected");
+                        result.Add(rejected);AppendSyncJournalResult(journalWriter, rejected, "rejected");
                         continue;
                     }
                     Dictionary<string, object> cached = null;
@@ -554,7 +600,7 @@ internal sealed class PortableStorage : IDisposable
                     var item = new Dictionary<string, object> { { "name", cleanName }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", lastModifiedUnixMs }, { "accepted", accepted }, { "error", cleanError }, { "encryptedPdf", encryptedPdf }, { "unchanged", unchanged } };
                     result.Add(item);
                     if (cacheable) next.Add(new Dictionary<string, object> { { "name", cleanName }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", lastModifiedUnixMs }, { "accepted", accepted }, { "error", cleanError } });
-                    item["cacheable"] = cacheable;AppendSyncJournalResult(journal.Path, item, accepted ? "validated" : "rejected");item.Remove("cacheable");
+                    item["cacheable"] = cacheable;AppendSyncJournalResult(journalWriter, item, accepted ? "validated" : "rejected");item.Remove("cacheable");
                 }
                 foreach (string directory in EnumerateScanDirectories(root, current.Item1))
                 {
@@ -566,9 +612,12 @@ internal sealed class PortableStorage : IDisposable
                     pending.Push(Tuple.Create(directory, current.Item2 + 1, permanentSaarArchive));
                 }
             }
+            journalWriter.Flush();
             SaveSyncIndex(root, cleanRuleSet, next);
-            AppendSyncJournal(journal.Path, new Dictionary<string, object> { { "type", "run-state" }, { "state", "indexed" }, { "timestampUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "files", result.Count } });
+            journalWriter.Append(new Dictionary<string, object> { { "type", "run-state" }, { "state", "indexed" }, { "timestampUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "files", result.Count } });
+            journalWriter.Flush();
             return json.Serialize(new Dictionary<string, object> { { "version", SyncJournalVersion }, { "runId", journal.RunId }, { "resumedFiles", journal.ResumedFiles }, { "items", result.ToArray() } });
+            }
         }
     }
 
@@ -627,7 +676,7 @@ internal sealed class PortableStorage : IDisposable
         ValidateSessionId(runId);
         lock (RootLock(systemId))
         {
-            string directory = SupportDirectory(Root(systemId), "Sync Journals"), path = Path.Combine(directory, "sync-" + runId + ".jsonl");
+            string directory = LocalPerformanceCacheDirectory(Root(systemId), "Sync Journals"), path = Path.Combine(directory, "sync-" + runId + ".jsonl");
             if (!File.Exists(path)) throw new FileNotFoundException("The Sync journal no longer exists.");
             AppendSyncJournal(path, new Dictionary<string, object> { { "type", "run-state" }, { "state", "committed" }, { "timestampUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) } });
             PruneSyncJournals(directory);
@@ -637,7 +686,7 @@ internal sealed class PortableStorage : IDisposable
 
     private SyncJournalState StartOrResumeSyncJournal(string root, string ruleSetVersion, bool fullRescan)
     {
-        string directory = SupportDirectory(root, "Sync Journals");
+        string directory = LocalPerformanceCacheDirectory(root, "Sync Journals");
         if (!fullRescan)
         {
             foreach (string candidate in Directory.EnumerateFiles(directory, "sync-*.jsonl", SearchOption.TopDirectoryOnly).OrderByDescending(Path.GetFileName))
@@ -688,12 +737,27 @@ internal sealed class PortableStorage : IDisposable
         entry.Remove("unchanged");entry.Remove("resumed");AppendSyncJournal(path, entry);
     }
 
+    private static void AppendSyncJournalResult(SyncJournalWriter writer, Dictionary<string, object> item, string state)
+    {
+        var entry = new Dictionary<string, object>(item);entry["type"] = "file";entry["state"] = state;entry["timestampUtc"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+        entry.Remove("unchanged");entry.Remove("resumed");writer.Append(entry);
+    }
+
     private void AppendSyncJournal(string path, Dictionary<string, object> item)
     {
-        string line = json.Serialize(item) + Environment.NewLine;byte[] bytes = Encoding.UTF8.GetBytes(line);
+        string line = json.Serialize(item) + Environment.NewLine;
+        AppendSyncJournalLines(path, new List<string> { line }, Encoding.UTF8.GetByteCount(line));
+    }
+
+    private void AppendSyncJournalLines(string path, IList<string> lines, int expectedBytes)
+    {
+        if (lines == null || lines.Count == 0) return;
+        var builder = new StringBuilder(Math.Max(expectedBytes, 256));
+        foreach (string line in lines) builder.Append(line);
+        byte[] bytes = Encoding.UTF8.GetBytes(builder.ToString());
         var info = new FileInfo(path);if (info.Exists && info.Length + bytes.Length > JournalLimit) throw new InvalidDataException("The resumable Sync journal exceeds the 100 MB limit.");
         Directory.CreateDirectory(Path.GetDirectoryName(path));
-        using (var stream = OpenCompatibleFileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, 8192)) { stream.Write(bytes, 0, bytes.Length);FlushCompatible(stream); }
+        using (var stream = OpenCompatibleFileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, Math.Max(8192, Math.Min(bytes.Length, 65536)))) { stream.Write(bytes, 0, bytes.Length);FlushCompatible(stream); }
     }
 
     private static bool JournalItemMatches(Dictionary<string, object> item, string filename, long size, long modified)
@@ -715,6 +779,16 @@ internal sealed class PortableStorage : IDisposable
         foreach (string stale in Directory.EnumerateFiles(directory, "sync-*.jsonl", SearchOption.TopDirectoryOnly).OrderByDescending(Path.GetFileName).Skip(30)) TryDelete(stale);
     }
 
+    private string LocalPerformanceCacheDirectory(string root, string purpose)
+    {
+        string parent = Path.GetDirectoryName(mappingCachePath);
+        if (String.IsNullOrWhiteSpace(parent)) parent = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InformationSystemUserTracker");
+        string rootKey = Sha256(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).ToUpperInvariant()).Substring(0, 24);
+        string directory = Path.Combine(parent, "performance-cache", rootKey, purpose);
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
     private Dictionary<string, Dictionary<string, object>> LoadSyncIndex(string root, string ruleSetVersion)
     {
         var result = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
@@ -722,9 +796,26 @@ internal sealed class PortableStorage : IDisposable
         {
             string indexPath = SystemFile(root, SyncIndexFilename), checksumPath = SystemFile(root, SyncIndexChecksumFilename);
             if (!File.Exists(indexPath) || !File.Exists(checksumPath)) return result;
-            string text = ReadText(indexPath, SyncIndexLimit), checksum = ReadText(checksumPath, 1024).Trim();
+            string checksum = ReadText(checksumPath, 1024).Trim();
             string[] checksumParts = checksum.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
-            if (checksumParts.Length != 2 || !String.Equals(checksumParts[1], SyncIndexFilename, StringComparison.Ordinal) || !IsSha256(checksumParts[0]) || !String.Equals(checksumParts[0], Sha256(text), StringComparison.OrdinalIgnoreCase)) return result;
+            if (checksumParts.Length != 2 || !String.Equals(checksumParts[1], SyncIndexFilename, StringComparison.Ordinal) || !IsSha256(checksumParts[0])) return result;
+            string expectedHash = checksumParts[0].ToLowerInvariant(), localPath = null, text = null;
+            try
+            {
+                localPath = Path.Combine(LocalPerformanceCacheDirectory(root, "Sync Index"), SyncIndexFilename);
+                if (File.Exists(localPath))
+                {
+                    string cached = File.ReadAllText(localPath, Encoding.UTF8);
+                    if (Encoding.UTF8.GetByteCount(cached) <= SyncIndexLimit && String.Equals(expectedHash, Sha256(cached), StringComparison.OrdinalIgnoreCase)) text = cached;
+                }
+            }
+            catch { if (!String.IsNullOrWhiteSpace(localPath)) TryDelete(localPath); }
+            if (text == null)
+            {
+                text = ReadText(indexPath, SyncIndexLimit);
+                if (!String.Equals(expectedHash, Sha256(text), StringComparison.OrdinalIgnoreCase)) return result;
+                if (!String.IsNullOrWhiteSpace(localPath)) try { AtomicWrite(localPath, Encoding.UTF8.GetBytes(text)); } catch { TryDelete(localPath); }
+            }
             Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(text));
             if (!envelope.ContainsKey("version") || Convert.ToInt32(envelope["version"], CultureInfo.InvariantCulture) != SyncIndexVersion || !envelope.ContainsKey("ruleSetVersion") || !String.Equals(Convert.ToString(envelope["ruleSetVersion"], CultureInfo.InvariantCulture), ruleSetVersion, StringComparison.Ordinal) || !envelope.ContainsKey("files")) return result;
             object[] files = ObjectArray(envelope["files"]);if (files.Length > 100000) return result;
@@ -748,8 +839,14 @@ internal sealed class PortableStorage : IDisposable
         {
             var envelope = new Dictionary<string, object> { { "version", SyncIndexVersion }, { "ruleSetVersion", ruleSetVersion }, { "generatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "files", files.ToArray() } };
             string text = json.Serialize(envelope);byte[] bytes = Encoding.UTF8.GetBytes(text);if (bytes.LongLength > SyncIndexLimit) return;
-            string indexPath = SystemFile(root, SyncIndexFilename), checksumPath = SystemFile(root, SyncIndexChecksumFilename);
-            AtomicWrite(indexPath, bytes);AtomicWrite(checksumPath, Encoding.ASCII.GetBytes(Sha256(text) + "  " + SyncIndexFilename + Environment.NewLine));
+            string indexPath = SystemFile(root, SyncIndexFilename), checksumPath = SystemFile(root, SyncIndexChecksumFilename), hash = Sha256(text);
+            AtomicWrite(indexPath, bytes);AtomicWrite(checksumPath, Encoding.ASCII.GetBytes(hash + "  " + SyncIndexFilename + Environment.NewLine));
+            try
+            {
+                string localPath = Path.Combine(LocalPerformanceCacheDirectory(root, "Sync Index"), SyncIndexFilename);
+                try { AtomicWrite(localPath, bytes); } catch { TryDelete(localPath); }
+            }
+            catch { }
         }
         catch { TryDelete(SystemFile(root, SyncIndexFilename));TryDelete(SystemFile(root, SyncIndexChecksumFilename)); }
     }

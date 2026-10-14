@@ -933,7 +933,7 @@ export default function Guide() {
           the database manifest and its SHA-256 checksum, Sync index,
           document-renamer queue, session
           metadata, Audit Logs, Error
-          Reports, backup, Reports, Sync Journals, Storage Transactions, and Archive
+          Reports, backup, Reports, Storage Transactions, and Archive
           Review. Existing top-level copies are migrated into this structure
           when the portable launcher maps the folder. Error entries append to
           one UTC-daily plain-text file under <code>System/Error Reports</code>
@@ -943,12 +943,14 @@ export default function Guide() {
           with their organization records.
         </p>
         <p>
-          Every portable Sync writes a per-run journal under{" "}
-          <code>System/Sync Journals</code>. Each discovered file advances through
+          Every portable Sync writes a batched per-run journal in the signed-in
+          Windows user&apos;s local R.A.P.T.O.R. performance cache. Each discovered file advances through
           Pending, Validated or Rejected, Indexed, and Committed states. If the
           launcher, computer, or network share is interrupted, the next Sync
           resumes unchanged completed files from the latest compatible journal
-          instead of starting the validation work again. The manifest is not
+          on that computer instead of starting the validation work again. Journal
+          batches contain metadata only; evidence documents remain in the mapped
+          system folder. The manifest is not
           considered committed until its verified write succeeds.
         </p>
         <p>
@@ -1300,7 +1302,8 @@ export default function Guide() {
         additions, moves, and deletions, but skip reopening evidence when its
         path, name, size, last-modified UTC value, and rule-set version are
         unchanged. The shared index accelerates another computer using the same
-        mapped folder. New or changed files always receive full PDF or ZIP
+        mapped folder, while a checksum-matched local mirror avoids repeatedly
+        downloading the complete index on the same computer. New or changed files always receive full PDF or ZIP
         validation. Filename tokens, dates, identities, and organizations are
         cached during large runs instead of being reparsed for every rule.
         Filename corrections use the evolving in-memory catalog and, when any
@@ -1308,7 +1311,12 @@ export default function Guide() {
         full rescans. Choose <b>Full Rescan</b> in the Sync scope window to ignore
         the index and validate every active evidence file in the selected system
         or organization scope; a missing, damaged, or outdated index also
-        causes safe full validation automatically. Processing Status reports
+        causes safe full validation automatically. Verified rename, move,
+        compression, and collision actions reuse their exact returned paths before
+        attempting any broad location refresh. Database, checksum, snapshot, and
+        daily CSV updates are submitted through one serialized launcher commit to
+        reduce shared-drive round trips. Processing Status reports elapsed scan
+        time alongside
         unchanged evidence skipped, new or changed evidence validated, and
         non-evidence files ignored.
       </aside>
