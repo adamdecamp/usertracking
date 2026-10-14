@@ -28,7 +28,7 @@ internal sealed class PortableStorage : IDisposable
     private const int AuditVersion = 1;
     private const int SyncIndexVersion = 2;
     private const int SyncJournalVersion = 1;
-    private const int ManifestCacheVersion = 2;
+    private const int ManifestCacheVersion = 3;
     private const int ManifestCacheFreshMinutes = 10;
     private const int AuditCheckpointVersion = 1;
     private const int BackupCoalesceSeconds = 30;
@@ -45,6 +45,9 @@ internal sealed class PortableStorage : IDisposable
     internal const string QualificationMemoTemplatePattern = "8140_Qualification_Memo DDMMMYYYY.pdf";
     private const string ManifestFilename = "information-system-user-tracker.json";
     private const string ManifestChecksumFilename = ManifestFilename + ".sha256";
+    private const string ManifestStorageFormat = "organization-sharded-v1";
+    private const int ManifestShardVersion = 1;
+    private const string ManifestShardDirectoryName = "Database Shards";
     private const string LocalManifestCacheFilename = "verified-manifest.cache";
     private const string LocalAuditCheckpointFilename = "verified-audit-head.cache";
     private const string SyncIndexDirectoryName = "Sync Index";
@@ -194,6 +197,7 @@ internal sealed class PortableStorage : IDisposable
         public string CachedAtUtc;
         public string VerifiedAtUtc;
         public string SharedSha256;
+        public string ContentSha256;
         public long SharedLength;
         public long SharedModifiedUnixMs;
     }
@@ -447,7 +451,89 @@ internal sealed class PortableStorage : IDisposable
         string text;
         try { text = new UTF8Encoding(false, true).GetString(bytes).TrimStart('\uFEFF'); }
         catch (DecoderFallbackException) { throw new InvalidDataException("The live database is not valid UTF-8 text."); }
-        ValidateDatabase(text);SaveLocalManifestCache(root, text, actualHash);return text;
+        Dictionary<string, object> logicalDatabase = ReadDatabaseManifest(root, text);
+        string logical = json.Serialize(logicalDatabase);
+        SaveLocalManifestCache(root, logical, actualHash);return logical;
+    }
+
+    private Dictionary<string, object> ReadDatabaseManifest(string root, string text)
+    {
+        Dictionary<string, object> stored;
+        try { stored = ObjectDictionary(json.DeserializeObject(text)); }
+        catch (Exception) { throw new InvalidDataException("The database manifest is invalid JSON."); }
+        string storageFormat = stored.ContainsKey("storageFormat") ? Convert.ToString(stored["storageFormat"], CultureInfo.InvariantCulture) : "";
+        if (!String.Equals(storageFormat, ManifestStorageFormat, StringComparison.Ordinal)) return MigrateDatabaseObject(stored);
+        if (!stored.ContainsKey("version") || Convert.ToInt32(stored["version"], CultureInfo.InvariantCulture) != 2 || !stored.ContainsKey("systems") || !stored.ContainsKey("userShards") || !stored.ContainsKey("stateHash") || !stored.ContainsKey("userCount")) throw new InvalidDataException("The sharded database catalog is invalid.");
+        int expectedTotal = Convert.ToInt32(stored["userCount"], CultureInfo.InvariantCulture);if (expectedTotal < 0 || expectedTotal > 100000) throw new InvalidDataException("The sharded database catalog user count is invalid.");
+        object[] shardReferences = ObjectArray(stored["userShards"]);if (shardReferences.Length > 1000) throw new InvalidDataException("The sharded database catalog exceeds its organization limit.");
+        string systemDirectory = Path.Combine(root, SystemDirectoryName), shardRoot = Path.Combine(systemDirectory, ManifestShardDirectoryName), shardRootPrefix = Path.GetFullPath(shardRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var positionedUsers = new List<Tuple<int, object>>();var seenPositions = new HashSet<int>();
+        foreach (object value in shardReferences)
+        {
+            Dictionary<string, object> reference = ObjectDictionary(value);
+            if (!reference.ContainsKey("organization") || !reference.ContainsKey("file") || !reference.ContainsKey("sha256") || !reference.ContainsKey("records")) throw new InvalidDataException("A database organization-shard reference is invalid.");
+            string organization = Convert.ToString(reference["organization"], CultureInfo.InvariantCulture), relative = Convert.ToString(reference["file"], CultureInfo.InvariantCulture), expectedHash = Convert.ToString(reference["sha256"], CultureInfo.InvariantCulture);
+            int expectedRecords = Convert.ToInt32(reference["records"], CultureInfo.InvariantCulture);
+            if (String.IsNullOrWhiteSpace(organization) || organization.Length > 200 || String.IsNullOrWhiteSpace(relative) || relative.Length > 500 || !IsSha256(expectedHash) || expectedRecords < 0 || expectedRecords > 100000) throw new InvalidDataException("A database organization-shard reference is invalid.");
+            string path = Path.GetFullPath(Path.Combine(systemDirectory, relative.Replace('/', Path.DirectorySeparatorChar)));
+            if (!path.StartsWith(shardRootPrefix, StringComparison.OrdinalIgnoreCase) || !File.Exists(path)) throw new InvalidDataException("A required database organization shard is missing or outside managed storage.");
+            byte[] bytes = ReadAllBytesWithRetry(path, ManifestLimit);if (!String.Equals(Sha256Bytes(bytes), expectedHash, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A database organization shard failed its SHA-256 integrity check.");
+            Dictionary<string, object> shard;
+            try { shard = ObjectDictionary(json.DeserializeObject(new UTF8Encoding(false, true).GetString(bytes))); }
+            catch (Exception) { throw new InvalidDataException("A database organization shard contains invalid JSON."); }
+            if (!shard.ContainsKey("version") || !shard.ContainsKey("organization") || !shard.ContainsKey("users") || !shard.ContainsKey("positions") || Convert.ToInt32(shard["version"], CultureInfo.InvariantCulture) != ManifestShardVersion || !String.Equals(Convert.ToString(shard["organization"], CultureInfo.InvariantCulture), organization, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A database organization shard has an invalid envelope.");
+            object[] shardUsers = ObjectArray(shard["users"]), positions = ObjectArray(shard["positions"]);if (shardUsers.Length != expectedRecords || positions.Length != expectedRecords) throw new InvalidDataException("A database organization shard record count does not match its catalog.");
+            for (int index = 0; index < shardUsers.Length; index++)
+            {
+                int position = Convert.ToInt32(positions[index], CultureInfo.InvariantCulture);if (position < 0 || position >= expectedTotal || !seenPositions.Add(position)) throw new InvalidDataException("A database organization shard contains an invalid or duplicate record position.");
+                Dictionary<string, object> user = ObjectDictionary(shardUsers[index]);string userOrganization = user.ContainsKey("organization") ? Convert.ToString(user["organization"], CultureInfo.InvariantCulture) : "";
+                if (!String.Equals(ManifestOrganization(userOrganization), organization, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A user record is stored in the wrong organization shard.");
+                positionedUsers.Add(Tuple.Create(position, (object)user));if (positionedUsers.Count > 100000) throw new InvalidDataException("The database manifest exceeds its user-record limit.");
+            }
+        }
+        if (positionedUsers.Count != expectedTotal) throw new InvalidDataException("The sharded database catalog user count does not match its organization shards.");
+        object[] users = positionedUsers.OrderBy(value => value.Item1).Select(value => value.Item2).ToArray();
+        var logical = new Dictionary<string, object> { { "version", 2 }, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
+        logical = MigrateDatabaseObject(logical);
+        if (!String.Equals(Convert.ToString(stored["stateHash"], CultureInfo.InvariantCulture), StateHash(logical), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The sharded database catalog content hash does not match its records.");
+        return logical;
+    }
+
+    private byte[] BuildShardedManifest(string root, Dictionary<string, object> database, string updated, out HashSet<string> activeShardFiles)
+    {
+        string systemDirectory = Path.Combine(root, SystemDirectoryName), shardDirectory = Path.Combine(systemDirectory, ManifestShardDirectoryName);activeShardFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Directory.CreateDirectory(shardDirectory);
+        var references = new List<object>();
+        object[] users = ObjectArray(database["users"]);IEnumerable<Tuple<int, object>> positionedUsers = users.Select((value, index) => Tuple.Create(index, value));
+        foreach (IGrouping<string, Tuple<int, object>> group in positionedUsers.GroupBy(value => ManifestOrganization(Convert.ToString(ObjectDictionary(value.Item2).ContainsKey("organization") ? ObjectDictionary(value.Item2)["organization"] : "", CultureInfo.InvariantCulture)), StringComparer.OrdinalIgnoreCase).OrderBy(value => value.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            object[] records = group.Select(value => value.Item2).ToArray(), positions = group.Select(value => (object)value.Item1).ToArray();
+            var envelope = new Dictionary<string, object> { { "version", ManifestShardVersion }, { "organization", group.Key }, { "positions", positions }, { "users", records } };
+            byte[] bytes = Encoding.UTF8.GetBytes(json.Serialize(envelope));if (bytes.LongLength > ManifestLimit) throw new InvalidDataException("A database organization shard exceeds the 50 MB safety limit.");
+            string hash = Sha256Bytes(bytes), filename = "org-" + Sha256(group.Key.ToUpperInvariant()).Substring(0, 24) + "-" + hash.Substring(0, 24) + ".json", path = Path.Combine(shardDirectory, filename);activeShardFiles.Add(filename);
+            if (File.Exists(path)) { if (!String.Equals(TryFileHash(path), hash, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("An existing database organization shard failed its SHA-256 integrity check."); }
+            else { AtomicWrite(path, bytes);if (!String.Equals(TryFileHash(path), hash, StringComparison.OrdinalIgnoreCase)) throw new IOException("A database organization shard failed post-write SHA-256 verification."); }
+            references.Add(new Dictionary<string, object> { { "organization", group.Key }, { "file", ManifestShardDirectoryName + "/" + filename }, { "sha256", hash }, { "records", records.Length } });
+        }
+        var catalog = new Dictionary<string, object> { { "version", 2 }, { "updated", updated }, { "storageFormat", ManifestStorageFormat }, { "stateHash", StateHash(database) }, { "systems", database["systems"] }, { "userCount", users.Length }, { "userShards", references.ToArray() } };
+        byte[] catalogBytes = Encoding.UTF8.GetBytes(json.Serialize(catalog));if (catalogBytes.LongLength > ManifestLimit) throw new InvalidDataException("The sharded database catalog exceeds the 50 MB safety limit.");
+        return catalogBytes;
+    }
+
+    private static string ManifestOrganization(string value)
+    {
+        string clean = CleanLine(value, 200).Trim();return clean.Length == 0 ? "Unassigned" : clean;
+    }
+
+    private static void PruneManifestShardFiles(string root, HashSet<string> activeShardFiles)
+    {
+        try
+        {
+            string directory = Path.Combine(root, SystemDirectoryName, ManifestShardDirectoryName);if (!Directory.Exists(directory)) return;
+            foreach (string stale in Directory.EnumerateFiles(directory, "org-*.json", SearchOption.TopDirectoryOnly).Where(path => !activeShardFiles.Contains(Path.GetFileName(path))).ToArray()) TryDelete(stale);
+            foreach (string legacyDirectory in Directory.EnumerateDirectories(directory).ToArray()) try { Directory.Delete(legacyDirectory, true); } catch { }
+        }
+        catch { }
     }
 
     private static string ReadManifestChecksumHash(string manifestPath, bool allowMissing)
@@ -457,6 +543,16 @@ internal sealed class PortableStorage : IDisposable
         string checksum = ReadText(checksumPath, 1024).Trim();Match match = Regex.Match(checksum, "^([a-fA-F0-9]{64})\\s{2}" + Regex.Escape(ManifestFilename) + "$");
         if (!match.Success) throw new InvalidDataException("The live database integrity checksum file is invalid.");
         return match.Groups[1].Value.ToLowerInvariant();
+    }
+
+    private Dictionary<string, object> ReadManifestFullyVerified(string root, string manifestPath, bool allowMissingChecksum, out string catalogHash)
+    {
+        byte[] bytes = ReadAllBytesWithRetry(manifestPath, ManifestLimit);catalogHash = Sha256Bytes(bytes);string expectedHash = ReadManifestChecksumHash(manifestPath, allowMissingChecksum);
+        if (IsSha256(expectedHash) && !String.Equals(expectedHash, catalogHash, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The live database failed its SHA-256 integrity check. Full Access is blocked until an operator restores a verified backup.");
+        string text;
+        try { text = new UTF8Encoding(false, true).GetString(bytes).TrimStart('\uFEFF'); }
+        catch (DecoderFallbackException) { throw new InvalidDataException("The live database is not valid UTF-8 text."); }
+        return ReadDatabaseManifest(root, text);
     }
 
     public string SaveManifest(string systemId, string text)
@@ -482,9 +578,9 @@ internal sealed class PortableStorage : IDisposable
                 catch { }
             }
             database["updated"] = now;string canonical = json.Serialize(database);
-            byte[] manifestBytes = Encoding.UTF8.GetBytes(canonical);
+            HashSet<string> activeShardFiles;byte[] manifestBytes = BuildShardedManifest(root, database, now, out activeShardFiles);
             string destinationHash = Sha256Bytes(manifestBytes), transaction = BeginTransaction(root, "manifest-write", manifest, manifest, TryFileHash(manifest), destinationHash);
-            try { AtomicWrite(manifest, manifestBytes);FailAfter("manifest-write-before-checksum");WriteManifestChecksum(manifest, destinationHash);SaveLocalManifestCache(root, canonical, destinationHash);FailAfter("manifest-write");CompleteTransaction(transaction); }
+            try { AtomicWrite(manifest, manifestBytes);FailAfter("manifest-write-before-checksum");WriteManifestChecksum(manifest, destinationHash);SaveLocalManifestCache(root, canonical, destinationHash);FailAfter("manifest-write");CompleteTransaction(transaction);PruneManifestShardFiles(root,activeShardFiles); }
             catch { if (!String.Equals(TryFileHash(manifest), destinationHash, StringComparison.OrdinalIgnoreCase)) CompleteTransaction(transaction);throw; }
             string backupDirectory = SupportDirectory(root, "backup");
             QueueBackup(systemId, database, null);
@@ -561,15 +657,15 @@ internal sealed class PortableStorage : IDisposable
             string manifestPath = SystemFile(Root(systemId), ManifestFilename);
             if (File.Exists(manifestPath))
             {
-                Dictionary<string, object> current = ValidateDatabase(ReadText(manifestPath, ManifestLimit));
+                string catalogHash;Dictionary<string, object> current = ReadManifestFullyVerified(Root(systemId), manifestPath, true, out catalogHash);
                 CreateSnapshot(directory, current, true);
             }
             string now = DateTime.UtcNow.ToString("o");
             restored["updated"] = now;
             string restoredText = json.Serialize(restored);
-            byte[] restoredBytes = Encoding.UTF8.GetBytes(restoredText);
+            HashSet<string> activeShardFiles;byte[] restoredBytes = BuildShardedManifest(Root(systemId), restored, now, out activeShardFiles);
             string destinationHash = Sha256Bytes(restoredBytes), transaction = BeginTransaction(Root(systemId), "manifest-write", manifestPath, manifestPath, TryFileHash(manifestPath), destinationHash);
-            try { AtomicWrite(manifestPath, restoredBytes);FailAfter("manifest-write-before-checksum");WriteManifestChecksum(manifestPath, destinationHash);SaveLocalManifestCache(Root(systemId), restoredText, destinationHash);CompleteTransaction(transaction); }
+            try { AtomicWrite(manifestPath, restoredBytes);FailAfter("manifest-write-before-checksum");WriteManifestChecksum(manifestPath, destinationHash);SaveLocalManifestCache(Root(systemId), restoredText, destinationHash);CompleteTransaction(transaction);PruneManifestShardFiles(Root(systemId),activeShardFiles); }
             catch { if (!String.Equals(TryFileHash(manifestPath), destinationHash, StringComparison.OrdinalIgnoreCase)) CompleteTransaction(transaction);throw; }
             CreateSnapshot(directory, restored, true);
             return restoredText;
@@ -599,10 +695,9 @@ internal sealed class PortableStorage : IDisposable
         ValidateSystemId(logicalSystemId);
         string manifestPath = SystemFile(Root(systemId), ManifestFilename), directory = SupportDirectory(Root(systemId), "backup");
         if (!File.Exists(manifestPath)) throw new FileNotFoundException("The current database manifest is missing.");
-        string manifestText = ReadText(manifestPath, ManifestLimit);
-        Dictionary<string, object> manifestDatabase = ValidateDatabase(manifestText);
+        string fullyVerifiedCatalogHash;Dictionary<string, object> manifestDatabase = ReadManifestFullyVerified(Root(systemId), manifestPath, true, out fullyVerifiedCatalogHash);
         string latest = SnapshotPaths(directory).FirstOrDefault();
-        if (latest == null) throw new FileNotFoundException("No JSON backup snapshot is available.");
+        if (latest == null) throw new FileNotFoundException("No backup snapshot is available.");
         Dictionary<string, object> envelope = VerifySnapshot(latest), database = ObjectDictionary(envelope["database"]);
         object[] systems = ObjectArray(database["systems"]);
         if (systems.Length != 1 || !String.Equals(Convert.ToString(ObjectDictionary(systems[0])["id"]), logicalSystemId, StringComparison.Ordinal)) throw new InvalidDataException("The latest backup belongs to a different information system.");
@@ -613,11 +708,11 @@ internal sealed class PortableStorage : IDisposable
         else
         {
             if (!String.Equals(StateHash(manifestDatabase), StateHash(database), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The live database has no integrity checksum and does not match the newest verified backup. Full Access is blocked until an operator restores a verified backup.");
-            manifestSha256 = TryFileHash(manifestPath);
+            manifestSha256 = fullyVerifiedCatalogHash;
             WriteManifestChecksum(manifestPath, manifestSha256);
             checksumInitialized = true;
         }
-        return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "saved", File.GetLastWriteTimeUtc(manifestPath).ToString("o") }, { "backup", Convert.ToString(envelope["created"]) }, { "filename", Path.GetFileName(latest) }, { "auditHealthy", true }, { "auditEntries", audit.Entries }, { "auditHeadHash", audit.HeadHash }, { "manifestSha256", manifestSha256 }, { "checksumInitialized", checksumInitialized } });
+        return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "saved", File.GetLastWriteTimeUtc(manifestPath).ToString("o") }, { "backup", Convert.ToString(envelope["created"]) }, { "filename", Path.GetFileName(latest) }, { "auditHealthy", true }, { "auditEntries", audit.Entries }, { "auditHeadHash", audit.HeadHash }, { "auditVerification", "full-chain" }, { "manifestSha256", manifestSha256 }, { "checksumInitialized", checksumInitialized } });
     }
 
     public void FinalizeMappedBackups()
@@ -632,7 +727,7 @@ internal sealed class PortableStorage : IDisposable
                 string root = Root(id), manifest = SystemFile(root, ManifestFilename);
                 if (!File.Exists(manifest)) continue;
                 VerifyManifestChecksum(manifest, true);
-                Dictionary<string, object> database = ValidateDatabase(ReadText(manifest, ManifestLimit));
+                string catalogHash;Dictionary<string, object> database = ReadManifestFullyVerified(root, manifest, true, out catalogHash);
                 string backupDirectory = SupportDirectory(root, "backup");
                 CreateSnapshot(backupDirectory, database, false);
             }
@@ -664,7 +759,7 @@ internal sealed class PortableStorage : IDisposable
                 {
                     string root = Root(pending.SystemId), manifest = SystemFile(root, ManifestFilename);
                     Dictionary<string, object> database = pending.Database;
-                    if (database == null && File.Exists(manifest)) database = ValidateDatabase(ReadText(manifest, ManifestLimit));
+                    if (database == null && File.Exists(manifest)) { bool cacheHit;database = ValidateDatabase(ReadManifestOptimized(root, manifest, out cacheHit)); }
                     if (database != null) CreateSnapshot(SupportDirectory(root, "backup"), database, false);
                     if (pending.CsvBytes != null) SaveCsv(pending.SystemId, pending.CsvBytes);
                 }
@@ -1097,7 +1192,10 @@ internal sealed class PortableStorage : IDisposable
         bool backupPending;lock (backupGate) backupPending = pendingBackups.ContainsKey(systemId);bool watcherBaselined = false, watcherOverflowed = false;string[] dirtyOrganizations = new string[0];
         lock (changeHintGate) { ChangeHintState hints;if (changeHints.TryGetValue(systemId, out hints)) { watcherBaselined = hints.Baselined;watcherOverflowed = hints.Overflowed;dirtyOrganizations = hints.Organizations.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray(); } }
         string shardDirectory = LocalPerformanceCacheDirectory(root, "Sync Index Shards");int shards = 0;try { if (Directory.Exists(shardDirectory)) shards = Directory.EnumerateFiles(shardDirectory, "index-*.json", SearchOption.TopDirectoryOnly).Count(); } catch { }
-        return json.Serialize(new Dictionary<string, object> { { "generatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "networkRoot", IsNetworkRoot(root) }, { "operations", operations.OrderByDescending(item => Convert.ToInt64(item["p95Ms"], CultureInfo.InvariantCulture)).ToArray() }, { "recent", entries.AsEnumerable().Reverse().Take(100).ToArray() }, { "backupPending", backupPending }, { "watcherBaselined", watcherBaselined }, { "watcherOverflowed", watcherOverflowed }, { "dirtyOrganizations", dirtyOrganizations }, { "syncIndexShards", shards }, { "auditCheckpointAvailable", File.Exists(Path.Combine(LocalPerformanceCacheDirectory(root, "Audit"), LocalAuditCheckpointFilename)) } });
+        int databaseShards = 0;string manifestStorageFormat = "legacy-single-file", backupCompression = "Legacy JSON";bool localReadCacheAvailable = File.Exists(Path.Combine(LocalPerformanceCacheDirectory(root, "Manifest"), LocalManifestCacheFilename));
+        try { string manifestPath = Path.Combine(root, SystemDirectoryName, ManifestFilename);if (File.Exists(manifestPath)) { Dictionary<string, object> catalog=ObjectDictionary(json.DeserializeObject(ReadText(manifestPath,ManifestLimit)));if(catalog.ContainsKey("storageFormat")&&String.Equals(Convert.ToString(catalog["storageFormat"],CultureInfo.InvariantCulture),ManifestStorageFormat,StringComparison.Ordinal)){manifestStorageFormat=ManifestStorageFormat;databaseShards=ObjectArray(catalog["userShards"]).Length;} } } catch { }
+        try { string latest=SnapshotPaths(SupportDirectory(root,"backup")).FirstOrDefault();if(latest!=null)backupCompression=latest.EndsWith(".json.gz",StringComparison.OrdinalIgnoreCase)?"GZip":"Legacy JSON"; } catch { }
+        return json.Serialize(new Dictionary<string, object> { { "generatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "networkRoot", IsNetworkRoot(root) }, { "operations", operations.OrderByDescending(item => Convert.ToInt64(item["p95Ms"], CultureInfo.InvariantCulture)).ToArray() }, { "recent", entries.AsEnumerable().Reverse().Take(100).ToArray() }, { "backupPending", backupPending }, { "watcherBaselined", watcherBaselined }, { "watcherOverflowed", watcherOverflowed }, { "dirtyOrganizations", dirtyOrganizations }, { "syncIndexShards", shards }, { "databaseShards", databaseShards }, { "manifestStorageFormat", manifestStorageFormat }, { "localReadCacheAvailable", localReadCacheAvailable }, { "backupCompression", backupCompression }, { "auditCheckpointAvailable", File.Exists(Path.Combine(LocalPerformanceCacheDirectory(root, "Audit"), LocalAuditCheckpointFilename)) } });
     }
 
     private static long PerformanceDuration(Dictionary<string, object> item)
@@ -1119,12 +1217,11 @@ internal sealed class PortableStorage : IDisposable
         {
             if (String.IsNullOrWhiteSpace(manifest)) return;
             ValidateDatabase(manifest);
-            string hash = IsSha256(sharedSha256) ? sharedSha256.ToLowerInvariant() : Sha256(manifest);
-            if (!String.Equals(hash, Sha256(manifest), StringComparison.OrdinalIgnoreCase)) return;
+            string contentHash = Sha256(manifest), sharedHash = IsSha256(sharedSha256) ? sharedSha256.ToLowerInvariant() : contentHash;
             long sharedLength = 0L, sharedModifiedUnixMs = 0L;string manifestPath = Path.Combine(root, SystemDirectoryName, ManifestFilename);
             try { var info = new FileInfo(manifestPath);info.Refresh();if (info.Exists) { sharedLength = info.Length;sharedModifiedUnixMs = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds(); } } catch { }
             string now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
-            var envelope = new Dictionary<string, object> { { "version", ManifestCacheVersion }, { "cachedAtUtc", now }, { "verifiedAtUtc", now }, { "sharedSha256", hash }, { "sharedLength", sharedLength }, { "sharedModifiedUnixMs", sharedModifiedUnixMs }, { "manifest", manifest } };
+            var envelope = new Dictionary<string, object> { { "version", ManifestCacheVersion }, { "cachedAtUtc", now }, { "verifiedAtUtc", now }, { "sharedSha256", sharedHash }, { "contentSha256", contentHash }, { "sharedLength", sharedLength }, { "sharedModifiedUnixMs", sharedModifiedUnixMs }, { "manifest", manifest } };
             byte[] clear = Encoding.UTF8.GetBytes(json.Serialize(envelope)), encrypted = ProtectedData.Protect(clear, ManifestCacheEntropy(), DataProtectionScope.CurrentUser);
             AtomicWrite(Path.Combine(LocalPerformanceCacheDirectory(root, "Manifest"), LocalManifestCacheFilename), encrypted);
         }
@@ -1146,10 +1243,10 @@ internal sealed class PortableStorage : IDisposable
             byte[] clear = ProtectedData.Unprotect(File.ReadAllBytes(path), ManifestCacheEntropy(), DataProtectionScope.CurrentUser);
             Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(new UTF8Encoding(false, true).GetString(clear)));
             if (Convert.ToInt32(envelope["version"], CultureInfo.InvariantCulture) != ManifestCacheVersion) return null;
-            string manifest = Convert.ToString(envelope["manifest"], CultureInfo.InvariantCulture), hash = Convert.ToString(envelope["sharedSha256"], CultureInfo.InvariantCulture), cachedAtUtc = Convert.ToString(envelope["cachedAtUtc"], CultureInfo.InvariantCulture), verifiedAtUtc = Convert.ToString(envelope["verifiedAtUtc"], CultureInfo.InvariantCulture);
-            if (String.IsNullOrWhiteSpace(manifest) || !IsSha256(hash) || !String.Equals(hash, Sha256(manifest), StringComparison.OrdinalIgnoreCase)) return null;
+            string manifest = Convert.ToString(envelope["manifest"], CultureInfo.InvariantCulture), hash = Convert.ToString(envelope["sharedSha256"], CultureInfo.InvariantCulture), contentHash = Convert.ToString(envelope["contentSha256"], CultureInfo.InvariantCulture), cachedAtUtc = Convert.ToString(envelope["cachedAtUtc"], CultureInfo.InvariantCulture), verifiedAtUtc = Convert.ToString(envelope["verifiedAtUtc"], CultureInfo.InvariantCulture);
+            if (String.IsNullOrWhiteSpace(manifest) || !IsSha256(hash) || !IsSha256(contentHash) || !String.Equals(contentHash, Sha256(manifest), StringComparison.OrdinalIgnoreCase)) return null;
             ValidateDatabase(manifest);DateTime parsed, verified;if (!DateTime.TryParse(cachedAtUtc, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out parsed) || !DateTime.TryParse(verifiedAtUtc, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out verified)) return null;
-            return new ManifestCacheRecord { Manifest = manifest, CachedAtUtc = cachedAtUtc, VerifiedAtUtc = verifiedAtUtc, SharedSha256 = hash.ToLowerInvariant(), SharedLength = Convert.ToInt64(envelope["sharedLength"], CultureInfo.InvariantCulture), SharedModifiedUnixMs = Convert.ToInt64(envelope["sharedModifiedUnixMs"], CultureInfo.InvariantCulture) };
+            return new ManifestCacheRecord { Manifest = manifest, CachedAtUtc = cachedAtUtc, VerifiedAtUtc = verifiedAtUtc, SharedSha256 = hash.ToLowerInvariant(), ContentSha256 = contentHash.ToLowerInvariant(), SharedLength = Convert.ToInt64(envelope["sharedLength"], CultureInfo.InvariantCulture), SharedModifiedUnixMs = Convert.ToInt64(envelope["sharedModifiedUnixMs"], CultureInfo.InvariantCulture) };
         }
         catch { if (!String.IsNullOrWhiteSpace(path)) TryDelete(path);return null; }
     }
@@ -2301,10 +2398,10 @@ internal sealed class PortableStorage : IDisposable
             try { if (String.Equals(Convert.ToString(VerifySnapshot(latest)["contentHash"]), stateHash, StringComparison.OrdinalIgnoreCase)) return null; }
             catch { }
         }
-        string created = DateTime.UtcNow.ToString("o"), filename = "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH-mm-ss-fffffffZ") + ".json";
+        string created = DateTime.UtcNow.ToString("o"), filename = "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH-mm-ss-fffffffZ") + ".json.gz";
         var envelope = new Dictionary<string, object> { { "backupVersion", 1 }, { "created", created }, { "contentHash", stateHash }, { "database", database } };
-        string text = json.Serialize(envelope), path = Path.Combine(directory, filename), integrity = Sha256(text);
-        AtomicWrite(path, Encoding.UTF8.GetBytes(text));
+        string text = json.Serialize(envelope);byte[] compressed = CompressGzip(Encoding.UTF8.GetBytes(text)), pathBytes = compressed;string path = Path.Combine(directory, filename), integrity = Sha256Bytes(pathBytes);
+        AtomicWrite(path, pathBytes);
         try { AtomicWrite(path + ".sha256", Encoding.ASCII.GetBytes(integrity + "  " + filename + Environment.NewLine)); }
         catch { TryDelete(path); throw; }
         foreach (string stale in SnapshotPaths(directory).Skip(SnapshotLimit).ToArray()) { TryDelete(stale); TryDelete(stale + ".sha256"); }
@@ -2314,9 +2411,12 @@ internal sealed class PortableStorage : IDisposable
     private Dictionary<string, object> VerifySnapshot(string path)
     {
         if (!File.Exists(path + ".sha256")) throw new InvalidDataException("The matching SHA-256 file is missing.");
-        string text = ReadText(path, ManifestLimit), checksum = ReadText(path + ".sha256", 1024).Trim(), filename = Path.GetFileName(path);
+        byte[] stored = ReadAllBytesWithRetry(path, ManifestLimit);string checksum = ReadText(path + ".sha256", 1024).Trim(), filename = Path.GetFileName(path);
         string[] parts = checksum.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 2 || parts[1] != filename || parts[0].Length != 64 || !String.Equals(parts[0], Sha256(text), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The backup SHA-256 integrity check failed.");
+        if (parts.Length != 2 || parts[1] != filename || parts[0].Length != 64 || !String.Equals(parts[0], Sha256Bytes(stored), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The backup SHA-256 integrity check failed.");
+        byte[] clear = filename.EndsWith(".json.gz", StringComparison.OrdinalIgnoreCase) ? DecompressGzip(stored, ManifestLimit) : stored;string text;
+        try { text = new UTF8Encoding(false, true).GetString(clear); }
+        catch (DecoderFallbackException) { throw new InvalidDataException("The backup is not valid UTF-8 JSON."); }
         Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(text));
         if (Convert.ToInt32(envelope["backupVersion"]) != 1 || !(envelope["created"] is string) || !(envelope["contentHash"] is string) || !envelope.ContainsKey("database")) throw new InvalidDataException("The backup format is invalid.");
         Dictionary<string, object> database = ObjectDictionary(envelope["database"]);
@@ -2336,7 +2436,28 @@ internal sealed class PortableStorage : IDisposable
     private IEnumerable<string> SnapshotPaths(string directory)
     {
         if (!Directory.Exists(directory)) return Enumerable.Empty<string>();
-        return Directory.EnumerateFiles(directory, "user-tracker-*.json", SearchOption.TopDirectoryOnly).OrderByDescending(path => Path.GetFileName(path), StringComparer.Ordinal);
+        return Directory.EnumerateFiles(directory, "user-tracker-*", SearchOption.TopDirectoryOnly).Where(path => path.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".json.gz", StringComparison.OrdinalIgnoreCase)).OrderByDescending(path => Path.GetFileName(path), StringComparer.Ordinal);
+    }
+
+    private static byte[] CompressGzip(byte[] clear)
+    {
+        using (var memory = new MemoryStream())
+        {
+            using (var gzip = new GZipStream(memory, CompressionLevel.Optimal, true)) gzip.Write(clear, 0, clear.Length);
+            return memory.ToArray();
+        }
+    }
+
+    private static byte[] DecompressGzip(byte[] compressed, long maximumBytes)
+    {
+        using (var input = new MemoryStream(compressed, false))
+        using (var gzip = new GZipStream(input, CompressionMode.Decompress))
+        using (var output = new MemoryStream())
+        {
+            var buffer = new byte[64 * 1024];int read;
+            while ((read = gzip.Read(buffer, 0, buffer.Length)) > 0) { if (output.Length + read > maximumBytes) throw new InvalidDataException("The decompressed backup exceeds the safety limit.");output.Write(buffer, 0, read); }
+            return output.ToArray();
+        }
     }
 
     private static string ManifestChecksumText(string hash)
@@ -2622,7 +2743,7 @@ internal sealed class PortableStorage : IDisposable
 
     private static string SafeBackupPath(string directory, string filename)
     {
-        if (String.IsNullOrEmpty(filename) || filename != Path.GetFileName(filename) || !filename.StartsWith("user-tracker-", StringComparison.Ordinal) || !filename.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The backup filename is invalid.");
+        if (String.IsNullOrEmpty(filename) || filename != Path.GetFileName(filename) || !filename.StartsWith("user-tracker-", StringComparison.Ordinal) || !(filename.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".json.gz", StringComparison.OrdinalIgnoreCase))) throw new InvalidDataException("The backup filename is invalid.");
         return SafeRelativePath(directory, filename);
     }
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {backupFilename,buildBackupSnapshot,checksumFilename,checksumFromText,sha256Hex,staleSnapshotNames,verifyBackupSnapshot} from '../app/backup-utils.ts';
+import {backupFilename,buildBackupSnapshot,buildCompressedBackupSnapshot,checksumFilename,checksumFromText,compressedBackupFilename,sha256Hex,staleSnapshotNames,verifyBackupSnapshot,verifyStoredBackupSnapshot} from '../app/backup-utils.ts';
 
 const database={
  version:2,
@@ -37,8 +37,27 @@ test('rejects checksum files that name a different backup',async()=>{
  assert.equal(checksumFromText(snapshot.checksumText,'different.json'),undefined);
 });
 
+test('creates and verifies a compressed backup while retaining legacy JSON compatibility',async()=>{
+ const created='2026-08-26T17:18:26.123Z',snapshot=await buildCompressedBackupSnapshot(database,created);
+ assert.equal(snapshot.filename,'user-tracker-2026-08-26T17-18-26-123Z.json.gz');
+ assert.equal(checksumFromText(snapshot.checksumText,snapshot.filename),snapshot.integrityHash);
+ assert.ok(snapshot.bytes.byteLength<new TextEncoder().encode(snapshot.text).byteLength);
+ const verified=await verifyStoredBackupSnapshot(snapshot.bytes,snapshot.filename,snapshot.integrityHash);
+ assert.deepEqual(verified.database.users,database.users);
+
+ const legacy=await buildBackupSnapshot(database,created),legacyBytes=new TextEncoder().encode(legacy.text);
+ assert.deepEqual((await verifyStoredBackupSnapshot(legacyBytes,legacy.filename,legacy.integrityHash)).database.users,database.users);
+});
+
+test('rejects a changed compressed backup before decompression',async()=>{
+ const snapshot=await buildCompressedBackupSnapshot(database,'2026-08-26T17:18:26.123Z'),tampered=new Uint8Array(snapshot.bytes);
+ tampered[Math.floor(tampered.length/2)]^=1;
+ await assert.rejects(()=>verifyStoredBackupSnapshot(tampered,snapshot.filename,snapshot.integrityHash),/SHA-256 integrity check failed/);
+});
+
 test('uses the expected snapshot filename format',()=>{
  assert.equal(backupFilename('2026-01-02T03:04:05.006Z'),'user-tracker-2026-01-02T03-04-05-006Z.json');
+ assert.equal(compressedBackupFilename('2026-01-02T03:04:05.006Z'),'user-tracker-2026-01-02T03-04-05-006Z.json.gz');
 });
 
 test('retains only the configured number of newest snapshots',()=>{

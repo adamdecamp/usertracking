@@ -42,3 +42,4 @@ tests/user-edit-ui.test.ts
 tests/workflow-utils.test.ts
 tests/data-migrations.test.ts
 tests/network-performance.test.ts
+tests/performance-budget.test.ts

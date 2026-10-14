@@ -63,6 +63,8 @@ for ($index = 0; $index -lt $assetFiles.Count; $index++) {
     $assetManifestLines.Add("/assets/$($asset.Name)`t$resourceName`t$contentType")
     $assetResourceArgs.Add("/resource:$compressed,$resourceName")
 }
+$compressedAssetBytes = (@(Get-ChildItem -LiteralPath $embeddedRoot -Filter "asset-*.gz" -File | Measure-Object -Property Length -Sum).Sum)
+if ($compressedAssetBytes -gt 2MB) { throw "Portable browser assets exceed the 2 MB compressed release budget: $compressedAssetBytes bytes." }
 [System.IO.File]::WriteAllLines($assetManifest, $assetManifestLines, (New-Object System.Text.UTF8Encoding($false)))
 $faviconSource = Join-Path $projectRoot "public\favicon.ico"
 $faviconCompressed = Join-Path $embeddedRoot "favicon.ico.gz"
@@ -88,6 +90,7 @@ $compilerArgs.Add((Join-Path $portableRoot "Program.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableStorage.cs"))
 & $compiler $compilerArgs
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $executable)) { throw "Standalone launcher compilation failed." }
+if ((Get-Item -LiteralPath $executable).Length -gt 3MB) { throw "RAPTOR.exe exceeds the 3 MB lightweight release budget." }
 
 & (Get-Command node.exe -ErrorAction Stop).Source --experimental-strip-types (Join-Path $projectRoot "scripts\New-ExecutiveSummaryPdf.ts") --output $executiveSummary
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $executiveSummary)) { throw "Executive summary PDF generation failed." }

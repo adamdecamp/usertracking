@@ -138,6 +138,25 @@ test('manifest refresh uses checksum and metadata before rereading the shared da
  assert.match(reader,/cacheHit = true;return cached\.Manifest/);
 });
 
+test('authoritative database is organization-sharded while the launcher preserves the logical manifest contract',()=>{
+ assert.match(storage,/ManifestStorageFormat = "organization-sharded-v1"/);
+ assert.match(storage,/private byte\[\] BuildShardedManifest/);
+ assert.match(storage,/private Dictionary<string, object> ReadDatabaseManifest/);
+ assert.match(storage,/userShards/);
+ assert.match(storage,/hash\.Substring\(0, 24\)/);
+ assert.match(storage,/if \(File\.Exists\(path\)\)/);
+ assert.match(storage,/A database organization shard failed its SHA-256 integrity check/);
+ assert.match(storage,/SaveLocalManifestCache\(root, logical, actualHash\)/);
+});
+
+test('portable backups are compressed locally and remain compatible with legacy JSON snapshots',()=>{
+ assert.match(storage,/\.json\.gz/);
+ assert.match(storage,/CompressGzip/);
+ assert.match(storage,/DecompressGzip/);
+ assert.match(storage,/path\.EndsWith\("\.json"[\s\S]*?path\.EndsWith\("\.json\.gz"/);
+ assert.match(storage,/The decompressed backup exceeds the safety limit/);
+});
+
 test('performance diagnostics record phase timing, counts, staging, and concurrency locally',()=>{
  assert.match(storage,/AppendPerformanceDiagnostic/);
  assert.match(storage,/performance-" \+ DateTime\.UtcNow\.ToString\("yyyy-MM-dd"/);
@@ -149,6 +168,9 @@ test('performance diagnostics record phase timing, counts, staging, and concurre
  assert.match(storage,/"maxValidationDurationMs"/);
  assert.match(storage,/public string ReadPerformanceDiagnostics/);
  assert.match(storage,/Percentile\(durations, 0\.95\)/);
+ assert.match(storage,/"databaseShards"/);
+ assert.match(storage,/"localReadCacheAvailable"/);
+ assert.match(storage,/"backupCompression"/);
  assert.match(launcher,/action == "performance"[\s\S]*?ReadPerformanceDiagnostics/);
  assert.match(page,/openPerformanceReport/);
  assert.match(page,/downloadPerformanceReport/);

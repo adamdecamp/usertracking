@@ -42,6 +42,14 @@ internal static class PortableStorageTests
         return Json.Serialize(new Dictionary<string, object> { { "version", 2 }, { "updated", DateTime.UtcNow.ToString("o") }, { "systems", new object[] { system } }, { "users", new object[] { user } } });
     }
 
+    private static string MultiOrganizationDatabase(string changedLmEmail = null)
+    {
+        var system = new Dictionary<string, object> { { "id", "system-1" }, { "name", "Test System" }, { "type", "Administrative" }, { "organization", "GOV" }, { "archived", false } };
+        string[] organizations = { "GOV", "LM", "GOV", "NGC", "LM" };
+        object[] users = organizations.Select((organization, index) => (object)new Dictionary<string, object> { { "id", "ordered-user-" + index.ToString(CultureInfo.InvariantCulture) }, { "systemId", "system-1" }, { "organization", organization }, { "last", "Ordered" + index.ToString(CultureInfo.InvariantCulture) }, { "first", "User" }, { "middle", "" }, { "email", index == 1 && !String.IsNullOrWhiteSpace(changedLmEmail) ? changedLmEmail : "ordered" + index.ToString(CultureInfo.InvariantCulture) + "@example.mil" }, { "disabled", false }, { "roles", new object[] { "General" } }, { "privilegedUsernames", new object[0] }, { "privilegedTypes", new object[0] }, { "artifacts", new object[0] }, { "changes", new object[0] } }).ToArray();
+        return Json.Serialize(new Dictionary<string, object> { { "version", 2 }, { "updated", DateTime.UtcNow.ToString("o") }, { "systems", new object[] { system } }, { "users", users } });
+    }
+
     private static void RunStorageEnumerationFuzz(string parent)
     {
         string fuzzRoot = Path.Combine(parent, "Storage Fuzz (Mapped), Unicode-\u00e9");
@@ -204,6 +212,16 @@ internal static class PortableStorageTests
         Assert(protectedLocalMappings.Contains("\"source\":\"local-cache\"") && protectedLocalMappings.Contains("first@example.mil") && Directory.EnumerateFiles(performanceCacheRoot, "verified-manifest.cache", SearchOption.AllDirectories).Any(), "A verified manifest save should refresh the Windows-user-protected local read cache without requiring shared-folder initialization.");
         string manifestPathForLockTest = Path.Combine(root, "System", "information-system-user-tracker.json");
         string manifestChecksumPath = manifestPathForLockTest + ".sha256", manifestHash = Sha256(File.ReadAllBytes(manifestPathForLockTest));
+        string manifestCatalog = File.ReadAllText(manifestPathForLockTest, Encoding.UTF8), databaseShardDirectory = Path.Combine(root, "System", "Database Shards");
+        Assert(manifestCatalog.Contains("\"storageFormat\":\"organization-sharded-v1\"") && manifestCatalog.Contains("\"userShards\"") && !manifestCatalog.Contains("first@example.mil") && Directory.EnumerateFiles(databaseShardDirectory, "org-*.json", SearchOption.AllDirectories).Any(path => File.ReadAllText(path, Encoding.UTF8).Contains("first@example.mil")), "The authoritative database should use a compact catalog and organization-scoped record shards while preserving the logical read contract.");
+        storage.SaveManifest("mapping-key", MultiOrganizationDatabase());
+        Dictionary<string, object> orderedDatabase = (Dictionary<string, object>)Json.DeserializeObject(storage.ReadManifest("mapping-key"));object[] orderedUsers = (object[])orderedDatabase["users"];
+        Assert(String.Join(",", orderedUsers.Cast<Dictionary<string, object>>().Select(user => Convert.ToString(user["email"], CultureInfo.InvariantCulture))) == "ordered0@example.mil,ordered1@example.mil,ordered2@example.mil,ordered3@example.mil,ordered4@example.mil" && Directory.EnumerateFiles(databaseShardDirectory, "org-*.json", SearchOption.AllDirectories).Count() >= 3, "Organization sharding must preserve the original logical user order across interleaved organizations.");
+        Dictionary<string, object> firstMultiCatalog = (Dictionary<string, object>)Json.DeserializeObject(File.ReadAllText(manifestPathForLockTest, Encoding.UTF8));var firstShardPaths = ((object[])firstMultiCatalog["userShards"]).Cast<Dictionary<string, object>>().ToDictionary(reference => Convert.ToString(reference["organization"], CultureInfo.InvariantCulture), reference => Convert.ToString(reference["file"], CultureInfo.InvariantCulture), StringComparer.OrdinalIgnoreCase);
+        storage.SaveManifest("mapping-key", MultiOrganizationDatabase("ordered1-updated@example.mil"));Dictionary<string, object> secondMultiCatalog = (Dictionary<string, object>)Json.DeserializeObject(File.ReadAllText(manifestPathForLockTest, Encoding.UTF8));var secondShardPaths = ((object[])secondMultiCatalog["userShards"]).Cast<Dictionary<string, object>>().ToDictionary(reference => Convert.ToString(reference["organization"], CultureInfo.InvariantCulture), reference => Convert.ToString(reference["file"], CultureInfo.InvariantCulture), StringComparer.OrdinalIgnoreCase);
+        Assert(firstShardPaths["GOV"] == secondShardPaths["GOV"] && firstShardPaths["NGC"] == secondShardPaths["NGC"] && firstShardPaths["LM"] != secondShardPaths["LM"] && Directory.EnumerateFiles(databaseShardDirectory, "org-*.json", SearchOption.TopDirectoryOnly).Count() == 3, "A record change in one organization should transfer only that content-addressed organization shard and reuse the others.");
+        storage.SaveManifest("mapping-key", Database("first@example.mil"));
+        manifestHash = Sha256(File.ReadAllBytes(manifestPathForLockTest));
         Assert(File.Exists(manifestChecksumPath) && File.ReadAllText(manifestChecksumPath, Encoding.ASCII).Trim() == manifestHash + "  information-system-user-tracker.json", "Every live database save should create a matching SHA-256 sidecar.");
         bool manifestChecksumInterruptionObserved = false;try { PortableStorage.FailAfterStageForTests = "manifest-write-before-checksum";storage.SaveManifest("mapping-key", Database("interrupted@example.mil")); } catch (IOException) { manifestChecksumInterruptionObserved = true; } finally { PortableStorage.FailAfterStageForTests = null; }
         Assert(manifestChecksumInterruptionObserved, "The manifest integrity recovery test must interrupt after the database write and before its checksum write.");storage.Map("mapping-key", root);manifestHash = Sha256(File.ReadAllBytes(manifestPathForLockTest));Assert(File.ReadAllText(manifestChecksumPath, Encoding.ASCII).Trim() == manifestHash + "  information-system-user-tracker.json" && !Directory.EnumerateFiles(Path.Combine(root, "System", "Storage Transactions"), "transaction-*.json").Any(), "Mapping should recover an interrupted database save by rebuilding the checksum for the verified transaction destination.");
@@ -212,7 +230,7 @@ internal static class PortableStorageTests
         releaseManifestBlocker.Start();
         storage.SaveManifest("mapping-key", Database("first@example.mil"));
         releaseManifestBlocker.Join();
-        Assert(File.ReadAllText(manifestPathForLockTest, Encoding.UTF8).Contains("first@example.mil") && !Directory.EnumerateFiles(root, ".isut-*", SearchOption.TopDirectoryOnly).Any(), "A brief SMB-style replacement lock should be retried without changing or stranding the manifest.");
+        Assert(storage.ReadManifest("mapping-key").Contains("first@example.mil") && !Directory.EnumerateFiles(root, ".isut-*", SearchOption.TopDirectoryOnly).Any(), "A brief SMB-style replacement lock should be retried without changing or stranding the sharded manifest.");
         string cachedFile = File.ReadAllText(mappingCache, Encoding.UTF8);
         Assert(cachedFile.Contains("\"version\":2") && cachedFile.Contains("mapping-key") && cachedFile.Contains(root.Replace("\\", "\\\\")) && !cachedFile.Contains("first@example.mil"), "The local cache should contain only current-version mapping metadata, not operational user records.");
         var restoredStorage = new PortableStorage("DOMAIN\\operator", mappingCache);
@@ -225,9 +243,9 @@ internal static class PortableStorageTests
         object[] firstItems = (object[])Json.DeserializeObject(firstList);
         Assert(firstItems.Length == 1, "The first database save should create one snapshot.");
         string firstFilename = Convert.ToString(((Dictionary<string, object>)firstItems[0])["filename"]);
-        Assert(Convert.ToBoolean(((Dictionary<string, object>)firstItems[0])["valid"]), "The first snapshot should verify.");
+        Assert(firstFilename.EndsWith(".json.gz", StringComparison.OrdinalIgnoreCase) && Convert.ToBoolean(((Dictionary<string, object>)firstItems[0])["valid"]), "The first compressed snapshot should verify.");
         string drill = storage.RestoreDrill("mapping-key", "system-1", firstFilename);
-        Assert(drill.Contains("\"healthy\":true") && drill.Contains("\"nonDestructive\":true") && drill.Contains("\"userCount\":1") && File.ReadAllText(manifestPathForLockTest, Encoding.UTF8).Contains("first@example.mil"), "The restore drill should verify and reconstruct a snapshot without changing the live manifest.");
+        Assert(drill.Contains("\"healthy\":true") && drill.Contains("\"nonDestructive\":true") && drill.Contains("\"userCount\":1") && storage.ReadManifest("mapping-key").Contains("first@example.mil"), "The restore drill should verify and reconstruct a snapshot without changing the live manifest.");
         byte[] queueBytes = Encoding.UTF8.GetBytes("{\"version\":1,\"items\":[]}");
         storage.SaveRenamerQueue("mapping-key", queueBytes);
         Assert(storage.ReadRenamerQueue("mapping-key").Contains("\"version\":1") && File.Exists(Path.Combine(root, "System", "tracker-document-renamer-queue.json")) && !File.Exists(Path.Combine(root, "tracker-document-renamer-queue.json")) && !storage.Scan("mapping-key").Contains("tracker-document-renamer-queue.json"), "The resumable renamer queue should round-trip beneath System and remain excluded from evidence scans.");
@@ -557,7 +575,7 @@ internal static class PortableStorageTests
         string auditView = storage.ReadAuditLogs("mapping-key");
         Assert(auditView.Contains("\"recent\"") && auditView.IndexOf("SECOND ACTION", StringComparison.Ordinal) < auditView.IndexOf("TEST ACTION", StringComparison.Ordinal), "The read-only audit view should return verified entries newest first.");
         string performanceReport = storage.ReadPerformanceDiagnostics("mapping-key");
-        Assert(performanceReport.Contains("\"generatedAtUtc\"") && performanceReport.Contains("\"operations\"") && performanceReport.Contains("\"syncIndexShards\"") && performanceReport.Contains("\"auditCheckpointAvailable\":true"), "The operator performance report should summarize bounded local timing diagnostics and optimization health without scanning evidence content.");
+        Assert(performanceReport.Contains("\"generatedAtUtc\"") && performanceReport.Contains("\"operations\"") && performanceReport.Contains("\"syncIndexShards\"") && performanceReport.Contains("\"databaseShards\":1") && performanceReport.Contains("\"manifestStorageFormat\":\"organization-sharded-v1\"") && performanceReport.Contains("\"localReadCacheAvailable\":true") && performanceReport.Contains("\"backupCompression\":\"GZip\"") && performanceReport.Contains("\"auditCheckpointAvailable\":true"), "The operator performance report should summarize bounded local timing diagnostics and optimization health without scanning evidence content.");
 
         Assert(storage.AcquireLease("mapping-key", "session-1"), "The first lease should be acquired.");
         Assert(!TrackerContext.StorageActionRequiresSerialization("lease-acquire") && !TrackerContext.StorageActionRequiresSerialization("lease-renew") && !TrackerContext.StorageActionRequiresSerialization("lease-release") && !TrackerContext.StorageActionRequiresSerialization("outlook-draft") && !TrackerContext.StorageActionRequiresSerialization("performance") && TrackerContext.StorageActionRequiresSerialization("scan"), "Session lease, Outlook-draft, and local performance-report operations must remain available while a long storage operation is running.");
@@ -586,6 +604,9 @@ internal static class PortableStorageTests
         byte[] verifiedManifestBytes = File.ReadAllBytes(manifestPathForLockTest), verifiedChecksumBytes = File.ReadAllBytes(manifestChecksumPath);File.AppendAllText(manifestPathForLockTest, "tampered");bool rejectedTamperedManifest = false;
         try { storage.ReadManifest("mapping-key"); } catch (InvalidDataException) { rejectedTamperedManifest = true; }
         Assert(rejectedTamperedManifest, "A live database changed without a matching checksum must be rejected before it is read.");File.WriteAllBytes(manifestPathForLockTest, verifiedManifestBytes);File.WriteAllBytes(manifestChecksumPath, verifiedChecksumBytes);
+        Dictionary<string, object> currentCatalog = (Dictionary<string, object>)Json.DeserializeObject(File.ReadAllText(manifestPathForLockTest, Encoding.UTF8));Dictionary<string, object> currentShardReference = (Dictionary<string, object>)((object[])currentCatalog["userShards"])[0];string currentShardPath = Path.Combine(root, "System", Convert.ToString(currentShardReference["file"], CultureInfo.InvariantCulture).Replace('/', Path.DirectorySeparatorChar));byte[] currentShardBytes = File.ReadAllBytes(currentShardPath);File.AppendAllText(currentShardPath, "tampered");bool rejectedTamperedShard = false;
+        try { storage.VerifyLatest("mapping-key", "system-1"); } catch (InvalidDataException) { rejectedTamperedShard = true; }
+        Assert(rejectedTamperedShard, "A modified organization shard must fail full storage verification even when the protected local read cache is fresh.");File.WriteAllBytes(currentShardPath, currentShardBytes);
         object[] items = (object[])Json.DeserializeObject(storage.ListBackups("mapping-key", "system-1"));
         string latest = Convert.ToString(((Dictionary<string, object>)items[0])["filename"]);
         File.AppendAllText(Path.Combine(root, "System", "backup", latest), "tampered");

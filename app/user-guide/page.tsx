@@ -927,8 +927,9 @@ export default function Guide() {
         </p>
         <p>
           In the portable Windows app, the launcher—not the browser tab—performs
-          the critical file operations. It atomically writes the manifest, daily
-          CSV, timestamped JSON snapshots, SHA-256 files, evidence ZIPs, audit
+          the critical file operations. It atomically writes the database catalog
+          and organization record shards, daily CSV, compressed timestamped JSON
+          snapshots, SHA-256 files, evidence ZIPs, audit
           entries, reports, and session lease. The browser validates changes and
           sends them to this local-only storage service. This design keeps the
           final disk write and shutdown backup available even if the browser
@@ -940,7 +941,8 @@ export default function Guide() {
         <p>
           Tracker-owned support folders and operational JSON files are grouped
           beneath the mapped system&apos;s top-level <code>System</code> folder:
-          the database manifest and its SHA-256 checksum, Sync index,
+          the database catalog, its SHA-256 checksum, organization record shards,
+          Sync index,
           document-renamer queue, session
           metadata, Audit Logs, Error
           Reports, backup, Reports, Storage Transactions, and Archive
@@ -984,10 +986,11 @@ export default function Guide() {
         <p>
           The storage-health strip shows <b>Last Saved</b>, <b>Last Backup</b>,
           and <b>Last Sync</b> for the selected system. Green means the live
-          database checksum, manifest, and backup are current; amber means a
+          database checksum, catalog and shards, and backup are current; amber means a
           save or verification is in progress; red means the mapped folder
           needs attention. Choose <b>Verify Storage</b> to validate the live
-          database SHA-256 checksum, newest JSON snapshot, and complete audit
+          database SHA-256 checksum, every referenced organization shard, newest
+          backup snapshot, and complete audit
           hash chain. A verification failure does not delete or overwrite
           evidence.
         </p>
@@ -1049,12 +1052,14 @@ export default function Guide() {
           finishing, then the operator can resume the preserved review.
         </p>
         <p>
-          Each meaningful database state creates a full-fidelity, timestamped
-          JSON snapshot in the selected system&apos;s <code>System/backup</code>{" "}
-          folder, alongside the daily CSV report. Every JSON snapshot has a
+          Each meaningful database state creates a full-fidelity, timestamped,
+          GZip-compressed JSON snapshot in the selected system&apos;s <code>System/backup</code>{" "}
+          folder, alongside the daily CSV report. Every snapshot has a
           matching <code>.sha256</code> file and includes the system, users,
-          artifact references, and administrative change histories. The live
-          database manifest also has its own SHA-256 sidecar, written as part
+          artifact references, and administrative change histories. Existing
+          uncompressed JSON snapshots remain available for backward-compatible
+          recovery. The live database catalog also has its own SHA-256 sidecar,
+          written as part
           of the same recoverable transaction. Interrupted writes repair that
           sidecar only after the verified manifest is recovered. Unchanged data
           is not duplicated, at least one snapshot is retained for each active
@@ -1072,8 +1077,8 @@ export default function Guide() {
           The portable Windows app shuts down after 60 minutes without keyboard,
           pointer, or touch activity, and it also shuts down when its browser
           window is closed. Before either automatic shutdown, the launcher
-          verifies or refreshes the mapped systems&apos; JSON backups. The
-          browser also refreshes the selected system&apos;s manifest and daily
+          verifies or refreshes the mapped systems&apos; compressed backups. The
+          browser also refreshes the selected system&apos;s database and daily
           CSV, records the shutdown in the audit log, and releases the
           shared-folder session when it remains available. If a pending write or
           final backup fails, shutdown is held so the failure can be corrected
@@ -1352,14 +1357,19 @@ export default function Guide() {
         or organization scope; a missing, damaged, or outdated index also
         causes safe full validation automatically. Verified rename, move,
         compression, and collision actions reuse their exact returned paths before
-        attempting any broad location refresh. Database, checksum, snapshot, and
+        attempting any broad location refresh. Immutable content-addressed organization
+        shards are reused when their records are unchanged, so ordinary updates transfer
+        only changed organizations. Database catalog, organization shards,
+        checksum, snapshot, and
         daily CSV updates are submitted through one serialized launcher commit to
-        reduce shared-drive round trips. The verified live manifest is immediate;
+        reduce shared-drive round trips. The verified live catalog commit is immediate;
         repeated snapshot and daily CSV work is coalesced for up to 30 seconds and
         is force-flushed before logoff or shutdown. If record state did not change,
-        the launcher leaves the verified manifest, snapshot, and daily CSV untouched.
-        Startup and refresh compare the small manifest checksum and file metadata
-        before rereading the full shared database. Bounded local performance logs
+        the launcher leaves the verified database, snapshot, and daily CSV untouched.
+        Startup and refresh compare the small catalog checksum and file metadata
+        before rereading the organization shards. A Windows-user-protected local
+        logical-database cache supports fast search and reporting after verification;
+        it never replaces the authoritative shared copy. Bounded local performance logs
         record phase duration, files discovered, changed and unchanged counts,
         staged bytes, enumeration-cache reuse, and selected concurrency without
         adding traffic to the shared folder. Processing Status reports elapsed scan
@@ -1371,6 +1381,13 @@ export default function Guide() {
         or overflowed network notification cannot hide evidence. PDF text extraction reuses a bounded worker pool
         and recycles workers after a fixed age or number of documents to reduce
         repeated startup cost without allowing stale workers to accumulate.
+        The local-only <b>Performance</b> report shows database-shard count,
+        storage format, protected read-cache availability, backup compression,
+        and bounded timing percentiles without exposing user records or evidence
+        content. Every release also runs a deterministic 10,000-record local-read
+        performance budget plus compressed browser-asset and executable-size
+        limits. The build gate fails if the bounded storage architecture is
+        removed or any fixed performance or package-size budget is exceeded.
       </aside>
       <aside>
         <b>Mapped-Folder Compatibility:</b> The portable launcher uses broadly
