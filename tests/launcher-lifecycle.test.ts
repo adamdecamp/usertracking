@@ -44,7 +44,7 @@ test('long scans and verified updates hold the launcher and browser session acti
  assert.match(apply,/syncInProgress\.current=true/);
  assert.match(apply,/setLauncherLongOperation\(true,true\)/);
  assert.match(apply,/finally\{window\.clearInterval\(launcherKeepAlive\);syncInProgress\.current=false/);
- assert.match(page,/stage==='scan'\|\|stage==='rework-retention'\?4\*60\*60\*1000/);
+ assert.match(page,/stage==='scan'\|\|stage==='rework-retention'\|\|stage==='sync-pipeline'\?4\*60\*60\*1000/);
 });
 
 test('evidence that fails canonical folder routing cannot enter database matching',()=>{

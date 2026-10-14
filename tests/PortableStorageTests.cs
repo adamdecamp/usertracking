@@ -87,7 +87,9 @@ internal static class PortableStorageTests
             }
             finally { PortableStorage.ForceNativeEnumerationForTests = false; }
             Assert(nativeItems.Length == total, "Native enumeration fuzz should return every generated file exactly once.");
-            Assert(nativeItems.Cast<Dictionary<string, object>>().Count(item => Convert.ToBoolean(item["accepted"])) == total / 2, "Native enumeration fuzz should accept only the valid PDF and PDF-in-ZIP cases.");
+            int nativeAccepted = nativeItems.Cast<Dictionary<string, object>>().Count(item => Convert.ToBoolean(item["accepted"]));
+            string firstNativeError = String.Join(" | ", nativeItems.Cast<Dictionary<string, object>>().Where(item => !Convert.ToBoolean(item["accepted"])).Select(item => Convert.ToString(item["error"])).Where(message => !String.IsNullOrWhiteSpace(message)).Distinct().Take(3));
+            Assert(nativeAccepted == total / 2, "Native enumeration fuzz should accept only the valid PDF and PDF-in-ZIP cases; accepted " + nativeAccepted.ToString() + " of " + total.ToString() + ". Errors: " + firstNativeError);
 
             object[] incrementalItems = (object[])Json.DeserializeObject(fuzzStorage.Scan("fuzz-system", "fuzz-rules", false));
             Assert(incrementalItems.Length == total, "Incremental managed enumeration should return the same complete fuzz corpus.");
@@ -132,7 +134,10 @@ internal static class PortableStorageTests
         {
             compatibilityStorage.Map("compatibility-key", compatibilityRoot);
             Assert(compatibilityStorage.AcquireLease("compatibility-key", "compatibility-session"), "A filesystem that rejects write-through options should still acquire an exclusive lease using compatible buffered I/O.");
-            compatibilityStorage.SaveSystemState("compatibility-key", Encoding.UTF8.GetBytes("{\"database\":" + Database("compatibility@example.mil") + ",\"csv\":\"header\\nvalue\"}"));
+            byte[] compatibilityState = Encoding.UTF8.GetBytes("{\"database\":" + Database("compatibility@example.mil") + ",\"csv\":\"header\\nvalue\"}");
+            compatibilityStorage.SaveSystemState("compatibility-key", compatibilityState);
+            string compatibilityManifest = Path.Combine(compatibilityRoot, "System", "information-system-user-tracker.json"), compatibilityCsv = Path.Combine(compatibilityRoot, "System", "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv");DateTime manifestWrite = File.GetLastWriteTimeUtc(compatibilityManifest), csvWrite = File.GetLastWriteTimeUtc(compatibilityCsv);string unchangedCommit = compatibilityStorage.SaveSystemState("compatibility-key", compatibilityState);
+            Assert(unchangedCommit.Contains("\"unchanged\":true") && File.GetLastWriteTimeUtc(compatibilityManifest) == manifestWrite && File.GetLastWriteTimeUtc(compatibilityCsv) == csvWrite, "An unchanged database commit should not rewrite the manifest, snapshot, or daily CSV backup.");
             compatibilityStorage.AppendAudit("compatibility-key", "COMPATIBILITY WRITE TEST");
             compatibilityStorage.ReleaseLease("compatibility-key", "compatibility-session");
         }
@@ -199,7 +204,7 @@ internal static class PortableStorageTests
         string manifestPathForLockTest = Path.Combine(root, "System", "information-system-user-tracker.json");
         string manifestChecksumPath = manifestPathForLockTest + ".sha256", manifestHash = Sha256(File.ReadAllBytes(manifestPathForLockTest));
         Assert(File.Exists(manifestChecksumPath) && File.ReadAllText(manifestChecksumPath, Encoding.ASCII).Trim() == manifestHash + "  information-system-user-tracker.json", "Every live database save should create a matching SHA-256 sidecar.");
-        bool manifestChecksumInterruptionObserved = false;try { PortableStorage.FailAfterStageForTests = "manifest-write-before-checksum";storage.SaveManifest("mapping-key", Database("first@example.mil")); } catch (IOException) { manifestChecksumInterruptionObserved = true; } finally { PortableStorage.FailAfterStageForTests = null; }
+        bool manifestChecksumInterruptionObserved = false;try { PortableStorage.FailAfterStageForTests = "manifest-write-before-checksum";storage.SaveManifest("mapping-key", Database("interrupted@example.mil")); } catch (IOException) { manifestChecksumInterruptionObserved = true; } finally { PortableStorage.FailAfterStageForTests = null; }
         Assert(manifestChecksumInterruptionObserved, "The manifest integrity recovery test must interrupt after the database write and before its checksum write.");storage.Map("mapping-key", root);manifestHash = Sha256(File.ReadAllBytes(manifestPathForLockTest));Assert(File.ReadAllText(manifestChecksumPath, Encoding.ASCII).Trim() == manifestHash + "  information-system-user-tracker.json" && !Directory.EnumerateFiles(Path.Combine(root, "System", "Storage Transactions"), "transaction-*.json").Any(), "Mapping should recover an interrupted database save by rebuilding the checksum for the verified transaction destination.");
         var manifestBlocker = new FileStream(manifestPathForLockTest, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         var releaseManifestBlocker = new Thread(new ThreadStart(delegate { Thread.Sleep(100); manifestBlocker.Dispose(); }));

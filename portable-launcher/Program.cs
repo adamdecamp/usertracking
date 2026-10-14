@@ -216,6 +216,8 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "restore" && parts[0] == "POST") response = storage.Restore(systemId, QueryValue(target, "logical"), QueryValue(target, "file"));
                     else if (action == "restore-drill" && parts[0] == "POST") response = storage.RestoreDrill(systemId, QueryValue(target, "logical"), QueryValue(target, "file"));
                     else if (action == "verify" && parts[0] == "GET") response = storage.VerifyLatest(systemId, QueryValue(target, "logical"));
+                    else if (action == "sync-cache-clear" && parts[0] == "POST") response = storage.ClearEvidenceValidationCache(systemId);
+                    else if (action == "sync-pipeline" && parts[0] == "POST") response = storage.RunSyncPipeline(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"), String.Equals(OptionalQueryValue(target, "legacy"), "1", StringComparison.Ordinal));
                     else if (action == "scan" && parts[0] == "GET") response = storage.ScanWithJournal(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"), String.Equals(OptionalQueryValue(target, "legacy"), "1", StringComparison.Ordinal));
                     else if (action == "locations" && parts[0] == "GET") response = storage.ListEvidenceLocations(systemId, OptionalQueryValue(target, "organization"));
                     else if (action == "archive-locations" && parts[0] == "GET") response = storage.ListArchivedEvidenceLocations(systemId, QueryValue(target, "organization"));

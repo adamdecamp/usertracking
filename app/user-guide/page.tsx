@@ -1325,6 +1325,15 @@ export default function Guide() {
         downloading the complete index on the same computer. New or changed files always receive full PDF or ZIP
         validation. Filename tokens, dates, identities, and organizations are
         cached during large runs instead of being reparsed for every rule.
+        On the Windows portable build, Archive Preflight and initial discovery
+        share one folder-enumeration pipeline. A changed PDF or ZIP is copied
+        from the mapped drive once into a short-lived, per-Windows-user local
+        validation cache; browser-side analysis then reuses that staged copy.
+        The launcher adjusts bounded validation concurrency to observed storage
+        speed, using less parallel work on a slow network share and more on a
+        local drive. Staged evidence is pruned before Sync and removed when the
+        launcher exits; the authoritative file always remains in the mapped
+        system folder.
         Filename corrections use the evolving in-memory catalog and, when any
         rename occurs, one final incremental verification pass replaces multiple
         full rescans. Choose <b>Full Rescan</b> in the Sync scope window to ignore
@@ -1334,7 +1343,13 @@ export default function Guide() {
         compression, and collision actions reuse their exact returned paths before
         attempting any broad location refresh. Database, checksum, snapshot, and
         daily CSV updates are submitted through one serialized launcher commit to
-        reduce shared-drive round trips. Processing Status reports elapsed scan
+        reduce shared-drive round trips. If record state did not change, the
+        launcher leaves the verified manifest, snapshot, and daily CSV untouched.
+        Startup and refresh compare the small manifest checksum and file metadata
+        before rereading the full shared database. Bounded local performance logs
+        record phase duration, files discovered, changed and unchanged counts,
+        staged bytes, enumeration-cache reuse, and selected concurrency without
+        adding traffic to the shared folder. Processing Status reports elapsed scan
         time alongside
         unchanged evidence skipped, new or changed evidence validated, and
         non-evidence files ignored.
