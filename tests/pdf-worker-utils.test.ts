@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import fs from 'node:fs';
 import {destroyPdfResources} from '../app/pdf-worker-utils.ts';
+
+const pdfTextSource=fs.readFileSync(new URL('../app/pdf-text.ts',import.meta.url),'utf8');
+
+test('reuses a bounded PDF worker pool and recycles workers by age or document count',()=>{
+ assert.match(pdfTextSource,/workerPoolLimit=2/);
+ assert.match(pdfTextSource,/workerRecycleUses=50/);
+ assert.match(pdfTextSource,/workerRecycleAgeMs=10\*60\*1000/);
+ assert.match(pdfTextSource,/acquireWorker\(\)/);
+ assert.match(pdfTextSource,/releaseWorker\(slot,healthy\)/);
+ assert.match(pdfTextSource,/addEventListener\('pagehide',disposePdfWorkerPool/);
+});
 
 test('destroys the loading task before the PDF worker and worker thread',async()=>{
  const calls:string[]=[];

@@ -26,10 +26,12 @@ internal sealed class PortableStorage : IDisposable
     private const long JournalLimit = 100L * 1024 * 1024;
     private const long ErrorReportFileLimit = 100L * 1024 * 1024;
     private const int AuditVersion = 1;
-    private const int SyncIndexVersion = 1;
+    private const int SyncIndexVersion = 2;
     private const int SyncJournalVersion = 1;
     private const int ManifestCacheVersion = 2;
     private const int ManifestCacheFreshMinutes = 10;
+    private const int AuditCheckpointVersion = 1;
+    private const int BackupCoalesceSeconds = 30;
     private const int SyncJournalBatchEntryLimit = 64;
     private const int SyncJournalBatchByteLimit = 64 * 1024;
     private const int StorageTransactionVersion = 1;
@@ -44,6 +46,8 @@ internal sealed class PortableStorage : IDisposable
     private const string ManifestFilename = "information-system-user-tracker.json";
     private const string ManifestChecksumFilename = ManifestFilename + ".sha256";
     private const string LocalManifestCacheFilename = "verified-manifest.cache";
+    private const string LocalAuditCheckpointFilename = "verified-audit-head.cache";
+    private const string SyncIndexDirectoryName = "Sync Index";
     private static readonly string[] SupportDirectoryNames = new[] { "Audit Logs", "backup", "Archive Review", "Reports", "Sync Journals", "Storage Transactions", ErrorReportsDirectoryName };
     private static readonly string[] ArtifactDirectoryNames = new[] { "SAAR", "User Agreement", "DoD Cyber Cert", "8140 Certification Memo", "Privileged User Training", "DTA Training" };
     private const string SyncIndexFilename = "tracker-sync-index.json";
@@ -57,13 +61,20 @@ internal sealed class PortableStorage : IDisposable
     private readonly Dictionary<string, object> rootLocks = new Dictionary<string, object>(StringComparer.Ordinal);
     private readonly Dictionary<string, object> leaseLocks = new Dictionary<string, object>(StringComparer.Ordinal);
     private readonly Dictionary<string, HeldLease> heldLeases = new Dictionary<string, HeldLease>(StringComparer.Ordinal);
+    private readonly Dictionary<string, PendingBackupState> pendingBackups = new Dictionary<string, PendingBackupState>(StringComparer.Ordinal);
+    private readonly Dictionary<string, FileSystemWatcher> changeWatchers = new Dictionary<string, FileSystemWatcher>(StringComparer.Ordinal);
+    private readonly Dictionary<string, ChangeHintState> changeHints = new Dictionary<string, ChangeHintState>(StringComparer.Ordinal);
     private readonly object mapGate = new object();
     private readonly object errorReportGate = new object();
+    private readonly object backupGate = new object();
+    private readonly object changeHintGate = new object();
+    private readonly Timer backupTimer;
     [ThreadStatic] private static JavaScriptSerializer threadJson;
     [ThreadStatic] private static Dictionary<string, DirectoryScanEntry[]> threadEnumerationSnapshot;
     [ThreadStatic] private static bool threadEnumerationSnapshotEnabled;
     [ThreadStatic] private static int threadEnumerationSnapshotHits;
     [ThreadStatic] private static int threadEnumerationSnapshotMisses;
+    [ThreadStatic] private static string threadPriorityOrganization;
     private JavaScriptSerializer json { get { if (threadJson == null) threadJson = new JavaScriptSerializer { MaxJsonLength = 100 * 1024 * 1024, RecursionLimit = 256 };return threadJson; } }
     private readonly string actor;
     private readonly string mappingCachePath;
@@ -118,6 +129,23 @@ internal sealed class PortableStorage : IDisposable
         public string LastTimestamp;
         public DateTimeOffset? LastInstant;
         public readonly List<Dictionary<string, object>> Recent = new List<Dictionary<string, object>>();
+        public bool Incremental;
+    }
+
+    private sealed class PendingBackupState
+    {
+        public string SystemId;
+        public Dictionary<string, object> Database;
+        public byte[] CsvBytes;
+        public DateTime QueuedUtc;
+    }
+
+    private sealed class ChangeHintState
+    {
+        public bool Baselined;
+        public bool Overflowed;
+        public readonly HashSet<string> Organizations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public DateTime LastEventUtc;
     }
 
     private sealed class SyncJournalState
@@ -202,6 +230,7 @@ internal sealed class PortableStorage : IDisposable
         // Keep the legacy cache directory so R.A.P.T.O.R. restores existing mappings without migration or remapping.
         mappingCachePath = String.IsNullOrWhiteSpace(cachePath) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InformationSystemUserTracker", "folder-mappings.json") : Path.GetFullPath(cachePath);
         LoadMappingCache();
+        backupTimer = new Timer(delegate { try { FlushDueBackups(false); } catch { } }, null, TimeSpan.FromSeconds(BackupCoalesceSeconds), TimeSpan.FromSeconds(BackupCoalesceSeconds));
     }
 
     public void Map(string systemId, string path)
@@ -240,6 +269,7 @@ internal sealed class PortableStorage : IDisposable
         }
         SaveMappingCache();
         PruneEvidenceValidationCache(full, false);
+        StartChangeWatcher(systemId, full);
     }
 
     public void MapReadOnly(string systemId, string path)
@@ -262,6 +292,7 @@ internal sealed class PortableStorage : IDisposable
         // The mapping cache is local to this Windows profile. Read-Only mapping never creates,
         // migrates, repairs, or reorganizes anything inside the selected shared folder.
         SaveMappingCache();
+        StartChangeWatcher(systemId, full);
     }
 
     public string CachedMappings(bool initializeSharedFolder = true, bool localOnly = false)
@@ -456,8 +487,8 @@ internal sealed class PortableStorage : IDisposable
             try { AtomicWrite(manifest, manifestBytes);FailAfter("manifest-write-before-checksum");WriteManifestChecksum(manifest, destinationHash);SaveLocalManifestCache(root, canonical, destinationHash);FailAfter("manifest-write");CompleteTransaction(transaction); }
             catch { if (!String.Equals(TryFileHash(manifest), destinationHash, StringComparison.OrdinalIgnoreCase)) CompleteTransaction(transaction);throw; }
             string backupDirectory = SupportDirectory(root, "backup");
-            string backupCreated = CreateSnapshot(backupDirectory, database, false);
-            return json.Serialize(new Dictionary<string, object> { { "saved", now }, { "backup", backupCreated ?? LatestCreated(backupDirectory) }, { "snapshotCreated", backupCreated != null }, { "unchanged", false }, { "stateHash", requestedStateHash }, { "manifestSha256", destinationHash } });
+            QueueBackup(systemId, database, null);
+            return json.Serialize(new Dictionary<string, object> { { "saved", now }, { "backup", LatestCreated(backupDirectory) ?? "" }, { "backupQueuedAt", now }, { "snapshotCreated", false }, { "backupPending", true }, { "unchanged", false }, { "stateHash", requestedStateHash }, { "manifestSha256", destinationHash } });
         }
     }
 
@@ -486,7 +517,8 @@ internal sealed class PortableStorage : IDisposable
         if (csvBytes.LongLength > ManifestLimit) throw new InvalidDataException("The CSV backup exceeds the 50 MB safety limit.");
         var timer = Stopwatch.StartNew();Dictionary<string, object> result = ObjectDictionary(json.DeserializeObject(SaveManifest(systemId, json.Serialize(database))));bool unchanged = result.ContainsKey("unchanged") && Convert.ToBoolean(result["unchanged"], CultureInfo.InvariantCulture);
         string csvPath = Path.Combine(SupportDirectory(Root(systemId), "backup"), "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv");bool csvUnchanged = unchanged && File.Exists(csvPath) && new FileInfo(csvPath).Length == csvBytes.LongLength;
-        result["csvSaved"] = csvUnchanged ? File.GetLastWriteTimeUtc(csvPath).ToString("o", CultureInfo.InvariantCulture) : SaveCsv(systemId, csvBytes);result["csvUnchanged"] = csvUnchanged;result["unchanged"] = unchanged && csvUnchanged;timer.Stop();result["commitDurationMs"] = timer.ElapsedMilliseconds;
+        if (!csvUnchanged) QueueBackup(systemId, null, csvBytes);
+        string queuedAt = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);result["csvSaved"] = csvUnchanged ? File.GetLastWriteTimeUtc(csvPath).ToString("o", CultureInfo.InvariantCulture) : queuedAt;result["csvUnchanged"] = csvUnchanged;result["backupPending"] = !unchanged || !csvUnchanged;result["backupQueuedAt"] = queuedAt;result["unchanged"] = unchanged && csvUnchanged;timer.Stop();result["commitDurationMs"] = timer.ElapsedMilliseconds;
         AppendPerformanceDiagnostic(Root(systemId), new Dictionary<string, object> { { "operation", "state-commit" }, { "durationMs", timer.ElapsedMilliseconds }, { "databaseUnchanged", unchanged }, { "csvUnchanged", csvUnchanged }, { "databaseBytes", Encoding.UTF8.GetByteCount(json.Serialize(database)) }, { "csvBytes", csvBytes.LongLength } });
         return json.Serialize(result);
     }
@@ -590,6 +622,7 @@ internal sealed class PortableStorage : IDisposable
 
     public void FinalizeMappedBackups()
     {
+        FlushDueBackups(true);
         string[] ids;
         lock (mapGate) ids = roots.Keys.ToArray();
         foreach (string id in ids)
@@ -602,6 +635,48 @@ internal sealed class PortableStorage : IDisposable
                 Dictionary<string, object> database = ValidateDatabase(ReadText(manifest, ManifestLimit));
                 string backupDirectory = SupportDirectory(root, "backup");
                 CreateSnapshot(backupDirectory, database, false);
+            }
+        }
+    }
+
+    private void QueueBackup(string systemId, Dictionary<string, object> database, byte[] csvBytes)
+    {
+        lock (backupGate)
+        {
+            PendingBackupState pending;
+            if (!pendingBackups.TryGetValue(systemId, out pending)) pending = new PendingBackupState { SystemId = systemId };
+            if (database != null) pending.Database = database;
+            if (csvBytes != null) pending.CsvBytes = csvBytes.ToArray();
+            pending.QueuedUtc = DateTime.UtcNow;
+            pendingBackups[systemId] = pending;
+        }
+    }
+
+    private void FlushDueBackups(bool force)
+    {
+        PendingBackupState[] due;
+        lock (backupGate) due = pendingBackups.Values.Where(item => force || DateTime.UtcNow - item.QueuedUtc >= TimeSpan.FromSeconds(BackupCoalesceSeconds)).ToArray();
+        foreach (PendingBackupState pending in due)
+        {
+            try
+            {
+                lock (RootLock(pending.SystemId))
+                {
+                    string root = Root(pending.SystemId), manifest = SystemFile(root, ManifestFilename);
+                    Dictionary<string, object> database = pending.Database;
+                    if (database == null && File.Exists(manifest)) database = ValidateDatabase(ReadText(manifest, ManifestLimit));
+                    if (database != null) CreateSnapshot(SupportDirectory(root, "backup"), database, false);
+                    if (pending.CsvBytes != null) SaveCsv(pending.SystemId, pending.CsvBytes);
+                }
+                lock (backupGate)
+                {
+                    PendingBackupState current;
+                    if (pendingBackups.TryGetValue(pending.SystemId, out current) && Object.ReferenceEquals(current, pending)) pendingBackups.Remove(pending.SystemId);
+                }
+            }
+            catch (Exception)
+            {
+                if (force) throw;
             }
         }
     }
@@ -633,7 +708,7 @@ internal sealed class PortableStorage : IDisposable
             using (var journalWriter = new SyncJournalWriter(this, journal.Path))
             {
             FailAfter("scan-start");
-            Dictionary<string, Dictionary<string, object>> allPrevious = LoadSyncIndex(root, cleanRuleSet), previous = fullRescan ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : allPrevious;
+            Dictionary<string, Dictionary<string, object>> allPrevious = LoadSyncIndex(root, cleanRuleSet, cleanOrganization), previous = fullRescan ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : allPrevious;
             var result = new List<Dictionary<string, object>>();
             var next = new List<Dictionary<string, object>>();
             var validations = new List<PendingEvidenceValidation>();
@@ -696,7 +771,7 @@ internal sealed class PortableStorage : IDisposable
                     }
                     validations.Add(new PendingEvidenceValidation { File = file, Filename = filename, Relative = relative, Size = size, LastModifiedUnixMs = lastModifiedUnixMs, HistoricalSaar = historicalSaar });
                 }
-                foreach (DirectoryScanEntry directoryEntry in directoryEntries.Where(item => item.IsDirectory))
+                foreach (DirectoryScanEntry directoryEntry in PrioritizedDirectories(directoryEntries))
                 {
                     string directory = directoryEntry.Path;
                     string name = Path.GetFileName(directory);
@@ -737,7 +812,7 @@ internal sealed class PortableStorage : IDisposable
             }
             validationTimer.Stop();
             journalWriter.Flush();
-            SaveSyncIndex(root, cleanRuleSet, next);
+            SaveSyncIndex(root, cleanRuleSet, next, cleanOrganization);
             journalWriter.Append(new Dictionary<string, object> { { "type", "run-state" }, { "state", "indexed" }, { "timestampUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "files", result.Count } });
             journalWriter.Flush();
             var diagnostics = new Dictionary<string, object> { { "enumerationDurationMs", enumerationTimer.ElapsedMilliseconds }, { "validationDurationMs", validationTimer.ElapsedMilliseconds }, { "discoveredFiles", discoveredFiles }, { "changedFiles", validations.Count }, { "unchangedFiles", unchangedFiles }, { "stagedBytes", stagedBytes }, { "validationConcurrency", validationConcurrency }, { "slowValidationFiles", slowValidationFiles }, { "maxValidationDurationMs", maxValidationDurationMs }, { "networkRoot", IsNetworkRoot(root) } };
@@ -771,7 +846,7 @@ internal sealed class PortableStorage : IDisposable
                     if (!directoryEntry.HasMetadata && !TryReadFileMetadata(file, out size, out modified, out metadataError)) { result.Add(new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "error", "File metadata could not be read after network-aware retries: " + metadataError } });continue; }
                     result.Add(new Dictionary<string, object> { { "name", CleanLine(filename, 500) }, { "path", relative }, { "size", size }, { "lastModifiedUnixMs", modified } });
                 }
-                foreach (DirectoryScanEntry directoryEntry in directoryEntries.Where(item => item.IsDirectory))
+                foreach (DirectoryScanEntry directoryEntry in PrioritizedDirectories(directoryEntries))
                 {
                     string directory = directoryEntry.Path;
                     string name = Path.GetFileName(directory);bool rework = IsReworkStorageDirectory(name);
@@ -907,6 +982,77 @@ internal sealed class PortableStorage : IDisposable
         foreach (string stale in Directory.EnumerateFiles(directory, "sync-*.jsonl", SearchOption.TopDirectoryOnly).OrderByDescending(Path.GetFileName).Skip(30)) TryDelete(stale);
     }
 
+    private void StartChangeWatcher(string systemId, string root)
+    {
+        try
+        {
+            string organizations = Path.Combine(root, "Organizations");
+            if (!Directory.Exists(organizations))
+            {
+                lock (changeHintGate)
+                {
+                    ChangeHintState unavailable;
+                    if (!changeHints.TryGetValue(systemId, out unavailable)) changeHints[systemId] = unavailable = new ChangeHintState();
+                    unavailable.Overflowed = true;
+                }
+                return;
+            }
+            var watcher = new FileSystemWatcher(organizations) { IncludeSubdirectories = true, NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size, InternalBufferSize = 64 * 1024 };
+            FileSystemEventHandler changed = delegate(object sender, FileSystemEventArgs eventArgs) { RecordChangeHint(systemId, organizations, eventArgs.FullPath); };
+            RenamedEventHandler renamed = delegate(object sender, RenamedEventArgs eventArgs) { RecordChangeHint(systemId, organizations, eventArgs.OldFullPath);RecordChangeHint(systemId, organizations, eventArgs.FullPath); };
+            ErrorEventHandler failed = delegate { lock (changeHintGate) { ChangeHintState state;if (!changeHints.TryGetValue(systemId, out state)) changeHints[systemId] = state = new ChangeHintState();state.Overflowed = true;state.LastEventUtc = DateTime.UtcNow; } };
+            watcher.Created += changed;watcher.Changed += changed;watcher.Deleted += changed;watcher.Renamed += renamed;watcher.Error += failed;watcher.EnableRaisingEvents = true;
+            lock (mapGate)
+            {
+                FileSystemWatcher previous;if (changeWatchers.TryGetValue(systemId, out previous)) try { previous.Dispose(); } catch { }
+                changeWatchers[systemId] = watcher;
+            }
+            lock (changeHintGate) if (!changeHints.ContainsKey(systemId)) changeHints[systemId] = new ChangeHintState();
+        }
+        catch
+        {
+            lock (changeHintGate) { ChangeHintState state;if (!changeHints.TryGetValue(systemId, out state)) changeHints[systemId] = state = new ChangeHintState();state.Overflowed = true; }
+        }
+    }
+
+    private void RecordChangeHint(string systemId, string organizationsRoot, string path)
+    {
+        try
+        {
+            string relative = Relative(organizationsRoot, path);string[] parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);if (parts.Length == 0 || ReservedOrganizationName(parts[0])) return;
+            lock (changeHintGate) { ChangeHintState state;if (!changeHints.TryGetValue(systemId, out state)) changeHints[systemId] = state = new ChangeHintState();state.Organizations.Add(parts[0]);state.LastEventUtc = DateTime.UtcNow; }
+        }
+        catch { lock (changeHintGate) { ChangeHintState state;if (!changeHints.TryGetValue(systemId, out state)) changeHints[systemId] = state = new ChangeHintState();state.Overflowed = true; } }
+    }
+
+    private string SuggestedChangeHintOrganization(string systemId, out bool noChanges, out int dirtyCount)
+    {
+        lock (changeHintGate)
+        {
+            ChangeHintState state;if (!changeHints.TryGetValue(systemId, out state) || !state.Baselined || state.Overflowed) { noChanges = false;dirtyCount = state == null ? 0 : state.Organizations.Count;return null; }
+            dirtyCount = state.Organizations.Count;noChanges = dirtyCount == 0;return dirtyCount == 1 ? state.Organizations.First() : null;
+        }
+    }
+
+    private void CompleteChangeHintScan(string systemId, string organization, bool authoritativeSystemScan)
+    {
+        lock (changeHintGate)
+        {
+            ChangeHintState state;if (!changeHints.TryGetValue(systemId, out state)) changeHints[systemId] = state = new ChangeHintState();
+            if (authoritativeSystemScan) { state.Baselined = true;state.Overflowed = false;state.Organizations.Clear(); }
+            else if (!String.IsNullOrWhiteSpace(organization)) state.Organizations.Remove(organization);
+        }
+    }
+
+    private static IEnumerable<DirectoryScanEntry> PrioritizedDirectories(DirectoryScanEntry[] entries)
+    {
+        IEnumerable<DirectoryScanEntry> directories = entries.Where(item => item.IsDirectory);
+        if (String.IsNullOrWhiteSpace(threadPriorityOrganization)) return directories;
+        // A watcher event only changes traversal order. Every in-scope directory is still
+        // enumerated, so a missed or delayed network notification cannot hide evidence.
+        return directories.OrderBy(item => String.Equals(Path.GetFileName(item.Path), threadPriorityOrganization, StringComparison.OrdinalIgnoreCase) ? 1 : 0);
+    }
+
     private string LocalPerformanceCacheDirectory(string root, string purpose)
     {
         string parent = Path.GetDirectoryName(mappingCachePath);
@@ -929,6 +1075,38 @@ internal sealed class PortableStorage : IDisposable
         }
         catch { }
     }
+
+    public string ReadPerformanceDiagnostics(string systemId)
+    {
+        string root = Root(systemId), directory = LocalPerformanceCacheDirectory(root, "Performance");var entries = new List<Dictionary<string, object>>();
+        try
+        {
+            foreach (string path in Directory.EnumerateFiles(directory, "performance-*.jsonl", SearchOption.TopDirectoryOnly).OrderByDescending(Path.GetFileName).Take(30).Reverse())
+            using (var reader = new StreamReader(path, new UTF8Encoding(false, true)))
+            {
+                string line;while ((line = reader.ReadLine()) != null) { if (String.IsNullOrWhiteSpace(line) || line.Length > 64 * 1024) continue;try { entries.Add(ObjectDictionary(json.DeserializeObject(line)));if (entries.Count > 500) entries.RemoveAt(0); } catch { } }
+            }
+        }
+        catch { }
+        var operations = new List<Dictionary<string, object>>();
+        foreach (var group in entries.GroupBy(item => item.ContainsKey("operation") ? Convert.ToString(item["operation"], CultureInfo.InvariantCulture) : "other", StringComparer.OrdinalIgnoreCase))
+        {
+            long[] durations = group.Select(item => PerformanceDuration(item)).Where(value => value >= 0).OrderBy(value => value).ToArray();if (durations.Length == 0) continue;
+            operations.Add(new Dictionary<string, object> { { "operation", group.Key }, { "runs", durations.Length }, { "averageMs", (long)Math.Round(durations.Average()) }, { "p50Ms", Percentile(durations, 0.50) }, { "p95Ms", Percentile(durations, 0.95) }, { "maximumMs", durations[durations.Length - 1] } });
+        }
+        bool backupPending;lock (backupGate) backupPending = pendingBackups.ContainsKey(systemId);bool watcherBaselined = false, watcherOverflowed = false;string[] dirtyOrganizations = new string[0];
+        lock (changeHintGate) { ChangeHintState hints;if (changeHints.TryGetValue(systemId, out hints)) { watcherBaselined = hints.Baselined;watcherOverflowed = hints.Overflowed;dirtyOrganizations = hints.Organizations.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray(); } }
+        string shardDirectory = LocalPerformanceCacheDirectory(root, "Sync Index Shards");int shards = 0;try { if (Directory.Exists(shardDirectory)) shards = Directory.EnumerateFiles(shardDirectory, "index-*.json", SearchOption.TopDirectoryOnly).Count(); } catch { }
+        return json.Serialize(new Dictionary<string, object> { { "generatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "networkRoot", IsNetworkRoot(root) }, { "operations", operations.OrderByDescending(item => Convert.ToInt64(item["p95Ms"], CultureInfo.InvariantCulture)).ToArray() }, { "recent", entries.AsEnumerable().Reverse().Take(100).ToArray() }, { "backupPending", backupPending }, { "watcherBaselined", watcherBaselined }, { "watcherOverflowed", watcherOverflowed }, { "dirtyOrganizations", dirtyOrganizations }, { "syncIndexShards", shards }, { "auditCheckpointAvailable", File.Exists(Path.Combine(LocalPerformanceCacheDirectory(root, "Audit"), LocalAuditCheckpointFilename)) } });
+    }
+
+    private static long PerformanceDuration(Dictionary<string, object> item)
+    {
+        foreach (string key in new[] { "totalDurationMs", "durationMs", "validationDurationMs", "scanDurationMs" }) try { if (item.ContainsKey(key)) return Convert.ToInt64(item[key], CultureInfo.InvariantCulture); } catch { }
+        return -1;
+    }
+
+    private static long Percentile(long[] sorted, double percentile) { if (sorted == null || sorted.Length == 0) return 0;int index = (int)Math.Ceiling(percentile * sorted.Length) - 1;return sorted[Math.Max(0, Math.Min(sorted.Length - 1, index))]; }
 
     private static byte[] ManifestCacheEntropy()
     {
@@ -976,66 +1154,79 @@ internal sealed class PortableStorage : IDisposable
         catch { if (!String.IsNullOrWhiteSpace(path)) TryDelete(path);return null; }
     }
 
-    private Dictionary<string, Dictionary<string, object>> LoadSyncIndex(string root, string ruleSetVersion)
+    private Dictionary<string, Dictionary<string, object>> LoadSyncIndex(string root, string ruleSetVersion, string organization = null)
     {
         var result = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            string indexPath = SystemFile(root, SyncIndexFilename), checksumPath = SystemFile(root, SyncIndexChecksumFilename);
-            if (!File.Exists(indexPath) || !File.Exists(checksumPath)) return result;
-            string checksum = ReadText(checksumPath, 1024).Trim();
-            string[] checksumParts = checksum.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
-            if (checksumParts.Length != 2 || !String.Equals(checksumParts[1], SyncIndexFilename, StringComparison.Ordinal) || !IsSha256(checksumParts[0])) return result;
-            string expectedHash = checksumParts[0].ToLowerInvariant(), localPath = null, text = null;
-            try
-            {
-                localPath = Path.Combine(LocalPerformanceCacheDirectory(root, "Sync Index"), SyncIndexFilename);
-                if (File.Exists(localPath))
-                {
-                    string cached = File.ReadAllText(localPath, Encoding.UTF8);
-                    if (Encoding.UTF8.GetByteCount(cached) <= SyncIndexLimit && String.Equals(expectedHash, Sha256(cached), StringComparison.OrdinalIgnoreCase)) text = cached;
-                }
-            }
-            catch { if (!String.IsNullOrWhiteSpace(localPath)) TryDelete(localPath); }
-            if (text == null)
-            {
-                text = ReadText(indexPath, SyncIndexLimit);
-                if (!String.Equals(expectedHash, Sha256(text), StringComparison.OrdinalIgnoreCase)) return result;
-                if (!String.IsNullOrWhiteSpace(localPath)) try { AtomicWrite(localPath, Encoding.UTF8.GetBytes(text)); } catch { TryDelete(localPath); }
-            }
-            Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(text));
-            if (!envelope.ContainsKey("version") || Convert.ToInt32(envelope["version"], CultureInfo.InvariantCulture) != SyncIndexVersion || !envelope.ContainsKey("ruleSetVersion") || !String.Equals(Convert.ToString(envelope["ruleSetVersion"], CultureInfo.InvariantCulture), ruleSetVersion, StringComparison.Ordinal) || !envelope.ContainsKey("files")) return result;
-            object[] files = ObjectArray(envelope["files"]);if (files.Length > 100000) return result;
-            foreach (object value in files)
-            {
-                Dictionary<string, object> item = ObjectDictionary(value);
-                if (!item.ContainsKey("path") || !item.ContainsKey("name") || !item.ContainsKey("size") || !item.ContainsKey("lastModifiedUnixMs") || !item.ContainsKey("accepted") || !item.ContainsKey("error")) return new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
-                string relative = Convert.ToString(item["path"], CultureInfo.InvariantCulture), name = Convert.ToString(item["name"], CultureInfo.InvariantCulture), error = Convert.ToString(item["error"], CultureInfo.InvariantCulture);
-                long size = Convert.ToInt64(item["size"], CultureInfo.InvariantCulture), modified = Convert.ToInt64(item["lastModifiedUnixMs"], CultureInfo.InvariantCulture);
-                if (String.IsNullOrWhiteSpace(relative) || relative.Length > 32767 || relative.IndexOf('\0') >= 0 || String.IsNullOrWhiteSpace(name) || name.Length > 500 || size < 0 || modified < 0 || error.Length > 300) return new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
-                item["accepted"] = Convert.ToBoolean(item["accepted"], CultureInfo.InvariantCulture);if (item.ContainsKey("encryptedPdf")) item["encryptedPdf"] = Convert.ToBoolean(item["encryptedPdf"], CultureInfo.InvariantCulture);result[relative] = item;
-            }
+            string directory = Path.Combine(root, SystemDirectoryName, SyncIndexDirectoryName);
+            string[] paths = Directory.Exists(directory) ? (String.IsNullOrWhiteSpace(organization) ? Directory.EnumerateFiles(directory, "index-*.json", SearchOption.TopDirectoryOnly).ToArray() : new[] { Path.Combine(directory, SyncIndexShardFilename(organization)) }.Where(File.Exists).ToArray()) : new string[0];
+            foreach (string indexPath in paths) LoadSyncIndexFile(root, indexPath, ruleSetVersion, SyncIndexVersion, result);
+            if (result.Count > 0 || paths.Length > 0) return result;
+            string legacyPath = SystemFile(root, SyncIndexFilename);
+            if (File.Exists(legacyPath)) LoadSyncIndexFile(root, legacyPath, ruleSetVersion, 1, result);
+            if (!String.IsNullOrWhiteSpace(organization)) foreach (string key in result.Keys.Where(key => !PathInOrganizationScope(key, organization)).ToArray()) result.Remove(key);
         }
         catch { return new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase); }
         return result;
     }
 
-    private void SaveSyncIndex(string root, string ruleSetVersion, List<Dictionary<string, object>> files)
+    private void LoadSyncIndexFile(string root, string indexPath, string ruleSetVersion, int expectedVersion, Dictionary<string, Dictionary<string, object>> result)
     {
+        string checksumPath = indexPath + ".sha256", filename = Path.GetFileName(indexPath);if (!File.Exists(checksumPath)) return;
+        string[] checksumParts = ReadText(checksumPath, 1024).Trim().Split((char[])null, StringSplitOptions.RemoveEmptyEntries);if (checksumParts.Length != 2 || !String.Equals(checksumParts[1], filename, StringComparison.Ordinal) || !IsSha256(checksumParts[0])) return;
+        string expectedHash = checksumParts[0].ToLowerInvariant(), localPath = Path.Combine(LocalPerformanceCacheDirectory(root, "Sync Index Shards"), filename), text = null;
+        try { if (File.Exists(localPath)) { string cached = File.ReadAllText(localPath, Encoding.UTF8);if (Encoding.UTF8.GetByteCount(cached) <= SyncIndexLimit && String.Equals(expectedHash, Sha256(cached), StringComparison.OrdinalIgnoreCase)) text = cached; } } catch { TryDelete(localPath); }
+        if (text == null) { text = ReadText(indexPath, SyncIndexLimit);if (!String.Equals(expectedHash, Sha256(text), StringComparison.OrdinalIgnoreCase)) return;try { AtomicWrite(localPath, Encoding.UTF8.GetBytes(text)); } catch { TryDelete(localPath); } }
+        Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(text));if (!envelope.ContainsKey("version") || Convert.ToInt32(envelope["version"], CultureInfo.InvariantCulture) != expectedVersion || !envelope.ContainsKey("ruleSetVersion") || !String.Equals(Convert.ToString(envelope["ruleSetVersion"], CultureInfo.InvariantCulture), ruleSetVersion, StringComparison.Ordinal) || !envelope.ContainsKey("files")) return;
+        object[] files = ObjectArray(envelope["files"]);if (files.Length > 100000) return;
+        foreach (object value in files)
+        {
+            Dictionary<string, object> item = ObjectDictionary(value);if (!item.ContainsKey("path") || !item.ContainsKey("name") || !item.ContainsKey("size") || !item.ContainsKey("lastModifiedUnixMs") || !item.ContainsKey("accepted") || !item.ContainsKey("error")) continue;
+            string relative = Convert.ToString(item["path"], CultureInfo.InvariantCulture), name = Convert.ToString(item["name"], CultureInfo.InvariantCulture), error = Convert.ToString(item["error"], CultureInfo.InvariantCulture);long size = Convert.ToInt64(item["size"], CultureInfo.InvariantCulture), modified = Convert.ToInt64(item["lastModifiedUnixMs"], CultureInfo.InvariantCulture);
+            if (String.IsNullOrWhiteSpace(relative) || relative.Length > 32767 || relative.IndexOf('\0') >= 0 || String.IsNullOrWhiteSpace(name) || name.Length > 500 || size < 0 || modified < 0 || error.Length > 300) continue;
+            item["accepted"] = Convert.ToBoolean(item["accepted"], CultureInfo.InvariantCulture);if (item.ContainsKey("encryptedPdf")) item["encryptedPdf"] = Convert.ToBoolean(item["encryptedPdf"], CultureInfo.InvariantCulture);result[relative] = item;
+        }
+    }
+
+    private static string SyncIndexShardFilename(string organization)
+    {
+        return String.IsNullOrWhiteSpace(organization) ? "index-root.json" : "index-org-" + Sha256(organization.Trim().ToUpperInvariant()).Substring(0, 20) + ".json";
+    }
+
+    private static string SyncIndexOrganization(string relative)
+    {
+        string[] parts = (relative ?? "").Replace('\\', '/').Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);return parts.Length >= 2 && String.Equals(parts[0], "Organizations", StringComparison.OrdinalIgnoreCase) ? parts[1] : "";
+    }
+
+    private void SaveSyncIndex(string root, string ruleSetVersion, List<Dictionary<string, object>> files, string organization = null)
+    {
+        string directory = Path.Combine(root, SystemDirectoryName, SyncIndexDirectoryName);Directory.CreateDirectory(directory);
         try
         {
-            var envelope = new Dictionary<string, object> { { "version", SyncIndexVersion }, { "ruleSetVersion", ruleSetVersion }, { "generatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "files", files.ToArray() } };
-            string text = json.Serialize(envelope);byte[] bytes = Encoding.UTF8.GetBytes(text);if (bytes.LongLength > SyncIndexLimit) return;
-            string indexPath = SystemFile(root, SyncIndexFilename), checksumPath = SystemFile(root, SyncIndexChecksumFilename), hash = Sha256(text);
-            AtomicWrite(indexPath, bytes);AtomicWrite(checksumPath, Encoding.ASCII.GetBytes(hash + "  " + SyncIndexFilename + Environment.NewLine));
-            try
+            var groups = files.GroupBy(item => SyncIndexOrganization(Convert.ToString(item["path"], CultureInfo.InvariantCulture)), StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+            if (!String.IsNullOrWhiteSpace(organization) && !groups.ContainsKey(organization)) groups[organization] = new List<Dictionary<string, object>>();
+            var written = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, List<Dictionary<string, object>>> group in groups)
             {
-                string localPath = Path.Combine(LocalPerformanceCacheDirectory(root, "Sync Index"), SyncIndexFilename);
-                try { AtomicWrite(localPath, bytes); } catch { TryDelete(localPath); }
+                string filename = SyncIndexShardFilename(group.Key), indexPath = Path.Combine(directory, filename);written.Add(filename);
+                var envelope = new Dictionary<string, object> { { "version", SyncIndexVersion }, { "ruleSetVersion", ruleSetVersion }, { "organization", group.Key }, { "generatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "files", group.Value.ToArray() } };
+                string text = json.Serialize(envelope);byte[] bytes = Encoding.UTF8.GetBytes(text);if (bytes.LongLength > SyncIndexLimit) continue;string hash = Sha256(text), currentHash = File.Exists(indexPath + ".sha256") ? ReadSyncIndexChecksum(indexPath + ".sha256", filename) : null;
+                if (!String.Equals(hash, currentHash, StringComparison.OrdinalIgnoreCase)) { AtomicWrite(indexPath, bytes);AtomicWrite(indexPath + ".sha256", Encoding.ASCII.GetBytes(hash + "  " + filename + Environment.NewLine)); }
+                try { AtomicWrite(Path.Combine(LocalPerformanceCacheDirectory(root, "Sync Index Shards"), filename), bytes); } catch { }
             }
-            catch { }
+            if (String.IsNullOrWhiteSpace(organization))
+            {
+                foreach (string stale in Directory.EnumerateFiles(directory, "index-*.json", SearchOption.TopDirectoryOnly).Where(path => !written.Contains(Path.GetFileName(path))).ToArray()) { TryDelete(stale);TryDelete(stale + ".sha256"); }
+                TryDelete(SystemFile(root, SyncIndexFilename));TryDelete(SystemFile(root, SyncIndexChecksumFilename));
+            }
         }
-        catch { TryDelete(SystemFile(root, SyncIndexFilename));TryDelete(SystemFile(root, SyncIndexChecksumFilename)); }
+        catch { }
+    }
+
+    private static string ReadSyncIndexChecksum(string path, string filename)
+    {
+        try { string[] parts = File.ReadAllText(path, Encoding.ASCII).Trim().Split((char[])null, StringSplitOptions.RemoveEmptyEntries);return parts.Length == 2 && String.Equals(parts[1], filename, StringComparison.Ordinal) && IsSha256(parts[0]) ? parts[0].ToLowerInvariant() : null; } catch { return null; }
     }
 
     public byte[] ReadRelativeFile(string systemId, string relative)
@@ -1223,7 +1414,7 @@ internal sealed class PortableStorage : IDisposable
             string cleanRuleSet = CleanLine(ruleSetVersion, 100);if (String.IsNullOrWhiteSpace(cleanRuleSet)) cleanRuleSet = "legacy";
             string today = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), systemDirectory = Path.Combine(root, SystemDirectoryName), markerName = cleanOrganization == null ? RetentionMarkerFilename : ".retention-sweep-" + SafePart(cleanOrganization, 60) + ".txt", markerPath = Path.Combine(systemDirectory, markerName);
             bool fastDaily = !forceFull && !legacyImport, dailyFullSweep = forceFull;try { dailyFullSweep = dailyFullSweep || !fastDaily && (!File.Exists(markerPath) || !String.Equals(ReadText(markerPath, 128).Trim(), today, StringComparison.Ordinal)); } catch { dailyFullSweep = !fastDaily; }
-            Dictionary<string, Dictionary<string, object>> previous = dailyFullSweep ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : LoadSyncIndex(root, cleanRuleSet);
+            Dictionary<string, Dictionary<string, object>> previous = dailyFullSweep ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : LoadSyncIndex(root, cleanRuleSet, cleanOrganization);
             var errors = new List<Dictionary<string, object>>();
             var moved = new List<Dictionary<string, object>>();
             var compressed = new List<Dictionary<string, object>>();
@@ -1334,7 +1525,7 @@ internal sealed class PortableStorage : IDisposable
                     }
                     catch (Exception error) { errors.Add(RetentionError(root, effectiveSource, CleanLine(error.Message, 300))); }
                 }
-                foreach (DirectoryScanEntry directoryEntry in directoryEntries.Where(item => item.IsDirectory))
+                foreach (DirectoryScanEntry directoryEntry in PrioritizedDirectories(directoryEntries))
                 {
                     string directory = directoryEntry.Path;
                     string name = Path.GetFileName(directory);
@@ -1357,19 +1548,23 @@ internal sealed class PortableStorage : IDisposable
     {
         lock (RootLock(systemId))
         {
-            string root = Root(systemId);PruneEvidenceValidationCache(root, false);var total = Stopwatch.StartNew();BeginEnumerationSnapshot();
+            string root = Root(systemId), requestedOrganization = organization, suggestedOrganization = null;bool noHintChanges = false;int dirtyHintCount = 0;bool hintAvailable = false;
+            if (!forceFull && !legacyImport && String.IsNullOrWhiteSpace(organization)) { suggestedOrganization = SuggestedChangeHintOrganization(systemId, out noHintChanges, out dirtyHintCount);hintAvailable = noHintChanges || !String.IsNullOrWhiteSpace(suggestedOrganization); }
+            threadPriorityOrganization = suggestedOrganization;
+            PruneEvidenceValidationCache(root, false);var total = Stopwatch.StartNew();BeginEnumerationSnapshot();
             try
             {
                 var retentionTimer = Stopwatch.StartNew();Dictionary<string, object> retention = ObjectDictionary(json.DeserializeObject(ProcessReworkRetention(systemId, ruleSetVersion, forceFull, organization, legacyImport)));retentionTimer.Stop();
                 int mutations = ObjectArray(retention["moved"]).Length + ObjectArray(retention["compressed"]).Length + ObjectArray(retention["deleted"]).Length;bool snapshotInvalidated = mutations > 0;
                 if (snapshotInvalidated) ResetEnumerationSnapshot();
                 var scanTimer = Stopwatch.StartNew();Dictionary<string, object> scan = ObjectDictionary(json.DeserializeObject(ScanWithJournal(systemId, ruleSetVersion, forceFull, organization, legacyImport))), scanDiagnostics = scan.ContainsKey("diagnostics") ? ObjectDictionary(scan["diagnostics"]) : new Dictionary<string, object>();scanTimer.Stop();total.Stop();
-                var diagnostics = new Dictionary<string, object> { { "totalDurationMs", total.ElapsedMilliseconds }, { "retentionDurationMs", retentionTimer.ElapsedMilliseconds }, { "scanDurationMs", scanTimer.ElapsedMilliseconds }, { "enumerationCacheHits", threadEnumerationSnapshotHits }, { "enumerationCacheMisses", threadEnumerationSnapshotMisses }, { "singlePassReused", threadEnumerationSnapshotHits > 0 && !snapshotInvalidated }, { "snapshotInvalidatedByMutations", snapshotInvalidated }, { "mutations", mutations }, { "scope", String.IsNullOrWhiteSpace(organization) ? "system" : CleanLine(organization, 100) }, { "mode", legacyImport ? "legacy" : forceFull ? "full" : "daily" } };
+                var diagnostics = new Dictionary<string, object> { { "totalDurationMs", total.ElapsedMilliseconds }, { "retentionDurationMs", retentionTimer.ElapsedMilliseconds }, { "scanDurationMs", scanTimer.ElapsedMilliseconds }, { "enumerationCacheHits", threadEnumerationSnapshotHits }, { "enumerationCacheMisses", threadEnumerationSnapshotMisses }, { "singlePassReused", threadEnumerationSnapshotHits > 0 && !snapshotInvalidated }, { "snapshotInvalidatedByMutations", snapshotInvalidated }, { "mutations", mutations }, { "scope", String.IsNullOrWhiteSpace(organization) ? "system" : CleanLine(organization, 100) }, { "requestedScope", String.IsNullOrWhiteSpace(requestedOrganization) ? "system" : CleanLine(requestedOrganization, 100) }, { "mode", legacyImport ? "legacy" : forceFull ? "full" : "daily" }, { "changeHintAvailable", hintAvailable }, { "changeHintNoChanges", noHintChanges }, { "changeHintOrganization", suggestedOrganization ?? "" }, { "dirtyHintCount", dirtyHintCount } };
                 foreach (string metric in new[] { "enumerationDurationMs", "validationDurationMs", "discoveredFiles", "changedFiles", "unchangedFiles", "stagedBytes", "validationConcurrency", "slowValidationFiles", "maxValidationDurationMs", "networkRoot" }) if (scanDiagnostics.ContainsKey(metric)) diagnostics[metric] = scanDiagnostics[metric];
                 AppendPerformanceDiagnostic(root, new Dictionary<string, object>(diagnostics) { { "operation", "sync-pipeline" } });
+                CompleteChangeHintScan(systemId, organization, String.IsNullOrWhiteSpace(requestedOrganization));
                 return json.Serialize(new Dictionary<string, object> { { "retention", retention }, { "scan", scan }, { "diagnostics", diagnostics } });
             }
-            finally { EndEnumerationSnapshot(); }
+            finally { threadPriorityOrganization = null;EndEnumerationSnapshot(); }
         }
     }
 
@@ -1805,7 +2000,7 @@ internal sealed class PortableStorage : IDisposable
             string directory = SupportDirectory(Root(systemId), "Audit Logs");
             using (FileStream auditLock = AcquireAuditFileLock(directory))
             {
-            AuditState state = VerifyAuditChainWithRetry(directory);
+            AuditState state = VerifyAuditChainIncrementalWithRetry(directory);
             DateTimeOffset now = DateTimeOffset.UtcNow;
             if (state.LastInstant.HasValue && now < state.LastInstant.Value.Subtract(TimeSpan.FromSeconds(1))) throw new InvalidDataException("The system clock is earlier than the most recent audit entry.");
             if (state.LastInstant.HasValue && now <= state.LastInstant.Value) now = state.LastInstant.Value.AddTicks(1);
@@ -1824,14 +2019,17 @@ internal sealed class PortableStorage : IDisposable
                     AppendAuditBytes(currentPath, Encoding.UTF8.GetBytes(buffer.ToString()));
                     buffer.Clear();
                 }
+                if (!String.Equals(currentPath, path, StringComparison.Ordinal) && !File.Exists(path)) state.Files++;
                 currentPath = path;
                 buffer.Append(json.Serialize(entry)).Append('\n');
                 state.Entries = sequence;
                 state.HeadHash = entryHash;
                 state.LastInstant = now;
                 state.LastTimestamp = timestamp;
+                state.FirstTimestamp = state.FirstTimestamp ?? timestamp;
             }
             if (currentPath != null) AppendAuditBytes(currentPath, Encoding.UTF8.GetBytes(buffer.ToString()));
+            SaveAuditCheckpoint(directory, state);
             }
         }
     }
@@ -1871,6 +2069,53 @@ internal sealed class PortableStorage : IDisposable
                 Thread.Sleep(75 * (attempt + 1));
             }
         }
+    }
+
+    private static byte[] AuditCheckpointEntropy() { return Encoding.UTF8.GetBytes("RAPTOR verified audit checkpoint v1"); }
+
+    private AuditState VerifyAuditChainIncrementalWithRetry(string directory)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                AuditState cached = ReadAuditCheckpoint(directory);
+                if (cached != null) { cached.Incremental = true;return cached; }
+                return VerifyAuditChain(directory);
+            }
+            catch (IOException) { if (attempt >= 2) throw;Thread.Sleep(75 * (attempt + 1)); }
+        }
+    }
+
+    private void SaveAuditCheckpoint(string directory, AuditState state)
+    {
+        try
+        {
+            string root = Path.GetDirectoryName(Path.GetDirectoryName(directory));if (String.IsNullOrWhiteSpace(root)) return;
+            string[] paths = Directory.Exists(directory) ? Directory.EnumerateFiles(directory, "audit-*.jsonl", SearchOption.TopDirectoryOnly).OrderBy(Path.GetFileName, StringComparer.Ordinal).ToArray() : new string[0];
+            var files = new List<object>();foreach (string path in paths) { var info = new FileInfo(path);files.Add(new Dictionary<string, object> { { "name", info.Name }, { "length", info.Length }, { "modifiedUnixMs", new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds() } }); }
+            var envelope = new Dictionary<string, object> { { "version", AuditCheckpointVersion }, { "verifiedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "entries", state.Entries }, { "filesCount", state.Files }, { "legacyFiles", state.LegacyFiles }, { "headHash", state.HeadHash }, { "firstTimestamp", state.FirstTimestamp ?? "" }, { "lastTimestamp", state.LastTimestamp ?? "" }, { "files", files.ToArray() } };
+            byte[] clear = Encoding.UTF8.GetBytes(json.Serialize(envelope)), encrypted = ProtectedData.Protect(clear, AuditCheckpointEntropy(), DataProtectionScope.CurrentUser);AtomicWrite(Path.Combine(LocalPerformanceCacheDirectory(root, "Audit"), LocalAuditCheckpointFilename), encrypted);
+        }
+        catch { }
+    }
+
+    private AuditState ReadAuditCheckpoint(string directory)
+    {
+        string path = null;
+        try
+        {
+            string root = Path.GetDirectoryName(Path.GetDirectoryName(directory));if (String.IsNullOrWhiteSpace(root)) return null;path = Path.Combine(LocalPerformanceCacheDirectory(root, "Audit"), LocalAuditCheckpointFilename);if (!File.Exists(path) || new FileInfo(path).Length <= 0 || new FileInfo(path).Length > 10L * 1024 * 1024) return null;
+            byte[] clear = ProtectedData.Unprotect(File.ReadAllBytes(path), AuditCheckpointEntropy(), DataProtectionScope.CurrentUser);Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(new UTF8Encoding(false, true).GetString(clear)));if (Convert.ToInt32(envelope["version"], CultureInfo.InvariantCulture) != AuditCheckpointVersion) return null;
+            object[] cachedFiles = ObjectArray(envelope["files"]);string[] current = Directory.Exists(directory) ? Directory.EnumerateFiles(directory, "audit-*.jsonl", SearchOption.TopDirectoryOnly).OrderBy(Path.GetFileName, StringComparer.Ordinal).ToArray() : new string[0];if (cachedFiles.Length != current.Length) return null;
+            for (int index = 0; index < current.Length; index++)
+            {
+                Dictionary<string, object> cached = ObjectDictionary(cachedFiles[index]);var info = new FileInfo(current[index]);if (!String.Equals(Convert.ToString(cached["name"], CultureInfo.InvariantCulture), info.Name, StringComparison.Ordinal) || Convert.ToInt64(cached["length"], CultureInfo.InvariantCulture) != info.Length || Convert.ToInt64(cached["modifiedUnixMs"], CultureInfo.InvariantCulture) != new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds()) return null;
+            }
+            string headHash = Convert.ToString(envelope["headHash"], CultureInfo.InvariantCulture), firstTimestamp = Convert.ToString(envelope["firstTimestamp"], CultureInfo.InvariantCulture), lastTimestamp = Convert.ToString(envelope["lastTimestamp"], CultureInfo.InvariantCulture);if (!IsSha256(headHash)) return null;DateTimeOffset instant;DateTimeOffset? parsedInstant = String.IsNullOrWhiteSpace(lastTimestamp) ? (DateTimeOffset?)null : DateTimeOffset.TryParse(lastTimestamp, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out instant) ? instant : (DateTimeOffset?)null;if (!String.IsNullOrWhiteSpace(lastTimestamp) && !parsedInstant.HasValue) return null;
+            return new AuditState { Entries = Convert.ToInt64(envelope["entries"], CultureInfo.InvariantCulture), Files = Convert.ToInt32(envelope["filesCount"], CultureInfo.InvariantCulture), LegacyFiles = Convert.ToInt32(envelope["legacyFiles"], CultureInfo.InvariantCulture), HeadHash = headHash.ToLowerInvariant(), FirstTimestamp = String.IsNullOrWhiteSpace(firstTimestamp) ? null : firstTimestamp, LastTimestamp = String.IsNullOrWhiteSpace(lastTimestamp) ? null : lastTimestamp, LastInstant = parsedInstant, Incremental = true };
+        }
+        catch { if (!String.IsNullOrWhiteSpace(path)) TryDelete(path);return null; }
     }
 
     private AuditState VerifyAuditChainWithRetry(string directory)
@@ -1942,6 +2187,7 @@ internal sealed class PortableStorage : IDisposable
             if (fileEntries == 0) throw new InvalidDataException(filename + " contains no audit entries.");
             state.Files++;
         }
+        SaveAuditCheckpoint(directory, state);
         return state;
     }
 
@@ -2017,8 +2263,12 @@ internal sealed class PortableStorage : IDisposable
 
     public void Dispose()
     {
+        try { backupTimer.Dispose(); } catch { }
+        try { FlushDueBackups(true); } catch { }
         HeldLease[] leases;string[] mappedRoots;
-        lock (mapGate) { leases = heldLeases.Values.ToArray();heldLeases.Clear();mappedRoots = roots.Values.Concat(cachedRoots.Values).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(); }
+        FileSystemWatcher[] watchers;
+        lock (mapGate) { leases = heldLeases.Values.ToArray();heldLeases.Clear();mappedRoots = roots.Values.Concat(cachedRoots.Values).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();watchers = changeWatchers.Values.ToArray();changeWatchers.Clear(); }
+        foreach (FileSystemWatcher watcher in watchers) try { watcher.Dispose(); } catch { }
         foreach (HeldLease held in leases) DisposeLease(held, true);
         foreach (string root in mappedRoots) PruneEvidenceValidationCache(root, true);
     }

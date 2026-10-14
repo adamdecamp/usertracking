@@ -992,6 +992,13 @@ export default function Guide() {
           evidence.
         </p>
         <p>
+          Choose <b>Performance</b> to review local-only operation counts, average,
+          median, 95th-percentile, and maximum durations. The report also shows
+          pending backup state, organization index-shard count, advisory change-
+          notification health, and protected audit-checkpoint availability. It can
+          be downloaded as JSON and contains no user records or evidence contents.
+        </p>
+        <p>
           At launch, choose <b>Read-Only Access</b> or <b>Full Access</b>.
           Read-Only Access permits concurrent operators to search, filter, open
           User Records, preview evidence, and view the audit log. It hides
@@ -1080,9 +1087,13 @@ export default function Guide() {
           <code>System/Audit Logs</code> folder. Every entry contains an ISO 8601 UTC
           timestamp, the Windows operator, a continuous sequence, the previous
           entry&apos;s SHA-256, and its own SHA-256. The chain continues across
-          daily files. Before appending, and whenever storage is verified, the
-          launcher checks the entire chain and refuses to extend it if an entry
-          was changed, removed, reordered, or inserted. Existing legacy{" "}
+          daily files. Startup, audit viewing, restoration, Release Health, and
+          explicit storage verification check the entire chain. After a full
+          verification, later appends may use a Windows-user-protected local
+          checkpoint only while every shared audit filename, byte length, and
+          modification time still matches; any difference forces full verification.
+          The launcher refuses to extend the chain if an entry was changed,
+          removed, reordered, or inserted. Existing legacy{" "}
           <code>audit-*.txt</code> files remain available but are not part of
           the cryptographic chain. Viewing, searching, filtering, and theme
           changes are excluded.
@@ -1316,9 +1327,9 @@ export default function Guide() {
       </section>
       <aside>
         <b>Incremental Sync:</b> After successful validation, the tracker stores
-        a checksum-protected <code>tracker-sync-index.json</code> beneath each
-        mapped system&apos;s <code>System</code> folder. Later Syncs still enumerate active folders to detect
-        additions, moves, and deletions, but skip reopening evidence when its
+        checksum-protected organization-sharded indexes beneath each mapped
+        system&apos;s <code>System/Sync Index</code> folder. A targeted Sync reads and
+        updates only the selected organization&apos;s shard. Later Syncs skip reopening evidence when its
         path, name, size, last-modified UTC value, and rule-set version are
         unchanged. The shared index accelerates another computer using the same
         mapped folder, while a checksum-matched local mirror avoids repeatedly
@@ -1343,8 +1354,10 @@ export default function Guide() {
         compression, and collision actions reuse their exact returned paths before
         attempting any broad location refresh. Database, checksum, snapshot, and
         daily CSV updates are submitted through one serialized launcher commit to
-        reduce shared-drive round trips. If record state did not change, the
-        launcher leaves the verified manifest, snapshot, and daily CSV untouched.
+        reduce shared-drive round trips. The verified live manifest is immediate;
+        repeated snapshot and daily CSV work is coalesced for up to 30 seconds and
+        is force-flushed before logoff or shutdown. If record state did not change,
+        the launcher leaves the verified manifest, snapshot, and daily CSV untouched.
         Startup and refresh compare the small manifest checksum and file metadata
         before rereading the full shared database. Bounded local performance logs
         record phase duration, files discovered, changed and unchanged counts,
@@ -1352,7 +1365,12 @@ export default function Guide() {
         adding traffic to the shared folder. Processing Status reports elapsed scan
         time alongside
         unchanged evidence skipped, new or changed evidence validated, and
-        non-evidence files ignored.
+        non-evidence files ignored. Windows file-system notifications act only as
+        traversal-priority hints after a successful authoritative baseline. Every
+        in-scope directory is still enumerated, so a missed, delayed, unavailable,
+        or overflowed network notification cannot hide evidence. PDF text extraction reuses a bounded worker pool
+        and recycles workers after a fixed age or number of documents to reduce
+        repeated startup cost without allowing stale workers to accumulate.
       </aside>
       <aside>
         <b>Mapped-Folder Compatibility:</b> The portable launcher uses broadly

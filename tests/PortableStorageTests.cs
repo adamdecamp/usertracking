@@ -124,7 +124,7 @@ internal static class PortableStorageTests
         Assert(optionalQueryValue != null, "The launcher must expose its optional archive request-value parser.");
         Assert(Convert.ToString(optionalQueryValue.Invoke(null, new object[] { "/api/storage/system/archive?path=file.pdf&filename=", "filename" })) == "", "An explicitly empty optional archive filename should use the source filename.");
         Assert(optionalQueryValue.Invoke(null, new object[] { "/api/storage/system/archive?path=file.pdf", "filename" }) == null, "A missing optional archive filename must not reject an otherwise valid archive request.");
-        Assert(TrackerContext.ReadOnlyStorageActionAllowed("manifest", "GET") && TrackerContext.ReadOnlyStorageActionAllowed("file", "GET") && TrackerContext.ReadOnlyStorageActionAllowed("audit-batch", "POST") && !TrackerContext.ReadOnlyStorageActionAllowed("manifest", "POST") && !TrackerContext.ReadOnlyStorageActionAllowed("scan", "GET") && !TrackerContext.ReadOnlyStorageActionAllowed("evidence", "POST"), "Read-Only launcher enforcement should allow lookup and session auditing while rejecting every database, evidence, and Sync mutation.");
+        Assert(TrackerContext.ReadOnlyStorageActionAllowed("manifest", "GET") && TrackerContext.ReadOnlyStorageActionAllowed("file", "GET") && TrackerContext.ReadOnlyStorageActionAllowed("performance", "GET") && TrackerContext.ReadOnlyStorageActionAllowed("audit-batch", "POST") && !TrackerContext.ReadOnlyStorageActionAllowed("manifest", "POST") && !TrackerContext.ReadOnlyStorageActionAllowed("scan", "GET") && !TrackerContext.ReadOnlyStorageActionAllowed("evidence", "POST"), "Read-Only launcher enforcement should allow lookup, local performance diagnostics, and session auditing while rejecting every database, evidence, and Sync mutation.");
         string root = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(root);
         RunStorageEnumerationFuzz(Path.GetDirectoryName(root));
@@ -136,6 +136,7 @@ internal static class PortableStorageTests
             Assert(compatibilityStorage.AcquireLease("compatibility-key", "compatibility-session"), "A filesystem that rejects write-through options should still acquire an exclusive lease using compatible buffered I/O.");
             byte[] compatibilityState = Encoding.UTF8.GetBytes("{\"database\":" + Database("compatibility@example.mil") + ",\"csv\":\"header\\nvalue\"}");
             compatibilityStorage.SaveSystemState("compatibility-key", compatibilityState);
+            compatibilityStorage.FinalizeMappedBackups();
             string compatibilityManifest = Path.Combine(compatibilityRoot, "System", "information-system-user-tracker.json"), compatibilityCsv = Path.Combine(compatibilityRoot, "System", "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv");DateTime manifestWrite = File.GetLastWriteTimeUtc(compatibilityManifest), csvWrite = File.GetLastWriteTimeUtc(compatibilityCsv);string unchangedCommit = compatibilityStorage.SaveSystemState("compatibility-key", compatibilityState);
             Assert(unchangedCommit.Contains("\"unchanged\":true") && File.GetLastWriteTimeUtc(compatibilityManifest) == manifestWrite && File.GetLastWriteTimeUtc(compatibilityCsv) == csvWrite, "An unchanged database commit should not rewrite the manifest, snapshot, or daily CSV backup.");
             compatibilityStorage.AppendAudit("compatibility-key", "COMPATIBILITY WRITE TEST");
@@ -219,6 +220,7 @@ internal static class PortableStorageTests
         Assert(restoredMappings.Contains("\"storageId\":\"mapping-key\"") && restoredMappings.Contains("\"systemId\":\"system-1\"") && restoredMappings.Contains("first@example.mil"), "A new launcher should reload the current manifest through its cached folder mapping.");
         restoredStorage.Dispose();
         storage.SaveCsv("mapping-key", Encoding.UTF8.GetBytes("header\nvalue"));
+        storage.FinalizeMappedBackups();
         string firstList = storage.ListBackups("mapping-key", "system-1");
         object[] firstItems = (object[])Json.DeserializeObject(firstList);
         Assert(firstItems.Length == 1, "The first database save should create one snapshot.");
@@ -233,6 +235,7 @@ internal static class PortableStorageTests
         Assert(storage.ReadRenamerQueue("mapping-key") == "null", "Clearing the resumable renamer queue should be idempotent.");
 
         storage.SaveManifest("mapping-key", Database("second@example.mil"));
+        storage.FinalizeMappedBackups();
         object[] secondItems = (object[])Json.DeserializeObject(storage.ListBackups("mapping-key", "system-1"));
         Assert(secondItems.Length == 2, "A distinct database state should create a second snapshot.");
         string restored = storage.Restore("mapping-key", "system-1", firstFilename);
@@ -287,8 +290,9 @@ internal static class PortableStorageTests
             Assert(nativeScanItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]) == "operator-notes.txt" && !Convert.ToBoolean(item["accepted"])), "The native Windows fallback should enumerate non-evidence files for review without accepting them.");
         }
         finally { PortableStorage.ForceNativeEnumerationForTests = false; }
-        Assert(File.Exists(Path.Combine(root, "System", "tracker-sync-index.json")) && File.Exists(Path.Combine(root, "System", "tracker-sync-index.json.sha256")) && !File.Exists(Path.Combine(root, "tracker-sync-index.json")), "A successful scan should store a checksum-protected shared Sync index beneath System.");
-        Assert(Directory.EnumerateFiles(performanceCacheRoot, "tracker-sync-index.json", SearchOption.AllDirectories).Any(), "A successful scan should mirror the verified Sync index into the per-Windows-user local performance cache.");
+        string sharedSyncIndexDirectory = Path.Combine(root, "System", "Sync Index");
+        Assert(Directory.Exists(sharedSyncIndexDirectory) && Directory.EnumerateFiles(sharedSyncIndexDirectory, "index-*.json", SearchOption.TopDirectoryOnly).Any() && Directory.EnumerateFiles(sharedSyncIndexDirectory, "index-*.json.sha256", SearchOption.TopDirectoryOnly).Any() && !File.Exists(Path.Combine(root, "tracker-sync-index.json")), "A successful scan should store checksum-protected organization-sharded Sync indexes beneath System.");
+        Assert(Directory.EnumerateFiles(performanceCacheRoot, "index-*.json", SearchOption.AllDirectories).Any(), "A successful scan should mirror verified Sync-index shards into the per-Windows-user local performance cache.");
         object[] cachedScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", false));
         Dictionary<string, object> cachedEvidenceItem = cachedScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
         Assert(Convert.ToBoolean(cachedEvidenceItem["unchanged"]), "A later scan should skip unchanged evidence content validation.");
@@ -313,10 +317,10 @@ internal static class PortableStorageTests
         Assert(!Convert.ToBoolean(fullScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip")["unchanged"]), "Full Rescan should ignore the shared Sync index.");
         object[] changedRuleItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-2", false));
         Assert(!Convert.ToBoolean(changedRuleItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip")["unchanged"]), "A rule-set change should invalidate the shared Sync index.");
-        File.WriteAllText(Path.Combine(root, "System", "tracker-sync-index.json.sha256"), new string('0', 64) + "  tracker-sync-index.json\n", Encoding.ASCII);
+        foreach (string checksumPath in Directory.EnumerateFiles(sharedSyncIndexDirectory, "index-*.json.sha256", SearchOption.TopDirectoryOnly)) File.WriteAllText(checksumPath, new string('0', 64) + "  " + Path.GetFileNameWithoutExtension(checksumPath) + "\n", Encoding.ASCII);
         object[] damagedIndexItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-2", false));
         Assert(!Convert.ToBoolean(damagedIndexItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip")["unchanged"]), "A damaged Sync-index checksum should fall back to full validation.");
-        Assert(!cachedScanItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]).StartsWith("tracker-sync-index.json", StringComparison.OrdinalIgnoreCase)), "Sync index files must be excluded from evidence results.");
+        Assert(!cachedScanItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["path"]).IndexOf("Sync Index", StringComparison.OrdinalIgnoreCase) >= 0), "Sync-index shards must be excluded from evidence results.");
         string alternateDateEvidence = storage.StoreEvidence("mapping-key", "GOV", "User Agreement", "Shaw_Vivian_GEN_User_Agreement_20260826.pdf.zip", EvidenceZip("Shaw_Vivian_GEN_User_Agreement_20260826.pdf", PdfBytes()));
         string alternateDateRelative = Path.Combine("Organizations", "GOV", "GOV User Agreement", alternateDateEvidence), alternateDatePath = Path.Combine(root, alternateDateRelative), normalizedDateName = "Shaw_Vivian_(GOV)_GEN_User_Agreement_26AUG2026.pdf.zip";byte[] alternateDateBytes = File.ReadAllBytes(alternateDatePath);
         var normalizedDateResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.NormalizeEvidenceFilename("mapping-key", alternateDateRelative, normalizedDateName));
@@ -549,11 +553,14 @@ internal static class PortableStorageTests
         Assert(Convert.ToString(secondAudit["previousHash"]) == Convert.ToString(firstAudit["entryHash"]), "Each audit entry should reference the previous entry hash.");
         string auditVerification = storage.VerifyAuditLogs("mapping-key");
         Assert(auditVerification.Contains("\"healthy\":true") && auditVerification.Contains("\"entries\":7"), "The intact batched audit hash chain should verify.");
+        Assert(Directory.EnumerateFiles(performanceCacheRoot, "verified-audit-head.cache", SearchOption.AllDirectories).Any(), "A successful audit verification should save a Windows-user-protected incremental checkpoint outside the shared folder.");
         string auditView = storage.ReadAuditLogs("mapping-key");
         Assert(auditView.Contains("\"recent\"") && auditView.IndexOf("SECOND ACTION", StringComparison.Ordinal) < auditView.IndexOf("TEST ACTION", StringComparison.Ordinal), "The read-only audit view should return verified entries newest first.");
+        string performanceReport = storage.ReadPerformanceDiagnostics("mapping-key");
+        Assert(performanceReport.Contains("\"generatedAtUtc\"") && performanceReport.Contains("\"operations\"") && performanceReport.Contains("\"syncIndexShards\"") && performanceReport.Contains("\"auditCheckpointAvailable\":true"), "The operator performance report should summarize bounded local timing diagnostics and optimization health without scanning evidence content.");
 
         Assert(storage.AcquireLease("mapping-key", "session-1"), "The first lease should be acquired.");
-        Assert(!TrackerContext.StorageActionRequiresSerialization("lease-acquire") && !TrackerContext.StorageActionRequiresSerialization("lease-renew") && !TrackerContext.StorageActionRequiresSerialization("lease-release") && !TrackerContext.StorageActionRequiresSerialization("outlook-draft") && TrackerContext.StorageActionRequiresSerialization("scan"), "Session lease and Outlook-draft operations must remain available while a long storage operation is running.");
+        Assert(!TrackerContext.StorageActionRequiresSerialization("lease-acquire") && !TrackerContext.StorageActionRequiresSerialization("lease-renew") && !TrackerContext.StorageActionRequiresSerialization("lease-release") && !TrackerContext.StorageActionRequiresSerialization("outlook-draft") && !TrackerContext.StorageActionRequiresSerialization("performance") && TrackerContext.StorageActionRequiresSerialization("scan"), "Session lease, Outlook-draft, and local performance-report operations must remain available while a long storage operation is running.");
         string outlookHtml = TrackerContext.OutlookHtmlBody("Sir/Ma'am,\nhttps://www.cyber.mil/cyber-awareness-challenge\nhttps://www.cdse.edu/Training/eLearning/DS-IA112/\n\nIMPORTANT — REQUIRED FILE NAME\n\nFormat: Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf\nExample: Brown_Jacob_(LM)_User_Agreement_26AUG2026.pdf\n\nFiles that do not follow this naming standard may be returned for correction.\n\nIf you have already submitted this document, please let us know. <Review>");
         Assert(outlookHtml.Contains("background-color:#fff200") && outlookHtml.Contains("Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf") && outlookHtml.Contains("href=\"https://www.cyber.mil/cyber-awareness-challenge\"") && outlookHtml.Contains("href=\"https://www.cdse.edu/Training/eLearning/DS-IA112/\"") && outlookHtml.Contains("</span><br><br>If you have already submitted this document") && outlookHtml.Contains("&lt;Review&gt;") && !outlookHtml.Contains("<Review>"), "Outlook drafts should safely render clickable allowlisted training links, highlight only the filename instructions, and HTML-escape the remaining message.");
         string signedOutlookHtml = TrackerContext.OutlookHtmlWithSignature(outlookHtml, "<html><body><p>Configured Operator Signature</p></body></html>");

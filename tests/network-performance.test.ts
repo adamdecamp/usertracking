@@ -9,14 +9,23 @@ const launcher=fs.readFileSync(new URL('../portable-launcher/Program.cs',import.
 test('portable database and CSV backup use one serialized launcher commit',()=>{
  assert.match(page,/portableRequest\(h,'state-commit'[\s\S]*?JSON\.stringify\(\{database,csv:csvRows/);
  assert.match(launcher,/action == "state-commit"[\s\S]*?SaveSystemState/);
- assert.match(storage,/public string SaveSystemState[\s\S]*?SaveManifest[\s\S]*?SaveCsv/);
+ assert.match(storage,/public string SaveSystemState[\s\S]*?SaveManifest[\s\S]*?QueueBackup/);
+ assert.match(storage,/private void FlushDueBackups[\s\S]*?CreateSnapshot[\s\S]*?SaveCsv/);
 });
 
 test('Sync keeps resumable journals and a verified index mirror in the local performance cache',()=>{
  assert.match(storage,/SyncJournalBatchEntryLimit = 64/);
  assert.match(storage,/AppendSyncJournalLines[\s\S]*?FlushCompatible/);
  assert.match(storage,/LocalPerformanceCacheDirectory\(Root\(systemId\), "Sync Journals"\)/);
- assert.match(storage,/LocalPerformanceCacheDirectory\(root, "Sync Index"\)/);
+ assert.match(storage,/LocalPerformanceCacheDirectory\(root, "Sync Index Shards"\)/);
+});
+
+test('shared Sync indexes are checksum-protected and sharded by organization',()=>{
+ assert.match(storage,/SyncIndexDirectoryName = "Sync Index"/);
+ assert.match(storage,/SyncIndexShardFilename/);
+ assert.match(storage,/index-org-/);
+ assert.match(storage,/SaveSyncIndex\(string root, string ruleSetVersion, List<Dictionary<string, object>> files, string organization = null\)/);
+ assert.match(storage,/ReadSyncIndexChecksum/);
 });
 
 test('portable Verified Sync uses exact mutation paths before any broad location fallback',()=>{
@@ -96,6 +105,31 @@ test('unchanged database state avoids redundant shared writes and daily CSV rewr
  assert.match(page,/if\(knownHash===stateHash\)return\{saved:previousSaved,backup:previousBackup,unchanged:true\}/);
 });
 
+test('database snapshots and CSV backups are coalesced but force-flushed before shutdown',()=>{
+ assert.match(storage,/BackupCoalesceSeconds = 30/);
+ assert.match(storage,/new Timer\(delegate \{ try \{ FlushDueBackups\(false\)/);
+ assert.match(storage,/public void FinalizeMappedBackups\(\)[\s\S]*?FlushDueBackups\(true\)/);
+ assert.match(storage,/public void Dispose\(\)[\s\S]*?FlushDueBackups\(true\)/);
+});
+
+test('audit appends reuse a protected verified checkpoint while explicit verification stays full-chain',()=>{
+ assert.match(storage,/LocalAuditCheckpointFilename = "verified-audit-head\.cache"/);
+ assert.match(storage,/AppendAuditBatch[\s\S]*?VerifyAuditChainIncrementalWithRetry/);
+ assert.match(storage,/ProtectedData\.Protect[\s\S]*?AuditCheckpointEntropy/);
+ assert.match(storage,/public string VerifyAuditLogs[\s\S]*?VerifyAuditChainWithRetry/);
+});
+
+test('Windows change notifications are advisory hints with overflow fallback to authoritative scans',()=>{
+ assert.match(storage,/new FileSystemWatcher\(organizations\)/);
+ assert.match(storage,/watcher\.Error \+= failed/);
+ assert.match(storage,/state\.Overflowed = true/);
+ assert.match(storage,/SuggestedChangeHintOrganization/);
+ assert.match(storage,/CompleteChangeHintScan/);
+ assert.match(storage,/PrioritizedDirectories/);
+ const pipeline=storage.slice(storage.indexOf('public string RunSyncPipeline'),storage.indexOf('private static bool IsReworkStorageDirectory'));
+ assert.doesNotMatch(pipeline,/if\s*\(noHintChanges\)/);
+});
+
 test('manifest refresh uses checksum and metadata before rereading the shared database',()=>{
  const reader=storage.slice(storage.indexOf('private string ReadManifestOptimized'),storage.indexOf('public string SaveManifest'));
  assert.match(reader,/ReadManifestChecksumHash/);
@@ -113,4 +147,9 @@ test('performance diagnostics record phase timing, counts, staging, and concurre
  assert.match(storage,/"validationConcurrency"/);
  assert.match(storage,/"slowValidationFiles"/);
  assert.match(storage,/"maxValidationDurationMs"/);
+ assert.match(storage,/public string ReadPerformanceDiagnostics/);
+ assert.match(storage,/Percentile\(durations, 0\.95\)/);
+ assert.match(launcher,/action == "performance"[\s\S]*?ReadPerformanceDiagnostics/);
+ assert.match(page,/openPerformanceReport/);
+ assert.match(page,/downloadPerformanceReport/);
 });
