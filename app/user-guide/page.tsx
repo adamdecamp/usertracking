@@ -69,8 +69,10 @@ export default function Guide() {
           </li>
           <li>
             Choose <b>Sync</b>, then select either the entire information system
-            or one immediate folder beneath <b>Organizations</b>. Review Sync
-            Review and the Current, Missing, and Overdue totals afterward.
+            or one immediate folder beneath <b>Organizations</b>. For routine
+            Daily Sync, place new files in that organization&apos;s prefixed
+            <b> Incoming</b> folder. Review Sync Review and the Current,
+            Missing, and Overdue totals afterward.
           </li>
           <li>
             Choose <b>Stop Sync</b> while a scan is running if you need to
@@ -109,11 +111,13 @@ export default function Guide() {
           Add User remains available only as a fallback. Every release opens
           without bundled systems or users. The portable launcher remembers only
           each mapped folder path in the signed-in Windows user&apos;s Local
-          AppData. On the next launch it revalidates those paths, reloads
-          operational records from the shared folders, and reacquires the
-          selected system&apos;s lock. Sync does not start until the operator chooses
-          a scope. User records are not copied into browser storage or the mapping
-          cache.
+          AppData. It also keeps a Windows-user-protected, checksum-matched local
+          read cache of the last verified database. On the next launch, cached
+          status can appear immediately while the authoritative shared database
+          is verified in the background; editing remains unavailable until that
+          verification and the selected system&apos;s lock succeed. Sync does not
+          start until the operator chooses a scope. User records are not copied
+          into browser storage.
         </aside>
       </section>
       <section id="systems">
@@ -521,12 +525,16 @@ export default function Guide() {
           default <b>Daily Sync — Fast and Strict</b> for routine operations.
           Select <b>Legacy Import — Historical Recovery</b> when onboarding an
           unmanaged repository or correcting a historical backlog. In either
-          mode, select the entire information system or exactly one immediate organization folder. A
-          targeted organization scan includes loose files at the top level of that
-          organization, its Rework folder, and its active evidence folders. Full
-          system scans apply the same discovery and validation rules to every
-          organization. Document-type and deeper subfolders cannot be chosen as
-          independent scopes. The
+          mode, select the entire information system or exactly one immediate
+          organization folder. Every organization includes a prefixed
+          <b> Incoming</b> folder, such as <code>GDMS Incoming</code>. Routine
+          Daily Sync scans only Incoming and Rework in the selected scope, which
+          avoids enumerating thousands of already organized evidence files.
+          Place new evidence in Incoming and corrected evidence in Rework. Select
+          <b> Full Rescan</b> when you intentionally need to inspect active
+          document-type folders too. Legacy Import scans the broader organization
+          tree for initial onboarding and historical repair. Document-type and
+          deeper subfolders cannot be chosen as independent scopes. The
           filename parser treats the first recognized identity value as{" "}
           <b>Last Name</b> and the second as <b>First Name</b>, accepting
           underscores, a comma, ordinary spaces, and additional surrounding
@@ -566,14 +574,15 @@ export default function Guide() {
           correction and do not delay clean-file Sync.
         </p>
         <aside>
-          <b>Incremental Operator Sync:</b> When the operator starts Sync, the launcher
-          performs a fast metadata discovery pass so files added while the app was closed
-          are found. It compares
+          <b>Incremental Operator Sync:</b> When the operator starts Daily Sync,
+          the launcher performs one metadata discovery pass through only the
+          selected Incoming and Rework folders. It compares
           path, filename, byte size, and modified time with the checksum-protected Sync
           index, then opens and validates only new or changed evidence. Unchanged files
           are not written into the per-file recovery journal. Daily Sync also reuses
           unchanged Rework results; a corrected or renamed Rework file changes its
-          metadata and is validated on the next run. Legacy Import deliberately
+          metadata and is validated on the next run. Full Rescan and Legacy Import
+          deliberately
           revalidates every in-scope Rework file. The evidence-cache
           version is independent from interface and reporting releases; it changes only
           when evidence-validation semantics change. Select <b>Full Rescan</b> in the Sync
@@ -581,7 +590,8 @@ export default function Guide() {
         </aside>
         <aside>
           <b>Daily Sync vs. Legacy Import:</b> Daily Sync is the normal operating
-          mode. It safely normalizes recognizable filename dates, organizations, and
+          mode and is intentionally limited to Incoming and Rework. It safely
+          normalizes recognizable filename dates, organizations, and
           artifact wording, creates new users from a valid SAAR or from strictly
           formatted supporting evidence dated in the current scan year, reuses validated
           unchanged Rework evidence, and limits PDF-assisted renaming to new, changed,
@@ -670,13 +680,13 @@ export default function Guide() {
           organization&apos;s Archive, Sync restores it to the canonical document-type
           folder and updates its recorded path. SHA-256 provenance is used when
           available; ambiguous Archive matches remain untouched for Clean Up
-          review. The first Sync of each UTC day performs a complete Archive
-          preflight. Later Syncs that day use the prior Sync index to skip unchanged
-          active evidence, skip the already-swept Archive tree, and still check every
-          new or changed file before PDF content or form-field extraction. Legacy
-          Import additionally revalidates all in-scope Rework; Daily Sync reuses
-          unchanged Rework validation. Full Rescan forces the complete preflight regardless of the
-          daily marker. Archive Preflight does not move active or Rework evidence
+          review. Routine Daily Sync limits Archive Preflight to Incoming and
+          Rework and reuses unchanged Rework validation. Legacy Import performs
+          the complete in-scope Archive preflight once per UTC day and revalidates
+          all in-scope Rework; later Legacy Import runs use the prior Sync index
+          to skip unchanged evidence and the already-swept Archive tree. Full
+          Rescan forces the complete preflight regardless of the daily marker.
+          Archive Preflight does not move active or Rework evidence
           solely because it is old or overdue. That evidence remains available and
           reports Overdue until an operator replaces it or performs an explicit
           archive, duplicate-cleanup, disable, or delete action. A SAAR whose
@@ -961,6 +971,15 @@ export default function Guide() {
           back an interrupted operation before accepting new changes. Operators
           should still review any exception reported after recovery; the app
           does not silently discard the original evidence.
+        </p>
+        <p>
+          Loose PDFs are copied once into the signed-in Windows user&apos;s local
+          compression staging area, validated and compressed there, then sent to
+          the shared folder as one verified ZIP transfer. The source PDF is
+          deleted only after the transferred ZIP is reopened and its embedded
+          PDF hash matches. Temporary staged files are removed after the action.
+          Each mapped system has its own launcher operation queue, so a slow
+          action for one system does not block safe work against another system.
         </p>
         <p>
           The storage-health strip shows <b>Last Saved</b>, <b>Last Backup</b>,

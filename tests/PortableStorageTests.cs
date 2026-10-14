@@ -177,7 +177,7 @@ internal static class PortableStorageTests
         try { storage.Resolve8140QualificationMemoTemplate("mapping-key"); } catch (InvalidDataException error) { rejectedInvalidQualificationMemo = error.Message.IndexOf("PDF", StringComparison.OrdinalIgnoreCase) >= 0; }
         Assert(rejectedInvalidQualificationMemo, "A newer but unreadable 8140 template must fail with actionable PDF validation detail instead of silently attaching an older memo.");File.Delete(invalidQualificationMemo);
         Assert(storage.CreateOrganization("mapping-key", "GOV").Contains("\"organization\":\"GOV\"") && storage.ListOrganizations("mapping-key").Contains("GOV"), "The launcher should create and list organization folders beneath Organizations.");
-        foreach (string documentFolder in new[] { "GOV SAAR", "GOV User Agreement", "GOV DoD Cyber Cert", "GOV 8140 Certification Memo", "GOV Privileged User Training", "GOV DTA Training" })
+        foreach (string documentFolder in new[] { "GOV Incoming", "GOV SAAR", "GOV User Agreement", "GOV DoD Cyber Cert", "GOV 8140 Certification Memo", "GOV Privileged User Training", "GOV DTA Training" })
             Assert(Directory.Exists(Path.Combine(root, "Organizations", "GOV", documentFolder)), "Creating an organization should create its organization-prefixed " + documentFolder + " folder.");
         string recoveryName = "Shaw_Vivian_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf.zip", recoveryArchive = Path.Combine(root, "Organizations", "GOV", "GOV Archive", "2026-09-10"), recoverySource = Path.Combine(recoveryArchive, recoveryName);Directory.CreateDirectory(recoveryArchive);File.WriteAllBytes(recoverySource, EvidenceZip(recoveryName.Substring(0, recoveryName.Length - 4), PdfBytes()));
         string recoveryRequest = Json.Serialize(new Dictionary<string, object> { { "items", new object[] { new Dictionary<string, object> { { "userId", "user-1" }, { "organization", "GOV" }, { "kind", "DoD Cyber Cert" }, { "filename", recoveryName }, { "path", "Organizations/GOV/GOV DoD Cyber Cert/" + recoveryName } } } } });
@@ -194,6 +194,8 @@ internal static class PortableStorageTests
         competingStorage.Map("mapping-key", root);
 
         storage.SaveManifest("mapping-key", Database("first@example.mil"));
+        string protectedLocalMappings = storage.CachedMappings(false, true);
+        Assert(protectedLocalMappings.Contains("\"source\":\"local-cache\"") && protectedLocalMappings.Contains("first@example.mil") && Directory.EnumerateFiles(performanceCacheRoot, "verified-manifest.cache", SearchOption.AllDirectories).Any(), "A verified manifest save should refresh the Windows-user-protected local read cache without requiring shared-folder initialization.");
         string manifestPathForLockTest = Path.Combine(root, "System", "information-system-user-tracker.json");
         string manifestChecksumPath = manifestPathForLockTest + ".sha256", manifestHash = Sha256(File.ReadAllBytes(manifestPathForLockTest));
         Assert(File.Exists(manifestChecksumPath) && File.ReadAllText(manifestChecksumPath, Encoding.ASCII).Trim() == manifestHash + "  information-system-user-tracker.json", "Every live database save should create a matching SHA-256 sidecar.");

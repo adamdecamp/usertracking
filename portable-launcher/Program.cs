@@ -25,7 +25,8 @@ internal sealed class TrackerContext : ApplicationContext
     private readonly TcpListener listener;
     private readonly CancellationTokenSource stop = new CancellationTokenSource();
     private readonly SemaphoreSlim connections = new SemaphoreSlim(16, 16);
-    private readonly SemaphoreSlim storageOperations = new SemaphoreSlim(1, 1);
+    private readonly Dictionary<string, SemaphoreSlim> storageOperations = new Dictionary<string, SemaphoreSlim>(StringComparer.Ordinal);
+    private readonly object storageOperationsGate = new object();
     private readonly NotifyIcon tray;
     private readonly Control dispatcher;
     private readonly PortableStorage storage;
@@ -156,7 +157,7 @@ internal sealed class TrackerContext : ApplicationContext
             catch (UriFormatException) { }
             if (path == null) { await Respond(stream, 400, "text/plain", Encoding.UTF8.GetBytes("Bad Request"), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/session-user") { string json = "{\"user\":\"" + Json(user) + "\"}"; await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json), parts[0] == "HEAD", "no-store"); return; }
-            if (path == "/api/mappings" && (parts[0] == "GET" || parts[0] == "HEAD")) { bool readOnlyMappings = String.Equals(OptionalQueryValue(target, "mode"), "read-only", StringComparison.Ordinal); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(storage.CachedMappings(!readOnlyMappings)), parts[0] == "HEAD", "no-store"); return; }
+            if (path == "/api/mappings" && (parts[0] == "GET" || parts[0] == "HEAD")) { bool readOnlyMappings = String.Equals(OptionalQueryValue(target, "mode"), "read-only", StringComparison.Ordinal), localOnlyMappings = String.Equals(OptionalQueryValue(target, "local"), "1", StringComparison.Ordinal); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(storage.CachedMappings(!readOnlyMappings && !localOnlyMappings, localOnlyMappings)), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/activity" && parts[0] == "POST") { RecordActivity(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/presence" && parts[0] == "POST") { RecordPresence(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/operation-active" && parts[0] == "POST") { SetLongOperation(true); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
@@ -174,8 +175,8 @@ internal sealed class TrackerContext : ApplicationContext
                 if (separator <= 0) { await Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The storage request is invalid."), false, "no-store"); return; }
                 string systemId = tail.Substring(0, separator), action = tail.Substring(separator + 1);
                 if (String.Equals(accessMode, "read-only", StringComparison.Ordinal) && !ReadOnlyStorageActionAllowed(action, parts[0])) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Read-Only Access cannot modify the mapped information system."), false, "no-store"); return; }
-                bool serializedStorage = StorageActionRequiresSerialization(action);int queueWaitMilliseconds = StorageQueueWaitMilliseconds(action, parts[0]);
-                if (serializedStorage && !await storageOperations.WaitAsync(queueWaitMilliseconds)) { await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Storage is busy completing another verified operation after waiting " + (queueWaitMilliseconds / 1000).ToString(System.Globalization.CultureInfo.InvariantCulture) + " seconds. The exclusive session remains active. Safe reads retry automatically; file-changing actions remain uncommitted until their turn begins."), false, "no-store"); return; }
+                bool serializedStorage = StorageActionRequiresSerialization(action);int queueWaitMilliseconds = StorageQueueWaitMilliseconds(action, parts[0]);SemaphoreSlim systemStorageOperations = serializedStorage ? StorageQueue(systemId) : null;
+                if (serializedStorage && !await systemStorageOperations.WaitAsync(queueWaitMilliseconds)) { await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("This information system is busy completing another verified operation after waiting " + (queueWaitMilliseconds / 1000).ToString(System.Globalization.CultureInfo.InvariantCulture) + " seconds. Other mapped systems remain available. Safe reads retry automatically; file-changing actions remain uncommitted until their turn begins."), false, "no-store"); return; }
                 BeginStorageRequest();
                 string storageAction = action;
                 try
@@ -225,7 +226,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "file" && parts[0] == "GET") { byte[] fileBytes = storage.ReadRelativeFile(systemId, QueryValue(target, "path")); await Respond(stream, 200, "application/octet-stream", fileBytes, false, "no-store"); return; }
                     else if (action == "archive" && parts[0] == "POST") response = storage.ArchiveEvidence(systemId, QueryValue(target, "path"), OptionalQueryValue(target, "filename"), String.Equals(OptionalQueryValue(target, "rework"), "1", StringComparison.Ordinal));
                     else if (action == "rework" && parts[0] == "POST") response = storage.MoveEvidenceToRework(systemId, QueryValue(target, "path"));
-                    else if (action == "rework-retention" && parts[0] == "POST") response = storage.ProcessReworkRetention(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"));
+                    else if (action == "rework-retention" && parts[0] == "POST") response = storage.ProcessReworkRetention(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"), String.Equals(OptionalQueryValue(target, "legacy"), "1", StringComparison.Ordinal));
                     else if (action == "compress" && parts[0] == "POST") response = storage.CompressEvidence(systemId, QueryValue(target, "path"));
                     else if (action == "organize" && parts[0] == "POST") response = storage.OrganizeEvidence(systemId, QueryValue(target, "path"), QueryValue(target, "folder"));
                     else if (action == "restore-active" && parts[0] == "POST") response = storage.RestoreActiveEvidence(systemId, requestBody);
@@ -253,7 +254,7 @@ internal sealed class TrackerContext : ApplicationContext
                     string message = StorageError(ex, storageAction) + (String.IsNullOrWhiteSpace(operationId) ? "" : " Operation ID: " + CleanError(operationId).Substring(0, Math.Min(CleanError(operationId).Length, 100)) + ".");
                     Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(message)), false, "no-store").GetAwaiter().GetResult(); return;
                 }
-                finally { EndStorageRequest(); if (serializedStorage) storageOperations.Release(); }
+                finally { EndStorageRequest(); if (serializedStorage) systemStorageOperations.Release(); }
             }
             WebAsset asset;
             if (assets.TryGetValue(path, out asset)) { string cache = path == "/favicon.ico" || path == "/raptor-icon.png" ? "no-cache, max-age=0" : "public, max-age=31536000, immutable"; await Respond(stream, 200, asset.ContentType, asset.Bytes, parts[0] == "HEAD", cache, "gzip"); return; }
@@ -265,6 +266,16 @@ internal sealed class TrackerContext : ApplicationContext
     internal static bool StorageActionRequiresSerialization(string action)
     {
         return !String.Equals(action, "error-report", StringComparison.Ordinal) && !String.Equals(action, "evidence-status", StringComparison.Ordinal) && !String.Equals(action, "outlook-draft", StringComparison.Ordinal) && !action.StartsWith("lease-", StringComparison.Ordinal);
+    }
+
+    private SemaphoreSlim StorageQueue(string systemId)
+    {
+        lock (storageOperationsGate)
+        {
+            SemaphoreSlim queue;
+            if (!storageOperations.TryGetValue(systemId, out queue)) { queue = new SemaphoreSlim(1, 1);storageOperations[systemId] = queue; }
+            return queue;
+        }
     }
 
     internal static int StorageQueueWaitMilliseconds(string action, string method)
@@ -782,6 +793,7 @@ internal sealed class TrackerContext : ApplicationContext
         try { TryFinalizeBackups(); } catch { }
         try { storage.Dispose(); } catch { }
         try { stop.Cancel(); listener.Stop(); } catch { }
+        try { lock (storageOperationsGate) { foreach (SemaphoreSlim queue in storageOperations.Values) queue.Dispose();storageOperations.Clear(); } } catch { }
         try { tray.Visible = false; tray.Dispose(); } catch { }
         try { dispatcher.Dispose(); } catch { }
         finally { base.ExitThreadCore(); Environment.Exit(0); }

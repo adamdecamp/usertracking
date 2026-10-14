@@ -20,7 +20,11 @@ test('offers only entire-system or immediate-organization Sync scope',()=>{
  assert.match(page,/<option value="legacy">Legacy Import — Historical Recovery<\/option>/);
  assert.match(page,/<option value="system">Entire Information System<\/option>/);
  assert.match(page,/<option value="organization"[^>]*>One Organization<\/option>/);
- assert.match(page,/deeper subfolders cannot be selected as a separate Sync scope/);
+ assert.match(page,/deeper subfolders cannot be selected as a separate scope/);
+ assert.match(page,/place new evidence in each organization&apos;s prefixed Incoming folder and use Daily Sync/);
+ assert.match(page,/Full Rescan — Inspect Active Document Folders and Ignore Cached Validation/);
+ assert.match(page,/dailyIncomingOnly=!legacyImport&&!forceFull/);
+ assert.match(page,/insideOrganizationIncoming\(path\)/);
  assert.doesNotMatch(page,/onClick=\{\(\)=>void sync\(true\)\}/);
 });
 
@@ -39,6 +43,8 @@ test('passes the validated organization scope to every launcher discovery stage'
  assert.match(launcher,/ScanWithJournal\([^\r\n]+OptionalQueryValue\(target, "organization"\)[^\r\n]+OptionalQueryValue\(target, "legacy"\)/);
  assert.match(launcher,/ListEvidenceLocations\(systemId, OptionalQueryValue\(target, "organization"\)\)/);
  assert.match(launcher,/ProcessReworkRetention\([^\r\n]+OptionalQueryValue\(target, "organization"\)/);
+ assert.match(launcher,/ProcessReworkRetention\([^\r\n]+OptionalQueryValue\(target, "legacy"\)/);
+ assert.match(page,/processReworkRetention\(h,controller\.signal,forceFull,organization,legacyImport\)/);
 });
 
 test('Daily Sync retains renaming while same-year supporting discovery applies to both modes',()=>{

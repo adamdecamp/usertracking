@@ -82,7 +82,7 @@ $icon = Join-Path $portableRoot "RAPTOR.ico"
 if (-not (Test-Path -LiteralPath $manifest)) { throw "The Windows application manifest was not found." }
 if (-not (Test-Path -LiteralPath $icon)) { throw "The R.A.P.T.O.R. Windows application icon was not found." }
 $compilerArgs = New-Object System.Collections.Generic.List[string]
-@('/nologo', '/target:winexe', "/out:$executable", "/win32manifest:$manifest", "/win32icon:$icon", '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll', '/reference:System.IO.Compression.dll', '/reference:System.IO.Compression.FileSystem.dll', "/resource:$webRoot\index.html,Tracker.Index", "/resource:$assetManifest,Tracker.AssetManifest", "/resource:$faviconCompressed,Tracker.Favicon", "/resource:$brandLogoCompressed,Tracker.BrandLogo") | ForEach-Object { $compilerArgs.Add($_) }
+@('/nologo', '/target:winexe', "/out:$executable", "/win32manifest:$manifest", "/win32icon:$icon", '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll', '/reference:System.IO.Compression.dll', '/reference:System.IO.Compression.FileSystem.dll', '/reference:System.Security.dll', "/resource:$webRoot\index.html,Tracker.Index", "/resource:$assetManifest,Tracker.AssetManifest", "/resource:$faviconCompressed,Tracker.Favicon", "/resource:$brandLogoCompressed,Tracker.BrandLogo") | ForEach-Object { $compilerArgs.Add($_) }
 $assetResourceArgs | ForEach-Object { $compilerArgs.Add($_) }
 $compilerArgs.Add((Join-Path $portableRoot "Program.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableStorage.cs"))
