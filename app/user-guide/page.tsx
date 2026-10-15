@@ -1017,6 +1017,12 @@ export default function Guide() {
           pending backup state, organization index-shard count, advisory change-
           notification health, and protected audit-checkpoint availability. It can
           be downloaded as JSON and contains no user records or evidence contents.
+          Choose <b>Download Sanitized Diagnostic Bundle</b> when technical support
+          needs a troubleshooting package. That bundle uses a fixed, privacy-
+          reviewed schema containing version, session, storage-health, performance,
+          audit-summary, and categorized error-count data only. It excludes operator,
+          user, and system identities; email addresses; filenames; paths; document
+          contents; and audit-entry text.
         </p>
         <p>
           At launch, choose <b>Read-Only Access</b> or <b>Full Access</b>.
@@ -1040,7 +1046,11 @@ export default function Guide() {
           shared folder. An organization snapshot contains only one
           organization, includes both active and disabled users, and excludes
           evidence documents, shared-folder paths, audit logs, and every other
-          organization.
+          organization. The exporting operator can optionally protect the snapshot
+          with a passphrase of at least 12 characters. Encrypted snapshots use
+          authenticated AES-256-GCM encryption with a strong PBKDF2-derived key;
+          give the ISSO the passphrase through a separate approved channel because
+          the app never stores or places it in the email.
         </p>
         <p>
           Only one Full Access portable Windows launcher can modify a mapped system folder
@@ -1119,6 +1129,15 @@ export default function Guide() {
           <code>audit-*.txt</code> files remain available but are not part of
           the cryptographic chain. Viewing, searching, filtering, and theme
           changes are excluded.
+        </p>
+        <p>
+          After reviewing the audit log, choose <b>Export Independent Audit
+          Receipt</b> to download a small JSON receipt containing the verified
+          audit-chain head, entry count, UTC generation time, operator, application
+          version, and rule-set version. Preserve that receipt outside the mapped
+          system folder using the organization&apos;s approved records process. A later
+          receipt or audit review can then demonstrate whether the chain head has
+          changed since the independent copy was retained.
         </p>
       </section>
       <section id="reconciliation">
@@ -1213,7 +1232,10 @@ export default function Guide() {
           <li>
             Select exactly one organization and enter that organization&apos;s
             ISSO email address. The displayed totals include active and disabled
-            users.
+            users. Select <b>Encrypt Snapshot With a Passphrase</b> for email or
+            other transport outside the protected shared folder, enter the same
+            12-character-or-longer passphrase twice, and provide that passphrase
+            separately to the recipient.
           </li>
           <li>
             Choose <b>Download Snapshot</b> for a protected offline copy, or

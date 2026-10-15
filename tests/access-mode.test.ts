@@ -3,15 +3,16 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const sessionPanels=readFileSync(new URL('../app/components/SessionPanels.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
 
 test('startup requires an explicit Read-Only or Full Access choice',()=>{
- assert.match(page,/Choose Your Access/);
+ assert.match(sessionPanels,/Choose Your Access/);
  assert.match(page,/chooseAccessMode\('read-only'\)/);
  assert.match(page,/chooseAccessMode\('full'\)/);
- assert.match(page,/Multiple viewers · No editor lock · 15-minute inactivity timeout/);
- assert.match(page,/Required startup health check · One exclusive editor/);
+ assert.match(sessionPanels,/Multiple viewers · No editor lock · 15-minute inactivity timeout/);
+ assert.match(sessionPanels,/Required startup health check · One exclusive editor/);
 });
 
 test('Read-Only sessions never acquire or renew the editor lease',()=>{

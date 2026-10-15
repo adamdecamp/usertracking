@@ -1198,6 +1198,45 @@ internal sealed class PortableStorage : IDisposable
         return json.Serialize(new Dictionary<string, object> { { "generatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "networkRoot", IsNetworkRoot(root) }, { "operations", operations.OrderByDescending(item => Convert.ToInt64(item["p95Ms"], CultureInfo.InvariantCulture)).ToArray() }, { "recent", entries.AsEnumerable().Reverse().Take(100).ToArray() }, { "backupPending", backupPending }, { "watcherBaselined", watcherBaselined }, { "watcherOverflowed", watcherOverflowed }, { "dirtyOrganizations", dirtyOrganizations }, { "syncIndexShards", shards }, { "databaseShards", databaseShards }, { "manifestStorageFormat", manifestStorageFormat }, { "localReadCacheAvailable", localReadCacheAvailable }, { "backupCompression", backupCompression }, { "auditCheckpointAvailable", File.Exists(Path.Combine(LocalPerformanceCacheDirectory(root, "Audit"), LocalAuditCheckpointFilename)) } });
     }
 
+    public string ReadSanitizedDiagnostics(string systemId)
+    {
+        string root = Root(systemId), directory = Path.Combine(root, SystemDirectoryName, ErrorReportsDirectoryName);int fileCount = 0, entryCount = 0;var contexts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            if (Directory.Exists(directory))
+            foreach (string path in Directory.EnumerateFiles(directory, "error-report-*.txt", SearchOption.TopDirectoryOnly).OrderByDescending(Path.GetFileName).Take(30))
+            {
+                fileCount++;var info = new FileInfo(path);if (!info.Exists || info.Length <= 0 || info.Length > ErrorReportFileLimit) continue;
+                using (var reader = new StreamReader(path, new UTF8Encoding(false, true)))
+                {
+                    string line;int lines = 0;while ((line = reader.ReadLine()) != null && lines++ < 250000)
+                    {
+                        if (line.StartsWith("Report ID:", StringComparison.OrdinalIgnoreCase)) entryCount++;
+                        if (!line.StartsWith("Context:", StringComparison.OrdinalIgnoreCase)) continue;
+                        string context = DiagnosticContextCategory(line.Substring("Context:".Length));int count;contexts[context] = contexts.TryGetValue(context, out count) ? count + 1 : 1;
+                    }
+                }
+            }
+        }
+        catch { }
+        var categories = contexts.OrderByDescending(item => item.Value).ThenBy(item => item.Key, StringComparer.OrdinalIgnoreCase).Take(100).Select(item => new Dictionary<string, object> { { "context", item.Key }, { "count", item.Value } }).ToArray();
+        return json.Serialize(new Dictionary<string, object> { { "generatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "networkRoot", IsNetworkRoot(root) }, { "errorReportFiles", fileCount }, { "errorEntries", entryCount }, { "contexts", categories } });
+    }
+
+    private static string DiagnosticContextCategory(string context)
+    {
+        string value = (context ?? "").ToUpperInvariant();
+        if (value.Contains("SYNC") || value.Contains("SCAN") || value.Contains("RECONCIL")) return "Sync and Reconciliation";
+        if (value.Contains("OUTLOOK") || value.Contains("EMAIL") || value.Contains("NOTIFICATION")) return "Outlook and Notifications";
+        if (value.Contains("EVIDENCE") || value.Contains("PDF") || value.Contains("DOCUMENT") || value.Contains("UPLOAD")) return "Evidence Processing";
+        if (value.Contains("USER") || value.Contains("PRIVILEGE") || value.Contains("ACCOUNT")) return "User Management";
+        if (value.Contains("BACKUP") || value.Contains("RESTORE")) return "Backup and Restore";
+        if (value.Contains("AUDIT")) return "Audit Integrity";
+        if (value.Contains("STORAGE") || value.Contains("MANIFEST") || value.Contains("DATABASE") || value.Contains("SESSION") || value.Contains("LEASE")) return "Storage and Session";
+        if (value.Contains("REPORT") || value.Contains("SNAPSHOT") || value.Contains("EXPORT")) return "Reporting and Export";
+        return "Other Operational Error";
+    }
+
     private static long PerformanceDuration(Dictionary<string, object> item)
     {
         foreach (string key in new[] { "totalDurationMs", "durationMs", "validationDurationMs", "scanDurationMs" }) try { if (item.ContainsKey(key)) return Convert.ToInt64(item[key], CultureInfo.InvariantCulture); } catch { }

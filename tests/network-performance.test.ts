@@ -175,3 +175,12 @@ test('performance diagnostics record phase timing, counts, staging, and concurre
  assert.match(page,/openPerformanceReport/);
  assert.match(page,/downloadPerformanceReport/);
 });
+
+test('sanitized diagnostics expose only categorized error counts through a nonqueued read-only route',()=>{
+ assert.match(storage,/public string ReadSanitizedDiagnostics/);
+ assert.match(storage,/DiagnosticContextCategory/);
+ assert.doesNotMatch(storage.slice(storage.indexOf('public string ReadSanitizedDiagnostics'),storage.indexOf('private static long PerformanceDuration')),/Details:/);
+ assert.match(launcher,/action == "diagnostics"[\s\S]*?ReadSanitizedDiagnostics/);
+ assert.match(launcher,/!String\.Equals\(action, "diagnostics"/);
+ assert.match(page,/Download Sanitized Diagnostic Bundle|downloadDiagnosticBundle/);
+});

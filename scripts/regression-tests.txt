@@ -2,6 +2,7 @@ tests/backup-utils.test.ts
 tests/evidence-validation.test.ts
 tests/evidence-audit-utils.test.ts
 tests/audit-utils.test.ts
+tests/audit-anchor.test.ts
 tests/compliance-report.test.ts
 tests/compliance-rules.test.ts
 tests/executive-summary.test.ts
@@ -28,6 +29,8 @@ tests/launcher-lifecycle.test.ts
 tests/access-mode.test.ts
 tests/organization-status-package.test.ts
 tests/organization-status-ui.test.ts
+tests/diagnostic-bundle.test.ts
+tests/ui-modularization.test.ts
 tests/release-workflow.test.ts
 tests/braces-security-backport.test.ts
 tests/pagination-utils.test.ts
