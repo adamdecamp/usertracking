@@ -237,7 +237,9 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "organizations" && parts[0] == "GET") response = storage.ListOrganizations(systemId);
                     else if (action == "organizations" && parts[0] == "POST") response = storage.CreateOrganization(systemId, QueryValue(target, "name"));
                     else if (action == "evidence" && parts[0] == "POST") response = "{\"filename\":\"" + Json(storage.StoreEvidence(systemId, QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"), requestBody)) + "\"}";
+                    else if (action == "evidence-pdf" && parts[0] == "POST") response = storage.StoreEvidencePdf(systemId, QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"), requestBody);
                     else if (action == "evidence-status" && parts[0] == "GET") response = storage.VerifyStoredEvidence(systemId, QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"), QueryValue(target, "sha256"));
+                    else if (action == "evidence-pdf-status" && parts[0] == "GET") response = storage.VerifyStoredEvidencePdf(systemId, QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"), QueryValue(target, "sha256"));
                     else if (action == "outlook-draft" && parts[0] == "POST") response = OpenOutlookDraft(systemId, requestBody);
                     else if (action == "report" && parts[0] == "POST") response = storage.StoreReport(systemId, QueryValue(target, "filename"), requestBody);
                     else if (action == "error-report" && parts[0] == "POST") response = storage.StoreErrorReport(systemId, QueryValue(target, "filename"), Encoding.UTF8.GetString(requestBody));
@@ -268,7 +270,7 @@ internal sealed class TrackerContext : ApplicationContext
 
     internal static bool StorageActionRequiresSerialization(string action)
     {
-        return !String.Equals(action, "error-report", StringComparison.Ordinal) && !String.Equals(action, "evidence-status", StringComparison.Ordinal) && !String.Equals(action, "outlook-draft", StringComparison.Ordinal) && !String.Equals(action, "performance", StringComparison.Ordinal) && !action.StartsWith("lease-", StringComparison.Ordinal);
+        return !String.Equals(action, "error-report", StringComparison.Ordinal) && !String.Equals(action, "evidence-status", StringComparison.Ordinal) && !String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal) && !String.Equals(action, "outlook-draft", StringComparison.Ordinal) && !String.Equals(action, "performance", StringComparison.Ordinal) && !action.StartsWith("lease-", StringComparison.Ordinal);
     }
 
     private SemaphoreSlim StorageQueue(string systemId)
@@ -292,7 +294,7 @@ internal sealed class TrackerContext : ApplicationContext
         if (String.Equals(action, "select-readonly", StringComparison.Ordinal) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
         if ((String.Equals(action, "audit", StringComparison.Ordinal) || String.Equals(action, "audit-batch", StringComparison.Ordinal)) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
         if (!String.Equals(method, "GET", StringComparison.Ordinal) && !String.Equals(method, "HEAD", StringComparison.Ordinal)) return false;
-        return String.Equals(action, "manifest", StringComparison.Ordinal) || String.Equals(action, "file", StringComparison.Ordinal) || String.Equals(action, "audit-verify", StringComparison.Ordinal) || String.Equals(action, "audit-view", StringComparison.Ordinal) || String.Equals(action, "performance", StringComparison.Ordinal) || String.Equals(action, "organizations", StringComparison.Ordinal) || String.Equals(action, "evidence-status", StringComparison.Ordinal) || String.Equals(action, "archive-locations", StringComparison.Ordinal);
+        return String.Equals(action, "manifest", StringComparison.Ordinal) || String.Equals(action, "file", StringComparison.Ordinal) || String.Equals(action, "audit-verify", StringComparison.Ordinal) || String.Equals(action, "audit-view", StringComparison.Ordinal) || String.Equals(action, "performance", StringComparison.Ordinal) || String.Equals(action, "organizations", StringComparison.Ordinal) || String.Equals(action, "evidence-status", StringComparison.Ordinal) || String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal) || String.Equals(action, "archive-locations", StringComparison.Ordinal);
     }
 
     private Task<string> ChooseFolder() { return ChooseFolder("Select the Shared Folder for This Information System", null, true); }
@@ -410,8 +412,13 @@ internal sealed class TrackerContext : ApplicationContext
         if (String.IsNullOrWhiteSpace(templateType) && request.ContainsKey("attachUserAgreementTemplate") && Convert.ToBoolean(request["attachUserAgreementTemplate"])) templateType = "user-agreement";
         bool attachTemplate = !String.IsNullOrWhiteSpace(templateType);
         object[] requestedAuditSystems = request.ContainsKey("auditSystemIds") ? request["auditSystemIds"] as object[] : null;
-        string[] auditSystemIds = requestedAuditSystems == null ? new[] { systemId } : requestedAuditSystems.Select(value => Convert.ToString(value)).Where(value => !String.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
-        if (auditSystemIds.Length == 0 || auditSystemIds.Length > 40 || !auditSystemIds.Contains(systemId, StringComparer.Ordinal) || auditSystemIds.Any(value => value.Length > 100 || value.IndexOfAny(new[] { '\r', '\n', '\0', '/', '\\' }) >= 0)) throw new InvalidDataException("The Outlook audit-system list is invalid.");
+        string[] requestedAuditSystemIds = requestedAuditSystems == null ? new string[0] : requestedAuditSystems.Select(value => Convert.ToString(value)).Where(value => !String.IsNullOrWhiteSpace(value)).ToArray();
+        if (requestedAuditSystemIds.Length > 40 || requestedAuditSystemIds.Any(value => value.Length > 100 || value.IndexOfAny(new[] { '\r', '\n', '\0', '/', '\\' }) >= 0)) throw new InvalidDataException("The Outlook audit-system list is invalid.");
+        // The endpoint's mapped system is always part of the audit scope. This keeps a
+        // stale browser selection from rejecting an otherwise valid draft while still
+        // guaranteeing that the storage context which prepared it receives an outcome.
+        string[] auditSystemIds = requestedAuditSystemIds.Concat(new[] { systemId }).Distinct(StringComparer.Ordinal).ToArray();
+        if (auditSystemIds.Length == 0 || auditSystemIds.Length > 40) throw new InvalidDataException("The Outlook audit-system list is invalid.");
         if (bcc.Length > 8000 || bcc.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook BCC list is invalid.");
         if (to.Length > 254 || to.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook To address is invalid.");
         if (String.IsNullOrWhiteSpace(subject) || subject.Length > 200 || subject.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook subject is invalid.");

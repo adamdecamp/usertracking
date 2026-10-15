@@ -21,7 +21,7 @@ test('mapped-drive operations use bounded network-lag retries',()=>{
  assert.match(storage,/NetworkRetryDelay/);
  assert.match(storage,/EnumerateScanFilesOnce/);
  assert.match(storage,/NetworkReadAttempts/);
- assert.match(page,/stage==='evidence-status'\?90_000:5\*60\*1000/);
+ assert.match(page,/stage==='evidence-status'\|\|stage==='evidence-pdf-status'\?90_000:5\*60\*1000/);
 });
 
 test('slow network storage queues safely instead of failing after five seconds',()=>{
@@ -95,4 +95,25 @@ test('reconnection waits for an in-flight verified storage operation before acti
  const reconnect=page.slice(page.indexOf('async function reconnect'),page.indexOf('async function openRestore'));
  assert.match(reconnect,/await readManifestAfterStorageSettles\(root\)/);
  assert.ok(reconnect.indexOf('await readManifestAfterStorageSettles(root)')<reconnect.lastIndexOf("setSessionState('active')"));
+});
+
+test('Outlook completion auditing always includes the mapped endpoint system',()=>{
+ const outlook=launcher.slice(launcher.indexOf('private string OpenOutlookDraft'),launcher.indexOf('internal static string OutlookHtmlBody'));
+ assert.match(outlook,/requestedAuditSystemIds\.Concat\(new\[\] \{ systemId \}\)\.Distinct/);
+ assert.match(outlook,/RecordOutlookOutcome\(auditSystemIds/);
+ assert.doesNotMatch(outlook,/!auditSystemIds\.Contains\(systemId/);
+});
+
+test('manual PDF receipt verification is read-only and does not wait behind storage writes',()=>{
+ assert.match(launcher,/!String\.Equals\(action, "evidence-pdf-status", StringComparison\.Ordinal\)/);
+ assert.match(launcher,/String\.Equals\(action, "evidence-pdf-status", StringComparison\.Ordinal\) \|\| String\.Equals\(action, "archive-locations"/);
+});
+
+test('successful disable and delete operations keep missing evidence in the audit trail without creating false failure reports',()=>{
+ const deleteUser=page.slice(page.indexOf('async function deleteUserRecord'),page.indexOf('async function openEvidence'));
+ const userSubmit=page.slice(page.indexOf(' async function submit(){const root=rootFor(system.id)'),page.indexOf(' async function deleteRecord()'));
+ assert.doesNotMatch(deleteUser,/Delete user completed with missing evidence files/);
+ assert.match(deleteUser,/already-missing evidence reference/);
+ assert.doesNotMatch(userSubmit,/Disable user completed with missing evidence files/);
+ assert.match(userSubmit,/archive exception/);
 });

@@ -11,18 +11,32 @@ test('manual evidence storage uses bounded stages instead of one composite two-m
  const artifact=store.slice(store.indexOf('async function storeEvidenceArtifact'));
  assert.doesNotMatch(artifact,/withOperationTimeout/);
  assert.doesNotMatch(artifact,/standardArtifactFile/);
- assert.match(store,/const sha256=await sha256Bytes\(writeBytes\),path=evidenceStoragePath/);
- assert.match(page,/stage==='evidence'\|\|stage==='file'\?5\*60\*1000/);
+ assert.match(store,/evidence-pdf\?organization=/);
+ assert.match(store,/pdfUploadBytes=new Uint8Array\(inspected\.pdfBytes\.byteLength\)/);
+ assert.match(page,/stage==='evidence'\|\|stage==='evidence-pdf'\|\|stage==='file'\?5\*60\*1000/);
 });
 
 test('a late portable write is reconciled from its exact path and SHA-256 receipt',()=>{
  assert.match(store,/reconcilePortableEvidenceWrite/);
+ assert.match(store,/reconcilePortablePdfEvidenceWrite/);
  assert.match(store,/error instanceof PortableRequestTimeoutError/);
  assert.match(store,/if\(reconciled\)return reconciled/);
  assert.match(launcher,/action == "evidence-status" && parts\[0\] == "GET"/);
+ assert.match(launcher,/action == "evidence-pdf-status" && parts\[0\] == "GET"/);
  assert.match(launcher,/!String\.Equals\(action, "evidence-status", StringComparison\.Ordinal\)/);
  assert.match(storage,/public string VerifyStoredEvidence/);
+ assert.match(storage,/public string VerifyStoredEvidencePdf/);
  assert.match(storage,/bool stored = String\.Equals\(actual, expected, StringComparison\.OrdinalIgnoreCase\)/);
+});
+
+test('portable manual PDF uploads are compressed by the Windows launcher instead of the browser',()=>{
+ assert.match(launcher,/action == "evidence-pdf" && parts\[0\] == "POST"/);
+ assert.match(storage,/public string StoreEvidencePdf/);
+ assert.match(storage,/LocalPerformanceCacheDirectory\(root, "Manual Evidence Staging"\)/);
+ assert.match(storage,/archive\.CreateEntry\(pdfName, CompressionLevel\.Optimal\)/);
+ assert.match(storage,/ValidateEvidenceZip\(output, zipName\)/);
+ const portableBranch=store.slice(store.indexOf('if(isPortableRoot(root))'),store.indexOf("const compressed=alreadyCanonical"));
+ assert.doesNotMatch(portableBranch,/zipFiles\(/);
 });
 
 test('missing supporting evidence does not change the single-SAAR storage path',()=>{

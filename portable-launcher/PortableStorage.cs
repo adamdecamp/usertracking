@@ -1964,6 +1964,49 @@ internal sealed class PortableStorage : IDisposable
         return zipName;
     }
 
+    public string StoreEvidencePdf(string systemId, string organization, string kind, string filename, byte[] pdfBytes)
+    {
+        if (pdfBytes == null || pdfBytes.Length == 0) throw new InvalidDataException("The evidence PDF is empty.");
+        if (pdfBytes.Length > EvidenceLimit) throw new InvalidDataException("The evidence PDF exceeds the size limit.");
+        string zipName = SafePart(filename, 180);
+        if (!zipName.EndsWith(".pdf.zip", StringComparison.OrdinalIgnoreCase) || !String.Equals(zipName, filename, StringComparison.Ordinal)) throw new InvalidDataException("The stored evidence filename must end with .pdf.zip.");
+        string pdfName = zipName.Substring(0, zipName.Length - 4), root = Root(systemId), stagingDirectory = Path.Combine(LocalPerformanceCacheDirectory(root, "Manual Evidence Staging"), Guid.NewGuid().ToString("N")), stagedPdf = Path.Combine(stagingDirectory, pdfName), stagedZip = Path.Combine(stagingDirectory, zipName);
+        try
+        {
+            Directory.CreateDirectory(stagingDirectory);
+            using (var output = OpenCompatibleFileStream(stagedPdf, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920)) { output.Write(pdfBytes, 0, pdfBytes.Length);FlushCompatible(output); }
+            string validationError;
+            if (!TryValidateEvidenceFile(stagedPdf, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The evidence PDF is invalid." : validationError);
+            using (var output = new FileStream(stagedZip, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+            {
+                using (var archive = new ZipArchive(output, ZipArchiveMode.Create, true))
+                {
+                    ZipArchiveEntry entry = archive.CreateEntry(pdfName, CompressionLevel.Optimal);
+                    using (Stream input = File.Open(stagedPdf, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    using (Stream target = entry.Open()) input.CopyTo(target);
+                }
+                output.Position = 0;ValidateEvidenceZip(output, zipName);FlushCompatible(output);
+            }
+            byte[] zipBytes = File.ReadAllBytes(stagedZip);
+            if (zipBytes.Length > EvidenceLimit) throw new InvalidDataException("The compressed evidence exceeds the size limit.");
+            lock (RootLock(systemId))
+            {
+                string safeOrganization = ValidOrganizationName(organization), directory = Path.Combine(root, "Organizations", safeOrganization, OrganizationArtifactStorageFolder(ArtifactStorageFolder(kind), safeOrganization)), destination = Path.Combine(directory, zipName);
+                Directory.CreateDirectory(directory);AtomicWrite(destination, zipBytes);
+                string storedError;
+                if (!TryValidateEvidenceFile(destination, out storedError)) throw new IOException(String.IsNullOrWhiteSpace(storedError) ? "The stored evidence failed verification." : storedError);
+                string sha256 = TryFileHash(destination), relative = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
+                if (!IsSha256(sha256)) throw new IOException("The stored evidence failed SHA-256 verification.");
+                return json.Serialize(new Dictionary<string, object> { { "filename", zipName }, { "path", relative }, { "sha256", sha256 } });
+            }
+        }
+        finally
+        {
+            TryDelete(stagedZip);TryDelete(stagedPdf);
+            try { if (Directory.Exists(stagingDirectory)) Directory.Delete(stagingDirectory, false); } catch { }
+        }
+    }
+
     public string VerifyStoredEvidence(string systemId, string organization, string kind, string filename, string expectedSha256)
     {
         string expected = CleanLine(expectedSha256, 64).ToLowerInvariant();
@@ -1973,6 +2016,18 @@ internal sealed class PortableStorage : IDisposable
         string root = Root(systemId), safeOrganization = ValidOrganizationName(organization), path = Path.Combine(root, "Organizations", safeOrganization, OrganizationArtifactStorageFolder(ArtifactStorageFolder(kind), safeOrganization), safeName), actual = TryFileHash(path);
         bool stored = String.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
         return json.Serialize(new Dictionary<string, object> { { "stored", stored }, { "filename", safeName }, { "path", Relative(root, path).Replace(Path.DirectorySeparatorChar, '/') }, { "sha256", actual } });
+    }
+
+    public string VerifyStoredEvidencePdf(string systemId, string organization, string kind, string filename, string expectedPdfSha256)
+    {
+        string expected = CleanLine(expectedPdfSha256, 64).ToLowerInvariant();
+        if (!IsSha256(expected)) throw new InvalidDataException("The expected evidence PDF SHA-256 value is invalid.");
+        string safeName = SafePart(filename, 180);
+        if (!safeName.EndsWith(".pdf.zip", StringComparison.OrdinalIgnoreCase) || !String.Equals(safeName, filename, StringComparison.Ordinal)) throw new InvalidDataException("The stored evidence filename is invalid.");
+        string root = Root(systemId), safeOrganization = ValidOrganizationName(organization), path = Path.Combine(root, "Organizations", safeOrganization, OrganizationArtifactStorageFolder(ArtifactStorageFolder(kind), safeOrganization), safeName), containerSha256 = TryFileHash(path), pdfSha256 = "";
+        if (IsSha256(containerSha256)) try { pdfSha256 = EvidencePdfSha256(path); } catch { }
+        bool stored = String.Equals(pdfSha256, expected, StringComparison.OrdinalIgnoreCase);
+        return json.Serialize(new Dictionary<string, object> { { "stored", stored }, { "filename", safeName }, { "path", Relative(root, path).Replace(Path.DirectorySeparatorChar, '/') }, { "sha256", containerSha256 }, { "pdfSha256", pdfSha256 } });
     }
 
     public string ListOrganizations(string systemId)

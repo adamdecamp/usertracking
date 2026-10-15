@@ -41,8 +41,9 @@ test('packages the R.A.P.T.O.R. brand and application icons consistently',()=>{
  assert.match(launcher,/path == "\/favicon\.ico" \|\| path == "\/raptor-icon\.png"/);
  assert.match(launcher,/result\.Add\("\/raptor-icon\.png", new WebAsset \{ Bytes = LoadResource\("Tracker\.BrandLogo"\), ContentType = "image\/png" \}\)/);
  assert.match(page,/archived\.blockingErrors\.length/);
- assert.match(page,/Delete user completed with missing evidence files/);
- assert.match(page,/Disable user completed with missing evidence files/);
+ assert.doesNotMatch(page,/Delete user completed with missing evidence files/);
+ assert.doesNotMatch(page,/Disable user completed with missing evidence files/);
+ assert.match(page,/already-missing evidence reference/);
  assert.match(page,/<h1>R\.A\.P\.T\.O\.R\.<\/h1>/);
  assert.match(page,/Role-Based Access Personnel Tracking &amp; Oversight Registry/);
  assert.match(page,/src="\/raptor-icon\.png"/);
