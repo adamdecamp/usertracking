@@ -7,6 +7,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Collections.Generic;
@@ -20,6 +21,9 @@ internal sealed class TrackerContext : ApplicationContext
     private const int Port = 38473;
     private sealed class WebAsset { public byte[] Bytes; public string ContentType; }
     private readonly string user;
+    private readonly string sessionToken;
+    private readonly object sessionGate = new object();
+    private string sessionAccessMode = "unselected";
     private readonly byte[] indexHtml;
     private readonly Dictionary<string, WebAsset> assets;
     private readonly TcpListener listener;
@@ -93,6 +97,7 @@ internal sealed class TrackerContext : ApplicationContext
         indexHtml = LoadResource("Tracker.Index");
         assets = LoadAssets();
         user = WindowsIdentity.GetCurrent().Name;
+        sessionToken = CreateSessionToken();
         storage = new PortableStorage(user);
         dispatcher = new Control();
         IntPtr dispatcherHandle = dispatcher.Handle;
@@ -114,7 +119,7 @@ internal sealed class TrackerContext : ApplicationContext
 
     private void OpenTracker()
     {
-        Process.Start(new ProcessStartInfo("http://localhost:" + Port + "/") { UseShellExecute = true });
+        Process.Start(new ProcessStartInfo("http://localhost:" + Port + "/#session=" + Uri.EscapeDataString(sessionToken)) { UseShellExecute = true });
     }
 
     private async Task ListenLoop()
@@ -146,18 +151,21 @@ internal sealed class TrackerContext : ApplicationContext
             if (String.IsNullOrEmpty(headerBlock)) return;
             string[] lines = headerBlock.Split(new[] { "\r\n" }, StringSplitOptions.None), parts = lines[0].Split(' ');
             if (parts.Length < 2 || (parts[0] != "GET" && parts[0] != "HEAD" && parts[0] != "POST" && parts[0] != "DELETE")) { await Respond(stream, 405, "text/plain", Encoding.UTF8.GetBytes("Method Not Allowed"), false, "no-store"); return; }
-            string host = null, origin = null, operationId = null, accessMode = null; long contentLength = 0;
-            for (int i = 1; i < lines.Length; i++) { string line = lines[i]; if (line.StartsWith("Host:", StringComparison.OrdinalIgnoreCase)) host = line.Substring(5).Trim(); if (line.StartsWith("Origin:", StringComparison.OrdinalIgnoreCase)) origin = line.Substring(7).Trim(); if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)) Int64.TryParse(line.Substring(15).Trim(), out contentLength); if (line.StartsWith("X-Tracker-Operation-Id:", StringComparison.OrdinalIgnoreCase)) operationId = line.Substring(23).Trim(); if (line.StartsWith("X-RAPTOR-Access-Mode:", StringComparison.OrdinalIgnoreCase)) accessMode = line.Substring(21).Trim(); }
+            string host = null, origin = null, operationId = null, presentedToken = null, leaseSession = null; long contentLength = 0;
+            for (int i = 1; i < lines.Length; i++) { string line = lines[i]; if (line.StartsWith("Host:", StringComparison.OrdinalIgnoreCase)) host = line.Substring(5).Trim(); if (line.StartsWith("Origin:", StringComparison.OrdinalIgnoreCase)) origin = line.Substring(7).Trim(); if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase) && !Int64.TryParse(line.Substring(15).Trim(), out contentLength)) contentLength = -1; if (line.StartsWith("X-Tracker-Operation-Id:", StringComparison.OrdinalIgnoreCase)) operationId = line.Substring(23).Trim(); if (line.StartsWith("X-RAPTOR-Session-Token:", StringComparison.OrdinalIgnoreCase)) presentedToken = line.Substring(23).Trim(); if (line.StartsWith("X-RAPTOR-Lease-Session:", StringComparison.OrdinalIgnoreCase)) leaseSession = line.Substring(23).Trim(); }
             if (!String.Equals(host, "localhost:" + Port, StringComparison.OrdinalIgnoreCase) && !String.Equals(host, "127.0.0.1:" + Port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), parts[0] == "HEAD", "no-store"); return; }
             if ((parts[0] == "POST" || parts[0] == "DELETE") && !String.Equals(origin, "http://localhost:" + Port, StringComparison.OrdinalIgnoreCase) && !String.Equals(origin, "http://127.0.0.1:" + Port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), false, "no-store"); return; }
-            if (contentLength < 0 || contentLength > 110L * 1024 * 1024) { await Respond(stream, 413, "text/plain", Encoding.UTF8.GetBytes("Request body is too large."), false, "no-store"); return; }
-            byte[] requestBody = contentLength > 0 ? await ReadBody(stream, contentLength) : new byte[0];
             string target = parts[1], path = null;
             try { path = Uri.UnescapeDataString(target.Split('?')[0]); }
             catch (UriFormatException) { }
             if (path == null) { await Respond(stream, 400, "text/plain", Encoding.UTF8.GetBytes("Bad Request"), parts[0] == "HEAD", "no-store"); return; }
+            if (path.StartsWith("/api/", StringComparison.Ordinal) && !SessionTokenMatches(presentedToken)) { await Respond(stream, 401, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The launcher session is missing or invalid. Reopen R.A.P.T.O.R. from its Windows launcher."), false, "no-store"); return; }
+            if (contentLength < 0 || contentLength > 110L * 1024 * 1024) { await Respond(stream, 413, "text/plain", Encoding.UTF8.GetBytes("Request body is too large."), false, "no-store"); return; }
+            byte[] requestBody = contentLength > 0 ? await ReadBody(stream, contentLength) : new byte[0];
             if (path == "/api/session-user") { string json = "{\"user\":\"" + Json(user) + "\"}"; await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json), parts[0] == "HEAD", "no-store"); return; }
-            if (path == "/api/mappings" && (parts[0] == "GET" || parts[0] == "HEAD")) { bool readOnlyMappings = String.Equals(OptionalQueryValue(target, "mode"), "read-only", StringComparison.Ordinal), localOnlyMappings = String.Equals(OptionalQueryValue(target, "local"), "1", StringComparison.Ordinal); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(storage.CachedMappings(!readOnlyMappings && !localOnlyMappings, localOnlyMappings)), parts[0] == "HEAD", "no-store"); return; }
+            if (path == "/api/session-open" && parts[0] == "POST") { string mode = QueryValue(target, "mode");if (!OpenSession(mode)) { await Respond(stream, 409, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("This launcher session already has a different access mode. Restart R.A.P.T.O.R. to choose another mode."), false, "no-store");return; }await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"mode\":\"" + Json(SessionAccessMode()) + "\"}"), false, "no-store");return; }
+            if (path == "/api/session-downgrade" && parts[0] == "POST") { storage.ReleaseAllLeases();DowngradeSession();await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"mode\":\"read-only\"}"), false, "no-store");return; }
+            if (path == "/api/mappings" && (parts[0] == "GET" || parts[0] == "HEAD")) { bool readOnlyMappings = String.Equals(SessionAccessMode(), "read-only", StringComparison.Ordinal), localOnlyMappings = String.Equals(OptionalQueryValue(target, "local"), "1", StringComparison.Ordinal); if (!readOnlyMappings && !String.Equals(SessionAccessMode(), "full", StringComparison.Ordinal)) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Choose an access mode before opening saved mappings."), false, "no-store");return; }await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(storage.CachedMappings(!readOnlyMappings && !localOnlyMappings, localOnlyMappings)), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/activity" && parts[0] == "POST") { RecordActivity(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/presence" && parts[0] == "POST") { RecordPresence(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/operation-active" && parts[0] == "POST") { SetLongOperation(true); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
@@ -174,7 +182,12 @@ internal sealed class TrackerContext : ApplicationContext
                 string tail = path.Substring("/api/storage/".Length); int separator = tail.IndexOf('/');
                 if (separator <= 0) { await Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The storage request is invalid."), false, "no-store"); return; }
                 string systemId = tail.Substring(0, separator), action = tail.Substring(separator + 1);
+                string accessMode = SessionAccessMode();
+                if (String.Equals(accessMode, "unselected", StringComparison.Ordinal)) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Choose an access mode before using mapped storage."), false, "no-store"); return; }
                 if (String.Equals(accessMode, "read-only", StringComparison.Ordinal) && !ReadOnlyStorageActionAllowed(action, parts[0])) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Read-Only Access cannot modify the mapped information system."), false, "no-store"); return; }
+                if (StorageActionRequiresLease(action, parts[0]) && (String.IsNullOrWhiteSpace(leaseSession) || !storage.OwnsLease(systemId, leaseSession))) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The exclusive Full Access lease is missing or is owned by another session."), false, "no-store"); return; }
+                if (action.StartsWith("lease-", StringComparison.Ordinal) && !String.Equals(accessMode, "full", StringComparison.Ordinal)) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Only Full Access can manage the exclusive editor lease."), false, "no-store"); return; }
+                if (action.StartsWith("lease-", StringComparison.Ordinal)) { string requestedSession = QueryValue(target, "session");if (String.IsNullOrWhiteSpace(leaseSession) || !String.Equals(requestedSession, leaseSession, StringComparison.Ordinal)) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The lease session identity is invalid."), false, "no-store");return; } }
                 bool serializedStorage = StorageActionRequiresSerialization(action);int queueWaitMilliseconds = StorageQueueWaitMilliseconds(action, parts[0]);SemaphoreSlim systemStorageOperations = serializedStorage ? StorageQueue(systemId) : null;
                 if (serializedStorage && !await systemStorageOperations.WaitAsync(queueWaitMilliseconds)) { await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("This information system is busy completing another verified operation after waiting " + (queueWaitMilliseconds / 1000).ToString(System.Globalization.CultureInfo.InvariantCulture) + " seconds. Other mapped systems remain available. Safe reads retry automatically; file-changing actions remain uncommitted until their turn begins."), false, "no-store"); return; }
                 BeginStorageRequest();
@@ -186,7 +199,7 @@ internal sealed class TrackerContext : ApplicationContext
                     {
                         string selected = await ChooseFolder();
                         if (selected == null) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"cancelled\":true}"), false, "no-store"); return; }
-                        storage.Map(systemId, selected); string manifest = storage.ReadManifest(systemId);
+                        if (!storage.MapForFullSession(systemId, selected, leaseSession)) { await Respond(stream, 409, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Another operator holds the exclusive mapped-folder lease."), false, "no-store");return; }string manifest = storage.ReadManifest(systemId);
                         response = "{\"cancelled\":false,\"folderName\":\"" + Json(storage.FolderName(systemId)) + "\",\"manifest\":" + (manifest ?? "null") + "}";
                     }
                     else if (action == "select-readonly" && parts[0] == "POST")
@@ -212,6 +225,9 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "manifest" && parts[0] == "POST") response = storage.SaveManifest(systemId, Encoding.UTF8.GetString(requestBody));
                     else if (action == "csv" && parts[0] == "POST") response = "{\"saved\":\"" + Json(storage.SaveCsv(systemId, requestBody)) + "\"}";
                     else if (action == "state-commit" && parts[0] == "POST") response = storage.SaveSystemState(systemId, requestBody);
+                    else if (action == "workspace" && parts[0] == "GET") response = storage.LocalWorkspaceInfo(systemId);
+                    else if (action == "workspace-publish" && parts[0] == "POST") response = storage.PublishWorkspace(systemId, requestBody);
+                    else if (action == "workspace-open" && parts[0] == "POST") { string workspacePath = storage.LocalWorkspacePath(systemId);Process.Start("explorer.exe", "\"" + workspacePath.Replace("\"", "") + "\"");response = "{\"opened\":true}"; }
                     else if (action == "backups" && parts[0] == "GET") response = storage.ListBackups(systemId, QueryValue(target, "logical"));
                     else if (action == "restore" && parts[0] == "POST") response = storage.Restore(systemId, QueryValue(target, "logical"), QueryValue(target, "file"));
                     else if (action == "restore-drill" && parts[0] == "POST") response = storage.RestoreDrill(systemId, QueryValue(target, "logical"), QueryValue(target, "file"));
@@ -274,6 +290,14 @@ internal sealed class TrackerContext : ApplicationContext
         return !String.Equals(action, "error-report", StringComparison.Ordinal) && !String.Equals(action, "evidence-status", StringComparison.Ordinal) && !String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal) && !String.Equals(action, "outlook-draft", StringComparison.Ordinal) && !String.Equals(action, "performance", StringComparison.Ordinal) && !String.Equals(action, "diagnostics", StringComparison.Ordinal) && !action.StartsWith("lease-", StringComparison.Ordinal);
     }
 
+    internal static bool StorageActionRequiresLease(string action, string method)
+    {
+        if (action.StartsWith("lease-", StringComparison.Ordinal)) return false;
+        if (String.Equals(action, "select", StringComparison.Ordinal) || String.Equals(action, "select-readonly", StringComparison.Ordinal) || String.Equals(action, "forget", StringComparison.Ordinal)) return false;
+        if (String.Equals(action, "error-report", StringComparison.Ordinal) || String.Equals(action, "audit", StringComparison.Ordinal) || String.Equals(action, "audit-batch", StringComparison.Ordinal)) return false;
+        return !ReadOnlyStorageActionAllowed(action, method);
+    }
+
     private SemaphoreSlim StorageQueue(string systemId)
     {
         lock (storageOperationsGate)
@@ -296,6 +320,42 @@ internal sealed class TrackerContext : ApplicationContext
         if ((String.Equals(action, "audit", StringComparison.Ordinal) || String.Equals(action, "audit-batch", StringComparison.Ordinal)) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
         if (!String.Equals(method, "GET", StringComparison.Ordinal) && !String.Equals(method, "HEAD", StringComparison.Ordinal)) return false;
         return String.Equals(action, "manifest", StringComparison.Ordinal) || String.Equals(action, "file", StringComparison.Ordinal) || String.Equals(action, "audit-verify", StringComparison.Ordinal) || String.Equals(action, "audit-view", StringComparison.Ordinal) || String.Equals(action, "performance", StringComparison.Ordinal) || String.Equals(action, "diagnostics", StringComparison.Ordinal) || String.Equals(action, "organizations", StringComparison.Ordinal) || String.Equals(action, "evidence-status", StringComparison.Ordinal) || String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal) || String.Equals(action, "archive-locations", StringComparison.Ordinal);
+    }
+
+    private static string CreateSessionToken()
+    {
+        byte[] bytes = new byte[32];
+        using (RandomNumberGenerator random = RandomNumberGenerator.Create()) random.GetBytes(bytes);
+        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    private bool SessionTokenMatches(string candidate)
+    {
+        if (String.IsNullOrEmpty(candidate) || candidate.Length != sessionToken.Length) return false;
+        int difference = 0;
+        for (int index = 0; index < sessionToken.Length; index++) difference |= sessionToken[index] ^ candidate[index];
+        return difference == 0;
+    }
+
+    private string SessionAccessMode() { lock (sessionGate) return sessionAccessMode; }
+
+    private bool OpenSession(string mode)
+    {
+        if (!String.Equals(mode, "read-only", StringComparison.Ordinal) && !String.Equals(mode, "full", StringComparison.Ordinal)) throw new InvalidDataException("The requested access mode is invalid.");
+        lock (sessionGate)
+        {
+            if (!String.Equals(sessionAccessMode, "unselected", StringComparison.Ordinal) && !String.Equals(sessionAccessMode, mode, StringComparison.Ordinal)) return false;
+            sessionAccessMode = mode;return true;
+        }
+    }
+
+    private void DowngradeSession()
+    {
+        lock (sessionGate)
+        {
+            if (String.Equals(sessionAccessMode, "unselected", StringComparison.Ordinal)) throw new InvalidOperationException("Choose an access mode before requesting a downgrade.");
+            sessionAccessMode = "read-only";
+        }
     }
 
     private Task<string> ChooseFolder() { return ChooseFolder("Select the Shared Folder for This Information System", null, true); }
@@ -775,7 +835,7 @@ internal sealed class TrackerContext : ApplicationContext
 
     private static async Task Respond(NetworkStream stream, int status, string type, byte[] body, bool head, string cache, string contentEncoding = null)
     {
-        string reason = status == 200 ? "OK" : status == 400 ? "Bad Request" : status == 403 ? "Forbidden" : status == 404 ? "Not Found" : status == 413 ? "Payload Too Large" : status == 503 ? "Service Unavailable" : "Method Not Allowed";
+        string reason = status == 200 ? "OK" : status == 400 ? "Bad Request" : status == 401 ? "Unauthorized" : status == 403 ? "Forbidden" : status == 404 ? "Not Found" : status == 409 ? "Conflict" : status == 413 ? "Payload Too Large" : status == 503 ? "Service Unavailable" : "Method Not Allowed";
         string encodingHeader = String.IsNullOrEmpty(contentEncoding) ? "" : "Content-Encoding: " + contentEncoding + "\r\n";
         string headers = "HTTP/1.1 " + status + " " + reason + "\r\nContent-Type: " + type + "\r\nContent-Length: " + body.Length + "\r\n" + encodingHeader + "Cache-Control: " + cache + "\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nX-DNS-Prefetch-Control: off\r\nReferrer-Policy: no-referrer\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Resource-Policy: same-origin\r\nPermissions-Policy: camera=(), microphone=(), geolocation=(), browsing-topics=()\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\r\nConnection: close\r\n\r\n";
         byte[] headerBytes = Encoding.ASCII.GetBytes(headers); await stream.WriteAsync(headerBytes, 0, headerBytes.Length); if (!head) await stream.WriteAsync(body, 0, body.Length);

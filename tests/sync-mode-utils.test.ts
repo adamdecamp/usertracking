@@ -5,7 +5,8 @@ import {isLegacyImport,shouldReadPdfForFilenameNormalization,syncModeDescription
 test('Daily Sync is the strict fast path',()=>{
  assert.equal(isLegacyImport('daily'),false);
  assert.equal(syncModeLabel('daily'),'Daily Sync');
- assert.match(syncModeDescription('daily'),/Normalizes recognizable filenames/);
+ assert.match(syncModeDescription('daily'),/Incoming and Rework folders/);
+ assert.match(syncModeDescription('daily'),/normalizes and files new or corrected evidence/);
  assert.equal(shouldReadPdfForFilenameNormalization('daily',false),true);
  assert.equal(shouldReadPdfForFilenameNormalization('daily',true),false);
 });

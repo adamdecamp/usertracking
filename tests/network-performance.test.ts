@@ -44,13 +44,15 @@ test('launcher discovery reuses one directory enumeration with file metadata',()
  assert.doesNotMatch(scan,/EnumerateScanFiles\(root, current\.Path\)/);
 });
 
-test('compression stages and validates locally before one verified shared-folder transfer',()=>{
- const compression=storage.slice(storage.indexOf('private string CompressEvidenceFile(string root, string source, bool allowManaged, out bool alreadyCompleted)'),storage.indexOf('public string StoreEvidence'));
+test('compression stays in the protected local workspace and preserves its source in Complete',()=>{
+ assert.match(storage,/if \(!IsLocalWorkspaceRoot\(systemId, root\)\) throw new InvalidOperationException\("Loose PDFs are compressed only in the protected local workspace/);
+ const compression=storage.slice(storage.indexOf('private string CompressEvidenceFile(string systemId, string root, string source, bool allowManaged, out bool alreadyCompleted)'),storage.indexOf('public string StoreEvidence'));
  assert.match(compression,/LocalPerformanceCacheDirectory\(root, "Compression Staging"\)/);
  assert.match(compression,/TryValidateEvidenceFile\(stagedPdf/);
  assert.match(compression,/File\.Open\(stagedZip[\s\S]*?OpenCompatibleFileStream\(networkTemporary/);
  assert.match(compression,/TryValidateEvidenceFile\(networkTemporary[\s\S]*?EvidencePdfSha256\(networkTemporary\)/);
- assert.match(compression,/File\.Delete\(source\);CompleteTransaction/);
+ assert.match(compression,/PreserveCompressedSource\(systemId, root, source\);CompleteTransaction/);
+ assert.doesNotMatch(compression,/File\.Delete\(source\)/);
 });
 
 test('each mapped system has an independent launcher operation queue',()=>{
@@ -64,8 +66,26 @@ test('startup uses a protected verified local cache while shared verification ru
  assert.match(storage,/ProtectedData\.Protect[\s\S]*?DataProtectionScope\.CurrentUser/);
  assert.match(storage,/ReadLocalManifestCache/);
  assert.match(page,/readMappings\(true\)/);
- assert.match(page,/Showing the protected local read cache while the shared folder is verified/);
+ assert.match(page,/Showing the protected local read cache while the selected shared folder is verified/);
  assert.match(page,/accessModeCanWrite\(accessMode\)&&sessionState==='active'/);
+});
+
+test('VPN startup reads only the selected system and reuses its verified manifest',()=>{
+ const startup=page.slice(page.indexOf('// This effect intentionally runs once after hydration'),page.indexOf('// Persist only the actively leased system'));
+ assert.match(startup,/const restored=localResult\?\?applyMappings\(await readMappings\(false\)\)/);
+ assert.match(startup,/if\(verification\.manifest\)await applyVerifiedSystemManifest\(target,verification\.manifest\)/);
+ assert.match(startup,/unrelated system folders were not opened/);
+ assert.match(storage,/SaveLocalManifestCache\(Root\(systemId\), json\.Serialize\(manifestDatabase\), manifestSha256\)/);
+ assert.match(storage,/\{ "manifest", manifestDatabase \}/);
+});
+
+test('rapid UI edits are coalesced before background shared-drive saves',()=>{
+ assert.match(page,/backgroundSaveDebounceMs=2000/);
+ assert.match(page,/window\.setTimeout\(\(\)=>void save\(\),backgroundSaveDebounceMs\)/);
+});
+
+test('verified state is marked committed before React can schedule a redundant startup save',()=>{
+ assert.match(page,/async function applyVerifiedSystemManifest[\s\S]*?committedStateHashes\.current\.set\(systemId,stateHash\)[\s\S]*?setSystems/);
 });
 
 test('routine Archive Preflight stays within Incoming and Rework',()=>{

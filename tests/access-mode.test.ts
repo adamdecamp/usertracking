@@ -6,6 +6,7 @@ const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const sessionPanels=readFileSync(new URL('../app/components/SessionPanels.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
+const portableEntry=readFileSync(new URL('../portable/src/main.tsx',import.meta.url),'utf8');
 
 test('startup requires an explicit Read-Only or Full Access choice',()=>{
  assert.match(sessionPanels,/Choose Your Access/);
@@ -16,7 +17,7 @@ test('startup requires an explicit Read-Only or Full Access choice',()=>{
 });
 
 test('Read-Only sessions never acquire or renew the editor lease',()=>{
- assert.match(page,/if\(accessMode==='read-only'\)\{lastActivity/);
+ assert.match(page,/if\(accessMode==='read-only'\)\{[\s\S]*?setSessionState\('active'\)/);
  assert.match(page,/if\(!root\|\|accessMode!=='full'\|\|leaseRenewPending\.current\)return/);
  assert.match(page,/if\(accessMode==='full'\)\{if\(!\(await acquireLease\(root,sessionId\)\)\)/);
 });
@@ -36,12 +37,30 @@ test('Read-Only controls expose lookup without mutation workflows',()=>{
  assert.match(page,/accessMode==='read-only'\)\{setStatusFilter\(state\)/);
 });
 
-test('portable requests carry access mode and the launcher rejects Read-Only mutations',()=>{
- assert.match(page,/headers\.set\('X-RAPTOR-Access-Mode'/);
+test('portable requests carry an authenticated launcher session and the launcher rejects Read-Only mutations',()=>{
+ assert.match(page,/headers\.set\('X-RAPTOR-Session-Token'/);
+ assert.match(page,/headers\.set\('X-RAPTOR-Lease-Session'/);
+ assert.match(launcher,/SessionTokenMatches\(presentedToken\)/);
+ assert.match(launcher,/OpenSession\(mode\)/);
+ assert.match(launcher,/storage\.ReleaseAllLeases\(\);DowngradeSession\(\)/);
  assert.match(launcher,/ReadOnlyStorageActionAllowed\(action, parts\[0\]\)/);
  assert.match(launcher,/Read-Only Access cannot modify the mapped information system/);
  assert.match(launcher,/action, "audit-batch"/);
  assert.match(launcher,/action, "manifest"/);
+ assert.match(launcher,/CreateSessionToken\(\)/);
+ assert.match(launcher,/#session=/);
+ assert.match(portableEntry,/history\.replaceState\(null,'',`\$\{location\.pathname\}\$\{location\.search\}`\)/);
+ assert.match(portableEntry,/X-RAPTOR-Session-Token/);
+ assert.match(portableEntry,/portableWindow\.__portableHost=true;[\s\S]*?loadLauncherSessionToken\(\)/);
+});
+
+test('every protected mutation is authorized by the backend lease owner',()=>{
+ assert.match(launcher,/StorageActionRequiresLease\(action, parts\[0\]\)/);
+ assert.match(launcher,/storage\.OwnsLease\(systemId, leaseSession\)/);
+ assert.match(launcher,/storage\.MapForFullSession\(systemId, selected, leaseSession\)/);
+ assert.match(launcher,/The exclusive Full Access lease is missing or is owned by another session/);
+ assert.match(storage,/public bool OwnsLease\(string systemId, string sessionId\)/);
+ assert.match(storage,/public bool MapForFullSession\(string systemId, string path, string sessionId\)/);
 });
 
 test('Read-Only mapping avoids shared-folder initialization and all session boundaries are audited',()=>{
@@ -61,4 +80,22 @@ test('the live JSON database has an independently verified SHA-256 sidecar',()=>
  assert.match(storage,/WriteManifestChecksum\(manifest, destinationHash\)/);
  assert.match(storage,/VerifyManifestChecksum\(manifestPath, false\)/);
  assert.match(storage,/live database failed its SHA-256 integrity check/i);
+});
+
+test('the local working database is Windows-user protected and publication is journaled',()=>{
+ assert.match(storage,/ProtectedData\.Protect\(clear, LocalWorkspaceEntropy\(purpose\), DataProtectionScope\.CurrentUser\)/);
+ assert.match(storage,/HardenLocalWorkspaceAcl\(workspace\)/);
+ assert.match(storage,/WritePublicationJournal\(workspaceRoot, "prepared"/);
+ assert.match(storage,/WritePublicationJournal\(workspaceRoot, "evidence-verified"/);
+ assert.match(storage,/WritePublicationJournal\(workspaceRoot, "manifest-committed"/);
+ assert.match(storage,/DeletePublicationJournal\(workspaceRoot\)/);
+});
+
+test('backend schema validation runs before local or shared database writes',()=>{
+ assert.match(storage,/SaveSystemState[\s\S]*?ValidateDatabaseObject\(database\)/);
+ assert.match(storage,/PublishWorkspace[\s\S]*?ValidateDatabaseObject\(requestedDatabase\)/);
+ assert.match(storage,/duplicate system ID/);
+ assert.match(storage,/user references an unknown information system/);
+ assert.match(storage,/artifact contains an invalid SHA-256 value/);
+ assert.match(storage,/artifact contains an invalid stored path/);
 });

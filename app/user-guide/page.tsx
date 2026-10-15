@@ -432,16 +432,15 @@ export default function Guide() {
            unambiguous identity, organization, artifact-type, and date metadata is
            renamed in place to the canonical <code>.pdf.zip</code> convention. A
            ZIP that cannot be normalized safely is offered in Clean Up so its
-           single PDF can be extracted to the organization Rework folder. The ZIP
-           is removed only after the extracted PDF is verified.
+           single PDF can be extracted to the local organization Rework folder.
+           The source ZIP is retained after the extracted PDF is verified.
         </p>
         <p>
-          <b>Incomplete</b> is a final operator disposition. During Archive
+          <b>Incomplete</b> is an operator-review marker. During Archive
           Preflight, a file whose name contains <code>Incomplete</code> as a
-          standalone word is permanently deleted before validation or matching.
-          The deletion is recorded in the tamper-evident audit log with the
-          original relative path and SHA-256 hash. Do not add that word unless
-          the file has been manually verified as invalid and should be deleted.
+          standalone word is preserved and recorded with its relative path and
+          SHA-256 hash. The app never automatically deletes that evidence; an
+          operator must decide its final disposition outside the automated flow.
         </p>
         <h3>Unarchive Evidence for Correction</h3>
         <p>
@@ -452,7 +451,7 @@ export default function Guide() {
           evidence packages. Review 20 results at a time, then select individual
           files, all files on the current page, or all discovered files. Each
           selected ZIP is extracted in its current folder without overwriting an
-          existing PDF. The source ZIP is deleted only after the package is
+          existing PDF. The source ZIP remains in place after the package is
           confirmed to contain exactly one readable PDF and the extracted bytes
           pass SHA-256 verification. Failures leave the ZIP unchanged, appear in
           the result, and are written to the daily error report while remaining
@@ -713,11 +712,11 @@ export default function Guide() {
           is ever placed in Superseded or selected for deletion. The preflight
           also repairs prior storage mistakes: archived SAARs are recovered into
           the permanent SAAR Archive, and non-SAAR evidence less than five years
-          old is moved out of Superseded into a dated Archive folder. Every loose
-          PDF already in a dated Archive, Superseded, or permanent SAAR Archive
-          is converted to a ZIP containing exactly that one validated PDF. The
-          source PDF is removed only after the ZIP is reopened and verified;
-          existing ZIP evidence is not recompressed. Other SAARs never expire,
+          old is moved out of Superseded into a dated Archive folder. Shared-drive
+          loose PDFs are never compressed or deleted by Sync. Loose PDFs are
+          compressed only in the protected local workspace, and the original is
+          moved to local Complete after the ZIP is reopened and verified.
+          Existing ZIP evidence is not recompressed. Other SAARs never expire,
           and Rework files stay in Rework until their filenames are corrected or
           an explicit administrative action is approved. A year-only, missing, or invalid date never drives an Archive
           decision; that file remains in Rework or is preselected for movement to
@@ -741,7 +740,7 @@ export default function Guide() {
           superseded, Rework, or loose-PDF actions open directly in Clean Up, so
           a second Sync is not required. Clean Up opens a compact action menu
           for <b>File Collisions</b>, <b>Rework Corrections</b>,{" "}
-          <b>Duplicate or Superseded</b>, and <b>ZIP Loose PDFs</b>. Only the selected action is displayed, 20
+          <b>Duplicate or Superseded</b>, and <b>ZIP Local Loose PDFs</b>. Only the selected action is displayed, 20
           records at a time. Use <b>Previous</b> and <b>Next</b> to move between
           pages, <b>Select All on Page</b> for only the visible 20 records, or{" "}
           <b>Select All Files</b> for every eligible record in that action
@@ -761,17 +760,15 @@ export default function Guide() {
           the operator approves that newer SAAR in the same Sync review. Evidence
           from another organization can never justify archiving the user&apos;s SAAR.
           Every validated loose PDF entering the User Directory database is
-          compressed automatically and cannot be deselected. Other valid loose PDFs
-          detected in an active organization folder are flagged for optional
-          compression. Rework remains uncompressed
-          for correction, and Archive compression is handled by the retention
-          workflow. This includes valid PDFs dropped directly into the top
-          level of an organization folder. Incremental and full rescans retain
-          unchanged loose PDFs in this review, so deferring compression does not
-          hide them on a later Sync. The new ZIP is reopened and
-          validated as containing exactly one readable PDF before the original
-          PDF is deleted; a creation, validation, or deletion failure leaves no
-          incomplete replacement and preserves the original PDF. Organization
+          compressed automatically inside the protected local workspace and cannot
+          be deselected. Other valid local loose PDFs are flagged for optional
+          compression. Local Rework remains uncompressed for correction. Full and
+          Legacy shared-drive scans preserve loose PDFs and do not offer network
+          compression. The new local ZIP is reopened and validated as containing
+          exactly one readable PDF before the original moves into the
+          organization&apos;s local-only Complete folder; a creation or validation
+          failure leaves no incomplete replacement and preserves the original PDF.
+          Organization
           Ordinary Archive and Superseded folders and generated reports are
           excluded from later active-evidence scans. Rework is intentionally
           revalidated on every Sync. Permanent SAAR Archive folders are limited
@@ -992,11 +989,12 @@ export default function Guide() {
           does not silently discard the original evidence.
         </p>
         <p>
-          Loose PDFs are copied once into the signed-in Windows user&apos;s local
-          compression staging area, validated and compressed there, then sent to
-          the shared folder as one verified ZIP transfer. The source PDF is
-          deleted only after the transferred ZIP is reopened and its embedded
-          PDF hash matches. Temporary staged files are removed after the action.
+          Loose PDFs are processed only in the signed-in Windows user&apos;s protected
+          local workspace, validated and compressed there, then sent to the shared
+          folder as one verified ZIP transfer. The original PDF moves to the
+          organization&apos;s local-only Complete folder after the ZIP is reopened and
+          its embedded PDF hash matches. Shared-drive loose PDFs are preserved and
+          never compressed by Sync. Temporary staging files are removed after the action.
           Each mapped system has its own launcher operation queue, so a slow
           action for one system does not block safe work against another system.
         </p>
@@ -1037,6 +1035,11 @@ export default function Guide() {
           audit chain before editing is enabled. If that startup health check
           fails, the app preserves the records and opens the system Read-Only
           so the operator can inspect the issue without making changes.
+          Each Windows launcher creates a new authenticated browser session when
+          it starts. The temporary session token is removed from the address after
+          launch, and the launcher independently enforces the selected access mode.
+          Full Access file and database changes are accepted only from the browser
+          session that owns the selected system&apos;s exclusive editor lease.
         </p>
         <p>
           An organization may also choose <b>Open Organization Snapshot</b> at
@@ -1067,6 +1070,15 @@ export default function Guide() {
           advisory.
         </p>
         <p>
+          Full Access edits use a local working directory protected for the signed-in
+          Windows account. Its database, state, and pending-publication journal are
+          encrypted with Windows user protection and integrity checked. When the
+          operator commits or logs off, R.A.P.T.O.R. copies and SHA-256 verifies
+          staged evidence first, then commits the shared database last. If the share
+          disconnects, the shared database is not partially advanced and the protected
+          local session remains available for a safe retry.
+        </p>
+        <p>
           After 15 minutes without activity, a Read-Only operator is disconnected
           and the session end is audited. Full Access retains the existing
           protected idle-disconnect behavior. The operator
@@ -1090,7 +1102,8 @@ export default function Guide() {
           of the same recoverable transaction. Interrupted writes repair that
           sidecar only after the verified manifest is recovered. Unchanged data
           is not duplicated, at least one snapshot is retained for each active
-          day, and the newest 30 snapshots are kept.
+          day. The Restore list shows the newest 30 snapshots, while older
+          snapshots remain retained on disk and are not automatically deleted.
         </p>
         <p>
           Use <b>Restore Backup</b> to review available snapshots. The launcher
@@ -1408,7 +1421,18 @@ export default function Guide() {
         Startup and refresh compare the small catalog checksum and file metadata
         before rereading the organization shards. A Windows-user-protected local
         logical-database cache supports fast search and reporting after verification;
-        it never replaces the authoritative shared copy. Bounded local performance logs
+        it never replaces the authoritative shared copy. At launch, R.A.P.T.O.R.
+        restores cached status without opening every saved network mapping, then
+        refreshes or verifies only the selected information system. Read-Only status
+        is available immediately from the protected cache while that selected-system
+        refresh runs. Full Access remains locked until the selected database, newest
+        backup, and audit chain pass verification; the verified database returned by
+        that check is reused instead of being downloaded a second time. Rapid interface
+        edits are grouped for two seconds before a background database commit, while
+        explicit record actions, Sync, logoff, and shutdown still save immediately.
+        Over VPN, use an organization-scoped <b>Daily Sync</b> for routine work and
+        reserve <b>Full Rescan</b> or <b>Legacy Import</b> for onsite maintenance when
+        practical. Bounded local performance logs
         record phase duration, files discovered, changed and unchanged counts,
         staged bytes, enumeration-cache reuse, and selected concurrency without
         adding traffic to the shared folder. Processing Status reports elapsed scan
@@ -1512,9 +1536,10 @@ export default function Guide() {
         old out of Superseded and into the current dated Archive bucket. A filename
         containing only a four-digit year is incomplete and cannot drive a
         retention decision; it remains isolated in Rework until corrected. Retention
-        preserves the existing evidence filename. Archive compression replaces
-        only a loose PDF container with a verified one-PDF ZIP; it does not
-        discard the PDF evidence content.
+        preserves the existing evidence filename. Shared Archive scans do not
+        compress or delete loose PDFs. Local processing creates a verified one-PDF
+        ZIP without changing the evidence content and preserves the original in
+        local Complete.
       </aside>
       <aside>
         <b>Rework Correction Promotion:</b> Every Sync inspects each organization&apos;s

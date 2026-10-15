@@ -32,7 +32,8 @@ test('a late portable write is reconciled from its exact path and SHA-256 receip
 test('portable manual PDF uploads are compressed by the Windows launcher instead of the browser',()=>{
  assert.match(launcher,/action == "evidence-pdf" && parts\[0\] == "POST"/);
  assert.match(storage,/public string StoreEvidencePdf/);
- assert.match(storage,/LocalPerformanceCacheDirectory\(root, "Manual Evidence Staging"\)/);
+ assert.match(storage,/LocalPerformanceCacheDirectory\(Root\(systemId\), "Manual Evidence Staging"\)/);
+ assert.match(storage,/root = LocalEvidenceRoot\(systemId\)/);
  assert.match(storage,/archive\.CreateEntry\(pdfName, CompressionLevel\.Optimal\)/);
  assert.match(storage,/ValidateEvidenceZip\(output, zipName\)/);
  const portableBranch=store.slice(store.indexOf('if(isPortableRoot(root))'),store.indexOf("const compressed=alreadyCanonical"));

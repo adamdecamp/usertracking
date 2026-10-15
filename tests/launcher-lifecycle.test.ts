@@ -44,7 +44,7 @@ test('long scans and verified updates hold the launcher and browser session acti
  assert.match(apply,/syncInProgress\.current=true/);
  assert.match(apply,/setLauncherLongOperation\(true,true\)/);
  assert.match(apply,/finally\{window\.clearInterval\(launcherKeepAlive\);syncInProgress\.current=false/);
- assert.match(page,/stage==='scan'\|\|stage==='rework-retention'\|\|stage==='sync-pipeline'\?4\*60\*60\*1000/);
+ assert.match(page,/stage==='scan'\|\|stage==='rework-retention'\|\|stage==='sync-pipeline'\|\|stage==='workspace-publish'\?4\*60\*60\*1000/);
 });
 
 test('evidence that fails canonical folder routing cannot enter database matching',()=>{
@@ -90,11 +90,12 @@ test('selected updates retain exact paths through optional PDF compression',()=>
  assert.match(apply,/path:compressedResult\?\.path\?\?match\.path/);
 });
 
-test('reconnection waits for an in-flight verified storage operation before activating the session',()=>{
+test('reconnection reuses a verified Full Access manifest and waits for a Read-Only refresh before activation',()=>{
  assert.match(page,/async function readManifestAfterStorageSettles/);
  const reconnect=page.slice(page.indexOf('async function reconnect'),page.indexOf('async function openRestore'));
- assert.match(reconnect,/await readManifestAfterStorageSettles\(root\)/);
- assert.ok(reconnect.indexOf('await readManifestAfterStorageSettles(root)')<reconnect.lastIndexOf("setSessionState('active')"));
+ assert.match(reconnect,/if\(verification\.manifest\)await applyVerifiedSystemManifest\(systemId,verification\.manifest\)/);
+ assert.match(reconnect,/else\{const shared=await readManifestAfterStorageSettles\(root\)/);
+ assert.ok(reconnect.indexOf("else{const shared=await readManifestAfterStorageSettles(root)")<reconnect.lastIndexOf("setSessionState('active')"));
 });
 
 test('Outlook completion auditing always includes the mapped endpoint system',()=>{
