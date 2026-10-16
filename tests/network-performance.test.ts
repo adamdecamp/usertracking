@@ -44,15 +44,15 @@ test('launcher discovery reuses one directory enumeration with file metadata',()
  assert.doesNotMatch(scan,/EnumerateScanFiles\(root, current\.Path\)/);
 });
 
-test('compression stays in the protected local workspace and preserves its source in Complete',()=>{
+test('compression stays in the protected local workspace and deletes its source only after ZIP verification',()=>{
  assert.match(storage,/if \(!IsLocalWorkspaceRoot\(systemId, root\)\) throw new InvalidOperationException\("Loose PDFs are compressed only in the protected local workspace/);
  const compression=storage.slice(storage.indexOf('private string CompressEvidenceFile(string systemId, string root, string source, bool allowManaged, out bool alreadyCompleted)'),storage.indexOf('public string StoreEvidence'));
  assert.match(compression,/LocalPerformanceCacheDirectory\(root, "Compression Staging"\)/);
  assert.match(compression,/TryValidateEvidenceFile\(stagedPdf/);
  assert.match(compression,/File\.Open\(stagedZip[\s\S]*?OpenCompatibleFileStream\(networkTemporary/);
  assert.match(compression,/TryValidateEvidenceFile\(networkTemporary[\s\S]*?EvidencePdfSha256\(networkTemporary\)/);
- assert.match(compression,/PreserveCompressedSource\(systemId, root, source\);CompleteTransaction/);
- assert.doesNotMatch(compression,/File\.Delete\(source\)/);
+ assert.match(compression,/DeleteCompressedSource\(systemId, root, source, destination, sourcePdfHash\);CompleteTransaction/);
+ assert.match(compression,/TryValidateEvidenceFile\(destination[\s\S]*?EvidencePdfSha256\(destination\)[\s\S]*?File\.Delete\(source\)/);
 });
 
 test('each mapped system has an independent launcher operation queue',()=>{

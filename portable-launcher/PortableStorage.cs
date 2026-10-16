@@ -55,6 +55,9 @@ internal sealed class PortableStorage : IDisposable
     private const string LocalWorkspaceManifestFilename = "information-system-user-tracker.local.json";
     private const string LocalWorkspaceStateFilename = "workspace-state.json";
     private const string LocalWorkspaceEvidenceFilename = "workspace-evidence.json";
+    private const string PendingUploadDirectoryName = "Pending Upload";
+    private const string PublishedEvidenceDirectoryName = "Published Evidence";
+    private const string LegacyRetainedEvidenceDirectoryName = "Retained Evidence";
     private const int LocalWorkspaceVersion = 1;
     private const int LocalWorkspaceProtectionVersion = 1;
     private const string LocalWorkspacePublicationFilename = "workspace-publication.json";
@@ -742,7 +745,7 @@ internal sealed class PortableStorage : IDisposable
     {
         lock (RootLock(systemId))
         {
-            string workspaceRoot = LocalWorkspaceRoot(systemId), manifestPath = LocalWorkspaceManifestPath(workspaceRoot);LocalWorkspaceState state = ReadLocalWorkspaceState(workspaceRoot);
+            string workspaceRoot = LocalWorkspaceRoot(systemId);RecoverTransactions(workspaceRoot);MigrateLegacyRetainedEvidence(systemId, workspaceRoot);string manifestPath = LocalWorkspaceManifestPath(workspaceRoot);LocalWorkspaceState state = ReadLocalWorkspaceState(workspaceRoot);
             return json.Serialize(new Dictionary<string, object> { { "path", workspaceRoot }, { "initialized", state != null && File.Exists(manifestPath) }, { "dirty", state != null && state.Dirty }, { "baseSharedSha256", state == null ? "" : state.BaseSharedSha256 }, { "savedAtUtc", state == null ? "" : state.SavedAtUtc } });
         }
     }
@@ -768,7 +771,7 @@ internal sealed class PortableStorage : IDisposable
         SaveSystemState(systemId, bytes);
         lock (RootLock(systemId))
         {
-            string sharedRoot = Root(systemId), workspaceRoot = LocalWorkspaceRoot(systemId), sharedManifest = SystemFile(sharedRoot, ManifestFilename);LocalWorkspaceState state = ReadLocalWorkspaceState(workspaceRoot);
+            string sharedRoot = Root(systemId), workspaceRoot = LocalWorkspaceRoot(systemId), sharedManifest = SystemFile(sharedRoot, ManifestFilename);RecoverTransactions(workspaceRoot);MigrateLegacyRetainedEvidence(systemId, workspaceRoot);LocalWorkspaceState state = ReadLocalWorkspaceState(workspaceRoot);
             if (state == null) throw new InvalidDataException("The local workspace state is missing.");
             string currentSharedHash = File.Exists(sharedManifest) ? ReadManifestChecksumHash(sharedManifest, false) : AbsentSharedManifestHash;
             string localOrganizations = Path.Combine(workspaceRoot, "Organizations"), sharedOrganizations = Path.Combine(sharedRoot, "Organizations");Directory.CreateDirectory(sharedOrganizations);
@@ -843,12 +846,13 @@ internal sealed class PortableStorage : IDisposable
                     if (!File.Exists(item.Source)) continue;
                     string relative = Relative(workspaceRoot, item.Source);string[] parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
                     if (parts.Length < 3 || !String.Equals(parts[0], "Organizations", StringComparison.OrdinalIgnoreCase)) continue;
-                    string organization = parts[1], completeRoot = Path.Combine(workspaceRoot, "Organizations", organization, SafePart(organization, 80) + " Complete"), completeDirectory = Path.Combine(completeRoot, "Published Evidence");Directory.CreateDirectory(completeDirectory);
-                    string completed = item.Source.StartsWith(completeRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ? item.Source : UniqueDestination(completeDirectory, Path.GetFileName(item.Source));
+                    string organization = parts[1], completeRoot = Path.Combine(workspaceRoot, "Organizations", organization, SafePart(organization, 80) + " Complete"), completeDirectory = Path.Combine(completeRoot, PublishedEvidenceDirectoryName);Directory.CreateDirectory(completeDirectory);
+                    string completed = String.Equals(Path.GetDirectoryName(Path.GetFullPath(item.Source)), Path.GetFullPath(completeDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) ? item.Source : UniqueDestination(completeDirectory, Path.GetFileName(item.Source));
                     bool moved = !String.Equals(item.Source, completed, StringComparison.OrdinalIgnoreCase);if (moved) File.Move(item.Source, completed);
                     Dictionary<string, object> originalEntry, resolvedEntry;bool hadOriginal = localEvidence.TryGetValue(item.OriginalRelative, out originalEntry), hadResolved = localEvidence.TryGetValue(item.Relative, out resolvedEntry);
                     try { localEvidence.Remove(item.OriginalRelative);localEvidence[item.Relative] = new Dictionary<string, object> { { "destination", item.Relative }, { "localPath", Relative(workspaceRoot, completed).Replace(Path.DirectorySeparatorChar, '/') }, { "sha256", item.SourceSha256 }, { "publishedSha256", item.Sha256 }, { "pdfSha256", item.PdfSha256 }, { "publicationSourceDestination", item.OriginalRelative }, { "pending", false } };WriteLocalEvidenceMap(systemId, localEvidence); }
                     catch { localEvidence.Remove(item.Relative);if (hadResolved) localEvidence[item.Relative] = resolvedEntry;if (hadOriginal) localEvidence[item.OriginalRelative] = originalEntry;if (moved && File.Exists(completed) && !File.Exists(item.Source)) File.Move(completed, item.Source);throw; }completedFiles++;
+                    string pendingDirectory = Path.Combine(completeRoot, PendingUploadDirectoryName);try { if (Directory.Exists(pendingDirectory) && !Directory.EnumerateFileSystemEntries(pendingDirectory).Any()) Directory.Delete(pendingDirectory); } catch { }
                 }
                 catch (Exception error) { completionErrors.Add(Path.GetFileName(item.Source) + ": " + CleanLine(error.Message, 240)); }
             }
@@ -2322,8 +2326,8 @@ internal sealed class PortableStorage : IDisposable
             string previous = File.Exists(source) ? LocalPublicEvidencePath(systemId, source) : relative.Replace('\\', '/');
             bool alreadyCompleted;string destination = CompressEvidenceFile(systemId, root, source, false, out alreadyCompleted), compressed = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
             if (previous.StartsWith("Organizations/", StringComparison.OrdinalIgnoreCase) && !IsOrganizationIncomingEvidencePath(previous) && !IsOrganizationReworkEvidencePath(previous)) { compressed = previous + ".zip";RegisterLocalEvidence(systemId, destination, compressed, previous); }
-            if (alreadyCompleted) return json.Serialize(new Dictionary<string, object> { { "compressed", compressed }, { "alreadyCompleted", true }, { "sourcePreserved", true } });
-            return json.Serialize(new Dictionary<string, object> { { "compressed", compressed }, { "sourcePreserved", true } });
+            if (alreadyCompleted) return json.Serialize(new Dictionary<string, object> { { "compressed", compressed }, { "alreadyCompleted", true }, { "sourceRemoved", true }, { "sourcePreserved", false } });
+            return json.Serialize(new Dictionary<string, object> { { "compressed", compressed }, { "sourceRemoved", true }, { "sourcePreserved", false } });
         }
     }
 
@@ -2349,8 +2353,8 @@ internal sealed class PortableStorage : IDisposable
             string existingError;
             if (!TryValidateEvidenceFile(destination, out existingError)) throw new IOException("A ZIP with the same filename already exists but is not valid evidence. Both files were preserved for collision review.");
             if (!String.Equals(sourcePdfHash, EvidencePdfSha256(destination), StringComparison.OrdinalIgnoreCase)) throw new IOException("A different PDF already occupies the ZIP compression destination. Both files were preserved for collision review.");
-            string existingTransaction = BeginTransaction(root, "compression", source, destination, sourcePdfHash, "");
-            PreserveCompressedSource(systemId, root, source);CompleteTransaction(existingTransaction);alreadyCompleted = true;return destination;
+            string existingTransaction = BeginTransaction(root, "compression-delete-source", source, destination, sourcePdfHash, "");
+            DeleteCompressedSource(systemId, root, source, destination, sourcePdfHash);CompleteTransaction(existingTransaction);alreadyCompleted = true;return destination;
         }
         string stagingDirectory = Path.Combine(LocalPerformanceCacheDirectory(root, "Compression Staging"), Guid.NewGuid().ToString("N")), stagedPdf = Path.Combine(stagingDirectory, "source.pdf"), stagedZip = Path.Combine(stagingDirectory, "source.pdf.zip"), networkTemporary = Path.Combine(Path.GetDirectoryName(destination), ".isut-" + Guid.NewGuid().ToString("N") + ".tmp.zip");
         try
@@ -2380,10 +2384,10 @@ internal sealed class PortableStorage : IDisposable
             using (var output = OpenCompatibleFileStream(networkTemporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920)) { input.CopyTo(output);FlushCompatible(output); }
             string uploadedError;
             if (!TryValidateEvidenceFile(networkTemporary, out uploadedError) || !String.Equals(sourcePdfHash, EvidencePdfSha256(networkTemporary), StringComparison.OrdinalIgnoreCase)) throw new IOException("The locally compressed evidence failed verification after transfer to the shared folder. The source PDF was preserved.");
-            string transaction = BeginTransaction(root, "compression", source, destination, sourcePdfHash, "");
+            string transaction = BeginTransaction(root, "compression-delete-source", source, destination, sourcePdfHash, "");
             File.Move(networkTemporary, destination);FailAfter("compression-move");
-            try { PreserveCompressedSource(systemId, root, source);CompleteTransaction(transaction); }
-            catch { TryDelete(destination);throw; }
+            try { DeleteCompressedSource(systemId, root, source, destination, sourcePdfHash);CompleteTransaction(transaction); }
+            catch { if (File.Exists(source)) TryDelete(destination);throw; }
         }
         catch { TryDelete(networkTemporary);throw; }
         finally
@@ -2394,18 +2398,16 @@ internal sealed class PortableStorage : IDisposable
         return destination;
     }
 
-    private string PreserveCompressedSource(string systemId, string root, string source)
+    private void DeleteCompressedSource(string systemId, string root, string source, string destination, string expectedPdfHash)
     {
-        if (!File.Exists(source)) return "";
+        if (!File.Exists(source)) return;
         string workspaceRoot = LocalWorkspaceRoot(systemId);
-        if (!String.Equals(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(workspaceRoot).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)) return source;
-        Tuple<string, string> organization = OrganizationStorageLocation(root, source);
-        string directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 80) + " Complete", "Original PDFs");Directory.CreateDirectory(directory);
-        string completeName = FitFilenameForDirectory(directory, Path.GetFileName(source), Path.GetExtension(source)), destination = UniqueDestination(directory, completeName), sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "complete-preserve", source, destination, sourceHash, "");
-        File.Move(source, destination);FailAfter("complete-preserve-move");
-        try { if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The local Complete preservation copy failed its SHA-256 integrity check."); }
-        catch { if (!File.Exists(source) && File.Exists(destination)) File.Move(destination, source);throw; }
-        CompleteTransaction(transaction);return destination;
+        if (!String.Equals(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(workspaceRoot).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Compressed source PDFs may be removed only from the protected local workspace.");
+        string validationError;
+        if (!TryValidateEvidenceFile(destination, out validationError) || !String.Equals(expectedPdfHash, EvidencePdfSha256(destination), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The verified ZIP no longer matches its source PDF. The original PDF was retained.");
+        File.Delete(source);
+        if (File.Exists(source)) throw new IOException("The original PDF could not be removed after ZIP verification.");
+        FailAfter("compression-source-delete");
     }
 
     private bool IsLocalWorkspaceRoot(string systemId, string root)
@@ -3619,13 +3621,40 @@ internal sealed class PortableStorage : IDisposable
         string filename = String.IsNullOrWhiteSpace(requestedFilename) ? Path.GetFileName(source) : SafePart(requestedFilename, 180);
         string sourceExtension = source.EndsWith(".pdf.zip", StringComparison.OrdinalIgnoreCase) ? ".pdf.zip" : Path.GetExtension(source);
         if (!filename.EndsWith(sourceExtension, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The archive filename must preserve the PDF or ZIP evidence extension.");
-        string directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 80) + " Complete", "Retained Evidence");Directory.CreateDirectory(directory);
+        string directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 80) + " Complete", PendingUploadDirectoryName);Directory.CreateDirectory(directory);
         filename = FitFilenameForDirectory(directory, filename, sourceExtension);string destination = UniqueDestination(directory, filename), hash = TryFileHash(source);
         string archiveFolder = IsSaarFilename(filename) ? SafePart(organization.Item2, 60) + " SAAR Archive" : Path.Combine(SafePart(organization.Item2, 60) + " Archive", EvidenceOlderThanYears(filename, 5) ? "Superseded" : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
         string sharedRelative = Path.Combine("Organizations", organization.Item2, archiveFolder, Path.GetFileName(destination)).Replace(Path.DirectorySeparatorChar, '/');
         string transaction = BeginTransaction(root, "archive", source, destination, hash, "");File.Move(source, destination);FailAfter("archive-move");
         if (!String.Equals(TryFileHash(destination), hash, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The retained local evidence failed SHA-256 verification.");
         RegisterLocalEvidence(systemId, destination, sharedRelative, previous);CompleteTransaction(transaction);return sharedRelative;
+    }
+
+    private void MigrateLegacyRetainedEvidence(string systemId, string workspaceRoot)
+    {
+        string organizationsRoot = Path.Combine(workspaceRoot, "Organizations");
+        if (!Directory.Exists(organizationsRoot)) return;
+        Dictionary<string, Dictionary<string, object>> records = ReadLocalEvidenceMap(systemId);bool changed = false;
+        foreach (Dictionary<string, object> item in records.Values)
+        {
+            string localPath = Convert.ToString(item["localPath"], CultureInfo.InvariantCulture).Replace('/', Path.DirectorySeparatorChar), source;
+            try { source = SafeRelativePath(workspaceRoot, localPath); }
+            catch { continue; }
+            string[] parts = localPath.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 5 || !String.Equals(parts[0], "Organizations", StringComparison.OrdinalIgnoreCase) || !IsCompleteStorageDirectory(parts[2]) || !String.Equals(parts[3], LegacyRetainedEvidenceDirectoryName, StringComparison.OrdinalIgnoreCase) || !File.Exists(source)) continue;
+            string targetName = Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture) ? PendingUploadDirectoryName : PublishedEvidenceDirectoryName;
+            string targetDirectory = Path.Combine(workspaceRoot, "Organizations", parts[1], parts[2], targetName);Directory.CreateDirectory(targetDirectory);
+            string destination = UniqueDestination(targetDirectory, Path.GetFileName(source)), priorPath = Convert.ToString(item["localPath"], CultureInfo.InvariantCulture);
+            File.Move(source, destination);item["localPath"] = Relative(workspaceRoot, destination).Replace(Path.DirectorySeparatorChar, '/');
+            try { WriteLocalEvidenceMap(systemId, records);changed = true; }
+            catch { item["localPath"] = priorPath;if (File.Exists(destination) && !File.Exists(source)) File.Move(destination, source);throw; }
+        }
+        foreach (string organizationRoot in Directory.EnumerateDirectories(organizationsRoot, "*", SearchOption.TopDirectoryOnly))
+        {
+            string organization = Path.GetFileName(organizationRoot), legacy = Path.Combine(organizationRoot, SafePart(organization, 80) + " Complete", LegacyRetainedEvidenceDirectoryName);
+            try { if (Directory.Exists(legacy) && !Directory.EnumerateFileSystemEntries(legacy).Any()) Directory.Delete(legacy); } catch { }
+        }
+        if (changed) WriteLocalEvidenceMap(systemId, records);
     }
 
     private string LocalEvidenceRoot(string systemId)
@@ -3727,8 +3756,9 @@ internal sealed class PortableStorage : IDisposable
             catch (Exception error) { throw new InvalidDataException("A storage transaction journal is unreadable: " + Path.GetFileName(path) + ". " + CleanLine(error.Message, 200)); }
             if (Convert.ToInt32(item["version"], CultureInfo.InvariantCulture) != StorageTransactionVersion) throw new InvalidDataException("A storage transaction uses an unsupported version.");
             string operation = Convert.ToString(item["operation"], CultureInfo.InvariantCulture), source = SafeRelativeOrSelf(root, Convert.ToString(item["source"], CultureInfo.InvariantCulture)), destination = SafeRelativeOrSelf(root, Convert.ToString(item["destination"], CultureInfo.InvariantCulture)), sourceHash = Convert.ToString(item["sourceHash"], CultureInfo.InvariantCulture), destinationHash = Convert.ToString(item["destinationHash"], CultureInfo.InvariantCulture);
-            if (operation == "compression")
+            if (operation == "compression" || operation == "compression-delete-source")
             {
+                bool removeVerifiedSource = operation == "compression-delete-source";
                 if (File.Exists(destination))
                 {
                     string validationError;if (!TryValidateEvidenceFile(destination, out validationError)) { if (File.Exists(source)) { TryDelete(destination);CompleteTransaction(path);continue; } throw new InvalidDataException("An interrupted evidence compression left an invalid ZIP without its source PDF."); }
@@ -3736,6 +3766,7 @@ internal sealed class PortableStorage : IDisposable
                     if (File.Exists(source))
                     {
                         if (!String.IsNullOrEmpty(sourceHash) && !String.Equals(sourceHash, EvidencePdfSha256(source), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("An interrupted evidence compression source changed after the transaction began. Both files were preserved for collision review.");
+                        if (removeVerifiedSource && !String.IsNullOrEmpty(sourceHash)) { File.Delete(source);if (File.Exists(source)) throw new IOException("An interrupted evidence compression could not remove its verified source PDF."); }
                     }
                     CompleteTransaction(path);continue;
                 }

@@ -707,7 +707,7 @@ export default function Guide() {
           old is moved out of Superseded into a dated Archive folder. Shared-drive
           loose PDFs are never compressed or deleted by Sync. Loose PDFs are
           compressed only in the protected local workspace, and the original is
-          moved to local Complete after the ZIP is reopened and verified.
+          deleted after the ZIP is reopened, validated, and matched by SHA-256.
           Existing ZIP evidence is not recompressed. Other SAARs never expire,
           and Rework files stay in Rework until their filenames are corrected or
           an explicit administrative action is approved. A year-only, missing, or invalid date never drives an Archive
@@ -757,8 +757,8 @@ export default function Guide() {
           compression. Local Rework remains uncompressed for correction. Full and
           Legacy shared-drive scans preserve loose PDFs and do not offer network
           compression. The new local ZIP is reopened and validated as containing
-          exactly one readable PDF before the original moves into the
-          organization&apos;s local-only Complete folder; a creation or validation
+          exactly one readable PDF with the same SHA-256 before the original is
+          deleted; a creation or validation
           failure leaves no incomplete replacement and preserves the original PDF.
           Organization
           Ordinary Archive and Superseded folders and generated reports are
@@ -978,21 +978,20 @@ export default function Guide() {
           verifies source and destination hashes and either completes or rolls
           back an interrupted operation before accepting new changes. Operators
           should still review any exception reported after recovery; the app
-          does not silently discard the original evidence.
+          does not discard source evidence before its replacement is verified.
         </p>
         <p>
           Loose PDFs are processed only in the signed-in Windows user&apos;s protected
           local workspace, validated and compressed there, then sent to the shared
-          folder as one verified ZIP transfer. The original PDF moves to the
-          organization&apos;s local-only Complete folder after the ZIP is reopened and
-          its embedded PDF hash matches. Shared-drive loose PDFs are preserved and
+          folder as one verified ZIP transfer. The original PDF is deleted only after
+          the ZIP is reopened and its embedded PDF hash matches. Shared-drive loose PDFs are preserved and
           never compressed by Sync. Temporary staging files are removed after the action.
           In Full Access, choose <b>Open Local Workspace</b> on the dashboard to
           open the selected system&apos;s Incoming, Rework, Complete, and protected
           local System folders directly in Windows File Explorer.
           Each mapped system has its own launcher operation queue, so a slow
           action for one system does not block safe work against another system.
-        Local organizations use only Incoming, Rework, and Complete. Document-type and Archive destinations are tracked in protected local JSON and created on the shared drive during publication. Remaining associated PDFs are validated and zipped locally before upload; their originals stay in Complete.
+        Local organizations use only Incoming, Rework, and Complete. Archive-bound files wait in <b>Complete/Pending Upload</b>. After Session Commit copies and verifies them on the shared drive, their local copies move to <b>Complete/Published Evidence</b>. Files that fail or are explicitly deferred remain available for review and are not reported as completed. Document-type and Archive destinations are tracked in protected local JSON and created on the shared drive during publication. Remaining associated PDFs are validated and zipped locally before upload; their originals are removed only after ZIP verification succeeds.
         When the exact shared destination already contains a ZIP with the same validated PDF, publication reuses that ZIP even if its packaging differs. Different archived PDFs are both retained using a stable content-hash conflict filename; different active evidence remains available for collision review. Record and CSV references follow the resolved shared file, and retries reuse the same destination without scanning network folders.
         </p>
         <p>
@@ -1547,8 +1546,8 @@ export default function Guide() {
         retention decision; it remains isolated in Rework until corrected. Retention
         preserves the existing evidence filename. Shared Archive scans do not
         compress or delete loose PDFs. Local processing creates a verified one-PDF
-        ZIP without changing the evidence content and preserves the original in
-        local Complete.
+        ZIP without changing the evidence content and removes the original only
+        after the ZIP is verified.
       </aside>
       <aside>
         <b>Rework Correction Promotion:</b> Every Sync inspects each organization&apos;s
