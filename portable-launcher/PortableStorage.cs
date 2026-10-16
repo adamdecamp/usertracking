@@ -3436,7 +3436,6 @@ internal sealed class PortableStorage : IDisposable
     {
         string organizationsRoot = Path.Combine(workspaceRoot, "Organizations");Directory.CreateDirectory(organizationsRoot);
         var organizations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (object value in ObjectArray(database["systems"])) { Dictionary<string, object> system = ObjectDictionary(value);string organization = system.ContainsKey("organization") ? Convert.ToString(system["organization"], CultureInfo.InvariantCulture) : "";if (!String.IsNullOrWhiteSpace(organization)) organizations.Add(ValidOrganizationName(organization)); }
         foreach (object value in ObjectArray(database["users"])) { Dictionary<string, object> user = ObjectDictionary(value);string organization = user.ContainsKey("organization") ? Convert.ToString(user["organization"], CultureInfo.InvariantCulture) : "";if (!String.IsNullOrWhiteSpace(organization)) organizations.Add(ValidOrganizationName(organization)); }
         foreach (string organization in organizations)
         {

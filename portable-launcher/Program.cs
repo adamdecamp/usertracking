@@ -32,6 +32,7 @@ internal sealed class TrackerContext : ApplicationContext
     private readonly CancellationTokenSource stop = new CancellationTokenSource();
     private readonly SemaphoreSlim connections = new SemaphoreSlim(16, 16);
     private readonly Dictionary<string, SemaphoreSlim> storageOperations = new Dictionary<string, SemaphoreSlim>(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> activeStorageOperationNames = new Dictionary<string, string>(StringComparer.Ordinal);
     private readonly object storageOperationsGate = new object();
     private readonly NotifyIcon tray;
     private readonly Control dispatcher;
@@ -240,7 +241,8 @@ internal sealed class TrackerContext : ApplicationContext
                 if (action.StartsWith("lease-", StringComparison.Ordinal) && !String.Equals(accessMode, "full", StringComparison.Ordinal)) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Only Full Access can manage the exclusive editor lease."), false, "no-store"); return; }
                 if (action.StartsWith("lease-", StringComparison.Ordinal)) { string requestedSession = QueryValue(target, "session");if (String.IsNullOrWhiteSpace(leaseSession) || !String.Equals(requestedSession, leaseSession, StringComparison.Ordinal)) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The lease session identity is invalid."), false, "no-store");return; } }
                 bool serializedStorage = StorageActionRequiresSerialization(action);int queueWaitMilliseconds = StorageQueueWaitMilliseconds(action, parts[0]);SemaphoreSlim systemStorageOperations = serializedStorage ? StorageQueue(systemId) : null;
-                if (serializedStorage && !await systemStorageOperations.WaitAsync(queueWaitMilliseconds)) { await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("This information system is busy completing another verified operation after waiting " + (queueWaitMilliseconds / 1000).ToString(System.Globalization.CultureInfo.InvariantCulture) + " seconds. Other mapped systems remain available. Safe reads retry automatically; file-changing actions remain uncommitted until their turn begins."), false, "no-store"); return; }
+                if (serializedStorage && !await systemStorageOperations.WaitAsync(queueWaitMilliseconds)) { string activeOperation = ActiveStorageOperation(systemId);await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("This information system is busy completing " + (String.IsNullOrWhiteSpace(activeOperation) ? "another verified operation" : activeOperation) + " after waiting " + (queueWaitMilliseconds / 1000).ToString(System.Globalization.CultureInfo.InvariantCulture) + " seconds. Other mapped systems remain available. Safe reads retry automatically; file-changing actions remain uncommitted until their turn begins."), false, "no-store"); return; }
+                if (serializedStorage) SetActiveStorageOperation(systemId, StorageActionDisplayName(action));
                 BeginStorageRequest();
                 string storageAction = action;
                 try
@@ -328,7 +330,7 @@ internal sealed class TrackerContext : ApplicationContext
                     string message = StorageError(ex, storageAction) + (String.IsNullOrWhiteSpace(operationId) ? "" : " Operation ID: " + CleanError(operationId).Substring(0, Math.Min(CleanError(operationId).Length, 100)) + ".");
                     Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(message)), false, "no-store").GetAwaiter().GetResult(); return;
                 }
-                finally { EndStorageRequest(); if (serializedStorage) systemStorageOperations.Release(); }
+                finally { EndStorageRequest(); if (serializedStorage) { ClearActiveStorageOperation(systemId);systemStorageOperations.Release(); } }
             }
             WebAsset asset;
             if (assets.TryGetValue(path, out asset)) { string cache = path == "/favicon.ico" || path == "/raptor-icon.png" ? "no-cache, max-age=0" : "public, max-age=31536000, immutable"; await Respond(stream, 200, asset.ContentType, asset.Bytes, parts[0] == "HEAD", cache, "gzip"); return; }
@@ -359,6 +361,18 @@ internal sealed class TrackerContext : ApplicationContext
             return queue;
         }
     }
+
+    internal static string StorageActionDisplayName(string action)
+    {
+        string value = (action ?? "").Split('?')[0].Replace('-', ' ').Trim();
+        if (value.Length > 80) value = value.Substring(0, 80);
+        return String.IsNullOrWhiteSpace(value) ? "verified storage operation" : value;
+    }
+
+    private void SetActiveStorageOperation(string systemId, string operation) { lock (storageOperationsGate) activeStorageOperationNames[systemId] = operation; }
+    private void ClearActiveStorageOperation(string systemId) { lock (storageOperationsGate) activeStorageOperationNames.Remove(systemId); }
+    private string ActiveStorageOperation(string systemId) { lock (storageOperationsGate) { string value;return activeStorageOperationNames.TryGetValue(systemId, out value) ? value : ""; } }
+    private string ActiveStorageOperationSummary() { lock (storageOperationsGate) return activeStorageOperationNames.Values.FirstOrDefault() ?? ""; }
 
     internal static int StorageQueueWaitMilliseconds(string action, string method)
     {
@@ -862,9 +876,10 @@ internal sealed class TrackerContext : ApplicationContext
 
     private string ControlJson()
     {
+        string activeOperation = ActiveStorageOperationSummary();
         lock (lifecycleGate)
         {
-            return "{\"shutdownRequested\":" + (shutdownRequestedUtc.HasValue ? "true" : "false") + ",\"reason\":\"" + Json(shutdownReason ?? "") + "\",\"backupClean\":" + (backupClean ? "true" : "false") + ",\"activeStorageRequests\":" + activeStorageRequests.ToString() + ",\"longOperationActive\":" + (longOperationActive ? "true" : "false") + "}";
+            return "{\"shutdownRequested\":" + (shutdownRequestedUtc.HasValue ? "true" : "false") + ",\"reason\":\"" + Json(shutdownReason ?? "") + "\",\"backupClean\":" + (backupClean ? "true" : "false") + ",\"activeStorageRequests\":" + activeStorageRequests.ToString() + ",\"longOperationActive\":" + (longOperationActive ? "true" : "false") + ",\"activeOperation\":\"" + Json(activeOperation) + "\"}";
         }
     }
 
@@ -943,7 +958,7 @@ internal sealed class TrackerContext : ApplicationContext
         try { TryFinalizeBackups(); } catch { }
         try { storage.Dispose(); } catch { }
         try { stop.Cancel(); listener.Stop(); } catch { }
-        try { lock (storageOperationsGate) { foreach (SemaphoreSlim queue in storageOperations.Values) queue.Dispose();storageOperations.Clear(); } } catch { }
+        try { lock (storageOperationsGate) { foreach (SemaphoreSlim queue in storageOperations.Values) queue.Dispose();storageOperations.Clear();activeStorageOperationNames.Clear(); } } catch { }
         try { tray.Visible = false; tray.Dispose(); } catch { }
         try { dispatcher.Dispose(); } catch { }
         finally { base.ExitThreadCore(); Environment.Exit(0); }

@@ -139,6 +139,10 @@ export default function Guide() {
           Mapping creates a top-level <code>Organizations</code> folder. Choose{" "}
           <b>Manage Organizations</b> to create each organization beneath it,
           then place that organization&apos;s evidence in the corresponding folder.
+          The descriptive Organization field on an Information System does not
+          create a local or shared organization folder. Workflow folders are
+          prepared only for organizations created by an operator or represented
+          by an actual User Record.
           Every active document-type folder begins with its organization name,
           such as <code>LM SAAR</code>, <code>LM DoD Cyber Cert</code>,{" "}
           <code>LM User Agreement</code>, and <code>LM DTA Training</code>.
@@ -1587,7 +1591,12 @@ export default function Guide() {
           a crashed browser from leaving a permanent lock. If the local connection
         is interrupted, resumable and read-only launcher requests receive up to four
         bounded safe retries. File-changing actions are never automatically
-        repeated. During new-user ingestion, a complete filename is accepted
+        repeated. Outside Sync, an inactivity timeout waits for any active
+        storage operation and identifies that operation to the operator. It reuses
+        an in-progress final publication, releases Full Access only after the
+        verified publication succeeds, and then terminates the portable launcher.
+        If the final save fails, the session remains recoverable instead of leaving
+        an inaccessible background process. During new-user ingestion, a complete filename is accepted
         without opening the PDF, and the containing organization folder supplies
         a missing filename organization without a PDF read. Legacy Import opens
         SAARs that need recoverable identity or signed Part IV account-action date

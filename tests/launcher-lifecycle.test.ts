@@ -29,6 +29,22 @@ test('slow network storage queues safely instead of failing after five seconds',
  assert.match(launcher,/\? 30000 : 120000/);
  assert.doesNotMatch(launcher,/storageOperations\.WaitAsync\(5000\)/);
  assert.match(launcher,/client\.ReceiveTimeout = 120000; client\.SendTimeout = 120000/);
+ assert.match(launcher,/ActiveStorageOperation\(systemId\)/);
+ assert.match(launcher,/activeOperation/);
+});
+
+test('idle disconnect waits for storage, reuses final publication, and terminates the launcher',()=>{
+ assert.match(page,/waitForPortableStorageIdle/);
+ assert.match(page,/publicationBySystem\.current\.get\(systemId\)/);
+ assert.match(page,/publicationBySystem\.current\.has\(systemId\)/);
+ assert.match(page,/idle logoff/);
+ assert.match(page,/idle shutdown ready/);
+ const disconnect=page.slice(page.indexOf('async function disconnectForInactivity'),page.indexOf('async function prepareShutdown'));
+ assert.match(disconnect,/error instanceof PortableStorageBusyError/);
+ assert.match(disconnect,/before retrying the final verified save/);
+ assert.ok(disconnect.indexOf('publishSystemWorkspace')<disconnect.indexOf('releaseLease'));
+ assert.ok(disconnect.indexOf('releaseLease')<disconnect.indexOf("'/api/logoff'"));
+ assert.doesNotMatch(disconnect,/finally\{[^}]*releaseLease/);
 });
 
 test('Sync confirms launcher activity before its first serialized storage request',()=>{

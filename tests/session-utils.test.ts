@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {accessModeCanWrite,automaticSaveAllowed,idleTimeoutMs,sessionIdleExpired} from '../app/session-utils.ts';
+import {accessModeCanWrite,automaticSaveAllowed,idleTimeoutMs,sessionIdleExpired,storageWorkInProgress} from '../app/session-utils.ts';
 
 test('never expires the operator session while Sync is active',()=>{
  const started=Date.UTC(2026,7,27,12);
@@ -11,6 +11,13 @@ test('starts a fresh idle window when Sync finishes',()=>{
  const completed=Date.UTC(2026,7,27,16);
  assert.equal(sessionIdleExpired(completed+idleTimeoutMs-1,completed,false),false);
  assert.equal(sessionIdleExpired(completed+idleTimeoutMs,completed,false),true);
+});
+
+test('recognizes browser and launcher storage work before idle shutdown',()=>{
+ assert.equal(storageWorkInProgress(1),true);
+ assert.equal(storageWorkInProgress(0,{activeStorageRequests:1}),true);
+ assert.equal(storageWorkInProgress(0,{activeStorageRequests:0,longOperationActive:true}),true);
+ assert.equal(storageWorkInProgress(0,{activeStorageRequests:0,longOperationActive:false}),false);
 });
 
 test('supports an explicit timeout for boundary testing',()=>{
