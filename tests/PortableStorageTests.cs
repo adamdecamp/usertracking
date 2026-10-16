@@ -612,6 +612,10 @@ internal static class PortableStorageTests
         string longEvidenceName = longEvidencePrefix + new string('Y', longEvidenceFill) + longEvidenceSuffix, longEvidencePdfName = longEvidenceName.Substring(0, longEvidenceName.Length - 4);
         string storedLongEvidence = storage.StoreEvidence("mapping-key", "GOV", "User Agreement", longEvidenceName, EvidenceZip(longEvidencePdfName, PdfBytes())), storedLongEvidencePath = Path.Combine(longEvidenceDirectory, storedLongEvidence);
         Assert(storedLongEvidencePath.Length >= 230 && File.Exists(storedLongEvidencePath), "Atomic evidence storage should use short temporary and rollback names near the Windows path limit.");
+        string manualStagingRoot = Convert.ToString(typeof(PortableStorage).GetMethod("LocalPerformanceCacheDirectory", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(storage, new object[] { root, "Manual Evidence Staging" }));
+        Assert(Path.Combine(manualStagingRoot, new string('a', 32), longEvidenceName).Length >= 260, "The PDF upload regression must exceed MAX_PATH if staging repeats the full evidence filename.");
+        var longPdfUpload = (Dictionary<string, object>)Json.DeserializeObject(storage.StoreEvidencePdf("mapping-key", "GOV", "User Agreement", longEvidenceName, PdfBytes()));
+        using (var longPdfZip = ZipFile.OpenRead(storedLongEvidencePath)) Assert(longPdfZip.Entries.Count == 1 && longPdfZip.Entries[0].FullName == longEvidencePdfName && Convert.ToString(longPdfUpload["filename"]) == longEvidenceName && storage.VerifyStoredEvidencePdf("mapping-key", "GOV", "User Agreement", longEvidenceName, Sha256(PdfBytes())).Contains("\"stored\":true"), "PDF upload must use short staging names while preserving the full canonical PDF name inside the verified ZIP.");
         File.WriteAllText(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.txt"), "not evidence");
         File.WriteAllBytes(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf"), Encoding.ASCII.GetBytes("not a pdf"));
         scan = storage.Scan("mapping-key", "legacy", true);

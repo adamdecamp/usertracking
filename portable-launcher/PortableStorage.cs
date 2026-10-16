@@ -2326,7 +2326,7 @@ internal sealed class PortableStorage : IDisposable
         if (pdfBytes.Length > EvidenceLimit) throw new InvalidDataException("The evidence PDF exceeds the size limit.");
         string zipName = SafePart(filename, 180);
         if (!zipName.EndsWith(".pdf.zip", StringComparison.OrdinalIgnoreCase) || !String.Equals(zipName, filename, StringComparison.Ordinal)) throw new InvalidDataException("The stored evidence filename must end with .pdf.zip.");
-        string pdfName = zipName.Substring(0, zipName.Length - 4), root = LocalEvidenceRoot(systemId), stagingDirectory = Path.Combine(LocalPerformanceCacheDirectory(Root(systemId), "Manual Evidence Staging"), Guid.NewGuid().ToString("N")), stagedPdf = Path.Combine(stagingDirectory, pdfName), stagedZip = Path.Combine(stagingDirectory, zipName);
+        string pdfName = zipName.Substring(0, zipName.Length - 4), root = LocalEvidenceRoot(systemId), stagingDirectory = Path.Combine(LocalPerformanceCacheDirectory(Root(systemId), "Manual Evidence Staging"), Guid.NewGuid().ToString("N")), stagedPdf = Path.Combine(stagingDirectory, "source.pdf"), stagedZip = Path.Combine(stagingDirectory, "source.pdf.zip");
         try
         {
             Directory.CreateDirectory(stagingDirectory);
