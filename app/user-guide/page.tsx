@@ -715,7 +715,7 @@ export default function Guide() {
           Rework. Any file-level retention error is listed at
           the end of Sync without stopping the remaining files. After filename
           normalization, accepted active files are placed into a
-          organization-prefixed canonical document-type folder inside the
+          organization-prefixed canonical document-type folder on the shared drive inside the
           authoritative organization, including <code>ORG SAAR</code>,{" "}
           <code>ORG User Agreement</code>, <code>ORG DoD Cyber Cert</code>,{" "}
           <code>ORG 8140 Certification Memo</code>,{" "}
@@ -992,6 +992,7 @@ export default function Guide() {
           local System folders directly in Windows File Explorer.
           Each mapped system has its own launcher operation queue, so a slow
           action for one system does not block safe work against another system.
+        Local organizations use only Incoming, Rework, and Complete. Document-type and Archive destinations are tracked in protected local JSON and created on the shared drive during publication. Remaining associated PDFs are validated and zipped locally before upload; their originals stay in Complete.
         </p>
         <p>
           Evidence published from a local workspace receives a checksum-protected

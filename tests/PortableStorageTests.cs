@@ -17,6 +17,13 @@ internal static class PortableStorageTests
 
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
 
+    private static string LocalEvidenceFile(PortableStorage storage, string systemId, string relative)
+    {
+        object[] arguments = { systemId, relative, null };string localRoot = storage.LocalWorkspacePath(systemId);
+        try { string result = Convert.ToString(typeof(PortableStorage).GetMethod("ResolveEvidencePath", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(storage, arguments));return String.Equals(Convert.ToString(arguments[2]), localRoot, StringComparison.OrdinalIgnoreCase) ? result : Path.Combine(localRoot, relative); }
+        catch (TargetInvocationException error) { if (error.InnerException is FileNotFoundException) return Path.Combine(localRoot, relative);throw; }
+    }
+
     private static string RawLauncherRequest(TrackerContext context, string method, string path, byte[] body, bool includeToken, bool validOrigin, long? declaredLength = null)
     {
         using (var client = new TcpClient("127.0.0.1", context.E2EPort))
@@ -204,6 +211,74 @@ internal static class PortableStorageTests
         }
     }
 
+    private static void RunLocalWorkflowLayout(string parent)
+    {
+        string shared = Path.Combine(parent, "workflow-layout-share"), cache = Path.Combine(parent, "workflow-layout", "mappings.json"), retainedPath = "", cachedPath = "";byte[] cachedBytes = null;
+        Directory.CreateDirectory(shared);
+        using (var storage = new PortableStorage("DOMAIN\\layout", cache))
+        {
+            Assert(storage.MapForFullSession("layout", shared, "layout-session"), "The local workflow test requires its own isolated editor lease.");
+            var database = (Dictionary<string, object>)Json.DeserializeObject(Database("layout@example.mil"));
+            byte[] initial = Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", database }, { "csv", "initial" } }));storage.PublishWorkspace("layout", initial);
+            string workspace = storage.LocalWorkspacePath("layout"), incoming = Path.Combine(workspace, "Organizations", "GOV", "GOV Incoming");
+            string zipName = "Shaw_Vivian_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf.zip";storage.StoreEvidence("layout", "GOV", "DoD Cyber Cert", zipName, EvidenceZip(zipName.Substring(0, zipName.Length - 4), PdfBytes()));
+            string zipPath = "Organizations/GOV/GOV DoD Cyber Cert/" + zipName;
+            var renamed = (Dictionary<string, object>)Json.DeserializeObject(storage.RelabelUserEvidence("layout", zipPath, "EDITORG", "DoD Cyber Cert", "Shaw_Vivian_(EDITORG)_DoD_Cyber_Cert_24AUG2026.pdf.zip"));
+            Assert(File.Exists(LocalEvidenceFile(storage, "layout", Convert.ToString(renamed["path"]))) && !Directory.Exists(Path.Combine(workspace, "Organizations", "EDITORG", "EDITORG DoD Cyber Cert")), "Identity edits must stage in Incoming without creating a local document-type folder.");
+            string pdfUploadName = "Shaw_Vivian_(GOV)_User_Agreement_24AUG2026.pdf.zip";var pdfUpload = (Dictionary<string, object>)Json.DeserializeObject(storage.StoreEvidencePdf("layout", "GOV", "User Agreement", pdfUploadName, PdfBytes()));
+            Assert(File.Exists(Path.Combine(incoming, pdfUploadName)) && storage.VerifyStoredEvidencePdf("layout", "GOV", "User Agreement", pdfUploadName, Sha256(PdfBytes())).Contains("\"stored\":true") && Convert.ToString(pdfUpload["path"]).StartsWith("Organizations/GOV/GOV User Agreement/", StringComparison.Ordinal), "Manual PDF inputs must be accepted, verified, and zipped into local Incoming without creating document-type folders.");
+            string originalSaar = "Shaw_Vivian_(GOV)_GEN_SAAR_24AUG2026.pdf", correctedSaar = "Shaw_Vivian_(GOV)_GEN_SAAR_25AUG2026.pdf";File.WriteAllBytes(Path.Combine(incoming, originalSaar), PdfBytes());
+            var organized = (Dictionary<string, object>)Json.DeserializeObject(storage.OrganizeEvidence("layout", "Organizations/GOV/GOV Incoming/" + originalSaar, "SAAR"));
+            var normalized = (Dictionary<string, object>)Json.DeserializeObject(storage.NormalizeEvidenceFilename("layout", Convert.ToString(organized["organized"]), correctedSaar));
+            var compressed = (Dictionary<string, object>)Json.DeserializeObject(storage.CompressEvidence("layout", Convert.ToString(normalized["renamed"])));
+            Assert(storage.CompressEvidence("layout", Convert.ToString(normalized["renamed"])).Contains("\"alreadyCompleted\":true"), "Compression through a staged logical path must remain repeatable.");
+            var archived = (Dictionary<string, object>)Json.DeserializeObject(storage.ArchiveEvidence("layout", Convert.ToString(compressed["compressed"])));retainedPath = Convert.ToString(archived["archived"]);
+            Assert(File.Exists(LocalEvidenceFile(storage, "layout", retainedPath)) && !Directory.Exists(Path.Combine(workspace, "Organizations", "GOV", "GOV SAAR Archive")), "Local archival must retain the ZIP in Complete while tracking its shared archive destination in protected JSON.");
+            string archiveOnlyPdf = "Archive_Only_(GOV)_GEN_SAAR_01JAN2025.pdf";File.WriteAllBytes(Path.Combine(incoming, archiveOnlyPdf), PdfBytes());
+            var archiveOnly = (Dictionary<string, object>)Json.DeserializeObject(storage.ArchiveEvidence("layout", "Organizations/GOV/GOV Incoming/" + archiveOnlyPdf));
+            string autoPdf = "Shaw_Vivian_(GOV)_GEN_SAAR_26AUG2026.pdf";File.WriteAllBytes(Path.Combine(incoming, autoPdf), PdfBytes());
+            var autoOrganized = (Dictionary<string, object>)Json.DeserializeObject(storage.OrganizeEvidence("layout", "Organizations/GOV/GOV Incoming/" + autoPdf, "SAAR"));
+            Assert(Convert.ToString(autoOrganized["organized"]).StartsWith("Organizations/GOV/GOV SAAR/", StringComparison.Ordinal), "Organization must return its tracked shared destination without making that directory locally.");
+            var user = (Dictionary<string, object>)((object[])database["users"])[0];user["artifacts"] = new object[] { new Dictionary<string, object> { { "kind", "SAAR" }, { "filename", autoPdf }, { "sha256", Sha256(PdfBytes()) } } };
+            string orphanPdf = Path.Combine(workspace, "Organizations", "GOV", "Gendell_Mark_(GOV)_PRIV_ADM_SAAR_06SEP2023.pdf");File.WriteAllBytes(orphanPdf, PdfBytes());
+            string csv = String.Join(",", Enumerable.Repeat("\"Unchanged, field\"", 12).Concat(new[] { "\"" + autoPdf + "\"", "\"No\"" }));
+            byte[] publication = Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", database }, { "csv", csv } }));
+            var result = (Dictionary<string, object>)Json.DeserializeObject(storage.PublishWorkspace("layout", publication));storage.FinalizeMappedBackups();
+            Assert(Convert.ToInt32(result["compressedForPublication"]) == 2 && Convert.ToInt32(result["deferredLocalPdfs"]) == 1, "Publication must ZIP associated and explicitly retained local PDFs, while deferring an unassociated loose PDF without blocking the session.");
+            var savedUser = (Dictionary<string, object>)((object[])((Dictionary<string, object>)result["manifest"])["users"])[0];var artifact = (Dictionary<string, object>)((object[])savedUser["artifacts"])[0];cachedPath = Convert.ToString(artifact["path"]);
+            Assert(Convert.ToString(artifact["filename"]) == autoPdf + ".zip" && File.Exists(Path.Combine(shared, cachedPath.Replace('/', Path.DirectorySeparatorChar))) && File.Exists(Path.Combine(shared, retainedPath.Replace('/', Path.DirectorySeparatorChar))), "Shared publication must contain verified ZIPs in the authoritative document-type and SAAR Archive destinations.");
+            Assert(File.Exists(Path.Combine(shared, (Convert.ToString(archiveOnly["archived"]) + ".zip").Replace('/', Path.DirectorySeparatorChar))), "A retained PDF must be zipped before its explicit archive destination is published, even without an active user association.");
+            Assert(File.Exists(orphanPdf) && !File.Exists(Path.Combine(shared, "Organizations", "GOV", Path.GetFileName(orphanPdf))) && !File.Exists(Path.Combine(incoming, autoPdf)), "An unfinished unassociated PDF must stay local, while the associated PDF original is preserved in Complete.");
+            string originals = Path.Combine(workspace, "Organizations", "GOV", "GOV Complete", "Original PDFs");int originalCount = Directory.EnumerateFiles(originals).Count();Assert(originalCount >= 2, "Every compressed original must be retained in local Complete.");
+            Assert(File.ReadAllText(Path.Combine(shared, "System", "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv")).Contains("\"" + autoPdf + ".zip\"") && File.ReadAllText(Path.Combine(shared, "System", "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv")).StartsWith("\"Unchanged, field\"", StringComparison.Ordinal), "The CSV backup must update only its Filename field after automatic publication compression.");
+            string sharedCurrent = Path.Combine(shared, cachedPath.Replace('/', Path.DirectorySeparatorChar));byte[] originalSharedZip = File.ReadAllBytes(sharedCurrent), changedSharedZip = EvidenceZip(autoPdf, Encoding.ASCII.GetBytes("%PDF-1.4\n% changed evidence\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n"));
+            File.WriteAllBytes(sharedCurrent, changedSharedZip);Assert(storage.ReadRelativeFile("layout", cachedPath).SequenceEqual(changedSharedZip), "A published Complete copy must not hide later changes to authoritative shared evidence.");File.WriteAllBytes(sharedCurrent, originalSharedZip);
+            storage.PublishWorkspace("layout", publication);Assert(Directory.EnumerateFiles(originals).Count() == originalCount, "Retrying an older PDF request must reuse its prepared ZIP without creating duplicate original copies.");
+            foreach (string orgDirectory in Directory.EnumerateDirectories(Path.Combine(workspace, "Organizations")))
+            {
+                string organization = Path.GetFileName(orgDirectory);string[] folders = Directory.EnumerateDirectories(orgDirectory).Select(Path.GetFileName).OrderBy(value => value).ToArray();
+                Assert(folders.SequenceEqual(new[] { organization + " Complete", organization + " Incoming", organization + " Rework" }.OrderBy(value => value)), "Upload, organization, normalization, compression, identity edit, archival, and publication must leave only Incoming, Rework, and Complete at each local organization root.");
+                Assert(!Directory.EnumerateDirectories(orgDirectory, "*", SearchOption.AllDirectories).Any(path => Path.GetFileName(path).EndsWith(" SAAR Archive", StringComparison.OrdinalIgnoreCase) || Path.GetFileName(path).EndsWith(" DoD Cyber Cert", StringComparison.OrdinalIgnoreCase) || Path.GetFileName(path).EndsWith(" SAAR", StringComparison.OrdinalIgnoreCase)), "No document-type or SAAR Archive folder may be created anywhere in the local organization tree.");
+            }
+            string retryName = "Shaw_Vivian_(GOV)_GEN_SAAR_27AUG2026.pdf";File.WriteAllBytes(Path.Combine(incoming, retryName), PdfBytes());
+            var retryOrganized = (Dictionary<string, object>)Json.DeserializeObject(storage.OrganizeEvidence("layout", "Organizations/GOV/GOV Incoming/" + retryName, "SAAR"));
+            user["artifacts"] = new object[] { new Dictionary<string, object> { { "kind", "SAAR" }, { "filename", retryName }, { "path", retryOrganized["organized"] }, { "sha256", Sha256(PdfBytes()) } } };
+            byte[] retryRequest = Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", database }, { "csv", csv.Replace(autoPdf, retryName) } }));
+            string retryDestination = Path.Combine(shared, (Convert.ToString(retryOrganized["organized"]) + ".zip").Replace('/', Path.DirectorySeparatorChar));Directory.CreateDirectory(Path.GetDirectoryName(retryDestination));File.WriteAllBytes(retryDestination, new byte[] { 9, 8, 7 });
+            string priorManifestHash = Sha256(File.ReadAllBytes(Path.Combine(shared, "System", "information-system-user-tracker.json")));bool publicationFailed = false;
+            try { storage.PublishWorkspace("layout", retryRequest); } catch (InvalidDataException error) { publicationFailed = error.Message.Contains("different shared evidence file"); }
+            Assert(publicationFailed && Sha256(File.ReadAllBytes(Path.Combine(shared, "System", "information-system-user-tracker.json"))) == priorManifestHash && File.ReadAllBytes(retryDestination).SequenceEqual(new byte[] { 9, 8, 7 }), "A failed publication after compression must preserve the master JSON and conflicting shared evidence.");
+            int originalsAfterFailure = Directory.EnumerateFiles(originals).Count();Assert(!File.Exists(Path.Combine(incoming, retryName)) && originalsAfterFailure == originalCount + 1 && storage.ReadWorkingManifest("layout").Contains(retryName + ".zip"), "A failed upload must keep its prepared ZIP and original PDF in the protected local workspace with updated local JSON.");
+            File.Delete(retryDestination);var retried = (Dictionary<string, object>)Json.DeserializeObject(storage.PublishWorkspace("layout", retryRequest));Assert(Convert.ToInt32(retried["compressedForPublication"]) == 0 && File.Exists(retryDestination) && Directory.EnumerateFiles(originals).Count() == originalsAfterFailure, "Retry must reuse the already verified local ZIP and preserve one original copy.");
+            cachedBytes = storage.ReadRelativeFile("layout", cachedPath);string mapText = File.ReadAllText(Path.Combine(workspace, "System", "workspace-evidence.json"));Assert(mapText.Contains("DPAPI-CurrentUser") && !mapText.Contains(autoPdf), "The local evidence routing map must be protected by Windows DPAPI.");
+            storage.ReleaseLease("layout", "layout-session");
+        }
+        using (var reopened = new PortableStorage("DOMAIN\\layout", cache))
+        {
+            reopened.MapReadOnly("layout", shared);Assert(reopened.ReadRelativeFile("layout", cachedPath).SequenceEqual(cachedBytes) && reopened.ReadRelativeFile("layout", retainedPath).Length > 0, "Staged and published evidence associations must remain readable after a launcher restart.");
+        }
+    }
+
     public static int Main(string[] args)
     {
         try { return RunTests(args); }
@@ -231,6 +306,7 @@ internal static class PortableStorageTests
         finally { PortableStorage.ReparseTagOverrideForTests = null; }
         RunStorageEnumerationFuzz(Path.GetDirectoryName(root));
         RunLocalDatabaseScanBoundary(Path.GetDirectoryName(root));
+        RunLocalWorkflowLayout(Path.GetDirectoryName(root));
         string compatibilityRoot = Path.Combine(root, "write-compatibility"), compatibilityCache = Path.Combine(root, "write-compatibility-mappings.json");
         Directory.CreateDirectory(compatibilityRoot);
         using (var compatibilityStorage = new PortableStorage("DOMAIN\\compatibility-operator", compatibilityCache))
@@ -385,15 +461,15 @@ internal static class PortableStorageTests
         byte[] identityEditBytes = EvidenceZip("Oldname_Alex_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf", PdfBytes());storage.StoreEvidence("mapping-key", "GOV", "DoD Cyber Cert", identityEditSourceName, identityEditBytes);
         string identityEditSourceRelative = Path.Combine("Organizations", "GOV", "GOV DoD Cyber Cert", identityEditSourceName), identityEditTargetRelative = Path.Combine("Organizations", "EDITORG", "EDITORG DoD Cyber Cert", identityEditTargetName);
         var identityEditResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.RelabelUserEvidence("mapping-key", identityEditSourceRelative, "EDITORG", "DoD Cyber Cert", identityEditTargetName));
-        Assert(!File.Exists(Path.Combine(localEvidenceRoot, identityEditSourceRelative)) && File.Exists(Path.Combine(localEvidenceRoot, identityEditTargetRelative)) && identityEditBytes.SequenceEqual(File.ReadAllBytes(Path.Combine(localEvidenceRoot, identityEditTargetRelative))) && Convert.ToString(identityEditResponse["path"]).Replace('\\','/') == identityEditTargetRelative.Replace('\\','/'), "Editing a user identity should transactionally preserve and move active evidence into the new organization and canonical filename.");
+        Assert(!File.Exists(LocalEvidenceFile(storage, "mapping-key", identityEditSourceRelative)) && File.Exists(LocalEvidenceFile(storage, "mapping-key", identityEditTargetRelative)) && identityEditBytes.SequenceEqual(File.ReadAllBytes(LocalEvidenceFile(storage, "mapping-key", identityEditTargetRelative))) && Convert.ToString(identityEditResponse["path"]).Replace('\\','/') == identityEditTargetRelative.Replace('\\','/'), "Editing a user identity should transactionally preserve and move active evidence into the new organization and canonical filename.");
         Assert(!Directory.EnumerateFiles(Path.Combine(localEvidenceRoot, "System", "Storage Transactions"), "transaction-*.json").Any(), "A completed local-workspace relabel must close its short-path recovery journal.");
-        string identityEditCollisionName = "Collision_User_(EDITORG)_DoD_Cyber_Cert_24AUG2026.pdf.zip", identityEditCollisionRelative = Path.Combine("Organizations", "EDITORG", "EDITORG DoD Cyber Cert", identityEditCollisionName);File.WriteAllBytes(Path.Combine(localEvidenceRoot, identityEditCollisionRelative), EvidenceZip("Collision_User_(EDITORG)_DoD_Cyber_Cert_24AUG2026.pdf", PdfBytes()));
+        string identityEditCollisionName = "Collision_User_(EDITORG)_DoD_Cyber_Cert_24AUG2026.pdf.zip", identityEditCollisionRelative = Path.Combine("Organizations", "EDITORG", "EDITORG DoD Cyber Cert", identityEditCollisionName);storage.StoreEvidence("mapping-key", "EDITORG", "DoD Cyber Cert", identityEditCollisionName, EvidenceZip("Collision_User_(EDITORG)_DoD_Cyber_Cert_24AUG2026.pdf", PdfBytes()));
         var identityEditCollision = (Dictionary<string, object>)Json.DeserializeObject(storage.RelabelUserEvidence("mapping-key", identityEditTargetRelative, "EDITORG", "DoD Cyber Cert", identityEditCollisionName));
-        Assert(Convert.ToBoolean(identityEditCollision["collision"]) && File.Exists(Path.Combine(localEvidenceRoot, identityEditTargetRelative)) && File.Exists(Path.Combine(localEvidenceRoot, identityEditCollisionRelative)), "A user-information edit collision must preserve both files and stop before overwriting evidence.");
+        Assert(Convert.ToBoolean(identityEditCollision["collision"]) && File.Exists(LocalEvidenceFile(storage, "mapping-key", identityEditTargetRelative)) && File.Exists(LocalEvidenceFile(storage, "mapping-key", identityEditCollisionRelative)), "A user-information edit collision must preserve both files and stop before overwriting evidence.");
         string localGovIncoming = Path.Combine(localEvidenceRoot, "Organizations", "GOV", "GOV Incoming");File.WriteAllText(Path.Combine(localGovIncoming, "operator-notes.txt"), "This non-evidence file must not require metadata validation.", Encoding.UTF8);
         string encryptedEvidenceName = "Encrypted_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf", encryptedEvidencePath = Path.Combine(localGovIncoming, encryptedEvidenceName);File.WriteAllBytes(encryptedEvidencePath, EncryptedPdfBytes());
         var dailyScanEnvelope = (Dictionary<string, object>)Json.DeserializeObject(storage.ScanWithJournal("mapping-key", "rules-1", false, null, false));string scan = Json.Serialize((object[])dailyScanEnvelope["items"]);
-        Assert(!scan.Contains("Shaw_Vivian_SAAR_24AUG2026.pdf.zip") && scan.Contains(encryptedEvidenceName) && scan.Contains("\"accepted\":true") && scan.Contains("\"unchanged\":false"), "Daily Sync should validate new local Incoming or loose evidence without rescanning manually stored canonical evidence. Result: " + scan);
+        Assert(scan.Contains("Shaw_Vivian_SAAR_24AUG2026.pdf.zip") && scan.Contains(encryptedEvidenceName) && scan.Contains("\"accepted\":true") && scan.Contains("\"unchanged\":false"), "Daily Sync should validate new local Incoming or loose evidence without rescanning manually stored canonical evidence. Result: " + scan);
         Dictionary<string, object> encryptedEvidenceItem = ((object[])Json.DeserializeObject(scan)).Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == encryptedEvidenceName);
         Assert(Convert.ToBoolean(encryptedEvidenceItem["accepted"]) && Convert.ToBoolean(encryptedEvidenceItem["encryptedPdf"]), "The launcher should structurally validate and explicitly identify an encrypted PDF in one pass.");
         string excludedArchiveDirectory = Path.Combine(root, "Organizations", "GOV", "GOV Archive");Directory.CreateDirectory(excludedArchiveDirectory);File.WriteAllBytes(Path.Combine(excludedArchiveDirectory, "Archived_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf.zip"), EvidenceZip("Archived_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf", PdfBytes()));
@@ -428,7 +504,7 @@ internal static class PortableStorageTests
         string sharedSyncIndexDirectory = Path.Combine(root, "System", "Sync Index");
         Assert(Directory.Exists(sharedSyncIndexDirectory) && Directory.EnumerateFiles(sharedSyncIndexDirectory, "index-*.json", SearchOption.TopDirectoryOnly).Any() && Directory.EnumerateFiles(sharedSyncIndexDirectory, "index-*.json.sha256", SearchOption.TopDirectoryOnly).Any() && !File.Exists(Path.Combine(root, "tracker-sync-index.json")), "A successful scan should store checksum-protected organization-sharded Sync indexes beneath System.");
         Assert(Directory.EnumerateFiles(performanceCacheRoot, "index-*.json", SearchOption.AllDirectories).Any(), "A successful scan should mirror verified Sync-index shards into the per-Windows-user local performance cache.");
-        string evidencePath = Path.Combine(localEvidenceRoot, "Organizations", "GOV", "GOV SAAR", evidence), sharedEvidencePath = Path.Combine(root, "Organizations", "GOV", "GOV SAAR", evidence);Directory.CreateDirectory(Path.GetDirectoryName(sharedEvidencePath));File.WriteAllBytes(sharedEvidencePath, storedEvidenceBytes);File.WriteAllBytes(evidencePath, storedEvidenceBytes);
+        string evidencePath = LocalEvidenceFile(storage, "mapping-key", Path.Combine("Organizations", "GOV", "GOV SAAR", evidence)), sharedEvidencePath = Path.Combine(root, "Organizations", "GOV", "GOV SAAR", evidence);Directory.CreateDirectory(Path.GetDirectoryName(sharedEvidencePath));File.WriteAllBytes(sharedEvidencePath, storedEvidenceBytes);File.WriteAllBytes(evidencePath, storedEvidenceBytes);
         storage.Scan("mapping-key", "rules-1", false);
         object[] cachedScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", false));
         Dictionary<string, object> cachedEvidenceItem = cachedScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
@@ -461,15 +537,15 @@ internal static class PortableStorageTests
         Assert(!Convert.ToBoolean(damagedIndexItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip")["unchanged"]), "A damaged Sync-index checksum should fall back to full validation.");
         Assert(!cachedScanItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["path"]).IndexOf("Sync Index", StringComparison.OrdinalIgnoreCase) >= 0), "Sync-index shards must be excluded from evidence results. Paths: " + String.Join(" | ", cachedScanItems.Cast<Dictionary<string, object>>().Select(item => Convert.ToString(item["path"])).Where(path => path.IndexOf("Sync Index", StringComparison.OrdinalIgnoreCase) >= 0).Take(10)));
         string alternateDateEvidence = storage.StoreEvidence("mapping-key", "GOV", "User Agreement", "Shaw_Vivian_GEN_User_Agreement_20260826.pdf.zip", EvidenceZip("Shaw_Vivian_GEN_User_Agreement_20260826.pdf", PdfBytes()));
-        string alternateDateRelative = Path.Combine("Organizations", "GOV", "GOV User Agreement", alternateDateEvidence), alternateDatePath = Path.Combine(localEvidenceRoot, alternateDateRelative), normalizedDateName = "Shaw_Vivian_(GOV)_GEN_User_Agreement_26AUG2026.pdf.zip";byte[] alternateDateBytes = File.ReadAllBytes(alternateDatePath);
+        string alternateDateRelative = Path.Combine("Organizations", "GOV", "GOV User Agreement", alternateDateEvidence), alternateDatePath = LocalEvidenceFile(storage, "mapping-key", alternateDateRelative), normalizedDateName = "Shaw_Vivian_(GOV)_GEN_User_Agreement_26AUG2026.pdf.zip";byte[] alternateDateBytes = File.ReadAllBytes(alternateDatePath);
         var normalizedDateResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.NormalizeEvidenceFilename("mapping-key", alternateDateRelative, normalizedDateName));
-        string normalizedDatePath = Path.Combine(localEvidenceRoot, "Organizations", "GOV", "GOV User Agreement", normalizedDateName);
+        string normalizedDatePath = LocalEvidenceFile(storage, "mapping-key", Path.Combine("Organizations", "GOV", "GOV User Agreement", normalizedDateName));
         Assert(!File.Exists(alternateDatePath) && File.Exists(normalizedDatePath) && alternateDateBytes.SequenceEqual(File.ReadAllBytes(normalizedDatePath)) && Convert.ToString(normalizedDateResponse["renamed"]).EndsWith(normalizedDateName), "Filename normalization should apply the folder organization and standard date without changing any file bytes.");
-        File.WriteAllBytes(alternateDatePath, alternateDateBytes);
+        storage.StoreEvidence("mapping-key", "GOV", "User Agreement", alternateDateEvidence, alternateDateBytes);
         var collisionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.NormalizeEvidenceFilename("mapping-key", alternateDateRelative, normalizedDateName));
         Assert(Convert.ToBoolean(collisionResponse["collision"]) && File.Exists(alternateDatePath) && File.Exists(normalizedDatePath), "A normalization collision should preserve both files and return it for duplicate review instead of aborting Sync.");
         string conflictArchiveName = "Shaw_Vivian_(GOV)_GEN_User_Agreement_26AUG2026_CONFLICT_ABCDEF12.pdf.zip", conflictArchiveResult = storage.ArchiveEvidence("mapping-key", alternateDateRelative, conflictArchiveName), conflictArchiveRelative = Convert.ToString(((Dictionary<string, object>)Json.DeserializeObject(conflictArchiveResult))["archived"]);
-        Assert(Path.GetFileName(conflictArchiveRelative).IndexOf("CONFLICT_ABCDEF12", StringComparison.OrdinalIgnoreCase) >= 0 && File.Exists(Path.Combine(localEvidenceRoot, conflictArchiveRelative.Replace('/', Path.DirectorySeparatorChar))), "A non-authoritative same-name conflict should retain its traceable conflict identifier in the organization Archive even when the path must be shortened safely: " + conflictArchiveRelative);
+        Assert(Path.GetFileName(conflictArchiveRelative).IndexOf("CONFLICT_ABCDEF12", StringComparison.OrdinalIgnoreCase) >= 0 && File.Exists(LocalEvidenceFile(storage, "mapping-key", conflictArchiveRelative)), "A non-authoritative same-name conflict should retain its traceable conflict identifier in the organization Archive even when the path must be shortened safely: " + conflictArchiveRelative);
         bool rejectedArchiveExtension = false;
         try { storage.ArchiveEvidence("mapping-key", Path.Combine("Organizations", "GOV", "GOV User Agreement", normalizedDateName), "unsafe-conflict.exe"); } catch (InvalidDataException) { rejectedArchiveExtension = true; }
         Assert(rejectedArchiveExtension && File.Exists(normalizedDatePath), "A requested collision archive name must preserve the PDF or ZIP evidence extension and leave the source unchanged when rejected.");
@@ -487,8 +563,8 @@ internal static class PortableStorageTests
         string olderEvidence = storage.StoreEvidence("mapping-key", "GOV", "SAAR", "Shaw_Vivian_SAAR_24AUG2025.pdf.zip", EvidenceZip("Shaw_Vivian_SAAR_24AUG2025.pdf", PdfBytes()));
         string olderRelative = Path.Combine("Organizations", "GOV", "GOV SAAR", olderEvidence), archiveResult = storage.ArchiveEvidence("mapping-key", olderRelative);
         var archiveResponse = (Dictionary<string, object>)Json.DeserializeObject(archiveResult);
-        string archivedRelative = Convert.ToString(archiveResponse["archived"]), archivedPath = Path.Combine(localEvidenceRoot, archivedRelative.Replace('/', Path.DirectorySeparatorChar));
-        Assert(!File.Exists(Path.Combine(localEvidenceRoot, olderRelative)) && File.Exists(archivedPath) && archivedRelative.StartsWith("Organizations/GOV/GOV SAAR Archive/", StringComparison.OrdinalIgnoreCase), "Approved SAAR cleanup should move the local access-request record into the permanent organization SAAR Archive without deleting it.");
+        string archivedRelative = Convert.ToString(archiveResponse["archived"]), archivedPath = LocalEvidenceFile(storage, "mapping-key", archivedRelative);
+        Assert(!File.Exists(LocalEvidenceFile(storage, "mapping-key", olderRelative)) && File.Exists(archivedPath) && archivedRelative.StartsWith("Organizations/GOV/GOV SAAR Archive/", StringComparison.OrdinalIgnoreCase), "Approved SAAR cleanup should move the local access-request record into the permanent organization SAAR Archive without deleting it.");
         string nestedOrganizationDirectory = Path.Combine(root, "GDMS", "General", "Brown_Jacob");
         Directory.CreateDirectory(nestedOrganizationDirectory);
         string nestedArchiveName = "Brown_Jacob_(GDMS)_GEN_User_Agreement_24AUG2025.pdf.zip", nestedArchivePath = Path.Combine(nestedOrganizationDirectory, nestedArchiveName);
@@ -502,9 +578,9 @@ internal static class PortableStorageTests
         string retainedArchivedRelative = Convert.ToString(retainedArchiveResponse["archived"]);
         Assert(retainedArchivedRelative.StartsWith("GDMS/GDMS Archive/Superseded/", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(root, retainedArchivedRelative.Replace('/', Path.DirectorySeparatorChar))), "Archived training evidence older than five years should be retained in the organization's Superseded folder.");
         string looseRelative = Path.Combine("Organizations", "GOV", "GOV User Agreement", "Shaw_Vivian_GEN_User_Agreement_24AUG2026.pdf"), loosePath = Path.Combine(localEvidenceRoot, looseRelative);
-        File.WriteAllBytes(loosePath, PdfBytes());
+        Directory.CreateDirectory(Path.GetDirectoryName(loosePath));File.WriteAllBytes(loosePath, PdfBytes());
         var compressionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.CompressEvidence("mapping-key", looseRelative));
-        string compressedRelative = Convert.ToString(compressionResponse["compressed"]), compressedPath = Path.Combine(localEvidenceRoot, compressedRelative.Replace('/', Path.DirectorySeparatorChar)), preservedLoosePath = Directory.EnumerateFiles(Path.Combine(localEvidenceRoot, "Organizations", "GOV", "GOV Complete", "Original PDFs"), "*.pdf", SearchOption.TopDirectoryOnly).FirstOrDefault(path => Sha256(File.ReadAllBytes(path)) == Sha256(PdfBytes()));
+        string compressedRelative = Convert.ToString(compressionResponse["compressed"]), compressedPath = LocalEvidenceFile(storage, "mapping-key", compressedRelative), preservedLoosePath = Directory.EnumerateFiles(Path.Combine(localEvidenceRoot, "Organizations", "GOV", "GOV Complete", "Original PDFs"), "*.pdf", SearchOption.TopDirectoryOnly).FirstOrDefault(path => Sha256(File.ReadAllBytes(path)) == Sha256(PdfBytes()));
         Assert(!File.Exists(loosePath) && File.Exists(compressedPath) && !String.IsNullOrWhiteSpace(preservedLoosePath) && File.Exists(preservedLoosePath), "Validated local compression should create the ZIP and move, not delete, its source PDF into the local-only Complete folder.");
         string repeatedCompression = storage.CompressEvidence("mapping-key", looseRelative);
         Assert(repeatedCompression.Contains("\"alreadyCompleted\":true") && repeatedCompression.Contains("Shaw_Vivian_GEN_User_Agreement_24AUG2026.pdf.zip"), "A repeated cleanup request should recognize the validated ZIP instead of reporting its removed PDF as missing.");
@@ -528,10 +604,10 @@ internal static class PortableStorageTests
         Assert(longCompressionPath.Length >= 230 && longCompressionPath.Length < 248, "The long-path compression regression fixture should approach the legacy Windows limit without exceeding the source-file limit.");
         File.WriteAllBytes(longCompressionPath, PdfBytes());
         var longCompressionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.CompressEvidence("mapping-key", longCompressionRelative));
-        string longCompressedRelative = Convert.ToString(longCompressionResponse["compressed"]), longCompressedPath = Path.Combine(localEvidenceRoot, longCompressedRelative.Replace('/', Path.DirectorySeparatorChar));
+        string longCompressedRelative = Convert.ToString(longCompressionResponse["compressed"]), longCompressedPath = LocalEvidenceFile(storage, "mapping-key", longCompressedRelative);
         Assert(!File.Exists(longCompressionPath) && File.Exists(longCompressedPath), "Local compression should use a short temporary name and preserve the original under local Complete instead of exceeding the Windows path limit.");
 
-        string longEvidenceDirectory = Path.Combine(localEvidenceRoot, "Organizations", "GOV", "GOV User Agreement"), longEvidencePrefix = "Shaw_Vivian_GEN_User_Agreement_", longEvidenceSuffix = "_24AUG2026.pdf.zip";
+        string longEvidenceDirectory = Path.Combine(localEvidenceRoot, "Organizations", "GOV", "GOV Incoming"), longEvidencePrefix = "Shaw_Vivian_GEN_User_Agreement_", longEvidenceSuffix = "_24AUG2026.pdf.zip";
         int longEvidenceFill = Math.Max(1, 235 - longEvidenceDirectory.Length - 1 - longEvidencePrefix.Length - longEvidenceSuffix.Length);
         string longEvidenceName = longEvidencePrefix + new string('Y', longEvidenceFill) + longEvidenceSuffix, longEvidencePdfName = longEvidenceName.Substring(0, longEvidenceName.Length - 4);
         string storedLongEvidence = storage.StoreEvidence("mapping-key", "GOV", "User Agreement", longEvidenceName, EvidenceZip(longEvidencePdfName, PdfBytes())), storedLongEvidencePath = Path.Combine(longEvidenceDirectory, storedLongEvidence);
@@ -573,7 +649,7 @@ internal static class PortableStorageTests
         Dictionary<string, object> fullyRevalidatedReworkCorrection = ItemNamed(fullDailyReworkScanItems, promotableCorrectionName);
         Assert(!Convert.ToBoolean(fullyRevalidatedReworkCorrection["unchanged"]), "A local rule-set change must revalidate unchanged Rework evidence for recovery.");
         var promotionResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.OrganizeEvidence("mapping-key", Convert.ToString(fullyRevalidatedReworkCorrection["path"]), "User Agreement"));
-        string promotedRelative = Convert.ToString(promotionResponse["organized"]), promotedPath = Path.Combine(localEvidenceRoot, promotedRelative.Replace('/', Path.DirectorySeparatorChar));
+        string promotedRelative = Convert.ToString(promotionResponse["organized"]), promotedPath = LocalEvidenceFile(storage, "mapping-key", promotedRelative);
         Assert(promotedRelative.StartsWith("Organizations/NGC/NGC User Agreement/", StringComparison.OrdinalIgnoreCase) && File.Exists(promotedPath) && !File.Exists(promotableCorrectionPath), "A validated local Rework correction should move into its organization-prefixed canonical document-type folder with its source removed only after verification.");
         string invalidZipName = "Miller Ava (NGC) GEN SAAR 20260826.zip", invalidZipRelative = Path.Combine("NGC", "Privileged", "Miller_Ava", invalidZipName), invalidZipPath = Path.Combine(root, invalidZipRelative), embeddedPdfName = "Miller_Ava_(NGC)_GEN_SAAR_20260826.pdf";
         File.WriteAllBytes(invalidZipPath, EvidenceZip(embeddedPdfName, PdfBytes()));
