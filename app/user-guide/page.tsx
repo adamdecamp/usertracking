@@ -995,6 +995,9 @@ export default function Guide() {
           organization&apos;s local-only Complete folder after the ZIP is reopened and
           its embedded PDF hash matches. Shared-drive loose PDFs are preserved and
           never compressed by Sync. Temporary staging files are removed after the action.
+          In Full Access, choose <b>Open Local Workspace</b> on the dashboard to
+          open the selected system&apos;s Incoming, Rework, Complete, and protected
+          local System folders directly in Windows File Explorer.
           Each mapped system has its own launcher operation queue, so a slow
           action for one system does not block safe work against another system.
         </p>

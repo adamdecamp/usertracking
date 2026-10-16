@@ -72,6 +72,12 @@ test('Read-Only mapping avoids shared-folder initialization and all session boun
  assert.match(storage,/audit-chain\.lock/);
 });
 
+test('the dashboard opens the selected protected local workspace in File Explorer',()=>{
+ assert.match(page,/Open Local Workspace/);
+ assert.match(page,/portableRequest\(root,'workspace-open',\{method:'POST'\}\)/);
+ assert.match(launcher,/action == "workspace-open"[\s\S]*?LocalWorkspacePath\(systemId\)[\s\S]*?Process\.Start\("explorer\.exe"/);
+});
+
 test('the live JSON database has an independently verified SHA-256 sidecar',()=>{
  assert.match(page,/manifestChecksumFilename=checksumFilename\(manifestFilename\)/);
  assert.match(page,/verifyBrowserManifestChecksum\(directory,text\)/);

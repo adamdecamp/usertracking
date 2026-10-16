@@ -3175,7 +3175,12 @@ internal sealed class PortableStorage : IDisposable
     private string BeginTransaction(string root, string operation, string source, string destination, string sourceHash, string destinationHash)
     {
         string directory = SupportDirectory(root, "Storage Transactions");
-        string id = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N"), path = Path.Combine(directory, "transaction-" + id + ".json");
+        string transactionGuid = Guid.NewGuid().ToString("N");
+        string id = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ", CultureInfo.InvariantCulture) + "-" + transactionGuid;
+        // Keep the timestamped identifier in the journal payload, but use the shorter
+        // GUID-only leaf name so transaction recovery also works from long CI, VPN,
+        // OneDrive, and organization paths on legacy Windows filesystem APIs.
+        string path = Path.Combine(directory, "transaction-" + transactionGuid + ".json");
         var value = new Dictionary<string, object> { { "version", StorageTransactionVersion }, { "id", id }, { "operation", operation }, { "createdAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "source", RelativeOrSelf(root, source) }, { "destination", RelativeOrSelf(root, destination) }, { "sourceHash", sourceHash ?? "" }, { "destinationHash", destinationHash ?? "" }, { "state", "prepared" } };
         AtomicWrite(path, Encoding.UTF8.GetBytes(json.Serialize(value)));return path;
     }
