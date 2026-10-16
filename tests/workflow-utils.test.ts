@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,archiveRetentionDisposition,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reactivationSaarEligibility,reconcileEvidence,recordComplianceNotificationHistory,recoverDisabledArchivedArtifacts,removePreflightArchivedArtifacts,requiresSaarFormClassification,saarAccountMetadata,saarAccountMetadataChanged,sameYearSupportingEvidenceEligible,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
+import {activeComplianceException,activeUserProtectsEvidenceFromDeletion,applySyncArtifactProvenance,archiveRetentionDisposition,automaticDatabaseCompressionCandidateIds,clearComplianceNotificationHistory,committedRecordWithExceptions,complianceNotificationAction,duplicateContentGroups,evidenceAssociationMatchesTransfer,evidenceBelongsToUserArchiveScope,hasActiveDuplicateEvidenceScope,newestSaarAccountState,notificationRecipientBatches,proposedNewUserArtifacts,reactivationSaarEligibility,reconcileEvidence,recordComplianceNotificationHistory,recordIndividualComplianceNotificationHistory,recoverDisabledArchivedArtifacts,removePreflightArchivedArtifacts,requiresSaarFormClassification,saarAccountMetadata,saarAccountMetadataChanged,sameYearSupportingEvidenceEligible,shouldDisableUserFromSaarState,type NotificationHistoryChange,type SyncProvenanceUser} from '../app/workflow-utils.ts';
 import {verifySyncProvenance} from '../app/provenance-utils.ts';
 
 test('records stale provenance references per file while completing the rest of the batch',async()=>{
@@ -101,6 +101,15 @@ test('records paperwork draft dates and clears them when the user record is upda
  assert.match(recorded[0].changes.at(-1)?.description??'',/Missing User Agreement.*batch 1 of 2/);
  assert.equal(recorded[1].changes.length,0);
  assert.deepEqual(clearComplianceNotificationHistory(recorded[0]).changes,[]);
+});
+
+test('records one contact attempt for an individual multi-requirement draft',()=>{
+ const users:{id:string;email:string;roles:string[];changes:NotificationHistoryChange[]}[]=[{id:'u1',email:'jacob@example.mil',roles:['Privileged'],changes:[]}],timestamp='2026-10-16T12:00:00.000Z';
+ const recorded=recordIndividualComplianceNotificationHistory(users,'u1',[{state:'Missing',requirement:'User Agreement'},{state:'Overdue',requirement:'DoD Cyber Cert'}],timestamp,'DOMAIN\\operator');
+ assert.equal(recorded[0].changes.length,1);
+ assert.equal(recorded[0].changes[0].action,complianceNotificationAction);
+ assert.match(recorded[0].changes[0].description,/Individual Outlook draft prepared/);
+ assert.match(recorded[0].changes[0].description,/User Agreement \(Missing\), DoD Cyber Cert \(Overdue\)/);
 });
 
 test('commits exception changes without leaking unrelated draft edits',()=>{

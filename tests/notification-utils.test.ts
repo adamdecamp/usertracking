@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {annualRevalidationNotice,availableNotificationKinds,dodCyberTrainingUrl,notificationBody,notificationKindForState,notificationTemplateFor,notificationUsesUserAgreementTemplate,privilegedUserTrainingUrl,qualificationMemoTemplatePattern,userAgreementTemplateFilename} from '../app/notification-utils.ts';
+import {annualRevalidationNotice,availableNotificationKinds,dodCyberTrainingUrl,individualNotificationBody,notificationBody,notificationKindForState,notificationTemplateFor,notificationUsesUserAgreementTemplate,privilegedUserTrainingUrl,qualificationMemoTemplatePattern,userAgreementTemplateFilename} from '../app/notification-utils.ts';
 
 test('creates the approved missing-artifact message',()=>{
  const message=notificationBody('Missing','DoD Cyber Cert');
@@ -106,4 +106,33 @@ test('attaches the dated 8140 qualification memo and explains certification hand
  }
  assert.equal(notificationTemplateFor('Missing','User Agreement'),'user-agreement');
  assert.equal(notificationTemplateFor('Missing','DoD Cyber Cert'),null);
+});
+
+test('creates one polite individual draft for multiple actionable requirements',()=>{
+ const message=individualNotificationBody([
+  {state:'Missing',requirement:'User Agreement'},
+  {state:'Overdue',requirement:'DoD Cyber Cert'},
+  {state:'Due Within 30 Days',requirement:'Privileged User Training Cert'},
+  {state:'Missing',requirement:'8140 Cert Memo'},
+ ],4);
+ assert.match(message,/^Sir\/Ma'am,/);
+ assert.match(message,/• User Agreement — Missing/);
+ assert.match(message,/• DoD Cyber Cert — Overdue/);
+ assert.match(message,/• Privileged User Training Cert — Due Within 30 Days/);
+ assert.match(message,/Contact Attempt 4: Our records show that 3 previous Outlook drafts were prepared/);
+ assert.equal(message.split(dodCyberTrainingUrl).length,2);
+ assert.equal(message.split(privilegedUserTrainingUrl).length,2);
+ assert.match(message,/complete and return the attached User Agreement/i);
+ assert.match(message,/complete and return the attached 8140 Qualification Memo/i);
+ assert.match(message,/IMPORTANT — REQUIRED FILE NAMES/);
+ assert.match(message,/Last_First_\(ORG\)_User_Agreement_DDMMMYYYY\.pdf/);
+ assert.match(message,/Last_First_\(ORG\)_8140_Cert_Memo_DDMMMYYYY\.pdf/);
+ assert.match(message,/Thank you for your assistance\.$/);
+});
+
+test('labels a first individual outreach without implying prior delivery',()=>{
+ const message=individualNotificationBody([{state:'Missing',requirement:'SAAR'}]);
+ assert.match(message,/Contact Attempt 1: This is our first documented outreach/);
+ assert.doesNotMatch(message,/previous Outlook draft/);
+ assert.throws(()=>individualNotificationBody([{state:'Missing',requirement:'SAAR'}],0),/positive whole number/);
 });

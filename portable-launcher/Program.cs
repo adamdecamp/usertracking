@@ -535,9 +535,12 @@ internal sealed class TrackerContext : ApplicationContext
         if (request == null) throw new InvalidDataException("The Outlook draft request is invalid.");
         string to = request.ContainsKey("to") ? Convert.ToString(request["to"]) : "", bcc = request.ContainsKey("bcc") ? Convert.ToString(request["bcc"]) : "", subject = request.ContainsKey("subject") ? Convert.ToString(request["subject"]) : "", body = request.ContainsKey("body") ? Convert.ToString(request["body"]) : "";
         string attachmentFilename = request.ContainsKey("attachmentFilename") ? Convert.ToString(request["attachmentFilename"]) : "", attachmentText = request.ContainsKey("attachmentText") ? Convert.ToString(request["attachmentText"]) : "";
-        string templateType = request.ContainsKey("templateType") ? Convert.ToString(request["templateType"]) : "";
-        if (String.IsNullOrWhiteSpace(templateType) && request.ContainsKey("attachUserAgreementTemplate") && Convert.ToBoolean(request["attachUserAgreementTemplate"])) templateType = "user-agreement";
-        bool attachTemplate = !String.IsNullOrWhiteSpace(templateType);
+        object[] requestedTemplateValues = request.ContainsKey("templateTypes") ? request["templateTypes"] as object[] : null;
+        string[] templateTypes = requestedTemplateValues == null ? new string[0] : requestedTemplateValues.Select(value => Convert.ToString(value)).Where(value => !String.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
+        string legacyTemplateType = request.ContainsKey("templateType") ? Convert.ToString(request["templateType"]) : "";
+        if (templateTypes.Length == 0 && !String.IsNullOrWhiteSpace(legacyTemplateType)) templateTypes = new[] { legacyTemplateType };
+        if (templateTypes.Length == 0 && request.ContainsKey("attachUserAgreementTemplate") && Convert.ToBoolean(request["attachUserAgreementTemplate"])) templateTypes = new[] { "user-agreement" };
+        bool attachTemplate = templateTypes.Length > 0;
         object[] requestedAuditSystems = request.ContainsKey("auditSystemIds") ? request["auditSystemIds"] as object[] : null;
         string[] requestedAuditSystemIds = requestedAuditSystems == null ? new string[0] : requestedAuditSystems.Select(value => Convert.ToString(value)).Where(value => !String.IsNullOrWhiteSpace(value)).ToArray();
         if (requestedAuditSystemIds.Length > 40 || requestedAuditSystemIds.Any(value => value.Length > 100 || value.IndexOfAny(new[] { '\r', '\n', '\0', '/', '\\' }) >= 0)) throw new InvalidDataException("The Outlook audit-system list is invalid.");
@@ -564,8 +567,8 @@ internal sealed class TrackerContext : ApplicationContext
             catch { throw new InvalidDataException("The Outlook To address is invalid."); }
         }
         bool attachOrganizationSnapshot = !String.IsNullOrEmpty(attachmentText) || !String.IsNullOrEmpty(attachmentFilename);
-        if (attachTemplate && !String.Equals(templateType, "user-agreement", StringComparison.Ordinal) && !String.Equals(templateType, "8140-qualification-memo", StringComparison.Ordinal)) throw new InvalidDataException("The Outlook template type is invalid.");
-        if (attachTemplate && attachOrganizationSnapshot) throw new InvalidDataException("Only one managed attachment may be added to an Outlook draft.");
+        if (templateTypes.Length > 2 || templateTypes.Any(value => !String.Equals(value, "user-agreement", StringComparison.Ordinal) && !String.Equals(value, "8140-qualification-memo", StringComparison.Ordinal))) throw new InvalidDataException("The Outlook template list is invalid.");
+        if (attachTemplate && attachOrganizationSnapshot) throw new InvalidDataException("Template documents and an organization snapshot cannot be attached to the same Outlook draft.");
         if (attachOrganizationSnapshot)
         {
             if (String.IsNullOrWhiteSpace(attachmentText) || Encoding.UTF8.GetByteCount(attachmentText) > 25 * 1024 * 1024) throw new InvalidDataException("The organization status attachment is empty or exceeds 25 MB.");
@@ -580,23 +583,26 @@ internal sealed class TrackerContext : ApplicationContext
         string htmlBody = OutlookHtmlBody(body), operationId = Guid.NewGuid().ToString("N").ToUpperInvariant();
         var outlookThread = new Thread(new ThreadStart(delegate
         {
-            object outlook = null, message = null, attachments = null, attachment = null; string temporaryAttachmentPath = null;
+            object outlook = null, message = null, attachments = null; var attachmentObjects = new List<object>();var temporaryAttachmentPaths = new List<string>();
             try
             {
-                string attachmentPath = null;
+                var attachmentPaths = new List<string>();
                 if (attachTemplate)
                 {
-                    Task<string> templateLookup = Task.Run(() => storage.StageOutlookTemplateAttachment(systemId, templateType));
-                    if (!templateLookup.Wait(TimeSpan.FromMinutes(5))) throw new TimeoutException("The requested Template-folder attachment could not be validated within five minutes. Confirm that the mapped folder is available and try again.");
-                    temporaryAttachmentPath = templateLookup.GetAwaiter().GetResult();
-                    attachmentPath = temporaryAttachmentPath;
+                    foreach (string templateType in templateTypes)
+                    {
+                        Task<string> templateLookup = Task.Run(() => storage.StageOutlookTemplateAttachment(systemId, templateType));
+                        if (!templateLookup.Wait(TimeSpan.FromMinutes(5))) throw new TimeoutException("A requested Template-folder attachment could not be validated within five minutes. Confirm that the mapped folder is available and try again.");
+                        string temporaryAttachmentPath = templateLookup.GetAwaiter().GetResult();
+                        temporaryAttachmentPaths.Add(temporaryAttachmentPath);attachmentPaths.Add(temporaryAttachmentPath);
+                    }
                 }
                 else if (attachOrganizationSnapshot)
                 {
                     string temporaryDirectory = Path.Combine(Path.GetTempPath(), "RAPTOR", "Organization Status");Directory.CreateDirectory(temporaryDirectory);
-                    temporaryAttachmentPath = Path.Combine(temporaryDirectory, Guid.NewGuid().ToString("N") + "-" + attachmentFilename);
+                    string temporaryAttachmentPath = Path.Combine(temporaryDirectory, Guid.NewGuid().ToString("N") + "-" + attachmentFilename);
                     File.WriteAllText(temporaryAttachmentPath, attachmentText, new UTF8Encoding(false));
-                    attachmentPath = temporaryAttachmentPath;
+                    temporaryAttachmentPaths.Add(temporaryAttachmentPath);attachmentPaths.Add(temporaryAttachmentPath);
                 }
                 Type outlookType = Type.GetTypeFromProgID("Outlook.Application");
                 if (outlookType == null) throw new InvalidOperationException("Classic Microsoft Outlook is not installed or available to this Windows account.");
@@ -606,15 +612,15 @@ internal sealed class TrackerContext : ApplicationContext
                 if (!String.IsNullOrWhiteSpace(to)) messageType.InvokeMember("To", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { to });
                 else messageType.InvokeMember("BCC", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { String.Join(";", recipients) });
                 messageType.InvokeMember("Subject", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { subject });
-                if (!String.IsNullOrWhiteSpace(attachmentPath))
+                if (attachmentPaths.Count > 0)
                 {
                     attachments = messageType.InvokeMember("Attachments", BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, null);
-                    attachment = attachments.GetType().InvokeMember("Add", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, attachments, new object[] { attachmentPath, Type.Missing, Type.Missing, Type.Missing });
+                    foreach (string attachmentPath in attachmentPaths) attachmentObjects.Add(attachments.GetType().InvokeMember("Add", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, attachments, new object[] { attachmentPath, Type.Missing, Type.Missing, Type.Missing }));
                 }
                 messageType.InvokeMember("Display", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { false });
                 string signatureHtml = Convert.ToString(messageType.InvokeMember("HTMLBody", BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, null));
                 messageType.InvokeMember("HTMLBody", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { OutlookHtmlWithSignature(htmlBody, signatureHtml) });
-                RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + (String.IsNullOrWhiteSpace(to) ? recipients.Length + " BCC recipients" : "one ISSO To recipient") + "; managed template " + (attachTemplate ? templateType + " attached" : "not applicable") + "; organization snapshot " + (attachOrganizationSnapshot ? "attached" : "not applicable") + "; operator review required before sending", null, operationId);
+                RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + (String.IsNullOrWhiteSpace(to) ? recipients.Length + " BCC recipients" : "one To recipient") + "; managed templates " + (attachTemplate ? String.Join(", ", templateTypes) + " attached" : "not applicable") + "; organization snapshot " + (attachOrganizationSnapshot ? "attached" : "not applicable") + "; operator review required before sending", null, operationId);
             }
             catch (Exception error)
             {
@@ -625,8 +631,8 @@ internal sealed class TrackerContext : ApplicationContext
             }
             finally
             {
-                ReleaseComObject(attachment);ReleaseComObject(attachments);ReleaseComObject(message);ReleaseComObject(outlook);
-                if (!String.IsNullOrWhiteSpace(temporaryAttachmentPath))
+                foreach (object attachmentObject in attachmentObjects.AsEnumerable().Reverse()) ReleaseComObject(attachmentObject);ReleaseComObject(attachments);ReleaseComObject(message);ReleaseComObject(outlook);
+                foreach (string temporaryAttachmentPath in temporaryAttachmentPaths)
                 {
                     try { File.Delete(temporaryAttachmentPath); } catch { }
                     try { string temporaryDirectory = Path.GetDirectoryName(temporaryAttachmentPath);if (!String.IsNullOrWhiteSpace(temporaryDirectory) && Directory.Exists(temporaryDirectory)) Directory.Delete(temporaryDirectory, false); } catch { }
@@ -639,8 +645,9 @@ internal sealed class TrackerContext : ApplicationContext
         outlookThread.SetApartmentState(ApartmentState.STA);
         try { outlookThread.Start(); }
         catch { Interlocked.Exchange(ref outlookDraftActive, 0);throw; }
-        string responseAttachment = attachTemplate ? (String.Equals(templateType, "8140-qualification-memo", StringComparison.Ordinal) ? PortableStorage.QualificationMemoTemplatePattern : PortableStorage.UserAgreementTemplateFilename) : attachOrganizationSnapshot ? attachmentFilename : null;
-        return "{\"queued\":true,\"operationId\":\"" + operationId + "\",\"attachment\":" + (responseAttachment == null ? "null" : "\"" + Json(responseAttachment) + "\"") + "}";
+        string[] responseAttachments = attachTemplate ? templateTypes.Select(value => String.Equals(value, "8140-qualification-memo", StringComparison.Ordinal) ? PortableStorage.QualificationMemoTemplatePattern : PortableStorage.UserAgreementTemplateFilename).ToArray() : attachOrganizationSnapshot ? new[] { attachmentFilename } : new string[0];
+        string responseAttachment = responseAttachments.FirstOrDefault(), responseAttachmentList = "[" + String.Join(",", responseAttachments.Select(value => "\"" + Json(value) + "\"")) + "]";
+        return "{\"queued\":true,\"operationId\":\"" + operationId + "\",\"attachment\":" + (responseAttachment == null ? "null" : "\"" + Json(responseAttachment) + "\"") + ",\"attachments\":" + responseAttachmentList + "}";
     }
 
     internal static string OutlookHtmlBody(string body)
@@ -651,8 +658,8 @@ internal sealed class TrackerContext : ApplicationContext
         bool highlightFilenameStandard = false;
         foreach (string line in lines)
         {
-            if (String.Equals(line, "IMPORTANT - REQUIRED FILE NAME", StringComparison.Ordinal) || String.Equals(line, "IMPORTANT — REQUIRED FILE NAME", StringComparison.Ordinal)) highlightFilenameStandard = true;
-            if (line.StartsWith("Rename the file before returning it.", StringComparison.Ordinal) || line.StartsWith("If you have already submitted this document", StringComparison.Ordinal)) highlightFilenameStandard = false;
+            if (String.Equals(line, "IMPORTANT - REQUIRED FILE NAME", StringComparison.Ordinal) || String.Equals(line, "IMPORTANT — REQUIRED FILE NAME", StringComparison.Ordinal) || String.Equals(line, "IMPORTANT - REQUIRED FILE NAMES", StringComparison.Ordinal) || String.Equals(line, "IMPORTANT — REQUIRED FILE NAMES", StringComparison.Ordinal)) highlightFilenameStandard = true;
+            if (line.StartsWith("Rename the file before returning it.", StringComparison.Ordinal) || line.StartsWith("If you have already submitted this document", StringComparison.Ordinal) || line.StartsWith("If you have already submitted any of these documents", StringComparison.Ordinal)) highlightFilenameStandard = false;
             string encoded = WebUtility.HtmlEncode(line);
             if (String.Equals(line, "https://www.cyber.mil/cyber-awareness-challenge", StringComparison.Ordinal) || String.Equals(line, "https://www.cdse.edu/Training/eLearning/DS-IA112/", StringComparison.Ordinal)) encoded = "<a href=\"" + WebUtility.HtmlEncode(line) + "\">" + WebUtility.HtmlEncode(line) + "</a>";
             if (highlightFilenameStandard && encoded.Length > 0) html.Append("<span style=\"background-color:#fff200;color:#000000;font-weight:bold\">").Append(encoded).Append("</span>");

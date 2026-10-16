@@ -201,6 +201,19 @@ test('paperwork draft preparation is recorded in the User Record and cleared by 
  assert.match(page,/u=clearComplianceNotificationHistory\(u\)/);
 });
 
+test('individual User Record drafts include all actionable requirements and prior-contact count',()=>{
+ const userModal=page.slice(page.indexOf('function UserModal('),page.indexOf('function MessageAutomation('));
+ assert.match(userModal,/Previously Drafted Emails For Current Requirements/);
+ assert.match(userModal,/Prepare Outlook Draft/);
+ assert.match(userModal,/notificationIssues:NotificationIssue\[\]/);
+ assert.match(page,/individualNotificationBody\(issues,attemptNumber\)/);
+ assert.match(page,/Contact Attempt \$\{attemptNumber\}/);
+ assert.match(page,/templateTypes,auditSystemIds:\[user\.systemId\]/);
+ assert.match(launcher,/requestedTemplateValues/);
+ assert.match(launcher,/foreach \(string templateType in templateTypes\)/);
+ assert.match(launcher,/IMPORTANT — REQUIRED FILE NAMES/);
+});
+
 test('User Agreement and 8140 notification templates are launcher-attached and excluded from Sync',()=>{
  assert.match(page,/getDirectoryHandle\('Template',\{create:true\}\)/);
  assert.match(page,/\['system','template','error reports'/);

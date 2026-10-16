@@ -1281,6 +1281,19 @@ export default function Guide() {
           </li>
         </ol>
         <h3>Prepare Missing, Due-Soon, or Overdue Notifications</h3>
+        <p>
+          For one person, open the <b>User Record</b> and select{" "}
+          <b>Prepare Outlook Draft</b>. The draft lists every missing,
+          due-within-30-days, and overdue requirement for that active user in one
+          courteous message, includes the applicable official training links,
+          and attaches both the User Agreement and 8140 Qualification Memo
+          templates when those documents are needed. The User Record displays how
+          many drafts have been prepared during the current outstanding-paperwork
+          cycle. The subject and message identify the new contact-attempt number
+          and state how many previous Outlook drafts were prepared without claiming
+          that Outlook delivered them. That count and its dates clear when the
+          record or evidence is updated.
+        </p>
         <ol>
           <li>
             Click the <b>Missing</b>, <b>Due Within 30 Days</b>, or{" "}

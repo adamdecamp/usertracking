@@ -136,6 +136,11 @@ export function recordComplianceNotificationHistory<T extends{id:string;email:st
  return users.map(user=>{if(!selected.has(user.id))return user;const change:NotificationHistoryChange={timestamp,actor,action:complianceNotificationAction,description:`${state} ${artifact} Outlook draft prepared for ${user.email}; BCC batch ${batchNumber} of ${batchTotal}. Outlook controls final sending, so this entry records draft preparation rather than delivery confirmation.`,rolesBefore:[...user.roles],rolesAfter:[...user.roles],files:[]};return{...user,changes:[...(user.changes??[]),change]}});
 }
 
+export function recordIndividualComplianceNotificationHistory<T extends{id:string;email:string;roles:string[];changes?:NotificationHistoryChange[]}>(users:T[],userId:string,issues:readonly{state:string;requirement:string}[],timestamp:string,actor:string){
+ const summary=issues.map(issue=>`${issue.requirement} (${issue.state})`).join(', ');
+ return users.map(user=>{if(user.id!==userId)return user;const change:NotificationHistoryChange={timestamp,actor,action:complianceNotificationAction,description:`Individual Outlook draft prepared for ${user.email}; requirements: ${summary}. Outlook controls final sending, so this entry records draft preparation rather than delivery confirmation.`,rolesBefore:[...user.roles],rolesAfter:[...user.roles],files:[]};return{...user,changes:[...(user.changes??[]),change]}});
+}
+
 export function committedRecordWithExceptions<T extends{exceptions?:ComplianceException[]}>(record:T,exceptions:ComplianceException[]){return{...record,exceptions}}
 
 export function evidenceBelongsToUserArchiveScope(item:{filename:string;folderOrganization?:string},user:UserEvidenceArchiveScope){
