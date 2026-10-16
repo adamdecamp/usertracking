@@ -1,8 +1,9 @@
 import {canonicalArtifactKind,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom,parseDate} from './filename-utils.ts';
 import {resolveSyncProvenanceEvidence} from './provenance-utils.ts';
 import {normalizePrivilegedTypes} from './privileged-type-utils.ts';
+import type {ComplianceException} from './domain/tracker-models.ts';
 
-export type ComplianceException={id:string;artifact:string;reason:string;approvedBy:string;createdAt:string;createdBy:string;expiresOn:string;revokedAt?:string;revokedBy?:string};
+export type {ComplianceException} from './domain/tracker-models.ts';
 export type ReconciliationUser={id:string;last:string;first:string;email:string;organization:string;disabled?:boolean;artifacts:{kind:string;filename:string;sha256?:string;path?:string}[]};
 export type ReconciliationEvidence={filename:string;path:string;sha256?:string;folderOrganization?:string};
 export type ReconciliationRejection={filename:string;reason:string;path?:string};
