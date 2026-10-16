@@ -3457,17 +3457,25 @@ internal sealed class PortableStorage : IDisposable
                 Dictionary<string, object> user = ObjectDictionary(userValue);string organization = ValidOrganizationName(Convert.ToString(user["organization"], CultureInfo.InvariantCulture));
                 foreach (object artifactValue in ObjectArray(user["artifacts"]))
                 {
-                    Dictionary<string, object> artifact = ObjectDictionary(artifactValue);string filename = Convert.ToString(artifact["filename"], CultureInfo.InvariantCulture);
-                    if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) continue;
+                    Dictionary<string, object> artifact = ObjectDictionary(artifactValue);string filename = Convert.ToString(artifact["filename"], CultureInfo.InvariantCulture);bool recordedPdf = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase), recordedZip = filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+                    if (!recordedPdf && !recordedZip) continue;
                     string previous = artifact.ContainsKey("path") ? Convert.ToString(artifact["path"], CultureInfo.InvariantCulture).Replace('\\', '/') : "", canonical = previous, expected = artifact.ContainsKey("sha256") ? Convert.ToString(artifact["sha256"], CultureInfo.InvariantCulture) : "";
                     if (String.IsNullOrWhiteSpace(canonical) || IsOrganizationIncomingEvidencePath(canonical) || IsOrganizationReworkEvidencePath(canonical) || canonical.Split('/').Any(IsCompleteStorageDirectory) || !canonical.StartsWith("Organizations/", StringComparison.OrdinalIgnoreCase)) canonical = Path.Combine("Organizations", organization, OrganizationArtifactStorageFolder(ArtifactStorageFolder(Convert.ToString(artifact["kind"], CultureInfo.InvariantCulture)), organization), filename).Replace(Path.DirectorySeparatorChar, '/');
-                    string zipCanonical = canonical.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? canonical : canonical + ".zip", lookup = String.IsNullOrWhiteSpace(previous) ? canonical : previous, source = null;Dictionary<string, object> mapped;var records = ReadLocalEvidenceMap(systemId);
-                    if (records.TryGetValue(zipCanonical, out mapped)) source = SafeRelativePath(root, Convert.ToString(mapped["localPath"], CultureInfo.InvariantCulture));
-                    else if (records.TryGetValue(lookup, out mapped)) source = SafeRelativePath(root, Convert.ToString(mapped["localPath"], CultureInfo.InvariantCulture));
-                    else source = SafeRelativePath(root, lookup);
-                    if (!File.Exists(source)) source = FindLocalPublicationSource(root, organization, filename, expected);
+                    string zipCanonical = canonical.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? canonical : canonical + ".zip", lookup = String.IsNullOrWhiteSpace(previous) ? canonical : previous, source = FindLocalPublicationSource(root, organization, filename, expected);Dictionary<string, object> mapped;var records = ReadLocalEvidenceMap(systemId);
+                    // Prefer a newly staged Incoming copy over an older Published Evidence
+                    // receipt. This lets an idempotent Session Commit verify and drain a
+                    // duplicate that was added after the original evidence was published.
+                    if (String.IsNullOrWhiteSpace(source) && records.TryGetValue(zipCanonical, out mapped)) source = SafeRelativePath(root, Convert.ToString(mapped["localPath"], CultureInfo.InvariantCulture));
+                    else if (String.IsNullOrWhiteSpace(source) && records.TryGetValue(lookup, out mapped)) source = SafeRelativePath(root, Convert.ToString(mapped["localPath"], CultureInfo.InvariantCulture));
+                    else if (String.IsNullOrWhiteSpace(source)) source = SafeRelativePath(root, lookup);
                     if (String.IsNullOrWhiteSpace(source) || !File.Exists(source)) continue;
-                    if (IsSha256(expected) && !String.Equals(expected, source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? EvidencePdfSha256(source) : TryFileHash(source), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A recorded local PDF changed before publication: " + filename);
+                    string sourceExpectedHash = source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && recordedZip ? TryFileHash(source) : source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? EvidencePdfSha256(source) : TryFileHash(source);bool expectedMatches = !IsSha256(expected) || String.Equals(expected, sourceExpectedHash, StringComparison.OrdinalIgnoreCase);
+                    if (!expectedMatches && recordedZip && source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Dictionary<string, object> receipt;string incomingPdfHash = EvidencePdfSha256(source);
+                        expectedMatches = records.TryGetValue(zipCanonical, out receipt) && !Convert.ToBoolean(receipt["pending"], CultureInfo.InvariantCulture) && receipt.ContainsKey("pdfSha256") && String.Equals(incomingPdfHash, Convert.ToString(receipt["pdfSha256"], CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+                    }
+                    if (!expectedMatches) throw new InvalidDataException("A recorded local evidence file changed before publication: " + filename);
                     string zip = source;
                     if (source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) { zip = CompressEvidenceFile(systemId, root, source, true);compressed++; }
                     string validationError;if (!TryValidateEvidenceFile(zip, out validationError)) throw new InvalidDataException("The prepared publication ZIP failed validation: " + validationError);
