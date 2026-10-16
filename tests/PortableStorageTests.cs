@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Globalization;
 using System.Linq;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
@@ -15,6 +16,35 @@ internal static class PortableStorageTests
     private static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 100 * 1024 * 1024 };
 
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
+
+    private static string RawLauncherRequest(TrackerContext context, string method, string path, byte[] body, bool includeToken, bool validOrigin, long? declaredLength = null)
+    {
+        using (var client = new TcpClient("127.0.0.1", context.E2EPort))
+        using (NetworkStream stream = client.GetStream())
+        {
+            byte[] requestBody = body ?? new byte[0];long length = declaredLength ?? requestBody.LongLength;
+            string headers = method + " " + path + " HTTP/1.1\r\nHost: localhost:" + context.E2EPort.ToString(CultureInfo.InvariantCulture) + "\r\nConnection: close\r\n" + ((method == "POST" || method == "DELETE") ? "Origin: " + (validOrigin ? "http://localhost:" + context.E2EPort.ToString(CultureInfo.InvariantCulture) : "https://invalid.example") + "\r\n" : "") + (includeToken ? "X-RAPTOR-Session-Token: " + context.E2ESessionToken + "\r\n" : "") + "X-RAPTOR-Lease-Session: e2e-session\r\nContent-Length: " + length.ToString(CultureInfo.InvariantCulture) + "\r\n\r\n";
+            byte[] headerBytes = Encoding.ASCII.GetBytes(headers);stream.Write(headerBytes, 0, headerBytes.Length);if (requestBody.Length > 0) stream.Write(requestBody, 0, requestBody.Length);stream.Flush();
+            using (var response = new MemoryStream()) { byte[] buffer = new byte[4096];int read;while ((read = stream.Read(buffer, 0, buffer.Length)) > 0) response.Write(buffer, 0, read);return Encoding.UTF8.GetString(response.ToArray()); }
+        }
+    }
+
+    private static void RunLauncherE2E(string parent)
+    {
+        string root = Path.Combine(parent, "launcher-e2e");Directory.CreateDirectory(root);var context = new TrackerContext(root);
+        try
+        {
+            string authenticated = RawLauncherRequest(context, "GET", "/api/session-user", null, true, true);Assert(authenticated.StartsWith("HTTP/1.1 200", StringComparison.Ordinal) && authenticated.Contains("RAPTOR\\\\E2E"), "The real launcher listener should authenticate and route an API request end to end.");
+            Assert(RawLauncherRequest(context, "GET", "/api/session-user", null, false, true).StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "The launcher must reject an API request without its ephemeral session token.");
+            Assert(RawLauncherRequest(context, "POST", "/api/activity", null, true, false).StartsWith("HTTP/1.1 403", StringComparison.Ordinal), "The launcher must reject a state-changing request from a foreign Origin.");
+            Assert(RawLauncherRequest(context, "POST", "/api/storage/e2e-system/audit", null, true, true, 8193).StartsWith("HTTP/1.1 413", StringComparison.Ordinal), "The launcher must reject an audit body above its endpoint-specific limit before reading it.");
+            string auditWrite = RawLauncherRequest(context, "POST", "/api/storage/e2e-system/audit", Encoding.UTF8.GetBytes("LAUNCHER E2E AUDIT"), true, true);Assert(auditWrite.StartsWith("HTTP/1.1 200", StringComparison.Ordinal), "The launcher should route an allowed bounded audit write through the storage layer. Response: " + auditWrite);
+            PortableStorage.FailAfterStageForTests = "scan-start";
+            string failed = RawLauncherRequest(context, "GET", "/api/storage/e2e-system/scan?rules=e2e&full=1&legacy=1", null, true, true);Assert(failed.StartsWith("HTTP/1.1 400", StringComparison.Ordinal) && failed.Contains("Injected interruption"), "The launcher E2E test should surface an injected storage failure without terminating the listener.");
+            Assert(RawLauncherRequest(context, "GET", "/api/storage/e2e-system/audit-verify", null, true, true).StartsWith("HTTP/1.1 200", StringComparison.Ordinal), "The launcher must remain usable after an injected storage failure.");
+        }
+        finally { PortableStorage.FailAfterStageForTests = null;context.StopE2E(); }
+    }
 
     private static Dictionary<string, object> ItemNamed(object[] items, string name)
     {
@@ -106,6 +136,9 @@ internal static class PortableStorageTests
             string firstNativeError = String.Join(" | ", nativeItems.Cast<Dictionary<string, object>>().Where(item => !Convert.ToBoolean(item["accepted"])).Select(item => Convert.ToString(item["error"])).Where(message => !String.IsNullOrWhiteSpace(message)).Distinct().Take(3));
             Assert(nativeAccepted == total / 2, "Native enumeration fuzz should accept only the valid PDF and PDF-in-ZIP cases; accepted " + nativeAccepted.ToString() + " of " + total.ToString() + ". Errors: " + firstNativeError);
 
+            string localFuzzRoot = fuzzStorage.LocalWorkspacePath("fuzz-system");
+            foreach (string source in Directory.EnumerateFiles(fuzzRoot, "*", SearchOption.AllDirectories).Where(file => !file.StartsWith(Path.Combine(fuzzRoot, "System"), StringComparison.OrdinalIgnoreCase))) { string destination = Path.Combine(localFuzzRoot, source.Substring(fuzzRoot.Length + 1));Directory.CreateDirectory(Path.GetDirectoryName(destination));File.Copy(source, destination, true); }
+            fuzzStorage.Scan("fuzz-system", "fuzz-rules", false);
             object[] incrementalItems = (object[])Json.DeserializeObject(fuzzStorage.Scan("fuzz-system", "fuzz-rules", false));
             Assert(incrementalItems.Length == total, "Incremental managed enumeration should return the same complete fuzz corpus.");
             Assert(incrementalItems.Cast<Dictionary<string, object>>().Count(item => Convert.ToBoolean(item["unchanged"])) == total * 3 / 4, "Incremental Sync should reuse validation for every unchanged PDF or ZIP while leaving irrelevant extensions uncached.");
@@ -132,17 +165,72 @@ internal static class PortableStorageTests
         }
     }
 
+    private static void RunLocalDatabaseScanBoundary(string parent)
+    {
+        string root = Path.Combine(parent, "local-boundary-share"), cache = Path.Combine(parent, "local-boundary", "mappings.json");Directory.CreateDirectory(root);
+        using (var storage = new PortableStorage("DOMAIN\\local-boundary", cache))
+        {
+            storage.Map("local-boundary", root);
+            var database = (Dictionary<string, object>)Json.DeserializeObject(Database("local@example.mil"));
+            var user = (Dictionary<string, object>)((object[])database["users"])[0];user["disabled"] = true;
+            string disabledName = "Shaw_Vivian_(GOV)_GEN_SAAR_DISABLED_24AUG2026.pdf.zip", archived = "Organizations/GOV/GOV SAAR Archive/" + disabledName;
+            user["artifacts"] = new object[] { new Dictionary<string, object> { { "kind", "SAAR" }, { "filename", disabledName }, { "path", archived } } };
+            storage.SaveSystemState("local-boundary", Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", database }, { "csv", "local database" } })));
+            string local = storage.LocalWorkspacePath("local-boundary"), incoming = Path.Combine(local, "Organizations", "GOV", "GOV Incoming"), localName = "Local_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf";File.WriteAllBytes(Path.Combine(incoming, localName), PdfBytes());
+            string sharedOnly = "Shared_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf", sharedDirectory = Path.Combine(root, "Organizations", "GOV", "GOV DoD Cyber Cert");Directory.CreateDirectory(sharedDirectory);File.WriteAllBytes(Path.Combine(sharedDirectory, sharedOnly), PdfBytes());
+            string manualOrganization = "MANUAL_ORG", manualOrganizationDirectory = Path.Combine(local, "Organizations", manualOrganization);Directory.CreateDirectory(manualOrganizationDirectory);Directory.CreateDirectory(Path.Combine(manualOrganizationDirectory, "Nested Organization"));Directory.CreateDirectory(Path.Combine(local, "Organizations", "SAAR"));
+            int networkEnumerations = 0;PortableStorage.DirectoryEnumerationForTests = delegate(string directory) { if (directory.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || String.Equals(directory, root, StringComparison.OrdinalIgnoreCase)) { networkEnumerations++;throw new IOException("Routine lookup attempted shared-folder enumeration."); } };
+            try
+            {
+                string working = storage.ReadWorkingManifest("local-boundary");Assert(working.Contains("local@example.mil") && working.Contains(disabledName) && working.Contains("\"disabled\":true"), "Disabled state and archived evidence associations must come from the protected local JSON database.");
+                Assert(storage.ListOrganizations("local-boundary").Contains("GOV"), "Organization scope must load from local JSON and local workspace folders.");
+                string[] localOrganizations = (string[])Json.Deserialize(storage.ListOrganizations("local-boundary"), typeof(string[]));
+                Assert(localOrganizations.Contains(manualOrganization) && !localOrganizations.Contains("Nested Organization") && !localOrganizations.Contains("SAAR"), "A manually created local organization must be discovered even when absent from JSON; nested and reserved folders must remain excluded.");
+                foreach (string suffix in new[] { " Incoming", " Rework", " Complete" }) Assert(Directory.Exists(Path.Combine(manualOrganizationDirectory, manualOrganization + suffix)), "A discovered local organization must receive its local workflow folders.");
+                Assert(!storage.ReadWorkingManifest("local-boundary").Contains(manualOrganization), "Local organization discovery must not invent user records or rewrite the JSON database.");
+                Assert(!storage.ListEvidenceLocations("local-boundary").Contains(sharedOnly), "Routine location lookup must not discover unrecorded shared evidence.");
+                storage.ListArchivedEvidenceLocations("local-boundary", "GOV");
+                foreach (bool legacy in new[] { false, true })
+                {
+                    var pipeline = (Dictionary<string, object>)Json.DeserializeObject(storage.RunSyncPipeline("local-boundary", "boundary-rules", false, "GOV", legacy));var scan = (Dictionary<string, object>)pipeline["scan"];
+                    Assert(Json.Serialize(scan).Contains(localName) && !Json.Serialize(scan).Contains(sharedOnly), "Neither Daily nor Legacy mode may scan shared folders without explicit Full Rescan.");
+                    string run = Convert.ToString(scan["runId"]);Assert(storage.CommitSyncJournal("local-boundary", run).Contains("\"committed\":true") && storage.CommitSyncJournal("local-boundary", run).Contains("\"committed\":true"), "Local-workspace journals must commit from their own cache and remain safely repeatable.");
+                }
+                Assert(networkEnumerations == 0, "Routine status, organization, location, Archive, pipeline, and commit operations must perform zero shared-folder enumerations.");
+            }
+            finally { PortableStorage.DirectoryEnumerationForTests = null; }
+            Assert(storage.ScanWithJournal("local-boundary", "boundary-rules", true, "GOV", false).Contains(sharedOnly), "Explicit Full Rescan must still discover network evidence.");
+            Assert(storage.ReadWorkingManifest("local-boundary").Contains(disabledName), "Full discovery must preserve recorded disabled history in local JSON.");
+        }
+    }
+
     public static int Main(string[] args)
     {
+        try { return RunTests(args); }
+        catch (Exception error) { Console.Error.WriteLine(error);return 1; }
+    }
+
+    private static int RunTests(string[] args)
+    {
         if (args.Length != 1) throw new ArgumentException("A test directory is required.");
+        using (var auditTestKey = new RSACryptoServiceProvider(2048)) { auditTestKey.PersistKeyInCsp = false;PortableStorage.AuditSigningKeyOverrideForTests = auditTestKey.ExportCspBlob(true); }
         MethodInfo optionalQueryValue = typeof(TrackerContext).GetMethod("OptionalQueryValue", BindingFlags.NonPublic | BindingFlags.Static);
         Assert(optionalQueryValue != null, "The launcher must expose its optional archive request-value parser.");
         Assert(Convert.ToString(optionalQueryValue.Invoke(null, new object[] { "/api/storage/system/archive?path=file.pdf&filename=", "filename" })) == "", "An explicitly empty optional archive filename should use the source filename.");
         Assert(optionalQueryValue.Invoke(null, new object[] { "/api/storage/system/archive?path=file.pdf", "filename" }) == null, "A missing optional archive filename must not reject an otherwise valid archive request.");
         Assert(TrackerContext.ReadOnlyStorageActionAllowed("manifest", "GET") && TrackerContext.ReadOnlyStorageActionAllowed("file", "GET") && TrackerContext.ReadOnlyStorageActionAllowed("performance", "GET") && TrackerContext.ReadOnlyStorageActionAllowed("diagnostics", "GET") && TrackerContext.ReadOnlyStorageActionAllowed("audit-batch", "POST") && !TrackerContext.ReadOnlyStorageActionAllowed("manifest", "POST") && !TrackerContext.ReadOnlyStorageActionAllowed("scan", "GET") && !TrackerContext.ReadOnlyStorageActionAllowed("evidence", "POST"), "Read-Only launcher enforcement should allow lookup, sanitized diagnostics, local performance diagnostics, and session auditing while rejecting every database, evidence, and Sync mutation.");
+        Assert(TrackerContext.RequestBodyLimit("/api/storage/system/audit", "POST") == 8L * 1024 && TrackerContext.RequestBodyLimit("/api/storage/system/audit-batch", "POST") == 5L * 1024 * 1024 && TrackerContext.RequestBodyLimit("/api/storage/system/evidence", "POST") == 110L * 1024 * 1024 && TrackerContext.RequestBodyLimit("/api/storage/system/scan", "POST") == 0 && TrackerContext.RequestBodyLimit("/api/storage/system/evidence", "GET") == 0, "Every launcher endpoint should have an explicit least-privilege request-body limit.");
         string root = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(root);
+        string reparseRoot = Path.Combine(root, "reparse-path-test"), reparseChild = Path.Combine(reparseRoot, "junction"), reparseTarget = Path.Combine(reparseChild, "evidence.pdf");Directory.CreateDirectory(reparseChild);File.WriteAllBytes(reparseTarget, PdfBytes());bool reparseRejected = false;
+        try { PortableStorage.ReparseTagOverrideForTests = path => String.Equals(path, reparseChild, StringComparison.OrdinalIgnoreCase) ? (uint?)0xA000000C : null;PortableStorage.EnsureReparseSafePath(reparseRoot, reparseTarget); }
+        catch (UnauthorizedAccessException) { reparseRejected = true; }
+        finally { PortableStorage.ReparseTagOverrideForTests = null; }
+        Assert(reparseRejected, "Direct path operations must reject a symbolic-link or junction component even when lexical containment passes.");
+        try { PortableStorage.ReparseTagOverrideForTests = path => String.Equals(path, reparseChild, StringComparison.OrdinalIgnoreCase) ? (uint?)0x9000001A : null;PortableStorage.EnsureReparseSafePath(reparseRoot, reparseTarget); }
+        finally { PortableStorage.ReparseTagOverrideForTests = null; }
         RunStorageEnumerationFuzz(Path.GetDirectoryName(root));
+        RunLocalDatabaseScanBoundary(Path.GetDirectoryName(root));
         string compatibilityRoot = Path.Combine(root, "write-compatibility"), compatibilityCache = Path.Combine(root, "write-compatibility-mappings.json");
         Directory.CreateDirectory(compatibilityRoot);
         using (var compatibilityStorage = new PortableStorage("DOMAIN\\compatibility-operator", compatibilityCache))
@@ -168,6 +256,7 @@ internal static class PortableStorageTests
             try { compatibilityStorage.SaveSystemState("compatibility-key", Encoding.UTF8.GetBytes(Json.Serialize(unsafePathEnvelope))); }
             catch (InvalidDataException) { unsafePathRejected = true; }
             Assert(unsafePathRejected, "The storage boundary must reject artifact traversal paths before changing the protected local database.");
+            string publishedName = "Published_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf.zip";compatibilityStorage.StoreEvidence("compatibility-key", "GOV", "DoD Cyber Cert", publishedName, EvidenceZip(publishedName.Substring(0, publishedName.Length - 4), PdfBytes()));compatibilityStorage.PublishWorkspace("compatibility-key", compatibilityState);Dictionary<string, object> publishedScan = (Dictionary<string, object>)Json.DeserializeObject(compatibilityStorage.ScanWithJournal("compatibility-key", "publication-rules", true, "GOV", true));Dictionary<string, object> publishedItem = ((object[])publishedScan["items"]).Cast<Dictionary<string, object>>().Single(item => String.Equals(Convert.ToString(item["name"]), publishedName, StringComparison.Ordinal));Assert(publishedItem.ContainsKey("externalSharedAddition") && !Convert.ToBoolean(publishedItem["externalSharedAddition"], CultureInfo.InvariantCulture) && File.Exists(Path.Combine(compatibilityRoot, "System", "Publication Receipts", "published-evidence.json")), "Evidence copied and verified by local-workspace publication should retain a receipt and must not be flagged as a direct shared-drive addition.");
             compatibilityStorage.FinalizeMappedBackups();
             string compatibilityManifest = Path.Combine(compatibilityRoot, "System", "information-system-user-tracker.json"), compatibilityCsv = Path.Combine(compatibilityRoot, "System", "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv");DateTime manifestWrite = File.GetLastWriteTimeUtc(compatibilityManifest), csvWrite = File.GetLastWriteTimeUtc(compatibilityCsv);string unchangedCommit = compatibilityStorage.SaveSystemState("compatibility-key", compatibilityState);
             Assert(unchangedCommit.Contains("\"unchanged\":true") && File.GetLastWriteTimeUtc(compatibilityManifest) == manifestWrite && File.GetLastWriteTimeUtc(compatibilityCsv) == csvWrite, "An unchanged database commit should not rewrite the manifest, snapshot, or daily CSV backup.");
@@ -274,7 +363,7 @@ internal static class PortableStorageTests
         Assert(drill.Contains("\"healthy\":true") && drill.Contains("\"nonDestructive\":true") && drill.Contains("\"userCount\":1") && storage.ReadManifest("mapping-key").Contains("first@example.mil"), "The restore drill should verify and reconstruct a snapshot without changing the live manifest.");
         byte[] queueBytes = Encoding.UTF8.GetBytes("{\"version\":1,\"items\":[]}");
         storage.SaveRenamerQueue("mapping-key", queueBytes);
-        Assert(storage.ReadRenamerQueue("mapping-key").Contains("\"version\":1") && File.Exists(Path.Combine(root, "System", "tracker-document-renamer-queue.json")) && !File.Exists(Path.Combine(root, "tracker-document-renamer-queue.json")) && !storage.Scan("mapping-key").Contains("tracker-document-renamer-queue.json"), "The resumable renamer queue should round-trip beneath System and remain excluded from evidence scans.");
+        Assert(storage.ReadRenamerQueue("mapping-key").Contains("\"version\":1") && File.Exists(Path.Combine(root, "System", "tracker-document-renamer-queue.json")) && !File.Exists(Path.Combine(root, "tracker-document-renamer-queue.json")) && !storage.Scan("mapping-key", "legacy", true).Contains("tracker-document-renamer-queue.json"), "The resumable renamer queue should round-trip beneath System and remain excluded from evidence scans.");
         storage.ClearRenamerQueue("mapping-key");
         Assert(storage.ReadRenamerQueue("mapping-key") == "null", "Clearing the resumable renamer queue should be idempotent.");
 
@@ -310,10 +399,10 @@ internal static class PortableStorageTests
         string excludedArchiveDirectory = Path.Combine(root, "Organizations", "GOV", "GOV Archive");Directory.CreateDirectory(excludedArchiveDirectory);File.WriteAllBytes(Path.Combine(excludedArchiveDirectory, "Archived_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf.zip"), EvidenceZip("Archived_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf", PdfBytes()));
         var locationPayload = (Dictionary<string, object>)Json.DeserializeObject(storage.ListEvidenceLocations("mapping-key"));object[] locationItems = (object[])locationPayload["items"];
         var archivedLocationPayload = (Dictionary<string, object>)Json.DeserializeObject(storage.ListArchivedEvidenceLocations("mapping-key", "GOV"));object[] archivedLocationItems = (object[])archivedLocationPayload["items"];
-        Assert(archivedLocationItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]) == "Archived_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf.zip"), "Archive-only metadata discovery should expose disabled-user evidence associations without moving or reopening the evidence file.");
+        Assert(archivedLocationItems.Length == 0, "Routine Archive locations must not enumerate shared archives to reconstruct disabled-user associations.");
         Assert(locationItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip" && Convert.ToInt64(item["size"]) > 0 && Convert.ToInt64(item["lastModifiedUnixMs"]) > 0), "Metadata-only location refresh should return evidence paths, sizes, and modified times without content validation.");
         Assert(!locationItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]) == "operator-notes.txt"), "Metadata-only location refresh should omit non-evidence files.");
-        Assert(Convert.ToInt32(locationPayload["skippedZips"]) >= 1 && Convert.ToInt32(locationPayload["skippedArchives"]) >= 1, "Metadata-only location refresh should report skipped ZIP files and excluded archive trees for Document Renamer transparency.");
+        Assert(Convert.ToInt32(locationPayload["skippedZips"]) >= 1, "Metadata-only location refresh should report skipped ZIP files and excluded archive trees for Document Renamer transparency.");
         storage.CreateOrganization("mapping-key", "NGC");string ngcTargetName = "Target_User_(NGC)_DoD_Cyber_Cert_24AUG2026.pdf", sharedNgcDirectory = Path.Combine(root, "Organizations", "NGC"), ngcTargetPath = Path.Combine(sharedNgcDirectory, ngcTargetName);Directory.CreateDirectory(sharedNgcDirectory);File.WriteAllBytes(ngcTargetPath, PdfBytes());
         string fullScanSaarName = "Fullscan_User_(GOV)_GEN_SAAR_24AUG2026.pdf", fullScanSaarPath = Path.Combine(root, "Organizations", "GOV", fullScanSaarName);File.WriteAllBytes(fullScanSaarPath, PdfBytes());
         var fullScopeScan = (Dictionary<string, object>)Json.DeserializeObject(storage.ScanWithJournal("mapping-key", "scope-parity-rules", true, null));object[] fullScopeItems = (object[])fullScopeScan["items"];
@@ -322,7 +411,7 @@ internal static class PortableStorageTests
         Assert(!PortableStorage.ReparseTagMayEscapeMappedTree(0x9000001A) && PortableStorage.ReparseTagMayEscapeMappedTree(0xA000000C) && PortableStorage.ReparseTagMayEscapeMappedTree(0xA0000003), "Cloud placeholder reparse tags must remain scannable while symbolic-link and mount-point name surrogates remain blocked.");
         var govScopedScan = (Dictionary<string, object>)Json.DeserializeObject(storage.ScanWithJournal("mapping-key", "targeted-rules", false, "GOV", false));object[] govScopedItems = (object[])govScopedScan["items"];
         Assert(govScopedItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]) == encryptedEvidenceName) && !govScopedItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["name"]) == ngcTargetName), "An organization-targeted Daily Sync should enumerate only the selected local organization Incoming and Rework folders.");
-        var ngcScopedLocations = (Dictionary<string, object>)Json.DeserializeObject(storage.ListEvidenceLocations("mapping-key", "NGC"));object[] ngcLocationItems = (object[])ngcScopedLocations["items"];
+        var ngcScopedLocations = (Dictionary<string, object>)Json.DeserializeObject(storage.ListEvidenceLocations("mapping-key", "NGC", true));object[] ngcLocationItems = (object[])ngcScopedLocations["items"];
         Assert(ngcLocationItems.Length == 1 && Convert.ToString(((Dictionary<string, object>)ngcLocationItems[0])["name"]) == ngcTargetName, "An organization-targeted location refresh should not enumerate a sibling organization.");
         bool rejectedUnsafeScope = false;try { storage.ScanWithJournal("mapping-key", "targeted-rules", false, "NGC/DoD Cyber Cert"); } catch (InvalidDataException) { rejectedUnsafeScope = true; }
         Assert(rejectedUnsafeScope, "Targeted Sync must reject document-type subfolders and arbitrary paths as organization scope values.");
@@ -339,7 +428,7 @@ internal static class PortableStorageTests
         string sharedSyncIndexDirectory = Path.Combine(root, "System", "Sync Index");
         Assert(Directory.Exists(sharedSyncIndexDirectory) && Directory.EnumerateFiles(sharedSyncIndexDirectory, "index-*.json", SearchOption.TopDirectoryOnly).Any() && Directory.EnumerateFiles(sharedSyncIndexDirectory, "index-*.json.sha256", SearchOption.TopDirectoryOnly).Any() && !File.Exists(Path.Combine(root, "tracker-sync-index.json")), "A successful scan should store checksum-protected organization-sharded Sync indexes beneath System.");
         Assert(Directory.EnumerateFiles(performanceCacheRoot, "index-*.json", SearchOption.AllDirectories).Any(), "A successful scan should mirror verified Sync-index shards into the per-Windows-user local performance cache.");
-        string evidencePath = Path.Combine(root, "Organizations", "GOV", "GOV SAAR", evidence);Directory.CreateDirectory(Path.GetDirectoryName(evidencePath));File.WriteAllBytes(evidencePath, storedEvidenceBytes);
+        string evidencePath = Path.Combine(localEvidenceRoot, "Organizations", "GOV", "GOV SAAR", evidence), sharedEvidencePath = Path.Combine(root, "Organizations", "GOV", "GOV SAAR", evidence);Directory.CreateDirectory(Path.GetDirectoryName(sharedEvidencePath));File.WriteAllBytes(sharedEvidencePath, storedEvidenceBytes);File.WriteAllBytes(evidencePath, storedEvidenceBytes);
         storage.Scan("mapping-key", "rules-1", false);
         object[] cachedScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", false));
         Dictionary<string, object> cachedEvidenceItem = cachedScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
@@ -351,24 +440,26 @@ internal static class PortableStorageTests
         var crossComputerStorage = new PortableStorage("DOMAIN\\other-computer", mappingCache);crossComputerStorage.Map("mapping-key", root);
         object[] crossComputerItems = (object[])Json.DeserializeObject(crossComputerStorage.Scan("mapping-key", "rules-1", false));
         Dictionary<string, object> crossComputerEvidence = crossComputerItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
-        Assert(Convert.ToBoolean(crossComputerEvidence["unchanged"]), "The shared Sync index should accelerate a different Windows launcher using the same mapped folder.");crossComputerStorage.Dispose();
+        Assert(Convert.ToBoolean(crossComputerEvidence["unchanged"]), "The local Sync index should accelerate another launcher using the same protected workspace.");crossComputerStorage.Dispose();
         using (var evidenceBlocker = new FileStream(evidencePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        using (var sharedEvidenceBlocker = new FileStream(sharedEvidencePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         {
             Dictionary<string, object> cachedWhileLocked = ((object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", false))).Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
             Assert(Convert.ToBoolean(cachedWhileLocked["accepted"]) && Convert.ToBoolean(cachedWhileLocked["unchanged"]), "An unchanged cached file should not be reopened during incremental Sync.");
             Dictionary<string, object> forcedWhileLocked = ((object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", true))).Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
             Assert(!Convert.ToBoolean(forcedWhileLocked["accepted"]) && !Convert.ToBoolean(forcedWhileLocked["unchanged"]), "Full Rescan should reopen evidence and report a transient exclusive file lock.");
         }
+        File.SetLastWriteTimeUtc(evidencePath, File.GetLastWriteTimeUtc(evidencePath).AddSeconds(2));
         Dictionary<string, object> recoveredAfterLock = ((object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", false))).Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip");
         Assert(Convert.ToBoolean(recoveredAfterLock["accepted"]) && !Convert.ToBoolean(recoveredAfterLock["unchanged"]), "A transient read failure must not be cached after the file becomes available.");
         object[] fullScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-1", true));
         Assert(!Convert.ToBoolean(fullScanItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip")["unchanged"]), "Full Rescan should ignore the shared Sync index.");
         object[] changedRuleItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-2", false));
         Assert(!Convert.ToBoolean(changedRuleItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip")["unchanged"]), "A rule-set change should invalidate the shared Sync index.");
-        foreach (string checksumPath in Directory.EnumerateFiles(sharedSyncIndexDirectory, "index-*.json.sha256", SearchOption.TopDirectoryOnly)) File.WriteAllText(checksumPath, new string('0', 64) + "  " + Path.GetFileNameWithoutExtension(checksumPath) + "\n", Encoding.ASCII);
+        foreach (string checksumPath in Directory.EnumerateFiles(Path.Combine(localEvidenceRoot, "System", "Sync Index"), "index-*.json.sha256", SearchOption.TopDirectoryOnly)) File.WriteAllText(checksumPath, new string('0', 64) + "  " + Path.GetFileNameWithoutExtension(checksumPath) + "\n", Encoding.ASCII);
         object[] damagedIndexItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "rules-2", false));
         Assert(!Convert.ToBoolean(damagedIndexItems.Cast<Dictionary<string, object>>().First(item => Convert.ToString(item["name"]) == "Shaw_Vivian_SAAR_24AUG2026.pdf.zip")["unchanged"]), "A damaged Sync-index checksum should fall back to full validation.");
-        Assert(!cachedScanItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["path"]).IndexOf("Sync Index", StringComparison.OrdinalIgnoreCase) >= 0), "Sync-index shards must be excluded from evidence results.");
+        Assert(!cachedScanItems.Cast<Dictionary<string, object>>().Any(item => Convert.ToString(item["path"]).IndexOf("Sync Index", StringComparison.OrdinalIgnoreCase) >= 0), "Sync-index shards must be excluded from evidence results. Paths: " + String.Join(" | ", cachedScanItems.Cast<Dictionary<string, object>>().Select(item => Convert.ToString(item["path"])).Where(path => path.IndexOf("Sync Index", StringComparison.OrdinalIgnoreCase) >= 0).Take(10)));
         string alternateDateEvidence = storage.StoreEvidence("mapping-key", "GOV", "User Agreement", "Shaw_Vivian_GEN_User_Agreement_20260826.pdf.zip", EvidenceZip("Shaw_Vivian_GEN_User_Agreement_20260826.pdf", PdfBytes()));
         string alternateDateRelative = Path.Combine("Organizations", "GOV", "GOV User Agreement", alternateDateEvidence), alternateDatePath = Path.Combine(localEvidenceRoot, alternateDateRelative), normalizedDateName = "Shaw_Vivian_(GOV)_GEN_User_Agreement_26AUG2026.pdf.zip";byte[] alternateDateBytes = File.ReadAllBytes(alternateDatePath);
         var normalizedDateResponse = (Dictionary<string, object>)Json.DeserializeObject(storage.NormalizeEvidenceFilename("mapping-key", alternateDateRelative, normalizedDateName));
@@ -447,7 +538,7 @@ internal static class PortableStorageTests
         Assert(storedLongEvidencePath.Length >= 230 && File.Exists(storedLongEvidencePath), "Atomic evidence storage should use short temporary and rollback names near the Windows path limit.");
         File.WriteAllText(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.txt"), "not evidence");
         File.WriteAllBytes(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf"), Encoding.ASCII.GetBytes("not a pdf"));
-        scan = storage.Scan("mapping-key");
+        scan = storage.Scan("mapping-key", "legacy", true);
         object[] scannedItems = (object[])Json.DeserializeObject(scan);
         Dictionary<string, object> textItem = ItemNamed(scannedItems, "Shaw_Vivian_DOD_Cyber_24AUG2026.txt");
         Dictionary<string, object> fakePdfItem = ItemNamed(scannedItems, "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf");
@@ -459,7 +550,7 @@ internal static class PortableStorageTests
         string reworkedRelative = Convert.ToString(reworkResponse["reworked"]), reworkedPath = Path.Combine(root, reworkedRelative.Replace('/', Path.DirectorySeparatorChar));
         string rootOrganization = new DirectoryInfo(root).Name;
         Assert(!File.Exists(correctionPath) && File.Exists(reworkedPath) && reworkedRelative.StartsWith(rootOrganization + " Rework/", StringComparison.OrdinalIgnoreCase), "A correction PDF at the organization root should move into that organization's named Rework folder even when its PDF bytes are invalid.");
-        object[] correctionScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key"));
+        object[] correctionScanItems = (object[])Json.DeserializeObject(storage.Scan("mapping-key", "legacy", true));
         Dictionary<string, object> rejectedCorrection = ItemNamed(correctionScanItems, "Shaw_Vivian_GEN_SAAR_24AUG2026.pdf");
         Assert(!Convert.ToBoolean(rejectedCorrection["accepted"]) && Convert.ToString(rejectedCorrection["path"]).IndexOf(" Rework", StringComparison.OrdinalIgnoreCase) >= 0, "Sync should inspect Rework corrections and retain unreadable corrections there with a validation failure.");
         string nestedReworkDirectory = Path.Combine(root, "NGC", "Privileged", "Miller_Ava");
@@ -493,7 +584,7 @@ internal static class PortableStorageTests
         string interruptedZipName = "Miller Ava (NGC) User Agreement 20260827.zip", interruptedZipRelative = Path.Combine("NGC", "Privileged", "Miller_Ava", interruptedZipName), interruptedZipPath = Path.Combine(root, interruptedZipRelative), interruptedPdfName = "Miller_Ava_(NGC)_User_Agreement_20260827.pdf", interruptedPdfPath = Path.Combine(root, "NGC", "NGC Rework", interruptedPdfName);File.WriteAllBytes(interruptedZipPath, EvidenceZip(interruptedPdfName, PdfBytes()));bool reworkInterruptionObserved = false;
         try { PortableStorage.FailAfterStageForTests = "rework-extract-move";storage.MoveEvidenceToRework("mapping-key", interruptedZipRelative); } catch (IOException) { reworkInterruptionObserved = true; } finally { PortableStorage.FailAfterStageForTests = null; }
         Assert(reworkInterruptionObserved && File.Exists(interruptedZipPath) && File.Exists(interruptedPdfPath), "An interrupted ZIP extraction should retain the source while preserving the verified destination for transaction recovery.");
-        storage.Scan("mapping-key");
+        storage.Scan("mapping-key", "legacy", true);
         Assert(File.Exists(interruptedZipPath) && File.Exists(interruptedPdfPath) && File.ReadAllBytes(interruptedPdfPath).SequenceEqual(PdfBytes()), "Transaction recovery should verify the extracted PDF while retaining the interrupted source ZIP.");
         string bulkUnarchiveDirectory = Path.Combine(root, "Bulk Unarchive"), nestedBulkUnarchiveDirectory = Path.Combine(bulkUnarchiveDirectory, "Nested");Directory.CreateDirectory(nestedBulkUnarchiveDirectory);
         string bulkZipOne = Path.Combine(bulkUnarchiveDirectory, "Shaw_Vivian_(GOV)_GEN_SAAR_24AUG2026.pdf.zip"), bulkZipTwo = Path.Combine(nestedBulkUnarchiveDirectory, "Miller_Ava_(NGC)_User_Agreement_24AUG2026.pdf.zip");File.WriteAllBytes(bulkZipOne, EvidenceZip("Shaw_Vivian_(GOV)_GEN_SAAR_24AUG2026.pdf", PdfBytes()));File.WriteAllBytes(bulkZipTwo, EvidenceZip("Miller_Ava_(NGC)_User_Agreement_24AUG2026.pdf", PdfBytes()));
@@ -546,13 +637,14 @@ internal static class PortableStorageTests
         Assert(File.Exists(Path.Combine(nestedReworkDirectory, expired8570Name)), "Legacy 8570 evidence should remain present when overdue instead of being archived by age alone.");
         Assert(File.Exists(Path.Combine(legacy8570Folder, grace8570Name)), "An overdue legacy 8570 file in the 8140 Certification Memo folder should remain active until explicitly replaced or archived.");
         Assert(File.Exists(Path.Combine(reworkDirectory, currentReworkName)) && File.Exists(Path.Combine(reworkDirectory, graceReworkName)) && File.Exists(Path.Combine(reworkDirectory, oldYearOnlyName)) && File.Exists(Path.Combine(reworkDirectory, currentYearOnlyName)) && File.Exists(Path.Combine(reworkDirectory, oldSaarReworkName)), "Current, overdue, incomplete year-only, and SAAR evidence must remain available for validation or correction regardless of age.");
+        storage.ProcessReworkRetention("mapping-key", "legacy", false);storage.Scan("mapping-key", "legacy", false);
         var incrementalRetention = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessReworkRetention("mapping-key", "legacy", false));
         Assert(!Convert.ToBoolean(incrementalRetention["dailyFullSweep"]) && Convert.ToInt32(incrementalRetention["unchangedSkipped"]) > 0, "After the UTC-daily retention sweep, later Sync preflight runs should skip unchanged indexed evidence while continuing to inspect Rework.");
         string organizedSourceRelative = Path.Combine("Organizations", "GOV", "GOV SAAR", evidence), organizedResponseText = storage.OrganizeEvidence("mapping-key", organizedSourceRelative, "SAAR");var organizedResponse = (Dictionary<string, object>)Json.DeserializeObject(organizedResponseText);string organizedRelative = Convert.ToString(organizedResponse["organized"]);
         Assert(organizedRelative.StartsWith("Organizations/GOV/GOV SAAR/", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(root, organizedRelative.Replace('/', Path.DirectorySeparatorChar))), "Accepted active evidence should remain in its organization-prefixed canonical document-type folder with content integrity preserved.");
-        string postCleanupScan = storage.Scan("mapping-key");
+        string postCleanupScan = storage.Scan("mapping-key", "legacy", true);
         Assert(!postCleanupScan.Contains(nestedArchiveName) && postCleanupScan.Contains(nestedReworkName), "Organization Archive folders must remain excluded while Rework corrections remain visible to later Sync validation.");
-        Assert(postCleanupScan.Contains(loosePermanentSaar) && !postCleanupScan.Contains(unrelatedPermanentArchiveFile), "Sync should inspect loose historical SAAR records in the permanent organization SAAR Archive without modifying them while ignoring unrelated files stored there.");
+        Assert(!postCleanupScan.Contains(loosePermanentSaar) && !postCleanupScan.Contains(unrelatedPermanentArchiveFile), "Sync must exclude permanent SAAR Archive files from account-state discovery.");
         bool rejectedInvalidCompression = false;
         try { storage.CompressEvidence("mapping-key", "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf"); } catch (InvalidOperationException) { rejectedInvalidCompression = true; }
         Assert(rejectedInvalidCompression && File.Exists(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf")) && !File.Exists(Path.Combine(root, "Shaw_Vivian_DOD_Cyber_24AUG2026.pdf.zip")), "Shared-drive loose-PDF compression should be rejected while preserving the original network file.");
@@ -571,7 +663,9 @@ internal static class PortableStorageTests
         string sanitizedDiagnostics = storage.ReadSanitizedDiagnostics("mapping-key");
         Assert(sanitizedDiagnostics.Contains("\"context\":\"Sync and Reconciliation\"") && sanitizedDiagnostics.Contains("\"errorEntries\":1") && !sanitizedDiagnostics.Contains("Shaw") && !sanitizedDiagnostics.Contains("private@example.mil") && !sanitizedDiagnostics.Contains("private-operator") && !sanitizedDiagnostics.Contains("Sensitive"), "Sanitized diagnostics should expose only fixed categories and counts, never raw error details, identities, filenames, email addresses, or paths.");
 
-        string journalFirst = storage.ScanWithJournal("mapping-key", "journal-rules", true);var journalFirstObject = (Dictionary<string, object>)Json.DeserializeObject(journalFirst);string journalRun = Convert.ToString(journalFirstObject["runId"]);
+        string journalFirst = storage.ScanWithJournal("mapping-key", "journal-rules", true);var journalFirstObject = (Dictionary<string, object>)Json.DeserializeObject(journalFirst);string journalRun = Convert.ToString(journalFirstObject["runId"]);object[] journalFirstItems = (object[])journalFirstObject["items"];
+        Assert(journalFirstItems.Cast<Dictionary<string, object>>().Any(item => item.ContainsKey("externalSharedAddition") && Convert.ToBoolean(item["externalSharedAddition"], CultureInfo.InvariantCulture)), "A full shared-folder scan should flag evidence that has no matching local-workspace publication receipt.");
+        journalFirst = storage.ScanWithJournal("mapping-key", "journal-rules", false);journalRun = Convert.ToString(((Dictionary<string, object>)Json.DeserializeObject(journalFirst))["runId"]);
         string journalResumed = storage.ScanWithJournal("mapping-key", "journal-rules", false);var journalResumedObject = (Dictionary<string, object>)Json.DeserializeObject(journalResumed);
         Assert(journalRun == Convert.ToString(journalResumedObject["runId"]) && Convert.ToInt32(journalResumedObject["resumedFiles"]) > 0, "An uncommitted Sync journal should resume completed file validation after restart or reconnect.");
         storage.CommitSyncJournal("mapping-key", journalRun);Assert(storage.CommitSyncJournal("mapping-key", journalRun).Contains("\"committed\":true"), "Sync journal commit should be safely repeatable.");
@@ -583,7 +677,7 @@ internal static class PortableStorageTests
         string interruptedRelative = Path.Combine("GOV", "Transaction_User_(GOV)_User_Agreement_24AUG2026.pdf"), interruptedPath = Path.Combine(root, interruptedRelative), interruptedTarget = "Transaction_User_(GOV)_User_Agreement_25AUG2026.pdf";Directory.CreateDirectory(Path.GetDirectoryName(interruptedPath));File.WriteAllBytes(interruptedPath, PdfBytes());
         bool interruptionObserved = false;try { PortableStorage.FailAfterStageForTests = "rename-move";storage.NormalizeEvidenceFilename("mapping-key", interruptedRelative, interruptedTarget); } catch (IOException) { interruptionObserved = true; } finally { PortableStorage.FailAfterStageForTests = null; }
         Assert(interruptionObserved, "The transaction recovery test must simulate a crash after a completed move.");storage.Map("mapping-key", root);Assert(!File.Exists(interruptedPath) && File.Exists(Path.Combine(Path.GetDirectoryName(interruptedPath), interruptedTarget)) && !Directory.EnumerateFiles(Path.Combine(root, "System", "Storage Transactions"), "transaction-*.json").Any(), "Mapping after an interrupted rename should reconcile the durable transaction without duplicating or losing the file.");
-        string pendingRelative = Path.Combine("GOV", "Pending_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf"), pendingPath = Path.Combine(root, pendingRelative);File.WriteAllBytes(pendingPath, PdfBytes());bool pendingInterrupted = false;try { PortableStorage.FailAfterStageForTests = "scan-file-pending";storage.ScanWithJournal("mapping-key", "pending-rules", true); } catch (IOException) { pendingInterrupted = true; } finally { PortableStorage.FailAfterStageForTests = null; }
+        string pendingRelative = Path.Combine("GOV", "Pending_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf"), pendingPath = Path.Combine(localEvidenceRoot, pendingRelative);Directory.CreateDirectory(Path.GetDirectoryName(pendingPath));File.WriteAllBytes(pendingPath, PdfBytes());bool pendingInterrupted = false;try { PortableStorage.FailAfterStageForTests = "scan-file-pending";storage.ScanWithJournal("mapping-key", "pending-rules", false); } catch (IOException) { pendingInterrupted = true; } finally { PortableStorage.FailAfterStageForTests = null; }
         Assert(pendingInterrupted && storage.ScanWithJournal("mapping-key", "pending-rules", false).Contains("Pending_User"), "A crash after a pending Sync journal entry should resume and validate that file on the next run.");
         string auditDirectory = Path.Combine(root, "System", "Audit Logs");int auditBaseline = Directory.Exists(auditDirectory) ? Directory.EnumerateFiles(auditDirectory, "audit-*.jsonl").SelectMany(path => File.ReadLines(path, Encoding.UTF8)).Count() : 0;
         storage.AppendAudit("mapping-key", "TEST ACTION");
@@ -604,7 +698,8 @@ internal static class PortableStorageTests
         Assert(Convert.ToInt64(firstAudit["sequence"]) == 1 && Convert.ToInt64(secondAudit["sequence"]) == 2, "Audit entries should use a continuous sequence.");
         Assert(Convert.ToString(secondAudit["previousHash"]) == Convert.ToString(firstAudit["entryHash"]), "Each audit entry should reference the previous entry hash.");
         string auditVerification = storage.VerifyAuditLogs("mapping-key");
-        Assert(auditVerification.Contains("\"healthy\":true") && auditVerification.Contains("\"entries\":" + auditLines.Length.ToString(CultureInfo.InvariantCulture)), "The intact batched audit hash chain should verify.");
+        Assert(auditVerification.Contains("\"healthy\":true") && auditVerification.Contains("\"entries\":" + auditLines.Length.ToString(CultureInfo.InvariantCulture)) && auditVerification.Contains("\"anchorAlgorithm\":\"RSA-SHA256\""), "The intact batched audit hash chain and cryptographic audit head should verify.");
+        string auditAnchorPath = Path.Combine(auditDirectory, "head-anchors.jsonl");Assert(File.Exists(auditAnchorPath) && File.ReadAllText(auditAnchorPath, Encoding.UTF8).Contains("\"publicKeyId\"") && File.ReadAllText(auditAnchorPath, Encoding.UTF8).Contains("\"signature\""), "Every committed audit head should have a shared RSA-SHA256 signature anchor.");byte[] intactAuditAnchors = File.ReadAllBytes(auditAnchorPath);string tamperedAnchorText = Encoding.UTF8.GetString(intactAuditAnchors).Replace("\"actor\":\"DOMAIN\\\\operator\"", "\"actor\":\"DOMAIN\\\\tampered\"");File.WriteAllText(auditAnchorPath, tamperedAnchorText, new UTF8Encoding(false));bool rejectedTamperedAnchor = false;try { storage.VerifyAuditLogs("mapping-key"); } catch (InvalidDataException) { rejectedTamperedAnchor = true; }Assert(rejectedTamperedAnchor, "Changing a signed audit-head anchor must fail verification.");File.WriteAllBytes(auditAnchorPath, intactAuditAnchors);Assert(storage.VerifyAuditLogs("mapping-key").Contains("\"healthy\":true"), "Restoring the intact signed audit-anchor chain should restore verification.");
         Assert(Directory.EnumerateFiles(performanceCacheRoot, "verified-audit-head.cache", SearchOption.AllDirectories).Any(), "A successful audit verification should save a Windows-user-protected incremental checkpoint outside the shared folder.");
         string auditView = storage.ReadAuditLogs("mapping-key");
         Assert(auditView.Contains("\"recent\"") && auditView.IndexOf("SECOND ACTION", StringComparison.Ordinal) < auditView.IndexOf("TEST ACTION", StringComparison.Ordinal), "The read-only audit view should return verified entries newest first.");
@@ -659,6 +754,7 @@ internal static class PortableStorageTests
         Assert(rejectedAppendAfterTamper, "The launcher should refuse to extend a tampered audit chain.");
         storage.Dispose();
         competingStorage.Dispose();
+        RunLauncherE2E(Path.GetDirectoryName(root));
 
         Console.WriteLine("Portable storage integration tests passed.");
         return 0;

@@ -15,7 +15,7 @@ test('Verified Sync isolates per-file provenance failures and commits successful
 });
 
 test('a partial verification failure leaves the scan index retryable',()=>{
- assert.match(apply,/if\(!provenanceFailures\.length\)await commitSyncRuns/);
+ assert.match(apply,/if\(!provenanceFailures\.length\)try\{await commitSyncRuns/);
  assert.match(apply,/failed evidence update/);
  assert.match(apply,/available for retry without rescanning/);
 });

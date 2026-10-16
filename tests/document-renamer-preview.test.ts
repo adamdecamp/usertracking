@@ -75,8 +75,8 @@ test('disabled users retain supporting-artifact status for reactivation review',
  assert.match(page,/exception=u\.disabled\?undefined:exceptionFor\(u,kind,directoryAsOf\)/);
  assert.match(page,/remaining\.push\(\{\.\.\.artifact,filename,path:destination\}\)/);
  assert.match(page,/kind!=='SAAR'\|\|u\.disabled\|\|!disabledSaarFilename/);
- assert.match(page,/recoverDisabledEvidenceStatus\(h,sourceUsers,controller\.signal,organization\)/);
- assert.match(page,/archive-locations\?organization=/);
+ assert.doesNotMatch(page,/recoverDisabledEvidenceStatus\(/);
+ assert.doesNotMatch(page,/archive-locations\?organization=/);
  assert.doesNotMatch(page,/artifacts:user\.artifacts\.filter\(artifact=>!disabledSaarFilename/);
  assert.doesNotMatch(page,/if\(u\.disabled\)continue/);
  assert.match(page,/if\(u\.disabled&&kind==='SAAR'\)continue/);
@@ -136,7 +136,7 @@ test('Inspection Package is removed while core audit and reporting controls rema
 });
 
 test('location refresh and discovery workflows use metadata without reopening every PDF',()=>{
- assert.match(page,/portableRequest\(root,`locations\$\{organization\?/);
+ assert.match(page,/portableRequest\(root,`locations\?full=\$\{fullRescan/);
  assert.match(page,/Refreshing Current Evidence Locations[\s\S]*?refreshEvidenceLocations\(pendingSync\.handle/);
  assert.match(page,/Refreshing Stale Evidence References[\s\S]*?refreshEvidenceLocations\(pendingSync\.handle/);
  assert.match(page,/async function discoverRenamerPdfs[\s\S]*?refreshEvidenceLocations\(root\)/);

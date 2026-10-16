@@ -41,7 +41,7 @@ test('allows another scoped Sync while earlier review results are pending',()=>{
 
 test('passes the validated organization scope to every launcher discovery stage',()=>{
  assert.match(launcher,/ScanWithJournal\([^\r\n]+OptionalQueryValue\(target, "organization"\)[^\r\n]+OptionalQueryValue\(target, "legacy"\)/);
- assert.match(launcher,/ListEvidenceLocations\(systemId, OptionalQueryValue\(target, "organization"\)\)/);
+ assert.match(launcher,/ListEvidenceLocations\(systemId, OptionalQueryValue\(target, "organization"\), String\.Equals\(OptionalQueryValue\(target, "full"\)/);
  assert.match(launcher,/ProcessReworkRetention\([^\r\n]+OptionalQueryValue\(target, "organization"\)/);
  assert.match(launcher,/ProcessReworkRetention\([^\r\n]+OptionalQueryValue\(target, "legacy"\)/);
  assert.match(page,/processReworkRetention\(h,controller\.signal,forceFull,organization,legacyImport\)/);
@@ -56,4 +56,12 @@ test('Daily Sync retains renaming while same-year supporting discovery applies t
  assert.match(syncFlow,/sameYearSupportingEvidenceEligible\(item\.filename,scanDate\)/);
  assert.doesNotMatch(syncFlow,/if\(legacyImport\)\{for\(const item of activeEvidence\)/);
  assert.match(syncFlow,/requiresSaarFormClassification\(item\.filename\)&&\(legacyImport\|\|!item\.unchanged/);
+});
+
+
+test('launch discovers new local organization folders without starting Sync',()=>{
+ const startup=page.slice(page.indexOf('// This effect intentionally runs once after hydration'),page.indexOf('// Persist only the actively leased system'));
+ assert.match(startup,/setSyncOrganizations\(await organizationFolderNames\(root\)\)/);
+ assert.ok(startup.indexOf('setSyncOrganizations(await organizationFolderNames(root))')<startup.indexOf("if(accessMode==='read-only')"));
+ assert.doesNotMatch(startup,/syncMapped\s*\(/);
 });

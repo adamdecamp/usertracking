@@ -18,7 +18,9 @@ using System.Windows.Forms;
 
 internal sealed class TrackerContext : ApplicationContext
 {
-    private const int Port = 38473;
+    private const int DefaultPort = 38473;
+    private const long KiB = 1024L;
+    private const long MiB = 1024L * 1024L;
     private sealed class WebAsset { public byte[] Bytes; public string ContentType; }
     private readonly string user;
     private readonly string sessionToken;
@@ -34,6 +36,7 @@ internal sealed class TrackerContext : ApplicationContext
     private readonly NotifyIcon tray;
     private readonly Control dispatcher;
     private readonly PortableStorage storage;
+    private readonly int port;
     private readonly System.Windows.Forms.Timer lifecycleTimer;
     private readonly object lifecycleGate = new object();
     private DateTime lastActivityUtc = DateTime.UtcNow;
@@ -101,8 +104,9 @@ internal sealed class TrackerContext : ApplicationContext
         storage = new PortableStorage(user);
         dispatcher = new Control();
         IntPtr dispatcherHandle = dispatcher.Handle;
-        listener = new TcpListener(IPAddress.Loopback, Port);
+        listener = new TcpListener(IPAddress.Loopback, DefaultPort);
         listener.Start();
+        port = ((IPEndPoint)listener.LocalEndpoint).Port;
         Icon appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Shield;
         tray = new NotifyIcon { Icon = appIcon, Text = "R.A.P.T.O.R.", Visible = true };
         var menu = new ContextMenuStrip();
@@ -117,9 +121,39 @@ internal sealed class TrackerContext : ApplicationContext
         OpenTracker();
     }
 
+    // The build gate uses the real loopback listener and storage router without
+    // opening a browser or installing a tray icon. This keeps the HTTP boundary,
+    // origin/session enforcement, and failure recovery in the executable test path.
+    internal TrackerContext(string e2eRoot)
+    {
+        indexHtml = Encoding.UTF8.GetBytes("<!doctype html><title>R.A.P.T.O.R. E2E</title>");
+        assets = new Dictionary<string, WebAsset>(StringComparer.Ordinal);
+        user = "RAPTOR\\E2E";
+        sessionToken = CreateSessionToken();
+        storage = new PortableStorage(user, Path.Combine(e2eRoot, "e2e-mappings.json"));
+        dispatcher = null;
+        listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        tray = null;
+        lifecycleTimer = null;
+        OpenSession("full");
+        string mapped = Path.Combine(e2eRoot, "mapped");Directory.CreateDirectory(mapped);
+        if (!storage.MapForFullSession("e2e-system", mapped, "e2e-session")) throw new IOException("The E2E launcher could not acquire its test lease.");
+        Task.Run((Func<Task>)ListenLoop);
+    }
+
+    internal int E2EPort { get { return port; } }
+    internal string E2ESessionToken { get { return sessionToken; } }
+    internal void StopE2E()
+    {
+        try { storage.ReleaseAllLeases();storage.Dispose(); } catch { }
+        try { stop.Cancel();listener.Stop(); } catch { }
+    }
+
     private void OpenTracker()
     {
-        Process.Start(new ProcessStartInfo("http://localhost:" + Port + "/#session=" + Uri.EscapeDataString(sessionToken)) { UseShellExecute = true });
+        Process.Start(new ProcessStartInfo("http://localhost:" + port + "/#session=" + Uri.EscapeDataString(sessionToken)) { UseShellExecute = true });
     }
 
     private async Task ListenLoop()
@@ -151,17 +185,34 @@ internal sealed class TrackerContext : ApplicationContext
             if (String.IsNullOrEmpty(headerBlock)) return;
             string[] lines = headerBlock.Split(new[] { "\r\n" }, StringSplitOptions.None), parts = lines[0].Split(' ');
             if (parts.Length < 2 || (parts[0] != "GET" && parts[0] != "HEAD" && parts[0] != "POST" && parts[0] != "DELETE")) { await Respond(stream, 405, "text/plain", Encoding.UTF8.GetBytes("Method Not Allowed"), false, "no-store"); return; }
-            string host = null, origin = null, operationId = null, presentedToken = null, leaseSession = null; long contentLength = 0;
-            for (int i = 1; i < lines.Length; i++) { string line = lines[i]; if (line.StartsWith("Host:", StringComparison.OrdinalIgnoreCase)) host = line.Substring(5).Trim(); if (line.StartsWith("Origin:", StringComparison.OrdinalIgnoreCase)) origin = line.Substring(7).Trim(); if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase) && !Int64.TryParse(line.Substring(15).Trim(), out contentLength)) contentLength = -1; if (line.StartsWith("X-Tracker-Operation-Id:", StringComparison.OrdinalIgnoreCase)) operationId = line.Substring(23).Trim(); if (line.StartsWith("X-RAPTOR-Session-Token:", StringComparison.OrdinalIgnoreCase)) presentedToken = line.Substring(23).Trim(); if (line.StartsWith("X-RAPTOR-Lease-Session:", StringComparison.OrdinalIgnoreCase)) leaseSession = line.Substring(23).Trim(); }
-            if (!String.Equals(host, "localhost:" + Port, StringComparison.OrdinalIgnoreCase) && !String.Equals(host, "127.0.0.1:" + Port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), parts[0] == "HEAD", "no-store"); return; }
-            if ((parts[0] == "POST" || parts[0] == "DELETE") && !String.Equals(origin, "http://localhost:" + Port, StringComparison.OrdinalIgnoreCase) && !String.Equals(origin, "http://127.0.0.1:" + Port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), false, "no-store"); return; }
+            string host = null, origin = null, operationId = null, presentedToken = null, leaseSession = null, transferEncoding = null; long contentLength = 0;bool contentLengthSeen = false, invalidContentLength = false;
+            for (int i = 1; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                if (line.StartsWith("Host:", StringComparison.OrdinalIgnoreCase)) host = line.Substring(5).Trim();
+                if (line.StartsWith("Origin:", StringComparison.OrdinalIgnoreCase)) origin = line.Substring(7).Trim();
+                if (line.StartsWith("Transfer-Encoding:", StringComparison.OrdinalIgnoreCase)) transferEncoding = line.Substring(18).Trim();
+                if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
+                {
+                    long parsedLength;bool parsed = Int64.TryParse(line.Substring(15).Trim(), out parsedLength) && parsedLength >= 0;
+                    if (!parsed || contentLengthSeen && contentLength != parsedLength) invalidContentLength = true;
+                    else { contentLength = parsedLength;contentLengthSeen = true; }
+                }
+                if (line.StartsWith("X-Tracker-Operation-Id:", StringComparison.OrdinalIgnoreCase)) operationId = line.Substring(23).Trim();
+                if (line.StartsWith("X-RAPTOR-Session-Token:", StringComparison.OrdinalIgnoreCase)) presentedToken = line.Substring(23).Trim();
+                if (line.StartsWith("X-RAPTOR-Lease-Session:", StringComparison.OrdinalIgnoreCase)) leaseSession = line.Substring(23).Trim();
+            }
+            if (!String.Equals(host, "localhost:" + port, StringComparison.OrdinalIgnoreCase) && !String.Equals(host, "127.0.0.1:" + port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), parts[0] == "HEAD", "no-store"); return; }
+            if ((parts[0] == "POST" || parts[0] == "DELETE") && !String.Equals(origin, "http://localhost:" + port, StringComparison.OrdinalIgnoreCase) && !String.Equals(origin, "http://127.0.0.1:" + port, StringComparison.OrdinalIgnoreCase)) { await Respond(stream, 403, "text/plain", Encoding.UTF8.GetBytes("Forbidden"), false, "no-store"); return; }
             string target = parts[1], path = null;
             try { path = Uri.UnescapeDataString(target.Split('?')[0]); }
             catch (UriFormatException) { }
             if (path == null) { await Respond(stream, 400, "text/plain", Encoding.UTF8.GetBytes("Bad Request"), parts[0] == "HEAD", "no-store"); return; }
             if (path.StartsWith("/api/", StringComparison.Ordinal) && !SessionTokenMatches(presentedToken)) { await Respond(stream, 401, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The launcher session is missing or invalid. Reopen R.A.P.T.O.R. from its Windows launcher."), false, "no-store"); return; }
-            if (contentLength < 0 || contentLength > 110L * 1024 * 1024) { await Respond(stream, 413, "text/plain", Encoding.UTF8.GetBytes("Request body is too large."), false, "no-store"); return; }
-            byte[] requestBody = contentLength > 0 ? await ReadBody(stream, contentLength) : new byte[0];
+            if (invalidContentLength || !String.IsNullOrWhiteSpace(transferEncoding)) { await Respond(stream, 400, "text/plain", Encoding.UTF8.GetBytes("The request framing is invalid. Chunked transfer encoding is not accepted."), false, "no-store"); return; }
+            long requestLimit = RequestBodyLimit(path, parts[0]);
+            if (contentLength > requestLimit) { await Respond(stream, 413, "text/plain", Encoding.UTF8.GetBytes("Request body exceeds the limit for this endpoint."), false, "no-store"); return; }
+            byte[] requestBody = contentLength > 0 ? await ReadBody(stream, contentLength, requestLimit) : new byte[0];
             if (path == "/api/session-user") { string json = "{\"user\":\"" + Json(user) + "\"}"; await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/session-open" && parts[0] == "POST") { string mode = QueryValue(target, "mode");if (!OpenSession(mode)) { await Respond(stream, 409, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("This launcher session already has a different access mode. Restart R.A.P.T.O.R. to choose another mode."), false, "no-store");return; }await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"mode\":\"" + Json(SessionAccessMode()) + "\"}"), false, "no-store");return; }
             if (path == "/api/session-downgrade" && parts[0] == "POST") { storage.ReleaseAllLeases();DowngradeSession();await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"mode\":\"read-only\"}"), false, "no-store");return; }
@@ -222,6 +273,7 @@ internal sealed class TrackerContext : ApplicationContext
                     }
                     else if (action == "unarchive" && parts[0] == "POST") response = storage.UnarchiveEvidence(systemId, QueryValue(target, "path"));
                     else if (action == "manifest" && parts[0] == "GET") response = storage.ReadManifest(systemId) ?? "null";
+                    else if (action == "local-manifest" && parts[0] == "GET") response = storage.ReadWorkingManifest(systemId) ?? "null";
                     else if (action == "manifest" && parts[0] == "POST") response = storage.SaveManifest(systemId, Encoding.UTF8.GetString(requestBody));
                     else if (action == "csv" && parts[0] == "POST") response = "{\"saved\":\"" + Json(storage.SaveCsv(systemId, requestBody)) + "\"}";
                     else if (action == "state-commit" && parts[0] == "POST") response = storage.SaveSystemState(systemId, requestBody);
@@ -235,7 +287,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "sync-cache-clear" && parts[0] == "POST") response = storage.ClearEvidenceValidationCache(systemId);
                     else if (action == "sync-pipeline" && parts[0] == "POST") response = storage.RunSyncPipeline(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"), String.Equals(OptionalQueryValue(target, "legacy"), "1", StringComparison.Ordinal));
                     else if (action == "scan" && parts[0] == "GET") response = storage.ScanWithJournal(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"), String.Equals(OptionalQueryValue(target, "legacy"), "1", StringComparison.Ordinal));
-                    else if (action == "locations" && parts[0] == "GET") response = storage.ListEvidenceLocations(systemId, OptionalQueryValue(target, "organization"));
+                    else if (action == "locations" && parts[0] == "GET") response = storage.ListEvidenceLocations(systemId, OptionalQueryValue(target, "organization"), String.Equals(OptionalQueryValue(target, "full"), "1", StringComparison.Ordinal));
                     else if (action == "archive-locations" && parts[0] == "GET") response = storage.ListArchivedEvidenceLocations(systemId, QueryValue(target, "organization"));
                     else if (action == "sync-commit" && parts[0] == "POST") response = storage.CommitSyncJournal(systemId, QueryValue(target, "run"));
                     else if (action == "renamer-queue" && parts[0] == "GET") response = storage.ReadRenamerQueue(systemId);
@@ -319,7 +371,7 @@ internal sealed class TrackerContext : ApplicationContext
         if (String.Equals(action, "select-readonly", StringComparison.Ordinal) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
         if ((String.Equals(action, "audit", StringComparison.Ordinal) || String.Equals(action, "audit-batch", StringComparison.Ordinal)) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
         if (!String.Equals(method, "GET", StringComparison.Ordinal) && !String.Equals(method, "HEAD", StringComparison.Ordinal)) return false;
-        return String.Equals(action, "manifest", StringComparison.Ordinal) || String.Equals(action, "file", StringComparison.Ordinal) || String.Equals(action, "audit-verify", StringComparison.Ordinal) || String.Equals(action, "audit-view", StringComparison.Ordinal) || String.Equals(action, "performance", StringComparison.Ordinal) || String.Equals(action, "diagnostics", StringComparison.Ordinal) || String.Equals(action, "organizations", StringComparison.Ordinal) || String.Equals(action, "evidence-status", StringComparison.Ordinal) || String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal) || String.Equals(action, "archive-locations", StringComparison.Ordinal);
+        return String.Equals(action, "local-manifest", StringComparison.Ordinal) || String.Equals(action, "manifest", StringComparison.Ordinal) || String.Equals(action, "file", StringComparison.Ordinal) || String.Equals(action, "audit-verify", StringComparison.Ordinal) || String.Equals(action, "audit-view", StringComparison.Ordinal) || String.Equals(action, "performance", StringComparison.Ordinal) || String.Equals(action, "diagnostics", StringComparison.Ordinal) || String.Equals(action, "organizations", StringComparison.Ordinal) || String.Equals(action, "evidence-status", StringComparison.Ordinal) || String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal) || String.Equals(action, "archive-locations", StringComparison.Ordinal);
     }
 
     private static string CreateSessionToken()
@@ -641,11 +693,38 @@ internal sealed class TrackerContext : ApplicationContext
         throw new InvalidDataException("The HTTP request headers are invalid or too large.");
     }
 
-    private static async Task<byte[]> ReadBody(NetworkStream stream, long length)
+    internal static long RequestBodyLimit(string path, string method)
     {
-        byte[] body = new byte[(int)length]; int offset = 0;
-        while (offset < body.Length) { int read = await stream.ReadAsync(body, offset, body.Length - offset); if (read == 0) throw new EndOfStreamException("The request body ended unexpectedly."); offset += read; }
-        return body;
+        if (!String.Equals(method, "POST", StringComparison.Ordinal) && !String.Equals(method, "DELETE", StringComparison.Ordinal)) return 0;
+        if (String.IsNullOrWhiteSpace(path)) return 0;
+        if (!path.StartsWith("/api/storage/", StringComparison.Ordinal)) return 0;
+        string tail = path.Substring("/api/storage/".Length);int separator = tail.IndexOf('/');string action = separator >= 0 ? tail.Substring(separator + 1) : "";
+        if (action == "evidence" || action == "evidence-pdf") return 110L * MiB;
+        if (action == "state-commit" || action == "workspace-publish") return 100L * MiB;
+        if (action == "manifest" || action == "csv" || action == "report") return 50L * MiB;
+        if (action == "outlook-draft") return 40L * MiB;
+        if (action == "renamer-queue") return 20L * MiB;
+        if (action == "restore-active") return 10L * MiB;
+        if (action == "audit-batch") return 5L * MiB;
+        if (action == "error-report") return 1L * MiB;
+        if (action == "audit") return 8L * KiB;
+        return 0;
+    }
+
+    private static async Task<byte[]> ReadBody(NetworkStream stream, long length, long endpointLimit)
+    {
+        if (length < 0 || length > endpointLimit || length > Int32.MaxValue) throw new InvalidDataException("The request body exceeds the endpoint limit.");
+        using (var body = new MemoryStream(length > 0 ? (int)Math.Min(length, 64L * KiB) : 0))
+        {
+            byte[] buffer = new byte[64 * 1024];long remaining = length;
+            while (remaining > 0)
+            {
+                int requested = (int)Math.Min((long)buffer.Length, remaining), read = await stream.ReadAsync(buffer, 0, requested);
+                if (read == 0) throw new EndOfStreamException("The request body ended unexpectedly.");
+                body.Write(buffer, 0, read);remaining -= read;
+            }
+            return body.ToArray();
+        }
     }
 
     private static string QueryValue(string target, string name)

@@ -289,10 +289,9 @@ export default function Guide() {
           CSV exports preserve those statuses to support evidence review before a
           future reactivation. New supporting documents for a disabled user are
           matched normally and update that user&apos;s retained compliance dates without
-          changing the account status. If an older disabled record has lost its evidence
-          associations, Sync performs a metadata-only search of that organization&apos;s
-          Archive folders and restores the newest matching association without moving
-          or reopening the archived file. Disabled users remain excluded from active-user
+          changing the account status. Disabled account state, evidence associations, compliance dates, and
+          administrative history are read from the protected local JSON database.
+          Sync does not search Archive folders to reconstruct disabled users. Disabled users remain excluded from active-user
           compliance totals, reports, and notification emails. When
           disabling without an updated SAAR, an operator may select the documented
           override and must enter a justification. To re-enable a disabled user,
@@ -537,8 +536,9 @@ export default function Guide() {
           avoids enumerating thousands of already organized evidence files.
           Place new evidence in Incoming and corrected evidence in Rework. Select
           <b> Full Rescan</b> when you intentionally need to inspect active
-          document-type folders too. Legacy Import scans the broader organization
-          tree for initial onboarding and historical repair. Document-type and
+          network document-type folders too. Legacy Import scans the broader local
+          organization tree for initial onboarding and historical repair; it includes
+          network folders only when Full Rescan is selected. Document-type and
           deeper subfolders cannot be chosen as independent scopes. The
           filename parser treats the first recognized identity value as{" "}
           <b>Last Name</b> and the second as <b>First Name</b>, accepting
@@ -643,24 +643,16 @@ export default function Guide() {
           for an encrypted PDF accepted by the strict filename exception.
         </p>
         <aside>
-          <b>Disabled SAAR History:</b> Sync also performs a narrow filename-only
-          status check inside each organization&apos;s permanent{" "}
-          <code>ORG SAAR Archive</code>. It considers only PDF or ZIP filenames
-          recognized as SAARs and does not scan unrelated Archive, Rework, or
-          Superseded folders. For each Last Name and First Name identity, the
-          newest dated SAAR across the active organization folders and permanent
-          SAAR Archive controls the check. If that newest filename contains the
-          standalone word <b>DISABLED</b>, Sync proposes the user as Disabled,
-          creating a historical User Directory record when necessary. An older
-          disabled SAAR cannot override a newer active SAAR. A newer active SAAR
-          creates a separate, unchecked reactivation approval item only when its date
-          is later than the disabled date recorded in the User Directory. When a
-          disabled SAAR filename is unavailable, the timestamp of the latest recorded
-          disable action in Administrative Change History supplies that comparison date.
-          Supporting
-           evidence updates remain independent and do not reactivate the user. Archived
-           SAAR files remain permanent history and may stay associated with the disabled
-           record without being moved back into an active folder.
+          <b>Disabled User History:</b> The local JSON database supplies Disabled
+          account state, retained evidence associations, and disable-action dates.
+          Archive and permanent SAAR Archive folders do not participate in
+          account-state discovery. A newer active SAAR found in the selected scan
+          creates an unchecked reactivation approval item only when its date is later
+          than the disabled date recorded in the User Directory. When a disabled
+          SAAR filename is unavailable, the latest recorded disable action in
+          Administrative Change History supplies that comparison date. Supporting
+          evidence updates do not reactivate a user. Archived SAARs remain permanent
+          history and may remain associated with the disabled record.
         </aside>
         <p>
           Account status is mutually exclusive: one User Directory record cannot
@@ -690,15 +682,15 @@ export default function Guide() {
           unique high-confidence canonical names and continue past per-file
           timeouts or analysis failures so one document cannot stop the Sync.
           Ambiguous results remain available in Sync review and the Rework workflow.
-          Before Archive Preflight, Sync checks evidence associated
+          During an explicit Full Rescan, before Archive Preflight, Sync checks evidence associated
           with active users. If a retained artifact is missing from its recorded
           active location but the same associated file is found in that
           organization&apos;s Archive, Sync restores it to the canonical document-type
           folder and updates its recorded path. SHA-256 provenance is used when
           available; ambiguous Archive matches remain untouched for Clean Up
-          review. Routine Daily Sync limits Archive Preflight to Incoming and
+          review. At launch, the app checks immediate folders under the selected local workspace&apos;s Organizations folder for manually created organizations and prepares their local Incoming, Rework, and Complete folders. Routine Daily Sync and Legacy Import use the local workspace; network discovery requires Full Rescan. Daily Sync limits preflight to Incoming and
           Rework and reuses unchanged Rework validation. Legacy Import performs
-          the complete in-scope Archive preflight once per UTC day and revalidates
+          the complete local preflight once per UTC day and revalidates
           all in-scope Rework; later Legacy Import runs use the prior Sync index
           to skip unchanged evidence and the already-swept Archive tree. Full
           Rescan forces the complete preflight regardless of the daily marker.
@@ -708,7 +700,7 @@ export default function Guide() {
           archive, duplicate-cleanup, disable, or delete action. A SAAR whose
           filename contains the standalone word <b>DISABLED</b> moves into the
           permanent <code>ORG SAAR Archive</code> during this preflight and is
-          used only for the disabled-account history check described above. No SAAR
+          retained as permanent history; disabled account state comes from local JSON. No SAAR
           is ever placed in Superseded or selected for deletion. The preflight
           also repairs prior storage mistakes: archived SAARs are recovered into
           the permanent SAAR Archive, and non-SAAR evidence less than five years
@@ -729,7 +721,7 @@ export default function Guide() {
           <code>ORG 8140 Certification Memo</code>,{" "}
           <code>ORG Privileged User Training</code>, and <code>ORG DTA Training</code>.
           Archive, SAAR Archive, Rework, and Superseded trees remain separate
-          managed locations; only SAAR filenames inside SAAR Archive participate
+          managed locations; no filenames inside SAAR Archive participate
           in the narrow account-status check. Other correction, duplicate,
           superseded, and
           active loose-PDF actions remain
@@ -771,8 +763,8 @@ export default function Guide() {
           Organization
           Ordinary Archive and Superseded folders and generated reports are
           excluded from later active-evidence scans. Rework is intentionally
-          revalidated on every Sync. Permanent SAAR Archive folders are limited
-          to the historical account-status check. When Clean Up rebuilds its
+          revalidated on every Sync. Permanent SAAR Archive folders are excluded
+          from account-status discovery; disabled-user history comes from local JSON. When Clean Up rebuilds its
           remaining-action queue after a partial pass, it reapplies the same
           active-folder and strict canonical-filename gates. Rework evidence and
           malformed filenames therefore cannot reappear as ZIP or duplicate
@@ -1002,14 +994,26 @@ export default function Guide() {
           action for one system does not block safe work against another system.
         </p>
         <p>
+          Evidence published from a local workspace receives a checksum-protected
+          publication receipt under <code>System/Publication Receipts</code>. During
+          a shared-folder Sync, a file with no matching receipt, or metadata that no
+          longer matches its receipt, is listed as a <b>Shared-Drive Addition</b> in
+          Sync Review. The file is preserved and validated, but the operator is
+          warned to confirm who placed it on the share and whether it belongs in the
+          authoritative record. This warning also identifies legacy evidence that
+          predates publication receipts.
+        </p>
+        <p>
           The storage-health strip shows <b>Last Saved</b>, <b>Last Backup</b>,
           and <b>Last Sync</b> for the selected system. Green means the live
           database checksum, catalog and shards, and backup are current; amber means a
           save or verification is in progress; red means the mapped folder
           needs attention. Choose <b>Verify Storage</b> to validate the live
           database SHA-256 checksum, every referenced organization shard, newest
-          backup snapshot, and complete audit
-          hash chain. A verification failure does not delete or overwrite
+          backup snapshot, complete audit hash chain, and the signed RSA-SHA256
+          audit-head anchor chain. Audit signing keys are protected to the Windows
+          operator while public verification material travels with each anchor.
+          A verification failure does not delete or overwrite
           evidence.
         </p>
         <p>
@@ -1434,7 +1438,7 @@ export default function Guide() {
         edits are grouped for two seconds before a background database commit, while
         explicit record actions, Sync, logoff, and shutdown still save immediately.
         Over VPN, use an organization-scoped <b>Daily Sync</b> for routine work and
-        reserve <b>Full Rescan</b> or <b>Legacy Import</b> for onsite maintenance when
+        reserve <b>Full Rescan</b> for onsite maintenance when
         practical. Bounded local performance logs
         record phase duration, files discovered, changed and unchanged counts,
         staged bytes, enumeration-cache reuse, and selected concurrency without
@@ -1532,8 +1536,8 @@ export default function Guide() {
         because they do not expire. A SAAR with a standalone DISABLED marker, or
         a SAAR approved for archival after replacement, moves to the permanent
         <code>ORG SAAR Archive</code>; it never enters Superseded and is never
-        automatically deleted. Its filename remains available to determine
-        whether the newest dated SAAR marks the historical account Disabled. Sync
+        automatically deleted. Its recorded filename and history remain available
+        in the local JSON database for disabled-account status. Full Rescan
         repairs any SAAR previously left in a dated
         or Superseded archive. It also moves evidence that is not yet five years
         old out of Superseded and into the current dated Archive bucket. A filename

@@ -286,3 +286,13 @@ test('reconciliation surfaces contradictory Active and Disabled duplicate record
  const issues=reconcileEvidence(users,[],[]);
  assert.equal(issues.filter(issue=>issue.category==='Account State Conflict').length,1);
 });
+
+
+test('full-scan storage repair preserves disabled-user evidence history in local JSON',()=>{
+ const source='Organizations/LM/LM Archive/Superseded/Brown_Jacob_(LM)_GEN_SAAR_DISABLED_01JAN2025.pdf.zip',destination='Organizations/LM/LM SAAR Archive/Brown_Jacob_(LM)_GEN_SAAR_DISABLED_01JAN2025.pdf.zip',filename=source.split('/').at(-1)!;
+ const disabled={id:'disabled',disabled:true,roles:['General'],artifacts:[{kind:'SAAR',filename,path:source}],changes:[]};
+ const result=removePreflightArchivedArtifacts([disabled],[{source,archived:destination,bucket:'Permanent SAAR'}],'2026-10-16T00:00:00.000Z','operator');
+ assert.equal(result[0].disabled,true);
+ assert.deepEqual(result[0].artifacts,[{kind:'SAAR',filename,path:destination}]);
+ assert.deepEqual(result[0].changes,[]);
+});
