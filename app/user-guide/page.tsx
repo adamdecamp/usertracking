@@ -1453,7 +1453,7 @@ export default function Guide() {
         refresh runs. Full Access remains locked until the selected database, newest
         backup, and audit chain pass verification; the verified database returned by
         that check is reused instead of being downloaded a second time. Rapid interface
-        edits are grouped for two seconds before a background database commit, while
+        edits are grouped for five seconds before a background database commit, while
         explicit record actions, Sync, logoff, and shutdown still save immediately.
         Over VPN, use an organization-scoped <b>Daily Sync</b> for routine work and
         reserve <b>Full Rescan</b> for onsite maintenance when
@@ -1667,6 +1667,20 @@ export default function Guide() {
         own sequence, UTC timestamp, previous hash, and entry hash, and the
         launcher performs one append per UTC day instead of rereading the chain
         for every file.
+      </aside>
+      <aside>
+        <b>Efficient Session Commit:</b> Publication streams evidence to the
+        shared drive instead of loading a complete file into memory. Transfer
+        progress is appended to a protected local journal, so publishing one
+        file does not rewrite the complete recovery plan. Unchanged evidence
+        reuses hashes already verified during the current operation, and normal
+        commits use the protected local evidence map instead of walking every
+        local workspace folder. Published-evidence receipts are separated by
+        organization, so a commit updates only the affected organization
+        indexes. The Performance window records preparation, transfer, and
+        finalization time, transferred bytes, throughput, and hash-cache use.
+        The browser also reuses an unchanged system database and CSV payload
+        and coalesces background edits for five seconds before saving.
       </aside>
       <aside>
         <b>Error Records:</b> Operational failures show bounded diagnostic

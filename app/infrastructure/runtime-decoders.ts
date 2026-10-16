@@ -41,8 +41,11 @@ export function stringArrayValue(value:unknown,context:string,path:string,maxIte
  return value.map((item,index)=>stringValue(item,context,`${path}[${index}]`,maxItemLength));
 }
 
-export async function decodeJsonResponse<T>(response:Response,context:string,decoder:RuntimeDecoder<T>):Promise<T>{
+export async function decodeJsonResponse<T>(response:Response,context:string,decoder:RuntimeDecoder<T>,maxBytes=100*1024*1024):Promise<T>{
+ const declared=response.headers.get('content-length'),declaredBytes=declared===null?undefined:Number(declared);
+ if(!Number.isSafeInteger(maxBytes)||maxBytes<1)throw new Error('JSON response limit must be a positive safe integer.');
+ if(declaredBytes!==undefined&&(!Number.isSafeInteger(declaredBytes)||declaredBytes<0||declaredBytes>maxBytes))throw new RuntimeDecodeError(context,'$.bytes',`a response no larger than ${maxBytes} bytes`);
  let value:unknown;
- try{value=await response.json()}catch(error){throw new RuntimeDecodeError(context,'$','valid JSON')}
+ try{const text=await response.text();if(new TextEncoder().encode(text).byteLength>maxBytes)throw new RuntimeDecodeError(context,'$.bytes',`a response no larger than ${maxBytes} bytes`);value=JSON.parse(text)}catch(error){if(error instanceof RuntimeDecodeError)throw error;throw new RuntimeDecodeError(context,'$','valid JSON')}
  return decoder(value,'$');
 }

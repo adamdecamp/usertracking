@@ -46,6 +46,10 @@ internal sealed class TrackerContext : ApplicationContext
     private string shutdownReason;
     private bool backupClean = true;
     private bool shutdownReady;
+    private bool shutdownFinalizationActive;
+    private bool shutdownFinalizationComplete;
+    private int shutdownFinalizationAttempts;
+    private int exitStarted;
     private int activeStorageRequests;
     private bool longOperationActive;
     private DateTime lastLongOperationHeartbeatUtc = DateTime.MinValue;
@@ -341,15 +345,12 @@ internal sealed class TrackerContext : ApplicationContext
 
     internal static bool StorageActionRequiresSerialization(string action)
     {
-        return !String.Equals(action, "error-report", StringComparison.Ordinal) && !String.Equals(action, "evidence-status", StringComparison.Ordinal) && !String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal) && !String.Equals(action, "outlook-draft", StringComparison.Ordinal) && !String.Equals(action, "performance", StringComparison.Ordinal) && !String.Equals(action, "diagnostics", StringComparison.Ordinal) && !action.StartsWith("lease-", StringComparison.Ordinal);
+        return LauncherPolicy.StorageActionRequiresSerialization(action);
     }
 
     internal static bool StorageActionRequiresLease(string action, string method)
     {
-        if (action.StartsWith("lease-", StringComparison.Ordinal)) return false;
-        if (String.Equals(action, "select", StringComparison.Ordinal) || String.Equals(action, "select-readonly", StringComparison.Ordinal) || String.Equals(action, "forget", StringComparison.Ordinal)) return false;
-        if (String.Equals(action, "error-report", StringComparison.Ordinal) || String.Equals(action, "audit", StringComparison.Ordinal) || String.Equals(action, "audit-batch", StringComparison.Ordinal)) return false;
-        return !ReadOnlyStorageActionAllowed(action, method);
+        return LauncherPolicy.StorageActionRequiresLease(action, method);
     }
 
     private SemaphoreSlim StorageQueue(string systemId)
@@ -376,16 +377,12 @@ internal sealed class TrackerContext : ApplicationContext
 
     internal static int StorageQueueWaitMilliseconds(string action, string method)
     {
-        if (!StorageActionRequiresSerialization(action)) return 0;
-        return String.Equals(method, "GET", StringComparison.Ordinal) || String.Equals(method, "HEAD", StringComparison.Ordinal) ? 30000 : 120000;
+        return LauncherPolicy.StorageQueueWaitMilliseconds(action, method);
     }
 
     internal static bool ReadOnlyStorageActionAllowed(string action, string method)
     {
-        if (String.Equals(action, "select-readonly", StringComparison.Ordinal) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
-        if ((String.Equals(action, "audit", StringComparison.Ordinal) || String.Equals(action, "audit-batch", StringComparison.Ordinal)) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
-        if (!String.Equals(method, "GET", StringComparison.Ordinal) && !String.Equals(method, "HEAD", StringComparison.Ordinal)) return false;
-        return String.Equals(action, "local-manifest", StringComparison.Ordinal) || String.Equals(action, "manifest", StringComparison.Ordinal) || String.Equals(action, "file", StringComparison.Ordinal) || String.Equals(action, "audit-verify", StringComparison.Ordinal) || String.Equals(action, "audit-view", StringComparison.Ordinal) || String.Equals(action, "performance", StringComparison.Ordinal) || String.Equals(action, "diagnostics", StringComparison.Ordinal) || String.Equals(action, "organizations", StringComparison.Ordinal) || String.Equals(action, "evidence-status", StringComparison.Ordinal) || String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal) || String.Equals(action, "archive-locations", StringComparison.Ordinal);
+        return LauncherPolicy.ReadOnlyStorageActionAllowed(action, method);
     }
 
     private static string CreateSessionToken()
@@ -716,20 +713,7 @@ internal sealed class TrackerContext : ApplicationContext
 
     internal static long RequestBodyLimit(string path, string method)
     {
-        if (!String.Equals(method, "POST", StringComparison.Ordinal) && !String.Equals(method, "DELETE", StringComparison.Ordinal)) return 0;
-        if (String.IsNullOrWhiteSpace(path)) return 0;
-        if (!path.StartsWith("/api/storage/", StringComparison.Ordinal)) return 0;
-        string tail = path.Substring("/api/storage/".Length);int separator = tail.IndexOf('/');string action = separator >= 0 ? tail.Substring(separator + 1) : "";
-        if (action == "evidence" || action == "evidence-pdf") return 110L * MiB;
-        if (action == "state-commit" || action == "workspace-publish") return 100L * MiB;
-        if (action == "manifest" || action == "csv" || action == "report") return 50L * MiB;
-        if (action == "outlook-draft") return 40L * MiB;
-        if (action == "renamer-queue") return 20L * MiB;
-        if (action == "restore-active") return 10L * MiB;
-        if (action == "audit-batch") return 5L * MiB;
-        if (action == "error-report") return 1L * MiB;
-        if (action == "audit") return 8L * KiB;
-        return 0;
+        return LauncherPolicy.RequestBodyLimit(path, method);
     }
 
     private static async Task<byte[]> ReadBody(NetworkStream stream, long length, long endpointLimit)
@@ -816,12 +800,6 @@ internal sealed class TrackerContext : ApplicationContext
             activeStorageRequests++;
             lastActivityUtc = DateTime.UtcNow;
             lastPresenceUtc = lastActivityUtc;
-            if (shutdownReason == "browser-closed")
-            {
-                shutdownRequestedUtc = null;
-                shutdownReason = null;
-                shutdownReady = false;
-            }
         }
     }
 
@@ -843,12 +821,6 @@ internal sealed class TrackerContext : ApplicationContext
             lastLongOperationHeartbeatUtc = active ? DateTime.UtcNow : DateTime.MinValue;
             lastActivityUtc = DateTime.UtcNow;
             lastPresenceUtc = lastActivityUtc;
-            if (active && shutdownReason == "browser-closed")
-            {
-                shutdownRequestedUtc = null;
-                shutdownReason = null;
-                shutdownReady = false;
-            }
         }
     }
 
@@ -856,21 +828,34 @@ internal sealed class TrackerContext : ApplicationContext
 
     private void RequestShutdown(string reason)
     {
-        bool finalizeNow;
         lock (lifecycleGate)
         {
             if (!shutdownRequestedUtc.HasValue) shutdownRequestedUtc = DateTime.UtcNow;
             shutdownReason = reason;
             shutdownReady = false;
-            finalizeNow = backupClean;
         }
-        if (finalizeNow) TryFinalizeBackups();
     }
 
-    private void TryFinalizeBackups()
+    private void StartBackupFinalization()
     {
-        try { storage.FinalizeMappedBackups(); lock (lifecycleGate) backupClean = true; }
-        catch { lock (lifecycleGate) backupClean = false; }
+        lock (lifecycleGate)
+        {
+            if (shutdownFinalizationActive || shutdownFinalizationComplete || shutdownFinalizationAttempts >= 2) return;
+            shutdownFinalizationActive = true;
+            shutdownFinalizationAttempts++;
+        }
+        Task.Run(delegate
+        {
+            bool completed = false;
+            try { storage.FinalizePendingBackups();completed = true; }
+            catch { }
+            lock (lifecycleGate)
+            {
+                shutdownFinalizationActive = false;
+                shutdownFinalizationComplete = completed;
+                backupClean = completed;
+            }
+        });
     }
 
     private void MarkShutdownReady()
@@ -886,8 +871,19 @@ internal sealed class TrackerContext : ApplicationContext
         string activeOperation = ActiveStorageOperationSummary();
         lock (lifecycleGate)
         {
-            return "{\"shutdownRequested\":" + (shutdownRequestedUtc.HasValue ? "true" : "false") + ",\"reason\":\"" + Json(shutdownReason ?? "") + "\",\"backupClean\":" + (backupClean ? "true" : "false") + ",\"activeStorageRequests\":" + activeStorageRequests.ToString() + ",\"longOperationActive\":" + (longOperationActive ? "true" : "false") + ",\"activeOperation\":\"" + Json(activeOperation) + "\"}";
+            return "{\"shutdownRequested\":" + (shutdownRequestedUtc.HasValue ? "true" : "false") + ",\"reason\":\"" + Json(shutdownReason ?? "") + "\",\"backupClean\":" + (backupClean ? "true" : "false") + ",\"shutdownFinalizationActive\":" + (shutdownFinalizationActive ? "true" : "false") + ",\"shutdownFinalizationComplete\":" + (shutdownFinalizationComplete ? "true" : "false") + ",\"activeStorageRequests\":" + activeStorageRequests.ToString() + ",\"longOperationActive\":" + (longOperationActive ? "true" : "false") + ",\"activeOperation\":\"" + Json(activeOperation) + "\"}";
         }
+    }
+
+    internal static TimeSpan ForcedShutdownLimit(string reason)
+    {
+        return String.Equals(reason, "idle", StringComparison.Ordinal) ? TimeSpan.FromMinutes(3) : TimeSpan.FromMinutes(2);
+    }
+
+    internal static bool ShutdownShouldExit(string reason, TimeSpan waiting, bool operationBusy, bool backupClean, bool finalizationComplete, bool ready)
+    {
+        bool graceful = !operationBusy && backupClean && finalizationComplete && (ready || (reason == "operator-exit" && waiting >= TimeSpan.FromSeconds(2)) || ((reason == "browser-closed" || reason == "operator-logoff") && waiting >= TimeSpan.FromSeconds(12)) || (reason == "idle" && waiting >= TimeSpan.FromSeconds(30)));
+        return graceful || waiting >= ForcedShutdownLimit(reason);
     }
 
     private void EvaluateLifecycle()
@@ -926,11 +922,14 @@ internal sealed class TrackerContext : ApplicationContext
             if (shutdownRequestedUtc.HasValue)
             {
                 TimeSpan waiting = now - shutdownRequestedUtc.Value;
-                if (!backupClean && waiting >= TimeSpan.FromSeconds(8)) finalize = true;
-                shouldExit = backupClean && (shutdownReady || ((shutdownReason == "browser-closed" || shutdownReason == "operator-exit" || shutdownReason == "operator-logoff") && waiting >= TimeSpan.FromSeconds(12)) || (shutdownReason == "idle" && waiting >= TimeSpan.FromSeconds(30)));
+                if (!operationBusy && !shutdownFinalizationActive && !shutdownFinalizationComplete && shutdownFinalizationAttempts < 2) finalize = true;
+                // Local-first state and atomic shared writes make a bounded forced exit
+                // safer than leaving an orphaned tray process forever. Any unfinished
+                // publication remains recoverable from the protected local workspace.
+                shouldExit = ShutdownShouldExit(shutdownReason, waiting, operationBusy, backupClean, shutdownFinalizationComplete, shutdownReady);
             }
         }
-        if (finalize) TryFinalizeBackups();
+        if (finalize) StartBackupFinalization();
         if (shouldExit) ExitThread();
     }
 
@@ -961,14 +960,22 @@ internal sealed class TrackerContext : ApplicationContext
     }
     protected override void ExitThreadCore()
     {
+        if (Interlocked.Exchange(ref exitStarted, 1) != 0) return;
+        // A final watchdog guarantees that a slow network share, lease release, or
+        // cache cleanup cannot strand the tray process after shutdown was accepted.
+        Task.Run(delegate { Thread.Sleep(8000);Environment.Exit(0); });
         try { lifecycleTimer.Stop(); lifecycleTimer.Dispose(); } catch { }
-        try { TryFinalizeBackups(); } catch { }
-        try { storage.Dispose(); } catch { }
         try { stop.Cancel(); listener.Stop(); } catch { }
-        try { lock (storageOperationsGate) { foreach (SemaphoreSlim queue in storageOperations.Values) queue.Dispose();storageOperations.Clear();activeStorageOperationNames.Clear(); } } catch { }
         try { tray.Visible = false; tray.Dispose(); } catch { }
         try { dispatcher.Dispose(); } catch { }
-        finally { base.ExitThreadCore(); Environment.Exit(0); }
+        bool cleanupSafe;
+        lock (lifecycleGate) cleanupSafe = !shutdownFinalizationActive && activeStorageRequests == 0;
+        if (cleanupSafe)
+        {
+            try { Task.Run(delegate { storage.Dispose(false); }).Wait(5000); } catch { }
+        }
+        try { base.ExitThreadCore(); }
+        finally { Environment.Exit(0); }
     }
 }
 

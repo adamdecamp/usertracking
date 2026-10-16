@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
+const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 
 test('the portable page sends presence immediately and throughout an open session',()=>{
  assert.match(page,/startPortablePresenceHeartbeat\(\(\)=>launcherPost\('\/api\/presence',true\)\)/);
@@ -26,14 +27,14 @@ test('mapped-drive operations use bounded network-lag retries',()=>{
 
 test('slow network storage queues safely instead of failing after five seconds',()=>{
  assert.match(launcher,/StorageQueueWaitMilliseconds\(action, parts\[0\]\)/);
- assert.match(launcher,/\? 30000 : 120000/);
+ assert.match(policy,/\? 30000 : 120000/);
  assert.doesNotMatch(launcher,/storageOperations\.WaitAsync\(5000\)/);
  assert.match(launcher,/client\.ReceiveTimeout = 120000; client\.SendTimeout = 120000/);
  assert.match(launcher,/ActiveStorageOperation\(systemId\)/);
  assert.match(launcher,/activeOperation/);
 });
 
-test('idle disconnect waits for storage, reuses final publication, and terminates the launcher',()=>{
+test('idle disconnect arms bounded shutdown, reuses final publication, and releases the lease',()=>{
  assert.match(page,/waitForPortableStorageIdle/);
  assert.match(page,/publicationBySystem\.current\.get\(systemId\)/);
  assert.match(page,/publicationBySystem\.current\.has\(systemId\)/);
@@ -42,9 +43,41 @@ test('idle disconnect waits for storage, reuses final publication, and terminate
  const disconnect=page.slice(page.indexOf('async function disconnectForInactivity'),page.indexOf('async function prepareShutdown'));
  assert.match(disconnect,/error instanceof PortableStorageBusyError/);
  assert.match(disconnect,/before retrying the final verified save/);
- assert.ok(disconnect.indexOf('publishSystemWorkspace')<disconnect.indexOf('releaseLease'));
- assert.ok(disconnect.indexOf('releaseLease')<disconnect.indexOf("'/api/logoff'"));
+ assert.ok(disconnect.indexOf("'/api/logoff'")<disconnect.indexOf('publishForShutdown'));
+ assert.ok(disconnect.indexOf('publishForShutdown')<disconnect.indexOf('releaseLeaseForShutdown'));
+ assert.ok(disconnect.indexOf('releaseLeaseForShutdown')<disconnect.indexOf("'/api/shutdown-ready'"));
  assert.doesNotMatch(disconnect,/finally\{[^}]*releaseLease/);
+});
+
+test('shutdown waits are bounded and retain local-first recovery state',()=>{
+ const wait=page.slice(page.indexOf('async function waitForPortableStorageIdle'),page.indexOf('async function portableRequest'));
+ assert.match(wait,/Date\.now\(\)-started>=timeoutMs/);
+ assert.match(wait,/OperationTimeoutError/);
+ assert.match(page,/shutdownPublicationTimeoutMs=2\*60\*1000/);
+ assert.match(page,/protected local workspace (?:remains|was retained)/i);
+});
+
+test('operator logoff arms launcher shutdown before final network publication',()=>{
+ const logoff=page.slice(page.indexOf('async function logOff()'),page.indexOf('async function reconnect'));
+ assert.ok(logoff.indexOf("'/api/logoff'")<logoff.indexOf('publishForShutdown'));
+ assert.match(logoff,/syncAbort\.current\?\.abort\(\)/);
+ assert.match(logoff,/finally\{[\s\S]*?shutdown-ready/);
+});
+
+test('launcher finalization never blocks its UI thread and has a hard exit deadline',()=>{
+ const request=launcher.slice(launcher.indexOf('private void RequestShutdown'),launcher.indexOf('private void StartBackupFinalization'));
+ assert.doesNotMatch(request,/FinalizeMappedBackups\(\)/);
+ const finalizer=launcher.slice(launcher.indexOf('private void StartBackupFinalization'),launcher.indexOf('private void MarkShutdownReady'));
+ assert.match(finalizer,/Task\.Run/);
+ assert.match(finalizer,/storage\.FinalizePendingBackups\(\)/);
+ const lifecycle=launcher.slice(launcher.indexOf('private void EvaluateLifecycle'),launcher.indexOf('private static async Task Respond'));
+ assert.match(lifecycle,/ShutdownShouldExit\(shutdownReason, waiting, operationBusy, backupClean, shutdownFinalizationComplete, shutdownReady\)/);
+ assert.match(launcher,/internal static bool ShutdownShouldExit[\s\S]*?ForcedShutdownLimit\(reason\)/);
+ assert.match(lifecycle,/shutdownFinalizationComplete/);
+ const exit=launcher.slice(launcher.indexOf('protected override void ExitThreadCore'),launcher.indexOf('internal static class Program'));
+ assert.match(exit,/Thread\.Sleep\(8000\);Environment\.Exit\(0\)/);
+ assert.match(exit,/storage\.Dispose\(false\)/);
+ assert.doesNotMatch(exit,/FinalizeMappedBackups\(\)/);
 });
 
 test('Sync confirms launcher activity before its first serialized storage request',()=>{
@@ -81,6 +114,8 @@ test('a live heartbeat cancels only a pending browser-closed shutdown',()=>{
  assert.match(presence,/shutdownReason == "browser-closed"/);
  assert.match(presence,/shutdownRequestedUtc = null/);
  assert.doesNotMatch(presence,/operator-logoff|operator-exit|"idle"/);
+ const storage=launcher.slice(launcher.indexOf('private void BeginStorageRequest()'),launcher.indexOf('private void SetBackupClean'));
+ assert.doesNotMatch(storage,/shutdownRequestedUtc = null/);
 });
 
 test('lease loss stops active work and preserves the current Sync review',()=>{
@@ -122,8 +157,8 @@ test('Outlook completion auditing always includes the mapped endpoint system',()
 });
 
 test('manual PDF receipt verification is read-only and does not wait behind storage writes',()=>{
- assert.match(launcher,/!String\.Equals\(action, "evidence-pdf-status", StringComparison\.Ordinal\)/);
- assert.match(launcher,/String\.Equals\(action, "evidence-pdf-status", StringComparison\.Ordinal\) \|\| String\.Equals\(action, "archive-locations"/);
+ assert.match(policy,/!String\.Equals\(action, "evidence-pdf-status", StringComparison\.Ordinal\)/);
+ assert.match(policy,/String\.Equals\(action, "evidence-pdf-status", StringComparison\.Ordinal\)[\s\S]*?String\.Equals\(action, "archive-locations"/);
 });
 
 test('successful disable and delete operations keep missing evidence in the audit trail without creating false failure reports',()=>{

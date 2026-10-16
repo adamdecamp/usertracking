@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
+const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
 const store=page.slice(page.indexOf('type StoredEvidenceResult'),page.indexOf('function withStorageMutationTimeout'));
 
@@ -23,7 +24,7 @@ test('a late portable write is reconciled from its exact path and SHA-256 receip
  assert.match(store,/if\(reconciled\)return reconciled/);
  assert.match(launcher,/action == "evidence-status" && parts\[0\] == "GET"/);
  assert.match(launcher,/action == "evidence-pdf-status" && parts\[0\] == "GET"/);
- assert.match(launcher,/!String\.Equals\(action, "evidence-status", StringComparison\.Ordinal\)/);
+ assert.match(policy,/!String\.Equals\(action, "evidence-status", StringComparison\.Ordinal\)/);
  assert.match(storage,/public string VerifyStoredEvidence/);
  assert.match(storage,/public string VerifyStoredEvidencePdf/);
  assert.match(storage,/bool stored = String\.Equals\(actual, expected, StringComparison\.OrdinalIgnoreCase\)/);

@@ -11,7 +11,7 @@
     "prebuild": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-BuildGate.ps1",
     "build": "vite build",
     "start": "vinext start",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern vendor",
+    "lint": "eslint . --max-warnings 0 --ignore-pattern dist --ignore-pattern .next --ignore-pattern vendor",
     "test:regression": "node ./scripts/run-regression.mjs",
     "test:fuzz": "node --experimental-strip-types --test tests/fuzz.test.ts",
     "test:e2e": "pnpm build && playwright test",

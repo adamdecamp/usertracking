@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const sessionPanels=readFileSync(new URL('../app/components/SessionPanels.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
+const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
 const portableEntry=readFileSync(new URL('../portable/src/main.tsx',import.meta.url),'utf8');
 
@@ -45,8 +46,8 @@ test('portable requests carry an authenticated launcher session and the launcher
  assert.match(launcher,/storage\.ReleaseAllLeases\(\);DowngradeSession\(\)/);
  assert.match(launcher,/ReadOnlyStorageActionAllowed\(action, parts\[0\]\)/);
  assert.match(launcher,/Read-Only Access cannot modify the mapped information system/);
- assert.match(launcher,/action, "audit-batch"/);
- assert.match(launcher,/action, "manifest"/);
+ assert.match(policy,/action, "audit-batch"/);
+ assert.match(policy,/action, "manifest"/);
  assert.match(launcher,/CreateSessionToken\(\)/);
  assert.match(launcher,/#session=/);
  assert.match(portableEntry,/history\.replaceState\(null,'',`\$\{location\.pathname\}\$\{location\.search\}`\)/);

@@ -88,6 +88,9 @@ $compilerArgs = New-Object System.Collections.Generic.List[string]
 $assetResourceArgs | ForEach-Object { $compilerArgs.Add($_) }
 $compilerArgs.Add((Join-Path $portableRoot "Program.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableStorage.cs"))
+$compilerArgs.Add((Join-Path $portableRoot "LauncherPolicy.cs"))
+$compilerArgs.Add('/warn:4')
+$compilerArgs.Add('/warnaserror+')
 & $compiler $compilerArgs
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $executable)) { throw "Standalone launcher compilation failed." }
 if ((Get-Item -LiteralPath $executable).Length -gt 3MB) { throw "RAPTOR.exe exceeds the 3 MB lightweight release budget." }

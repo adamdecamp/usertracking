@@ -18,7 +18,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "TypeScript checks failed." }
 
     Write-Host "Running lint checks..."
-    & $eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern vendor
+    & $eslint . --max-warnings 0 --ignore-pattern dist --ignore-pattern .next --ignore-pattern vendor
     if ($LASTEXITCODE -ne 0) { throw "Lint checks failed." }
 
     # Single source of truth: scripts/regression-tests.txt via scripts/run-regression.mjs

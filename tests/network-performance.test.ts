@@ -5,9 +5,11 @@ import fs from 'node:fs';
 const page=fs.readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const storage=fs.readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
 const launcher=fs.readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
+const policy=fs.readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
+const systemCommitService=fs.readFileSync(new URL('../app/application/system-commit-service.ts',import.meta.url),'utf8');
 
 test('portable database and CSV backup use one serialized launcher commit',()=>{
- assert.match(page,/portableRequest\(h,'state-commit'[\s\S]*?JSON\.stringify\(\{database,csv:csvRows/);
+ assert.match(page,/portableRequest\(h,'state-commit'[\s\S]*?JSON\.stringify\(\{database,csv\}/);
  assert.match(launcher,/action == "state-commit"[\s\S]*?SaveSystemState/);
  assert.match(storage,/public string SaveSystemState[\s\S]*?SaveManifest[\s\S]*?QueueBackup/);
  assert.match(storage,/private void FlushDueBackups[\s\S]*?CreateSnapshot[\s\S]*?SaveCsv/);
@@ -80,8 +82,11 @@ test('VPN startup reads only the selected system and reuses its verified manifes
 });
 
 test('rapid UI edits are coalesced before background shared-drive saves',()=>{
- assert.match(page,/backgroundSaveDebounceMs=2000/);
+ assert.match(page,/backgroundSaveDebounceMs=5000/);
  assert.match(page,/window\.setTimeout\(\(\)=>void save\(\),backgroundSaveDebounceMs\)/);
+ assert.match(page,/systemPayloadCache=useRef\(new SystemCommitPayloadCache\(\)\)/);
+ assert.match(systemCommitService,/this\.entry\.systems===systems&&this\.entry\.users===users&&this\.entry\.systemId===systemId/);
+ assert.match(systemCommitService,/buildCsv\(scopedUsers,scopedSystems\)/);
 });
 
 test('verified state is marked committed before React can schedule a redundant startup save',()=>{
@@ -130,6 +135,10 @@ test('database snapshots and CSV backups are coalesced but force-flushed before 
  assert.match(storage,/new Timer\(delegate \{ try \{ FlushDueBackups\(false\)/);
  assert.match(storage,/public void FinalizeMappedBackups\(\)[\s\S]*?FlushDueBackups\(true\)/);
  assert.match(storage,/public void Dispose\(\)[\s\S]*?FlushDueBackups\(true\)/);
+ assert.match(storage,/public void FinalizePendingBackups\(\)[\s\S]*?FlushDueBackups\(true\)/);
+ const shutdownFinalizer=launcher.slice(launcher.indexOf('private void StartBackupFinalization'),launcher.indexOf('private void MarkShutdownReady'));
+ assert.match(shutdownFinalizer,/FinalizePendingBackups\(\)/);
+ assert.doesNotMatch(shutdownFinalizer,/FinalizeMappedBackups\(\)/);
 });
 
 test('audit appends reuse a protected verified checkpoint while explicit verification stays full-chain',()=>{
@@ -189,6 +198,10 @@ test('performance diagnostics record phase timing, counts, staging, and concurre
  assert.match(storage,/public string ReadPerformanceDiagnostics/);
  assert.match(storage,/Percentile\(durations, 0\.95\)/);
  assert.match(storage,/"databaseShards"/);
+ assert.match(storage,/"publicationIndexShards"/);
+ assert.match(storage,/"bytesPerSecond"/);
+ assert.match(storage,/"preparationMs"/);
+ assert.match(storage,/"transferMs"/);
  assert.match(storage,/"localReadCacheAvailable"/);
  assert.match(storage,/"backupCompression"/);
  assert.match(launcher,/action == "performance"[\s\S]*?ReadPerformanceDiagnostics/);
@@ -196,11 +209,30 @@ test('performance diagnostics record phase timing, counts, staging, and concurre
  assert.match(page,/downloadPerformanceReport/);
 });
 
+test('workspace publication streams evidence and appends bounded progress without routine tree walks',()=>{
+ const publish=storage.slice(storage.indexOf('public string PublishWorkspace'),storage.indexOf('private PublicationEvidence PreparePublicationDestination'));
+ assert.match(publish,/recoverUnindexedLocalEvidence && Directory\.Exists\(localOrganizations\)/);
+ assert.match(publish,/StreamVerifiedEvidenceCopy\(item\.Source, temporary/);
+ assert.doesNotMatch(publish,/File\.ReadAllBytes\(item\.Source\)/);
+ assert.match(storage,/AppendPublicationProgress/);
+ assert.match(storage,/workspace-publication-progress\.jsonl/);
+ assert.match(storage,/FileMode\.Append/);
+});
+
+test('publication receipts are sharded per organization and file hashes stream with per-operation reuse',()=>{
+ assert.match(storage,/PublicationIndexStorageFormat = "organization-sharded-v1"/);
+ assert.match(storage,/WritePublishedEvidenceShard/);
+ assert.match(storage,/LoadPublishedEvidence\(sharedRoot, cleanOrganization\)/);
+ assert.match(storage,/class PublicationHashCache/);
+ assert.match(storage,/FileHashWithRetry[\s\S]*?Sha256Stream/);
+ assert.match(storage,/hashCache\.Container/);
+});
+
 test('sanitized diagnostics expose only categorized error counts through a nonqueued read-only route',()=>{
  assert.match(storage,/public string ReadSanitizedDiagnostics/);
  assert.match(storage,/DiagnosticContextCategory/);
  assert.doesNotMatch(storage.slice(storage.indexOf('public string ReadSanitizedDiagnostics'),storage.indexOf('private static long PerformanceDuration')),/Details:/);
  assert.match(launcher,/action == "diagnostics"[\s\S]*?ReadSanitizedDiagnostics/);
- assert.match(launcher,/!String\.Equals\(action, "diagnostics"/);
+ assert.match(policy,/!String\.Equals\(action, "diagnostics"/);
  assert.match(page,/Download Sanitized Diagnostic Bundle|downloadDiagnosticBundle/);
 });

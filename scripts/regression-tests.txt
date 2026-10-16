@@ -46,3 +46,7 @@ tests/workflow-utils.test.ts
 tests/data-migrations.test.ts
 tests/network-performance.test.ts
 tests/performance-budget.test.ts
+tests/system-commit-service.test.ts
+tests/runtime-contract-fuzz.test.ts
+tests/architecture-boundaries.test.ts
+tests/security-workflow.test.ts
