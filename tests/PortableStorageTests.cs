@@ -211,6 +211,80 @@ internal static class PortableStorageTests
         }
     }
 
+    private static byte[] TimestampedEvidenceZip(string entry, byte[] pdf, int day)
+    {
+        using (var memory = new MemoryStream())
+        {
+            byte[] bytes = EvidenceZip(entry, pdf);memory.Write(bytes, 0, bytes.Length);memory.Position = 0;
+            using (var archive = new ZipArchive(memory, ZipArchiveMode.Update, true)) archive.Entries[0].LastWriteTime = new DateTimeOffset(2026, 9, day, 12, 0, 0, TimeSpan.Zero);
+            return memory.ToArray();
+        }
+    }
+
+    private static void RunPublicationCollisions(string parent)
+    {
+        string shared = Path.Combine(parent, "publish-collisions"), cache = Path.Combine(parent, "pc", "mappings.json");Directory.CreateDirectory(shared);
+        using (var storage = new PortableStorage("DOMAIN\\publication", cache))
+        {
+            Assert(storage.MapForFullSession("collisions", shared, "collision-session"), "Publication collision tests require an isolated editor lease.");
+            var database = (Dictionary<string, object>)Json.DeserializeObject(Database("collisions@example.mil"));var user = (Dictionary<string, object>)((object[])database["users"])[0];
+            storage.PublishWorkspace("collisions", Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", database }, { "csv", "initial" } })));
+            string filename = "Shaw_Vivian_(GOV)_GEN_SAAR_25SEP2026.pdf.zip", relative = "Organizations/GOV/GOV SAAR/" + filename, destination = Path.Combine(shared, relative.Replace('/', Path.DirectorySeparatorChar));
+            byte[] localZip = TimestampedEvidenceZip(filename.Substring(0, filename.Length - 4), PdfBytes(), 25), sharedZip = TimestampedEvidenceZip(filename.Substring(0, filename.Length - 4), PdfBytes(), 26);
+            Assert(Sha256(localZip) != Sha256(sharedZip), "The duplicate fixture must contain the same PDF in different ZIP containers.");
+            storage.StoreEvidence("collisions", "GOV", "SAAR", filename, localZip);Directory.CreateDirectory(Path.GetDirectoryName(destination));File.WriteAllBytes(destination, sharedZip);
+            user["artifacts"] = new object[] { new Dictionary<string, object> { { "kind", "SAAR" }, { "filename", filename }, { "path", relative }, { "sha256", Sha256(localZip) } } };
+            string csv = String.Join(",", Enumerable.Repeat("\"Unchanged, field\"", 12).Concat(new[] { "\"" + filename + "\"" }));
+            byte[] request = Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", database }, { "csv", csv } }));
+            int sharedEvidenceEnumerations = 0;PortableStorage.DirectoryEnumerationForTests = path => { if (path.StartsWith(Path.Combine(shared, "Organizations"), StringComparison.OrdinalIgnoreCase)) sharedEvidenceEnumerations++; };
+            try
+            {
+                var duplicate = (Dictionary<string, object>)Json.DeserializeObject(storage.PublishWorkspace("collisions", request));
+                var savedArtifact = (Dictionary<string, object>)((object[])((Dictionary<string, object>)((object[])((Dictionary<string, object>)duplicate["manifest"])["users"])[0])["artifacts"])[0];
+                Assert(Convert.ToInt32(duplicate["reusedFiles"]) == 1 && Convert.ToString(savedArtifact["sha256"]) == Sha256(sharedZip) && File.ReadAllBytes(destination).SequenceEqual(sharedZip), "Identical PDF content must reuse the existing shared ZIP and record its container hash without replacing shared bytes.");
+                string workspace = storage.LocalWorkspacePath("collisions"), mapPath = Path.Combine(workspace, "System", "workspace-evidence.json");
+                string clearMap = Convert.ToString(typeof(PortableStorage).GetMethod("ReadProtectedLocalJson", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(storage, new object[] { mapPath, "workspace-evidence", 50L * 1024 * 1024 }));
+                Assert(clearMap.Contains(Sha256(localZip)) && clearMap.Contains(Sha256(sharedZip)), "Protected receipts must retain separate local and shared container hashes.");
+                string manifest = Path.Combine(shared, "System", "information-system-user-tracker.json"), duplicateManifestHash = Sha256(File.ReadAllBytes(manifest));storage.PublishWorkspace("collisions", request);
+                Assert(Sha256(File.ReadAllBytes(manifest)) == duplicateManifestHash && storage.ReadWorkingManifest("collisions").Contains(Sha256(sharedZip)), "Retrying stale browser state must retain the reused shared ZIP hash.");
+
+                string archiveName = "Chen_Henry_(GOV)_PRIV_DEV_SAAR_25SEP2026.pdf.zip";byte[] changedPdf = Encoding.ASCII.GetBytes("%PDF-1.4\n% distinct archived evidence\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n"), archiveZip = TimestampedEvidenceZip(archiveName.Substring(0, archiveName.Length - 4), changedPdf, 25), existingArchiveZip = TimestampedEvidenceZip(archiveName.Substring(0, archiveName.Length - 4), PdfBytes(), 25);
+                storage.StoreEvidence("collisions", "GOV", "SAAR", archiveName, archiveZip);
+                string archive = Convert.ToString(((Dictionary<string, object>)Json.DeserializeObject(storage.ArchiveEvidence("collisions", "Organizations/GOV/GOV SAAR/" + archiveName)))["archived"]), archiveDestination = Path.Combine(shared, archive.Replace('/', Path.DirectorySeparatorChar));Directory.CreateDirectory(Path.GetDirectoryName(archiveDestination));File.WriteAllBytes(archiveDestination, existingArchiveZip);
+                user["artifacts"] = new object[] { new Dictionary<string, object> { { "kind", "SAAR" }, { "filename", archiveName }, { "path", archive }, { "sha256", Sha256(archiveZip) } } };
+                request = Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", database }, { "csv", csv.Replace(filename, archiveName) } }));
+                string conflictName = archiveName.Substring(0, archiveName.Length - 8) + "_CONFLICT_" + Sha256(changedPdf).Substring(0, 8).ToUpperInvariant() + ".pdf.zip", conflictDestination = Path.Combine(Path.GetDirectoryName(archiveDestination), conflictName);
+                PortableStorage.FailAfterStageForTests = "publication-evidence-copy";bool interruptedCopy = false;
+                try { storage.PublishWorkspace("collisions", request); } catch (IOException error) { interruptedCopy = error.Message.Contains("Injected interruption"); }
+                Assert(interruptedCopy && File.Exists(conflictDestination) && File.ReadAllBytes(archiveDestination).SequenceEqual(existingArchiveZip) && Sha256(File.ReadAllBytes(manifest)) == duplicateManifestHash && storage.ReadWorkingManifest("collisions").Contains(conflictName), "A distinct archive PDF must keep both versions and persist resolved local references before a failed transfer can affect the master JSON.");
+                string publicationJournal = Path.Combine(workspace, "System", "workspace-publication.json");
+                string clearJournal = Convert.ToString(typeof(PortableStorage).GetMethod("ReadProtectedLocalJson", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(storage, new object[] { publicationJournal, "workspace-publication", 50L * 1024 * 1024 }));
+                Assert(clearJournal.Contains(conflictName) && clearJournal.Contains("sourceSha256"), "The recovery journal must record the resolved archive destination and local source hash.");
+                PortableStorage.FailAfterStageForTests = "publication-manifest-committed";bool interruptedCompletion = false;
+                try { storage.PublishWorkspace("collisions", request); } catch (IOException error) { interruptedCompletion = error.Message.Contains("Injected interruption"); }
+                Assert(interruptedCompletion, "The retry fixture must interrupt after the shared master was committed.");
+                var recovered = (Dictionary<string, object>)Json.DeserializeObject(storage.PublishWorkspace("collisions", request));storage.FinalizeMappedBackups();
+                Assert(Convert.ToInt32(recovered["archivedConflicts"]) == 1 && File.ReadAllBytes(conflictDestination).SequenceEqual(archiveZip) && File.ReadAllBytes(archiveDestination).SequenceEqual(existingArchiveZip) && Directory.GetFiles(Path.GetDirectoryName(archiveDestination), "*_CONFLICT_*.zip").Length == 1 && storage.ReadWorkingManifest("collisions").Contains(conflictName), "Repeated interrupted publication must reuse the same deterministic conflict filename and preserve both archive versions.");
+                Assert(File.ReadAllText(Path.Combine(shared, "System", "backup", "user-tracker-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".csv")).Contains(conflictName), "CSV references must follow the resolved archived evidence filename.");
+                string recoveredHash = Sha256(File.ReadAllBytes(manifest));storage.PublishWorkspace("collisions", request);Assert(Sha256(File.ReadAllBytes(manifest)) == recoveredHash, "A completed archive conflict must reconcile stale browser references on later retries.");
+                ((Dictionary<string, object>)((object[])user["artifacts"])[0]).Remove("sha256");storage.PublishWorkspace("collisions", Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", database }, { "csv", csv.Replace(filename, archiveName) } })));Assert(Sha256(File.ReadAllBytes(manifest)) == recoveredHash, "Legacy browser references without a stored hash must reuse the protected publication receipt on retry.");
+                Assert(!Directory.Exists(Path.Combine(workspace, "Organizations", "GOV", "GOV SAAR Archive")), "Archive collision resolution must not create local Archive folders.");
+
+                // Legacy local archive files have no routing-map entry.
+                string legacyName = "Legacy_User_(GOV)_GEN_SAAR_24SEP2026.pdf.zip", legacyRelative = "Organizations/GOV/GOV SAAR Archive/" + legacyName, legacyLocal = Path.Combine(workspace, legacyRelative.Replace('/', Path.DirectorySeparatorChar)), legacyShared = Path.Combine(shared, legacyRelative.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(Path.GetDirectoryName(legacyLocal));File.WriteAllBytes(legacyLocal, TimestampedEvidenceZip(legacyName.Substring(0, legacyName.Length - 4), changedPdf, 25));File.WriteAllBytes(legacyShared, TimestampedEvidenceZip(legacyName.Substring(0, legacyName.Length - 4), PdfBytes(), 25));
+                var legacy = (Dictionary<string, object>)Json.DeserializeObject(storage.PublishWorkspace("collisions", Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", recovered["manifest"] }, { "csv", csv } }))));Assert(Convert.ToInt32(legacy["archivedConflicts"]) == 1 && !File.Exists(legacyLocal), "Legacy local archives must use the same conflict-preserving publication rules.");
+
+                storage.StoreEvidence("collisions", "GOV", "SAAR", filename, TimestampedEvidenceZip(filename.Substring(0, filename.Length - 4), changedPdf, 25));
+                string beforeActiveConflict = Sha256(File.ReadAllBytes(manifest));bool blockedActive = false;
+                try { storage.PublishWorkspace("collisions", Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", legacy["manifest"] }, { "csv", csv } }))); } catch (InvalidDataException error) { blockedActive = error.Message.Contains("different shared evidence file"); }
+                Assert(blockedActive && File.ReadAllBytes(destination).SequenceEqual(sharedZip) && Sha256(File.ReadAllBytes(manifest)) == beforeActiveConflict, "Different active evidence must remain blocked without changing the shared file or master JSON.");
+                Assert(sharedEvidenceEnumerations == 0, "Publication collision checks must read exact shared destinations without enumerating network evidence folders.");
+            }
+            finally { PortableStorage.DirectoryEnumerationForTests = null;PortableStorage.FailAfterStageForTests = null;storage.ReleaseLease("collisions", "collision-session"); }
+        }
+    }
+
     private static void RunLocalWorkflowLayout(string parent)
     {
         string shared = Path.Combine(parent, "workflow-layout-share"), cache = Path.Combine(parent, "workflow-layout", "mappings.json"), retainedPath = "", cachedPath = "";byte[] cachedBytes = null;
@@ -307,6 +381,7 @@ internal static class PortableStorageTests
         RunStorageEnumerationFuzz(Path.GetDirectoryName(root));
         RunLocalDatabaseScanBoundary(Path.GetDirectoryName(root));
         RunLocalWorkflowLayout(Path.GetDirectoryName(root));
+        RunPublicationCollisions(Path.GetDirectoryName(root));
         string compatibilityRoot = Path.Combine(root, "write-compatibility"), compatibilityCache = Path.Combine(root, "write-compatibility-mappings.json");
         Directory.CreateDirectory(compatibilityRoot);
         using (var compatibilityStorage = new PortableStorage("DOMAIN\\compatibility-operator", compatibilityCache))

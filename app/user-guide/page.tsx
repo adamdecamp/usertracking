@@ -993,6 +993,7 @@ export default function Guide() {
           Each mapped system has its own launcher operation queue, so a slow
           action for one system does not block safe work against another system.
         Local organizations use only Incoming, Rework, and Complete. Document-type and Archive destinations are tracked in protected local JSON and created on the shared drive during publication. Remaining associated PDFs are validated and zipped locally before upload; their originals stay in Complete.
+        When the exact shared destination already contains a ZIP with the same validated PDF, publication reuses that ZIP even if its packaging differs. Different archived PDFs are both retained using a stable content-hash conflict filename; different active evidence remains available for collision review. Record and CSV references follow the resolved shared file, and retries reuse the same destination without scanning network folders.
         </p>
         <p>
           Evidence published from a local workspace receives a checksum-protected
