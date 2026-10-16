@@ -2968,6 +2968,11 @@ internal sealed class PortableStorage : IDisposable
         if (String.IsNullOrWhiteSpace(parent)) parent = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InformationSystemUserTracker");
         string rootKey = Sha256(Path.GetFullPath(sharedRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).ToUpperInvariant()).Substring(0, 24);
         string workspace = Path.Combine(parent, "Local Workspaces", rootKey);
+        // Custom/test profiles and some redirected corporate profiles can already
+        // consume most of MAX_PATH before an evidence filename is appended. Keep
+        // the normal documented location stable, but use a deterministic compact
+        // form when the workspace base itself is unusually long.
+        if (workspace.Length > 120) workspace = Path.Combine(parent, "W", rootKey.Substring(0, 16));
         Directory.CreateDirectory(workspace);
         bool harden;
         lock (localWorkspaceAclGate) harden = hardenedLocalWorkspaces.Add(workspace);
