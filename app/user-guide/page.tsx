@@ -490,12 +490,12 @@ export default function Guide() {
           date values and never rewrites, flattens, or signs PDF content.
         </p>
         <p>
-          Within a User Record, choose <b>Preview &amp; Provenance</b> to open
-          the validated embedded PDF without changing it. The preview shows its
-          PDF in a full-window viewer. Document details and provenance
-          remain available in a collapsible section, and <b>Open Full-Size PDF</b>
-          opens the browser&apos;s dedicated PDF viewer. Manually stored evidence
-          records a baseline SHA-256 for later reconciliation.
+          Within a User Record, choose <b>Open File Location</b>. The Windows
+          launcher opens File Explorer at the verified current location and
+          selects the recorded PDF or ZIP; the document is not transferred to or
+          rendered inside the browser. This lookup is available in Read-Only and
+          Full Access. Manually stored evidence records a baseline SHA-256 for
+          later reconciliation.
         </p>
         <p>
           Collision review uses the same full-window PDF layout for both the
@@ -1037,7 +1037,7 @@ export default function Guide() {
         <p>
           At launch, choose <b>Read-Only Access</b> or <b>Full Access</b>.
           Read-Only Access permits concurrent operators to search, filter, open
-          User Records, preview evidence, and view the audit log. It hides
+          User Records, locate recorded evidence in File Explorer, and view the audit log. It hides
           administrative actions and the Windows launcher rejects any attempted
           shared-folder mutation. Read-Only mapping does not initialize,
           migrate, repair, or reorganize the selected shared folder. Session

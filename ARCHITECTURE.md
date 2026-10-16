@@ -10,7 +10,7 @@ Dependencies point inward:
 2. `app/application` contains use cases such as manifest decoding and single-system commit construction. It may use domain records and pure root-level domain utilities, but never React pages or components.
 3. `app/infrastructure` validates launcher responses and other external contracts. It may use domain code, but not application orchestration or presentation code.
 4. `app/components` and `app/page.tsx` are presentation and composition. They may call the inner layers; inner layers never call them.
-5. `portable-launcher` is the trusted Windows boundary. `Program.cs` handles loopback HTTP and session policy; `PortableStorage.cs` owns durable storage and file operations.
+5. `portable-launcher` is the trusted Windows boundary. `Program.cs` handles loopback HTTP and session policy; `PortableStorage.cs` owns durable storage and file operations; `PublicationRecovery.cs` contains the hash-verified recovery policy for stale local publication references.
 
 These rules and monolith size ceilings are enforced by `tests/architecture-boundaries.test.ts`. New behavior should be extracted behind a typed, directly tested function or service before either monolith exceeds its ceiling.
 

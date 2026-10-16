@@ -79,6 +79,15 @@ test('the dashboard opens the selected protected local workspace in File Explore
  assert.match(launcher,/action == "workspace-open"[\s\S]*?LocalWorkspacePath\(systemId\)[\s\S]*?Process\.Start\("explorer\.exe"/);
 });
 
+test('User Record evidence controls open the verified folder location instead of a browser preview',()=>{
+ assert.match(page,/async function openEvidenceLocation\(user:UserRecord,artifact:Artifact\)/);
+ assert.match(page,/portableRequest\(root,`file-location\?path=\$\{encodeURIComponent\(path\)\}`,\{method:'POST'\}\)/);
+ assert.match(page,/>Open File Location<\/button>/);
+ assert.doesNotMatch(page,/onPreview=\{\(user,artifact\)=>void openEvidence\(/);
+ assert.match(policy,/action, "file-location"[\s\S]*?method, "POST"/);
+ assert.match(launcher,/action == "file-location"[\s\S]*?EvidenceLocation\(systemId,[\s\S]*?explorer\.exe[\s\S]*?\/select/);
+});
+
 test('the live JSON database has an independently verified SHA-256 sidecar',()=>{
  assert.match(page,/manifestChecksumFilename=checksumFilename\(manifestFilename\)/);
  assert.match(page,/verifyBrowserManifestChecksum\(directory,text\)/);

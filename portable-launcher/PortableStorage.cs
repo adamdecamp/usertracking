@@ -17,7 +17,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 
-internal sealed class PortableStorage : IDisposable
+internal sealed partial class PortableStorage : IDisposable
 {
     private const int SnapshotLimit = 30;
     private const long ManifestLimit = 50L * 1024 * 1024;
@@ -812,9 +812,9 @@ internal sealed class PortableStorage : IDisposable
         if (!requestEnvelope.ContainsKey("database") || !requestEnvelope.ContainsKey("csv")) throw new InvalidDataException("The combined database commit is missing its database or CSV backup.");
         Dictionary<string, object> requestedDatabase = ObjectDictionary(requestEnvelope["database"]);ValidateDatabaseObject(requestedDatabase);
         string initialWorkspaceRoot = LocalWorkspaceRoot(systemId);bool recoverUnindexedLocalEvidence = !File.Exists(SystemFile(initialWorkspaceRoot, LocalWorkspaceEvidenceRecoveryMarkerFilename));
-        var hashCache = new PublicationHashCache();var preparationTimer = Stopwatch.StartNew();
-        int compressedForPublication;Dictionary<string, string> renamedPdfs = PrepareLocalPublicationEvidence(systemId, requestedDatabase, hashCache, out compressedForPublication);preparationTimer.Stop();
-        requestEnvelope["csv"] = PublicationCsvFilenames(Convert.ToString(requestEnvelope["csv"], CultureInfo.InvariantCulture) ?? "", renamedPdfs);
+        var hashCache = new PublicationHashCache();var preparationTimer = Stopwatch.StartNew();var preparationWarnings = new List<string>();var isolatedEvidenceFilenames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        int compressedForPublication;Dictionary<string, string> renamedPdfs = PrepareLocalPublicationEvidence(systemId, requestedDatabase, hashCache, preparationWarnings, isolatedEvidenceFilenames, out compressedForPublication);preparationTimer.Stop();
+        requestEnvelope["csv"] = PublicationCsvFilenames(Convert.ToString(requestEnvelope["csv"], CultureInfo.InvariantCulture) ?? "", renamedPdfs, isolatedEvidenceFilenames);
         bytes = Encoding.UTF8.GetBytes(json.Serialize(requestEnvelope));string requestedStateHash = StateHash(requestedDatabase);
         // Save locally before touching the share. A failed publication always remains
         // resumable from the protected local database and publication journal.
@@ -858,7 +858,7 @@ internal sealed class PortableStorage : IDisposable
             var reconciledNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var references = localEvidence.Values.Where(item => !Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture) && item.ContainsKey("publishedSha256")).Select(item => new PublicationEvidence { OriginalRelative = item.ContainsKey("publicationSourceDestination") ? Convert.ToString(item["publicationSourceDestination"], CultureInfo.InvariantCulture) : Convert.ToString(item["destination"], CultureInfo.InvariantCulture), Relative = Convert.ToString(item["destination"], CultureInfo.InvariantCulture), SourceSha256 = Convert.ToString(item["sha256"], CultureInfo.InvariantCulture), Sha256 = Convert.ToString(item["publishedSha256"], CultureInfo.InvariantCulture), PdfSha256 = Convert.ToString(item["pdfSha256"], CultureInfo.InvariantCulture) }).Concat(staged).ToArray();
             ReconcilePublicationReferences(requestedDatabase, references, reconciledNames);
-            requestEnvelope["csv"] = PublicationCsvFilenames(Convert.ToString(requestEnvelope["csv"], CultureInfo.InvariantCulture) ?? "", reconciledNames);
+            requestEnvelope["csv"] = PublicationCsvFilenames(Convert.ToString(requestEnvelope["csv"], CultureInfo.InvariantCulture) ?? "", reconciledNames, isolatedEvidenceFilenames);
             bytes = Encoding.UTF8.GetBytes(json.Serialize(requestEnvelope));requestedStateHash = StateHash(requestedDatabase);SaveSystemState(systemId, bytes);
             bool manifestAlreadyCommitted = false;
             if (!String.Equals(currentSharedHash, state.BaseSharedSha256, StringComparison.OrdinalIgnoreCase))
@@ -897,7 +897,7 @@ internal sealed class PortableStorage : IDisposable
             string publishedHash = ReadManifestChecksumHash(sharedManifest, false), now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);WritePublicationJournal(workspaceRoot, "manifest-committed", state.BaseSharedSha256, requestedStateHash, staged, copied);
             FailAfter("publication-manifest-committed");
             WriteLocalWorkspaceState(workspaceRoot, new LocalWorkspaceState { BaseSharedSha256 = publishedHash, Dirty = false, PulledAtUtc = now, SavedAtUtc = now });
-            var completionErrors = new List<string>();int completedFiles = 0;
+            var completionErrors = new List<string>(preparationWarnings);int completedFiles = 0;
             foreach (PublicationEvidence item in staged)
             {
                 try
@@ -1828,6 +1828,14 @@ internal sealed class PortableStorage : IDisposable
         string staged = StagedEvidencePath(root, relative, file.Length, new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(), Path.GetExtension(path));
         try { var stagedInfo = new FileInfo(staged);if (stagedInfo.Exists && stagedInfo.Length == file.Length) return File.ReadAllBytes(staged); } catch { }
         return File.ReadAllBytes(path);
+    }
+
+    public string EvidenceLocation(string systemId, string relative)
+    {
+        string root, path = ResolveEvidencePath(systemId, relative, out root);
+        if (!File.Exists(path)) throw new FileNotFoundException("The selected evidence file no longer exists.");
+        EnsureReparseSafePath(root, path);
+        return path;
     }
 
     public string ClearEvidenceValidationCache(string systemId)
@@ -3624,12 +3632,12 @@ internal sealed class PortableStorage : IDisposable
         }
     }
 
-    private Dictionary<string, string> PrepareLocalPublicationEvidence(string systemId, Dictionary<string, object> database, PublicationHashCache hashCache, out int compressed)
+    private Dictionary<string, string> PrepareLocalPublicationEvidence(string systemId, Dictionary<string, object> database, PublicationHashCache hashCache, List<string> warnings, HashSet<string> isolatedEvidenceFilenames, out int compressed)
     {
         compressed = 0;var renamed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         lock (RootLock(systemId))
         {
-            string root = LocalWorkspaceRoot(systemId);var records = ReadLocalEvidenceMap(systemId);bool recordsChanged = false;
+            string root = LocalWorkspaceRoot(systemId);var records = ReadLocalEvidenceMap(systemId);ReconcileMissingPendingLocalEvidence(systemId, database, records, root, hashCache, warnings, isolatedEvidenceFilenames);bool recordsChanged = false;
             foreach (object userValue in ObjectArray(database["users"]))
             {
                 Dictionary<string, object> user = ObjectDictionary(userValue);string organization = ValidOrganizationName(Convert.ToString(user["organization"], CultureInfo.InvariantCulture));
@@ -3702,20 +3710,39 @@ internal sealed class PortableStorage : IDisposable
         return null;
     }
 
-    private static string PublicationCsvFilenames(string csv, Dictionary<string, string> renamed)
+    private static string PublicationCsvFilenames(string csv, Dictionary<string, string> renamed, HashSet<string> isolatedEvidenceFilenames = null)
     {
-        if (renamed.Count == 0) return csv;
-        var output = new StringBuilder(csv.Length);int start = 0, column = 0;bool quoted = false;
+        if (renamed.Count == 0 && (isolatedEvidenceFilenames == null || isolatedEvidenceFilenames.Count == 0)) return csv;
+        var output = new StringBuilder(csv.Length);var cells = new List<string>();int start = 0;bool quoted = false;
         for (int index = 0; index <= csv.Length; index++)
         {
             if (index < csv.Length && csv[index] == '"') { if (quoted && index + 1 < csv.Length && csv[index + 1] == '"') { index++;continue; }quoted = !quoted; }
             if (index < csv.Length && (quoted || csv[index] != ',' && csv[index] != '\r' && csv[index] != '\n')) continue;
-            string cell = csv.Substring(start, index - start), value = cell.Length >= 2 && cell[0] == '"' && cell[cell.Length - 1] == '"' ? cell.Substring(1, cell.Length - 2).Replace("\"\"", "\"") : cell, replacement;
-            output.Append(column == 12 && renamed.TryGetValue(value, out replacement) ? "\"" + replacement.Replace("\"", "\"\"") + "\"" : cell);
-            if (index < csv.Length) { output.Append(csv[index]);column = csv[index] == ',' ? column + 1 : 0; }start = index + 1;
+            cells.Add(csv.Substring(start, index - start));
+            if (index < csv.Length && csv[index] == ',') { start = index + 1;continue; }
+            if (cells.Count > 12)
+            {
+                string organization = CsvCellValue(cells[3]), filename = CsvCellValue(cells[12]), replacement;
+                if (isolatedEvidenceFilenames != null && isolatedEvidenceFilenames.Contains(organization + "\0" + filename)) { cells[11] = CsvCell("Missing");cells[12] = CsvCell(""); }
+                else if (renamed.TryGetValue(filename, out replacement)) cells[12] = CsvCell(replacement);
+            }
+            output.Append(String.Join(",", cells));cells.Clear();
+            if (index < csv.Length)
+            {
+                if (csv[index] == '\r' && index + 1 < csv.Length && csv[index + 1] == '\n') { output.Append("\r\n");index++; }
+                else output.Append(csv[index]);
+            }
+            start = index + 1;
         }
         return output.ToString();
     }
+
+    private static string CsvCellValue(string cell)
+    {
+        return cell.Length >= 2 && cell[0] == '"' && cell[cell.Length - 1] == '"' ? cell.Substring(1, cell.Length - 2).Replace("\"\"", "\"") : cell;
+    }
+
+    private static string CsvCell(string value) { return "\"" + (value ?? "").Replace("\"", "\"\"") + "\""; }
 
     private Dictionary<string, Dictionary<string, object>> ReadLocalEvidenceMap(string systemId)
     {

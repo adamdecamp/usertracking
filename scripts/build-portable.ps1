@@ -88,6 +88,7 @@ $compilerArgs = New-Object System.Collections.Generic.List[string]
 $assetResourceArgs | ForEach-Object { $compilerArgs.Add($_) }
 $compilerArgs.Add((Join-Path $portableRoot "Program.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableStorage.cs"))
+$compilerArgs.Add((Join-Path $portableRoot "PublicationRecovery.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "LauncherPolicy.cs"))
 $compilerArgs.Add('/warn:4')
 $compilerArgs.Add('/warnaserror+')
