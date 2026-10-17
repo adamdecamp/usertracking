@@ -636,10 +636,12 @@ internal sealed partial class PortableStorage : IDisposable
         }
         if (positionedUsers.Count != expectedTotal) throw new InvalidDataException("The sharded database catalog user count does not match its organization shards.");
         object[] users = positionedUsers.OrderBy(value => value.Item1).Select(value => value.Item2).ToArray();
-        var logical = new Dictionary<string, object> { { "version", 2 }, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
-        logical = MigrateDatabaseObject(logical);
-        if (!String.Equals(Convert.ToString(stored["stateHash"], CultureInfo.InvariantCulture), StateHash(logical), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The sharded database catalog content hash does not match its records.");
-        return logical;
+        var storedLogical = new Dictionary<string, object> { { "version", 2 }, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
+        // Verify the exact persisted representation before applying backward-compatible
+        // defaults. Otherwise a legitimate migration (for example adding an empty
+        // historical change.files array) would incorrectly look like tampering.
+        if (!String.Equals(Convert.ToString(stored["stateHash"], CultureInfo.InvariantCulture), StateHash(storedLogical), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The sharded database catalog content hash does not match its records.");
+        return MigrateDatabaseObject(storedLogical);
     }
 
     private byte[] BuildShardedManifest(string root, Dictionary<string, object> database, string updated, out HashSet<string> activeShardFiles)
@@ -3245,19 +3247,7 @@ internal sealed partial class PortableStorage : IDisposable
     private static Dictionary<string, object> MigrateDatabaseObject(Dictionary<string, object> value)
     {
         int version = value.ContainsKey("version") ? Convert.ToInt32(value["version"], CultureInfo.InvariantCulture) : 1;
-        if (version == 1)
-        {
-            if (!value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid.");
-            foreach (object raw in ObjectArray(value["users"]))
-            {
-                Dictionary<string, object> user = ObjectDictionary(raw);
-                if (!user.ContainsKey("privilegedUsernames")) user["privilegedUsernames"] = new object[0];
-                if (!user.ContainsKey("privilegedTypes")) user["privilegedTypes"] = new object[0];
-                if (!user.ContainsKey("changes")) user["changes"] = new object[0];
-                if (!user.ContainsKey("exceptions")) user["exceptions"] = new object[0];
-            }
-            value["version"] = 2;version = 2;
-        }
+        if (version == 1) { if (!value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid.");value["version"] = 2;version = 2; }
         if (version != 2 || !value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid or uses a newer unsupported schema.");
         object[] systems = ObjectArray(value["systems"]), users = ObjectArray(value["users"]);
         if (systems.Length > 1000 || users.Length > 100000) throw new InvalidDataException("The database manifest exceeds its record limits.");
@@ -3274,6 +3264,16 @@ internal sealed partial class PortableStorage : IDisposable
         {
             Dictionary<string, object> user = ObjectDictionary(raw);
             if (!user.ContainsKey("privilegedUsernames")) user["privilegedUsernames"] = new object[0];if (!user.ContainsKey("privilegedTypes")) user["privilegedTypes"] = new object[0];if (!user.ContainsKey("changes")) user["changes"] = new object[0];if (!user.ContainsKey("exceptions")) user["exceptions"] = new object[0];
+            foreach (object changeRaw in ObjectArray(user["changes"]))
+            {
+                Dictionary<string, object> change = ObjectDictionary(changeRaw);
+                // Historical releases did not always persist these non-identity arrays.
+                // Empty defaults preserve the recorded action without weakening validation
+                // for timestamps, actors, descriptions, roles, or evidence records.
+                if (!change.ContainsKey("rolesBefore")) change["rolesBefore"] = new object[0];
+                if (!change.ContainsKey("rolesAfter")) change["rolesAfter"] = new object[0];
+                if (!change.ContainsKey("files")) change["files"] = new object[0];
+            }
             string id = RequiredBoundedString(user, "id", 100, false, "user"), systemId = RequiredBoundedString(user, "systemId", 100, false, "user");
             if (!userIds.Add(id)) throw new InvalidDataException("The database contains a duplicate user ID: " + CleanLine(id, 100) + ".");
             if (!systemIds.Contains(systemId)) throw new InvalidDataException("A user references an unknown information system.");

@@ -11,20 +11,28 @@ const clone=<T>(value:T):T=>structuredClone(value);
 
 export function migrateManifestPayload(value:unknown):JsonRecord|undefined{
  if(!record(value))return;
- const input=clone(value),version=typeof input.version==='number'?input.version:1;
+ const input=clone(value),version=typeof input.version==='number'?input.version:1,legacyVersion=version===1;
  if(version<1||version>currentManifestVersion)return;
  if(version===1){
   if(!Array.isArray(input.systems)||!Array.isArray(input.users))return;
-  input.users=input.users.map(item=>record(item)?{
-   ...item,
-   privilegedUsernames:Array.isArray(item.privilegedUsernames)?item.privilegedUsernames:[],
-   privilegedTypes:Array.isArray(item.privilegedTypes)?item.privilegedTypes:[],
-   changes:Array.isArray(item.changes)?item.changes:[],
-   exceptions:Array.isArray(item.exceptions)?item.exceptions:[],
-  }:item);
   input.version=2;
  }
- if(Array.isArray(input.users))input.users=input.users.map(item=>record(item)&&Array.isArray(item.privilegedTypes)?{...item,privilegedTypes:normalizePrivilegedTypes(item.privilegedTypes.filter((value):value is string=>typeof value==='string'))}:item);
+ if(Array.isArray(input.users))input.users=input.users.map(item=>{
+  if(!record(item))return item;
+  const changes=Array.isArray(item.changes)?item.changes.map(change=>record(change)?{
+   ...change,
+   rolesBefore:'rolesBefore'in change?change.rolesBefore:[],
+   rolesAfter:'rolesAfter'in change?change.rolesAfter:[],
+   files:'files'in change?change.files:[],
+  }:change):(legacyVersion||item.changes===undefined?[]:item.changes);
+  return{
+   ...item,
+   privilegedUsernames:Array.isArray(item.privilegedUsernames)?item.privilegedUsernames:(legacyVersion?[]:item.privilegedUsernames),
+   privilegedTypes:Array.isArray(item.privilegedTypes)?normalizePrivilegedTypes(item.privilegedTypes.filter((value):value is string=>typeof value==='string')):(legacyVersion?[]:item.privilegedTypes),
+   changes,
+   exceptions:Array.isArray(item.exceptions)?item.exceptions:(legacyVersion?[]:item.exceptions),
+  };
+ });
  return input;
 }
 

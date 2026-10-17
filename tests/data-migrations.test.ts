@@ -28,3 +28,16 @@ test('normalizes privileged account types case-insensitively in current manifest
  const users=migrated.users as Array<{privilegedTypes:string[]}>;
  assert.deepEqual(users[0].privilegedTypes,['DEV','DTA']);
 });
+
+test('repairs historical change entries that predate the persisted array fields',()=>{
+ const migrated=migrateManifestPayload({version:currentManifestVersion,systems:[],users:[{id:'u1',changes:[{timestamp:'2026-01-01T00:00:00Z',actor:'operator',action:'Legacy update',description:'Historical record'}]}]})!;
+ const users=migrated.users as Array<{changes:Array<{rolesBefore:string[];rolesAfter:string[];files:string[]}>}>;
+ assert.deepEqual(users[0].changes[0],{timestamp:'2026-01-01T00:00:00Z',actor:'operator',action:'Legacy update',description:'Historical record',rolesBefore:[],rolesAfter:[],files:[]});
+});
+
+test('does not use compatibility defaults to hide malformed persisted arrays',()=>{
+ const malformed={version:currentManifestVersion,systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false}],users:[{id:'u1',systemId:'s1',organization:'GOV',last:'Sample',first:'User',middle:'',email:'user@example.mil',disabled:false,roles:['General'],privilegedUsernames:[],privilegedTypes:[],artifacts:[],changes:[{timestamp:'2026-01-01T00:00:00Z',actor:'operator',action:'Malformed',description:'Invalid array must fail closed.',rolesBefore:[],rolesAfter:[],files:null}],exceptions:[]}]};
+ const migrated=migrateManifestPayload(malformed)!;
+ const users=migrated.users as Array<{changes:Array<{files:unknown}>}>;
+ assert.equal(users[0].changes[0].files,null);
+});

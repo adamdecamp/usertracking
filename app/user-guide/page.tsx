@@ -1127,6 +1127,11 @@ export default function Guide() {
           is not duplicated, at least one snapshot is retained for each active
           day. The Restore list shows the newest 30 snapshots, while older
           snapshots remain retained on disk and are not automatically deleted.
+          Older databases whose administrative change entries predate the
+          non-identity role and filename arrays are upgraded in memory before
+          strict validation, so those historical entries do not prevent Full
+          Access or Sync. Identity, evidence, checksum, and authorization fields
+          remain strictly validated.
         </p>
         <p>
           Use <b>Restore Backup</b> to review available snapshots. The launcher
