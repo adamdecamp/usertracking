@@ -14,6 +14,9 @@ test('canonicalizes an explicitly assigned PDF or ZIP to the selected user and a
 
 test('uses the selected role when canonicalizing manually assigned SAAR evidence',()=>{
  assert.equal(canonicalManualEvidenceFilename({filename:'archive_20260826.zip',kind:'SAAR',last:'Brown',first:'Jacob',organization:'LM',role:'PRIV',privilegedType:'_dta'}),'Brown_Jacob_(LM)_PRIV_DTA_SAAR_26AUG2026.pdf.zip');
+ const disabled=canonicalManualEvidenceFilename({filename:'archive_20260826.zip',kind:'SAAR',last:'Brown',first:'Jacob',organization:'LM',role:'PRIV',privilegedType:'_dta',disabledSaar:true});
+ assert.equal(disabled,'Brown_Jacob_(LM)_PRIV_DTA_SAAR_DISABLED_26AUG2026.pdf.zip');
+ assert.equal(canonicalManualEvidenceFilename({filename:disabled!,kind:'SAAR',last:'Brown',first:'Jacob',organization:'LM',role:'PRIV',privilegedType:'_dta'}),'Brown_Jacob_(LM)_PRIV_DTA_SAAR_26AUG2026.pdf.zip');
  assert.equal(canonicalManualEvidenceFilename({filename:'archive_20260826.zip',kind:'SAAR',last:'Brown',first:'Jacob',organization:'LM'}),undefined);
 });
 

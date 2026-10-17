@@ -163,7 +163,8 @@ test('manual PDF receipt verification is read-only and does not wait behind stor
 
 test('successful disable and delete operations keep missing evidence in the audit trail without creating false failure reports',()=>{
  const deleteUser=page.slice(page.indexOf('async function deleteUserRecord'),page.indexOf('async function openEvidence'));
- const userSubmit=page.slice(page.indexOf(' async function submit(){const root=rootFor(system.id)'),page.indexOf(' async function deleteRecord()'));
+ const userModal=page.slice(page.indexOf('function UserModal'),page.indexOf('function MessageAutomation'));
+ const userSubmit=userModal.slice(userModal.indexOf(' async function submit(){'),userModal.indexOf(' async function deleteRecord()'));
  assert.doesNotMatch(deleteUser,/Delete user completed with missing evidence files/);
  assert.match(deleteUser,/already-missing evidence reference/);
  assert.doesNotMatch(userSubmit,/Disable user completed with missing evidence files/);

@@ -19,8 +19,9 @@ test('existing-user evidence replacement uses the shared drag-and-drop picker',(
  assert.match(userModal,/<EvidenceFilePicker kind=\{k\}/);
  assert.match(userModal,/file=\{uploads\[k\]\}/);
  assert.match(userModal,/canonicalName=\{uploadTargets\[k\]\}/);
- assert.match(userModal,/required=\{reactivating\}/);
+ assert.match(userModal,/required=\{reactivating&&!accessOverride\}/);
  assert.match(userModal,/Will Remain Missing After the Role Change/);
+ assert.match(userModal,/newest dated disabled SAAR will be restored from the permanent SAAR Archive/);
  assert.match(userModal,/onFile=\{file=>selectEvidenceUpload\(k,file\)\}/);
 });
 

@@ -48,6 +48,25 @@ test('missing supporting evidence does not change the single-SAAR storage path',
  assert.match(addUser,/missing evidence override/);
 });
 
+test('manual disable stores a disabled-name SAAR and moves it into the permanent SAAR Archive',()=>{
+ assert.match(store,/disabledSaar:kind==='SAAR'&&disabledSaar/);
+ assert.match(page,/async function storeAndArchiveDisabledSaar/);
+ assert.match(page,/storeEvidenceArtifact\(root,user,'SAAR',file,'Manual Update',true\)/);
+ assert.match(page,/archiveFilename:stored\.filename/);
+ assert.match(page,/disabledSaarArchive=await storeAndArchiveDisabledSaar\(root,draft,saar\)/);
+ assert.match(page,/stored the updated disabled SAAR in the permanent SAAR Archive/);
+});
+
+test('manual re-enable restores the newest disabled SAAR to the active folder without the disabled marker',()=>{
+ assert.match(page,/async function restoreDisabledSaarForReactivation/);
+ assert.match(page,/disabledSaarFilename\(artifact\.filename\)/);
+ assert.match(page,/sort\(\(left,right\)=>parseDate\(right\.filename\)!\.getTime\(\)-parseDate\(left\.filename\)!\.getTime\(\)\)\[0\]/);
+ assert.match(page,/relocateUserEvidenceFile\(root,located\.path,located\.ref,user,'SAAR',filename\)/);
+ assert.match(page,/if\(reactivating&&!replacements\.has\('SAAR'\)\)/);
+ assert.match(page,/baseArtifacts=reactivating\?draft\.artifacts/);
+ assert.match(page,/restored the disabled SAAR to the active SAAR folder/);
+});
+
 test('encrypted evidence requires the complete filename gate in manual storage and Sync',()=>{
  assert.match(store,/validateReadableOrStrictEncryptedEvidence\(inspected,source\.name,sourcePath/);
  assert.match(store,/last:user\.last,first:user\.first,organization:user\.organization,kind/);

@@ -298,9 +298,16 @@ export default function Guide() {
           Sync does not search Archive folders to reconstruct disabled users. Disabled users remain excluded from active-user
           compliance totals, reports, and notification emails. When
           disabling without an updated SAAR, an operator may select the documented
-          override and must enter a justification. To re-enable a disabled user,
+          override and must enter a justification. An updated SAAR supplied while
+          disabling is stored with a <b>DISABLED</b> marker and moved into the
+          organization&apos;s permanent SAAR Archive. To re-enable a disabled user,
           select that user through the Disabled Users filter and upload a fresh
-          SAAR plus every artifact required for the user&apos;s role. Sync can also flag
+          SAAR plus every artifact required for the user&apos;s role. When an authorized
+          inactivity reactivation uses the documented evidence override without a
+          new SAAR, the app restores the newest dated disabled SAAR from the permanent
+          SAAR Archive to the active SAAR folder and removes the <b>DISABLED</b>
+          marker from its canonical filename. A newly uploaded SAAR takes precedence.
+          Supporting-evidence history remains associated with the record. Sync can also flag
           a disabled account for operator-approved reactivation, but only when the
           active SAAR date is strictly newer than the recorded disabled SAAR date.
           The account remains Disabled until the operator selects Approve Reactivation
@@ -656,7 +663,11 @@ export default function Guide() {
           SAAR filename is unavailable, the latest recorded disable action in
           Administrative Change History supplies that comparison date. Supporting
           evidence updates do not reactivate a user. Archived SAARs remain permanent
-          history and may remain associated with the disabled record.
+          history and may remain associated with the disabled record until an operator
+          re-enables the account. A manual re-enable without a replacement SAAR moves
+          the newest dated disabled SAAR back to the active SAAR folder, removes the
+          <b>DISABLED</b> filename marker, and records the verified move in the user
+          history and tamper-evident audit log.
         </aside>
         <p>
           Account status is mutually exclusive: one User Directory record cannot
