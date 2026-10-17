@@ -1006,7 +1006,7 @@ export default function Guide() {
           local System folders directly in Windows File Explorer.
           Each mapped system has its own launcher operation queue, so a slow
           action for one system does not block safe work against another system.
-        Local organizations use only Incoming, Rework, and Complete. Archive-bound files wait in <b>Complete/Pending Upload</b>. Session Commit first checks protected local metadata for actual changes. If nothing changed, it returns without rewriting the database or touching evidence. If only JSON records changed, it publishes the database and backups without scanning, compressing, hashing, or verifying evidence. Evidence processing runs only when pending evidence, an associated file in the local workflow folders, or interrupted recovery work exists. After an evidence commit copies and verifies files on the shared drive, their local copies move to <b>Complete/Published Evidence</b>. If a duplicate ZIP is later placed in Incoming, Session Commit verifies its embedded PDF against the published receipt and drains the verified duplicate instead of leaving it in Incoming. Files that fail or are explicitly deferred remain available for review and are not reported as completed. Document-type and Archive destinations are tracked in protected local JSON and created on the shared drive during publication. Remaining associated PDFs are validated and zipped locally before upload; their originals are removed only after ZIP verification succeeds.
+        Local organizations use only Incoming, Rework, and Complete. Archive-bound files wait in <b>Complete/Pending Upload</b>. Session Commit first checks protected local metadata for actual changes. If nothing changed, it returns without rewriting the database or touching evidence. If only JSON records changed, it publishes the database and backups without scanning, compressing, hashing, or verifying evidence. After a successful manual Session Commit, closing the application, logging off, or reaching the idle limit does not start another publication when the current record-state hash still matches that commit. Any later record change, incomplete publication warning, or recoverable evidence work keeps the final publication safeguard active. Evidence processing runs only when pending evidence, an associated file in the local workflow folders, or interrupted recovery work exists. After an evidence commit copies and verifies files on the shared drive, their local copies move to <b>Complete/Published Evidence</b>. If a duplicate ZIP is later placed in Incoming, Session Commit verifies its embedded PDF against the published receipt and drains the verified duplicate instead of leaving it in Incoming. Files that fail or are explicitly deferred remain available for review and are not reported as completed. Document-type and Archive destinations are tracked in protected local JSON and created on the shared drive during publication. Remaining associated PDFs are validated and zipped locally before upload; their originals are removed only after ZIP verification succeeds.
         When the exact shared destination already contains a ZIP with the same validated PDF, publication reuses that ZIP even if its packaging differs. Different archived PDFs are both retained using a stable content-hash conflict filename; different active evidence remains available for collision review. Record and CSV references follow the resolved shared file, and retries reuse the same destination without scanning network folders.
         </p>
         <p>
@@ -1140,10 +1140,11 @@ export default function Guide() {
           The portable Windows app shuts down after 60 minutes without keyboard,
           pointer, or touch activity, and it also shuts down when its browser
           window is closed. Before either automatic shutdown, the launcher
-          verifies or refreshes the mapped systems&apos; compressed backups. The
-          browser also refreshes the selected system&apos;s database and daily
-          CSV, records the shutdown in the audit log, and releases the
-          shared-folder session when it remains available. If a pending write or
+          completes any pending compressed backup work. The browser publishes
+          the selected system&apos;s database and daily CSV only when changes remain;
+          a clean manual Session Commit suppresses a duplicate shutdown publication.
+          Shutdown is still recorded in the audit log, and the shared-folder
+          session is released when it remains available. If a pending write or
           final backup fails, shutdown is held so the failure can be corrected
           without discarding changes.
         </p>
@@ -1464,8 +1465,10 @@ export default function Guide() {
         refresh runs. Full Access remains locked until the selected database, newest
         backup, and audit chain pass verification; the verified database returned by
         that check is reused instead of being downloaded a second time. Rapid interface
-        edits are grouped for five seconds before a background database commit, while
-        explicit record actions, Sync, logoff, and shutdown still save immediately.
+        edits are grouped for five seconds before a background database commit. Explicit
+        record actions and Sync still save immediately. Logoff and shutdown publish only
+        when the current state differs from the last successful manual Session Commit or
+        recoverable publication work remains.
         Over VPN, use an organization-scoped <b>Daily Sync</b> for routine work and
         reserve <b>Full Rescan</b> for onsite maintenance when
         practical. Bounded local performance logs

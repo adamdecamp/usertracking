@@ -64,6 +64,14 @@ test('operator logoff arms launcher shutdown before final network publication',(
  assert.match(logoff,/finally\{[\s\S]*?shutdown-ready/);
 });
 
+test('a clean manual Session Commit suppresses duplicate close and logoff publication',()=>{
+ assert.match(page,/manualSessionCommitHashes=useRef\(new Map<string,string>\(\)\)/);
+ assert.match(page,/shutdownPublicationRequired\(manualSessionCommitHashes\.current\.get\(systemId\),stateHash\)/);
+ assert.match(page,/manualSessionCommitHashes\.current\.set\(systemId,result\.stateHash\)/);
+ assert.match(page,/manualSessionCommitHashes\.current\.delete\(systemId\)/);
+ assert.match(page,/repeat publication skipped/);
+});
+
 test('launcher finalization never blocks its UI thread and has a hard exit deadline',()=>{
  const request=launcher.slice(launcher.indexOf('private void RequestShutdown'),launcher.indexOf('private void StartBackupFinalization'));
  assert.doesNotMatch(request,/FinalizeMappedBackups\(\)/);

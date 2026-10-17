@@ -19,3 +19,7 @@ export function sessionIdleExpired(now:number,lastActivity:number,operationInPro
 export function automaticSaveAllowed(hydrated:boolean,sessionState:string,syncRunning:boolean,accessMode:AccessMode='full'){
  return hydrated&&sessionState==='active'&&!syncRunning&&accessModeCanWrite(accessMode);
 }
+
+export function shutdownPublicationRequired(manualCommitStateHash:string|undefined,currentStateHash:string){
+ return manualCommitStateHash!==currentStateHash;
+}

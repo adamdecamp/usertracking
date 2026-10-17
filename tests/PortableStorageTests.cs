@@ -91,6 +91,7 @@ internal static class PortableStorageTests
     private static byte[] EncryptedPdfBytes() { return Encoding.ASCII.GetBytes("%PDF-1.4\n1 0 obj\n<< /Encrypt 2 0 R >>\nendobj\ntrailer\n<<>>\n%%EOF\n"); }
 
     private static string Sha256(byte[] bytes) { using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant(); }
+    private static bool IsSha256(string value) { return !String.IsNullOrWhiteSpace(value) && value.Length == 64 && value.All(character => (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F')); }
 
     private static byte[] EvidenceZip(string entryName, byte[] contents)
     {
@@ -371,10 +372,10 @@ internal static class PortableStorageTests
             byte[] initial = Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", database }, { "csv", "initial" } }));var initialized = (Dictionary<string, object>)Json.DeserializeObject(storage.PublishWorkspace("layout", initial));
             Assert(!Convert.ToBoolean(initialized["evidenceFastPath"]) && !Convert.ToBoolean(initialized["noChanges"]), "The first publication must retain one-time legacy evidence recovery instead of taking the routine fast path.");
             var noChanges = (Dictionary<string, object>)Json.DeserializeObject(storage.PublishWorkspace("layout", initial));
-            Assert(Convert.ToBoolean(noChanges["evidenceFastPath"]) && Convert.ToBoolean(noChanges["noChanges"]) && Convert.ToInt32(noChanges["publishedFiles"]) == 0 && Convert.ToInt32(noChanges["compressedForPublication"]) == 0, "A Session Commit with no database or evidence changes must return without evidence work or rewrites.");
+            Assert(Convert.ToBoolean(noChanges["evidenceFastPath"]) && Convert.ToBoolean(noChanges["noChanges"]) && IsSha256(Convert.ToString(noChanges["stateHash"], CultureInfo.InvariantCulture)) && Convert.ToInt32(noChanges["publishedFiles"]) == 0 && Convert.ToInt32(noChanges["compressedForPublication"]) == 0, "A Session Commit with no database or evidence changes must return its verified state hash without evidence work or rewrites.");
             var databaseOnlyUser = (Dictionary<string, object>)((object[])database["users"])[0];databaseOnlyUser["email"] = "database-only@example.mil";byte[] databaseOnlyRequest = Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", database }, { "csv", "database-only" } }));
             var databaseOnly = (Dictionary<string, object>)Json.DeserializeObject(storage.PublishWorkspace("layout", databaseOnlyRequest));
-            Assert(Convert.ToBoolean(databaseOnly["evidenceFastPath"]) && !Convert.ToBoolean(databaseOnly["noChanges"]) && Convert.ToInt32(databaseOnly["publishedFiles"]) == 0 && Convert.ToInt32(databaseOnly["compressedForPublication"]) == 0 && storage.ReadManifest("layout").Contains("database-only@example.mil"), "A JSON-only change must publish the database without scanning, compressing, hashing, or verifying evidence.");
+            Assert(Convert.ToBoolean(databaseOnly["evidenceFastPath"]) && !Convert.ToBoolean(databaseOnly["noChanges"]) && IsSha256(Convert.ToString(databaseOnly["stateHash"], CultureInfo.InvariantCulture)) && Convert.ToInt32(databaseOnly["publishedFiles"]) == 0 && Convert.ToInt32(databaseOnly["compressedForPublication"]) == 0 && storage.ReadManifest("layout").Contains("database-only@example.mil"), "A JSON-only change must return its committed state hash and publish the database without scanning, compressing, hashing, or verifying evidence.");
             string workspace = storage.LocalWorkspacePath("layout"), incoming = Path.Combine(workspace, "Organizations", "GOV", "GOV Incoming");
             string zipName = "Shaw_Vivian_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf.zip";storage.StoreEvidence("layout", "GOV", "DoD Cyber Cert", zipName, EvidenceZip(zipName.Substring(0, zipName.Length - 4), PdfBytes()));
             string zipPath = "Organizations/GOV/GOV DoD Cyber Cert/" + zipName;

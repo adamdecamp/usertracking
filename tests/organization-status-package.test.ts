@@ -20,7 +20,10 @@ test('organization status packages reject tampering',async()=>{
 test('optional encrypted status packages hide user data and reject the wrong passphrase',async()=>{
  const encrypted=await createEncryptedOrganizationStatusPackage(payload,'correct horse battery staple'),text=JSON.stringify(encrypted);
  assert.equal(organizationStatusPackageRequiresPassphrase(text),true);
- assert.doesNotMatch(text,/Brown|jacob@example\.mil|GOV/);
+ const{ciphertext,...publicEnvelope}=encrypted;
+ assert.ok(ciphertext.length>0);
+ assert.doesNotMatch(JSON.stringify(publicEnvelope),/Brown|jacob@example\.mil|GOV/);
+ assert.deepEqual(Object.keys(encrypted).sort(),['cipher','ciphertext','format','kdf','version']);
  await assert.rejects(()=>parseOrganizationStatusPackage(text,'incorrect passphrase'),/passphrase and file integrity/);
  const parsed=await parseOrganizationStatusPackage(text,'correct horse battery staple');
  assert.equal(parsed.payload.users[0].email,'jacob@example.mil');

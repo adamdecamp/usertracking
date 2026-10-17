@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {accessModeCanWrite,automaticSaveAllowed,idleTimeoutMs,sessionIdleExpired,storageWorkInProgress} from '../app/session-utils.ts';
+import {accessModeCanWrite,automaticSaveAllowed,idleTimeoutMs,sessionIdleExpired,shutdownPublicationRequired,storageWorkInProgress} from '../app/session-utils.ts';
 
 test('never expires the operator session while Sync is active',()=>{
  const started=Date.UTC(2026,7,27,12);
@@ -36,4 +36,11 @@ test('only Full Access can mutate shared-system data',()=>{
  assert.equal(accessModeCanWrite('full'),true);
  assert.equal(accessModeCanWrite('read-only'),false);
  assert.equal(accessModeCanWrite('unselected'),false);
+});
+
+test('skips shutdown publication only when a manual Session Commit covers the current state',()=>{
+ const committed='a'.repeat(64),changed='b'.repeat(64);
+ assert.equal(shutdownPublicationRequired(committed,committed),false);
+ assert.equal(shutdownPublicationRequired(committed,changed),true);
+ assert.equal(shutdownPublicationRequired(undefined,committed),true);
 });
