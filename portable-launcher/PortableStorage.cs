@@ -764,8 +764,8 @@ internal sealed partial class PortableStorage : IDisposable
             if (state == null || !IsSha256(state.BaseSharedSha256)) throw new InvalidDataException("The local workspace has not been initialized from a verified shared master database.");
             string stateHash = StateHash(database), existingHash = null;
             try { existingHash = StateHash(ReadLocalWorkspaceDatabase(workspaceRoot)); } catch { }
-            string saved = WriteLocalWorkspaceDatabase(workspaceRoot, database, state.BaseSharedSha256, state.Dirty || !String.Equals(stateHash, existingHash, StringComparison.OrdinalIgnoreCase));
-            return json.Serialize(new Dictionary<string, object> { { "saved", saved }, { "backup", state.PulledAtUtc ?? saved }, { "snapshotCreated", false }, { "backupPending", true }, { "unchanged", String.Equals(stateHash, existingHash, StringComparison.OrdinalIgnoreCase) }, { "stateHash", stateHash }, { "localWorkspace", true }, { "workspacePath", workspaceRoot }, { "sharedCommitPending", true } });
+            bool unchanged = String.Equals(stateHash, existingHash, StringComparison.OrdinalIgnoreCase);string saved = unchanged ? (String.IsNullOrWhiteSpace(state.SavedAtUtc) ? DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) : state.SavedAtUtc) : WriteLocalWorkspaceDatabase(workspaceRoot, database, state.BaseSharedSha256, true);
+            return json.Serialize(new Dictionary<string, object> { { "saved", saved }, { "backup", state.PulledAtUtc ?? saved }, { "snapshotCreated", false }, { "backupPending", state.Dirty || !unchanged }, { "unchanged", unchanged }, { "stateHash", stateHash }, { "localWorkspace", true }, { "workspacePath", workspaceRoot }, { "sharedCommitPending", state.Dirty || !unchanged } });
         }
     }
 
@@ -811,11 +811,24 @@ internal sealed partial class PortableStorage : IDisposable
         catch (Exception) { throw new InvalidDataException("The combined database commit is invalid JSON."); }
         if (!requestEnvelope.ContainsKey("database") || !requestEnvelope.ContainsKey("csv")) throw new InvalidDataException("The combined database commit is missing its database or CSV backup.");
         Dictionary<string, object> requestedDatabase = ObjectDictionary(requestEnvelope["database"]);ValidateDatabaseObject(requestedDatabase);
-        string initialWorkspaceRoot = LocalWorkspaceRoot(systemId);bool recoverUnindexedLocalEvidence = !File.Exists(SystemFile(initialWorkspaceRoot, LocalWorkspaceEvidenceRecoveryMarkerFilename));
+        string requestedStateHash = StateHash(requestedDatabase), initialWorkspaceRoot = LocalWorkspaceRoot(systemId);bool recoverUnindexedLocalEvidence = !File.Exists(SystemFile(initialWorkspaceRoot, LocalWorkspaceEvidenceRecoveryMarkerFilename));
+        Dictionary<string, Dictionary<string, object>> initialLocalEvidence = ReadLocalEvidenceMap(systemId);LocalWorkspaceState initialState = ReadLocalWorkspaceState(initialWorkspaceRoot);string initialDatabaseHash = null;
+        try { initialDatabaseHash = StateHash(ReadLocalWorkspaceDatabase(initialWorkspaceRoot)); } catch { }
+        bool databaseChangePending = initialState == null || initialState.Dirty || !String.Equals(initialDatabaseHash, requestedStateHash, StringComparison.OrdinalIgnoreCase);
+        bool pendingEvidence = initialLocalEvidence.Values.Any(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture));
+        bool interruptedPublication = File.Exists(Path.Combine(initialWorkspaceRoot, SystemDirectoryName, LocalWorkspacePublicationFilename));
+        string transactionDirectory = Path.Combine(initialWorkspaceRoot, SystemDirectoryName, "Storage Transactions");bool interruptedFileOperation = Directory.Exists(transactionDirectory) && Directory.EnumerateFiles(transactionDirectory, "transaction-*.json", SearchOption.TopDirectoryOnly).Any();
+        bool unindexedAssociatedEvidence = !recoverUnindexedLocalEvidence && HasUnindexedAssociatedLocalEvidence(initialWorkspaceRoot, requestedDatabase);
+        bool evidenceFastPath = !recoverUnindexedLocalEvidence && !pendingEvidence && !interruptedPublication && !interruptedFileOperation && !unindexedAssociatedEvidence;
+        if (!databaseChangePending && evidenceFastPath)
+        {
+            string unchangedAt = initialState == null || String.IsNullOrWhiteSpace(initialState.SavedAtUtc) ? DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) : initialState.SavedAtUtc;
+            return json.Serialize(new Dictionary<string, object> { { "saved", unchangedAt }, { "backup", initialState == null ? unchangedAt : initialState.PulledAtUtc ?? unchangedAt }, { "unchanged", true }, { "noChanges", true }, { "evidenceFastPath", true }, { "localWorkspace", true }, { "sharedPublished", false }, { "publishedFiles", 0 }, { "completedFiles", 0 }, { "compressedForPublication", 0 }, { "deferredLocalPdfs", 0 }, { "reusedFiles", 0 }, { "archivedConflicts", 0 }, { "completionErrors", new string[0] }, { "manifest", requestedDatabase }, { "manifestSha256", initialState == null ? AbsentSharedManifestHash : initialState.BaseSharedSha256 } });
+        }
         var hashCache = new PublicationHashCache();var preparationTimer = Stopwatch.StartNew();var preparationWarnings = new List<string>();var isolatedEvidenceFilenames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        int compressedForPublication;Dictionary<string, string> renamedPdfs = PrepareLocalPublicationEvidence(systemId, requestedDatabase, hashCache, preparationWarnings, isolatedEvidenceFilenames, out compressedForPublication);preparationTimer.Stop();
+        int compressedForPublication = 0;Dictionary<string, string> renamedPdfs = evidenceFastPath ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) : PrepareLocalPublicationEvidence(systemId, requestedDatabase, hashCache, preparationWarnings, isolatedEvidenceFilenames, out compressedForPublication);preparationTimer.Stop();
         requestEnvelope["csv"] = PublicationCsvFilenames(Convert.ToString(requestEnvelope["csv"], CultureInfo.InvariantCulture) ?? "", renamedPdfs, isolatedEvidenceFilenames);
-        bytes = Encoding.UTF8.GetBytes(json.Serialize(requestEnvelope));string requestedStateHash = StateHash(requestedDatabase);
+        bytes = Encoding.UTF8.GetBytes(json.Serialize(requestEnvelope));requestedStateHash = StateHash(requestedDatabase);
         // Save locally before touching the share. A failed publication always remains
         // resumable from the protected local database and publication journal.
         SaveSystemState(systemId, bytes);
@@ -917,9 +930,9 @@ internal sealed partial class PortableStorage : IDisposable
             }
             if (recoverUnindexedLocalEvidence) AtomicWrite(SystemFile(workspaceRoot, LocalWorkspaceEvidenceRecoveryMarkerFilename), Encoding.ASCII.GetBytes("2" + Environment.NewLine));
             DeletePublicationJournal(workspaceRoot);
-            Dictionary<string, object> result = ObjectDictionary(json.DeserializeObject(resultText));result["localWorkspace"] = true;result["sharedPublished"] = true;result["publishedFiles"] = staged.Count;result["reusedFiles"] = staged.Count(item => item.Reused);result["archivedConflicts"] = staged.Count(item => !String.Equals(item.Relative, item.OriginalRelative, StringComparison.OrdinalIgnoreCase));result["deferredLocalPdfs"] = deferredLocalPdfs;result["compressedForPublication"] = compressedForPublication;result["manifest"] = requestedDatabase;result["completedFiles"] = completedFiles;result["completionErrors"] = completionErrors.ToArray();result["workspacePath"] = workspaceRoot;result["manifestSha256"] = publishedHash;
+            Dictionary<string, object> result = ObjectDictionary(json.DeserializeObject(resultText));result["localWorkspace"] = true;result["sharedPublished"] = true;result["evidenceFastPath"] = evidenceFastPath;result["noChanges"] = false;result["publishedFiles"] = staged.Count;result["reusedFiles"] = staged.Count(item => item.Reused);result["archivedConflicts"] = staged.Count(item => !String.Equals(item.Relative, item.OriginalRelative, StringComparison.OrdinalIgnoreCase));result["deferredLocalPdfs"] = deferredLocalPdfs;result["compressedForPublication"] = compressedForPublication;result["manifest"] = requestedDatabase;result["completedFiles"] = completedFiles;result["completionErrors"] = completionErrors.ToArray();result["workspacePath"] = workspaceRoot;result["manifestSha256"] = publishedHash;
             totalTimer.Stop();long transferMilliseconds = Math.Max(1L, transferTimer.ElapsedMilliseconds), bytesPerSecond = transferredBytes == 0 ? 0 : (long)Math.Round(transferredBytes * 1000d / transferMilliseconds);
-            AppendPerformanceDiagnostic(sharedRoot, new Dictionary<string, object> { { "operation", "workspace-publish" }, { "durationMs", totalTimer.ElapsedMilliseconds }, { "preparationMs", preparationTimer.ElapsedMilliseconds }, { "transferMs", transferTimer.ElapsedMilliseconds }, { "finalizationMs", Math.Max(0L, totalTimer.ElapsedMilliseconds - preparationTimer.ElapsedMilliseconds - transferTimer.ElapsedMilliseconds) }, { "filesPlanned", staged.Count }, { "filesCopied", copied }, { "bytesTransferred", transferredBytes }, { "bytesPerSecond", bytesPerSecond }, { "legacyTreeRecovery", recoverUnindexedLocalEvidence }, { "hashCacheEnabled", true } });
+            AppendPerformanceDiagnostic(sharedRoot, new Dictionary<string, object> { { "operation", "workspace-publish" }, { "durationMs", totalTimer.ElapsedMilliseconds }, { "preparationMs", preparationTimer.ElapsedMilliseconds }, { "transferMs", transferTimer.ElapsedMilliseconds }, { "finalizationMs", Math.Max(0L, totalTimer.ElapsedMilliseconds - preparationTimer.ElapsedMilliseconds - transferTimer.ElapsedMilliseconds) }, { "filesPlanned", staged.Count }, { "filesCopied", copied }, { "bytesTransferred", transferredBytes }, { "bytesPerSecond", bytesPerSecond }, { "legacyTreeRecovery", recoverUnindexedLocalEvidence }, { "evidenceFastPath", evidenceFastPath }, { "hashCacheEnabled", !evidenceFastPath } });
             return json.Serialize(result);
         }
     }

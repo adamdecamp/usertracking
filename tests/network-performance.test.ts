@@ -212,6 +212,11 @@ test('performance diagnostics record phase timing, counts, staging, and concurre
 test('workspace publication streams evidence and appends bounded progress without routine tree walks',()=>{
  const publish=storage.slice(storage.indexOf('public string PublishWorkspace'),storage.indexOf('private PublicationEvidence PreparePublicationDestination'));
  assert.match(publish,/recoverUnindexedLocalEvidence && Directory\.Exists\(localOrganizations\)/);
+ assert.match(publish,/if \(!databaseChangePending && evidenceFastPath\)/);
+ assert.match(publish,/evidenceFastPath \? new Dictionary<string, string>[\s\S]*?: PrepareLocalPublicationEvidence/);
+ assert.match(publish,/"noChanges", true/);
+ assert.match(page,/Checking for Pending Changes/);
+ assert.doesNotMatch(page,/Compressing and Verifying Local Evidence/);
  assert.match(publish,/StreamVerifiedEvidenceCopy\(item\.Source, temporary/);
  assert.doesNotMatch(publish,/File\.ReadAllBytes\(item\.Source\)/);
  assert.match(storage,/AppendPublicationProgress/);

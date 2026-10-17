@@ -22,7 +22,10 @@ test('portable response contracts accept bounded valid payloads',()=>{
  assert.deepEqual(decodeLauncherControlResponse({activeStorageRequests:2,longOperationActive:true,activeOperation:'sync'}),{activeStorageRequests:2,longOperationActive:true,activeOperation:'sync'});
  assert.equal(decodePathMutationResponse('archived','Archive')({archived:'Archive/A.zip'}).path,'Archive/A.zip');
  assert.equal(decodeStorageVerificationResponse({saved:'2026-10-16T00:00:00Z',backup:'2026-10-16T00:00:00Z',filename:'manifest.json',auditEntries:1,auditHeadHash:hash,manifestSha256:hash}).auditEntries,1);
- assert.equal(decodePublishResponse({saved:'2026-10-16T00:00:00Z',publishedFiles:2}).publishedFiles,2);
+ const publication=decodePublishResponse({saved:'2026-10-16T00:00:00Z',publishedFiles:2,noChanges:false,evidenceFastPath:true});
+ assert.equal(publication.publishedFiles,2);
+ assert.equal(publication.noChanges,false);
+ assert.equal(publication.evidenceFastPath,true);
  assert.deepEqual(decodeCachedMappingResponse({lastSystemId:'one',mappings:[]}),{lastSystemId:'one',mappings:[]});
  const mapping=decodeCachedMappingResponse({lastSystemId:'one',mappings:[{storageId:'storage-one',systemId:'one',folderName:'System One',manifest:{version:2},source:'local-cache',cachedAtUtc:'2026-10-16T00:00:00Z',stateHash:hash}]});
  assert.equal(mapping.mappings?.[0].folderName,'System One');

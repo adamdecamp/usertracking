@@ -6,6 +6,29 @@ using System.Linq;
 
 internal sealed partial class PortableStorage
 {
+    private static bool HasUnindexedAssociatedLocalEvidence(string workspaceRoot, Dictionary<string, object> database)
+    {
+        var filenames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (object userValue in ObjectArray(database["users"]))
+        {
+            Dictionary<string, object> user = ObjectDictionary(userValue);
+            foreach (object artifactValue in ObjectArray(user["artifacts"]))
+            {
+                Dictionary<string, object> artifact = ObjectDictionary(artifactValue);string filename = Convert.ToString(artifact["filename"], CultureInfo.InvariantCulture);
+                if (!String.IsNullOrWhiteSpace(filename)) { filenames.Add(filename);if (filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) filenames.Add(filename + ".zip"); }
+            }
+        }
+        if (filenames.Count == 0) return false;
+        string organizations = Path.Combine(workspaceRoot, "Organizations");if (!Directory.Exists(organizations)) return false;
+        foreach (DirectoryScanEntry organizationEntry in EnumerateDirectoryEntries(workspaceRoot, organizations).Where(entry => entry.IsDirectory && !entry.IsReparsePoint))
+        {
+            string organizationDirectory = organizationEntry.Path;foreach (DirectoryScanEntry entry in EnumerateDirectoryEntries(workspaceRoot, organizationDirectory)) if (!entry.IsDirectory && filenames.Contains(Path.GetFileName(entry.Path))) return true;
+            string organization = Path.GetFileName(organizationDirectory), incoming = Path.Combine(organizationDirectory, organization + " Incoming");
+            if (Directory.Exists(incoming)) { EnsureReparseSafePath(workspaceRoot, incoming);foreach (DirectoryScanEntry entry in EnumerateDirectoryEntries(workspaceRoot, incoming)) if (!entry.IsDirectory && filenames.Contains(Path.GetFileName(entry.Path))) return true; }
+        }
+        return false;
+    }
+
     // A publication map is durable recovery state. Files can still be moved by a
     // completed retry, cleanup, or operator action before the next commit reads
     // that map. Reconcile those stale references by content hash before treating
