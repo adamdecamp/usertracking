@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const styles=readFileSync(new URL('../app/globals.css',import.meta.url),'utf8');
 const sessionPanels=readFileSync(new URL('../app/components/SessionPanels.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
@@ -79,13 +80,20 @@ test('the dashboard opens the selected protected local workspace in File Explore
  assert.match(launcher,/action == "workspace-open"[\s\S]*?LocalWorkspacePath\(systemId\)[\s\S]*?Process\.Start\("explorer\.exe"/);
 });
 
-test('User Record evidence controls open the verified folder location instead of a browser preview',()=>{
+test('Full Access User Record evidence controls open the verified folder location instead of a browser preview',()=>{
  assert.match(page,/async function openEvidenceLocation\(user:UserRecord,artifact:Artifact\)/);
  assert.match(page,/portableRequest\(root,`file-location\?path=\$\{encodeURIComponent\(path\)\}`,\{method:'POST'\}\)/);
  assert.match(page,/>Open File Location<\/button>/);
  assert.doesNotMatch(page,/onPreview=\{\(user,artifact\)=>void openEvidence\(/);
- assert.match(policy,/action, "file-location"[\s\S]*?method, "POST"/);
+ assert.match(styles,/access-mode-badge\.read-only\) \.artifact-card>button\{display:none\}/);
+ assert.doesNotMatch(policy,/String\.Equals\(action, "file-location", StringComparison\.Ordinal\) && String\.Equals\(method, "POST", StringComparison\.Ordinal\)\) return true/);
+ assert.match(policy,/String\.Equals\(action, "error-report", StringComparison\.Ordinal\) && String\.Equals\(method, "POST", StringComparison\.Ordinal\)\) return true/);
  assert.match(launcher,/action == "file-location"[\s\S]*?EvidenceLocation\(systemId,[\s\S]*?explorer\.exe[\s\S]*?\/select/);
+});
+
+test('blocked sessions always offer a safe exit that preserves recovery state',()=>{
+ assert.match(sessionPanels,/state==='blocked'&&<button type="button" onClick=\{\(\)=>void onEndSession\(\)\}>End Session Safely<\/button>/);
+ assert.match(page,/async function endBlockedSession\(\)[\s\S]*?backup-failed[\s\S]*?shutdown-ready/);
 });
 
 test('the live JSON database has an independently verified SHA-256 sidecar',()=>{

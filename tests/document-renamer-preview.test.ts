@@ -7,6 +7,8 @@ const styles=readFileSync(new URL('../app/globals.css',import.meta.url),'utf8');
 const versions=readFileSync(new URL('../app/version.ts',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const operationalPanels=readFileSync(new URL('../app/components/OperationalPanels.tsx',import.meta.url),'utf8');
+const statusUtils=readFileSync(new URL('../app/user-status-utils.ts',import.meta.url),'utf8');
+const csvUtils=readFileSync(new URL('../app/csv-utils.ts',import.meta.url),'utf8');
 
 test('Document Renamer preview reserves a full browser window before asynchronous PDF validation',()=>{
  assert.match(page,/function reservePdfPreviewWindow\(filename:string\)\{const target=window\.open\('about:blank','_blank'\)/);
@@ -69,12 +71,12 @@ test('both Sync modes normalize complete noncanonical ZIP names before routing a
 test('disabled users retain supporting-artifact status for reactivation review',()=>{
  assert.match(page,/const status=statusFor\(u,kind,directoryAsOf\)/);
  assert.match(page,/<Status kind=\{kind\} value=\{status\}/);
- assert.match(page,/const filterStatus=directoryStatusFor\(user,kind,asOf\)/);
+ assert.match(csvUtils,/const filterStatus=directoryStatusFor\(user,kind,asOf\)/);
  assert.doesNotMatch(page,/u\.disabled\?'':statusFor\(u,k\)/);
  assert.doesNotMatch(page,/status not applicable/);
  assert.match(page,/exception=u\.disabled\?undefined:exceptionFor\(u,kind,directoryAsOf\)/);
  assert.match(page,/remaining\.push\(\{\.\.\.artifact,filename,path:destination\}\)/);
- assert.match(page,/kind!=='SAAR'\|\|u\.disabled\|\|!disabledSaarFilename/);
+ assert.match(statusUtils,/kind!=='SAAR'\|\|user\.disabled\|\|!disabledSaarFilename/);
  assert.doesNotMatch(page,/recoverDisabledEvidenceStatus\(/);
  assert.doesNotMatch(page,/archive-locations\?organization=/);
  assert.doesNotMatch(page,/artifacts:user\.artifacts\.filter\(artifact=>!disabledSaarFilename/);
@@ -89,10 +91,10 @@ test('disabled users retain supporting-artifact status for reactivation review',
 
 test('DTA Training is an annual DTA requirement throughout the directory workflow',()=>{
  assert.match(page,/\['DTA Training','DTA Training'\]/);
- assert.match(page,/const requiredKinds=\(u:UserRecord\)=>requiredKindsForUser\(u\)/);
+ assert.match(statusUtils,/requiredKinds=\(user:UserRecord\)=>requiredKindsForUser\(user\)/);
  assert.match(page,/visible\.some\(u=>requirementAppliesToUser\(u,kind\)\)/);
  assert.match(page,/status not-applicable">N\/A/);
- assert.match(page,/return evidenceStatusAt\(kind,d,asOf\)/);
+ assert.match(statusUtils,/return date\?evidenceStatusAt\(kind,date,asOf\):'Missing'/);
  assert.match(page,/\['8140 Cert Memo','Privileged User Training Cert','DTA Training'\]/);
 });
 

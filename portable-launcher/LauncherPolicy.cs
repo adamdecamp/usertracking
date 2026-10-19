@@ -42,7 +42,7 @@ internal static class LauncherPolicy
     {
         action = action ?? "";method = method ?? "";
         if (String.Equals(action, "select-readonly", StringComparison.Ordinal) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
-        if (String.Equals(action, "file-location", StringComparison.Ordinal) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
+        if (String.Equals(action, "error-report", StringComparison.Ordinal) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
         if ((String.Equals(action, "audit", StringComparison.Ordinal) || String.Equals(action, "audit-batch", StringComparison.Ordinal)) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
         if (!String.Equals(method, "GET", StringComparison.Ordinal) && !String.Equals(method, "HEAD", StringComparison.Ordinal)) return false;
         return String.Equals(action, "local-manifest", StringComparison.Ordinal)

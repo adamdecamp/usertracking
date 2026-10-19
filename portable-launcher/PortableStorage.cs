@@ -181,6 +181,7 @@ internal sealed partial class PortableStorage : IDisposable
         public Dictionary<string, object> Database;
         public byte[] CsvBytes;
         public DateTime QueuedUtc;
+        public bool FailureReported;
     }
 
     private sealed class ChangeHintState
@@ -1090,16 +1091,22 @@ internal sealed partial class PortableStorage : IDisposable
         string manifestPath = SystemFile(Root(systemId), ManifestFilename), directory = SupportDirectory(Root(systemId), "backup");
         if (!File.Exists(manifestPath)) throw new FileNotFoundException("The current database manifest is missing.");
         string fullyVerifiedCatalogHash;Dictionary<string, object> manifestDatabase = ReadManifestFullyVerified(Root(systemId), manifestPath, true, out fullyVerifiedCatalogHash);
-        string latest = SnapshotPaths(directory).FirstOrDefault();
-        if (latest == null) throw new FileNotFoundException("No backup snapshot is available.");
-        Dictionary<string, object> envelope = VerifySnapshot(latest), database = ObjectDictionary(envelope["database"]);
-        object[] systems = ObjectArray(database["systems"]);
-        if (systems.Length != 1 || !String.Equals(Convert.ToString(ObjectDictionary(systems[0])["id"]), logicalSystemId, StringComparison.Ordinal)) throw new InvalidDataException("The latest backup belongs to a different information system.");
         AuditState audit = VerifyAuditChain(SupportDirectory(Root(systemId), "Audit Logs"));
         bool checksumInitialized = false;
         string manifestSha256;
         if (File.Exists(manifestPath + ".sha256")) manifestSha256 = VerifyManifestChecksum(manifestPath, false);
-        else
+        else { manifestSha256 = null; }
+        string latest;Dictionary<string, object> envelope;var rejectedBackups = new List<string>();
+        bool hasVerifiedBackup = TryLatestVerifiedSnapshot(directory, logicalSystemId, out latest, out envelope, rejectedBackups), backupRebuilt = false;
+        if (!hasVerifiedBackup && manifestSha256 != null)
+        {
+            CreateSnapshot(directory, manifestDatabase, true);
+            backupRebuilt = true;
+            if (!TryLatestVerifiedSnapshot(directory, logicalSystemId, out latest, out envelope, rejectedBackups)) throw new InvalidDataException("A replacement backup could not be verified after the live database and audit chain passed integrity checks.");
+        }
+        if (!hasVerifiedBackup && !backupRebuilt && manifestSha256 == null) throw new FileNotFoundException("No verified backup snapshot is available. The live database checksum cannot be initialized safely without a matching verified backup.");
+        Dictionary<string, object> database = ObjectDictionary(envelope["database"]);
+        if (manifestSha256 == null)
         {
             if (!String.Equals(StateHash(manifestDatabase), StateHash(database), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The live database has no integrity checksum and does not match the newest verified backup. Full Access is blocked until an operator restores a verified backup.");
             manifestSha256 = fullyVerifiedCatalogHash;
@@ -1117,7 +1124,8 @@ internal sealed partial class PortableStorage : IDisposable
             manifestDatabase = ReadLocalWorkspaceDatabase(workspaceRoot);workspaceResumed = true;
         }
         else WriteLocalWorkspaceDatabase(workspaceRoot, manifestDatabase, manifestSha256, false);
-        return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "saved", File.GetLastWriteTimeUtc(manifestPath).ToString("o") }, { "backup", Convert.ToString(envelope["created"]) }, { "filename", Path.GetFileName(latest) }, { "auditHealthy", true }, { "auditEntries", audit.Entries }, { "auditHeadHash", audit.HeadHash }, { "auditVerification", "full-chain" }, { "manifestSha256", manifestSha256 }, { "checksumInitialized", checksumInitialized }, { "manifest", manifestDatabase }, { "localWorkspace", true }, { "workspacePath", workspaceRoot }, { "workspaceResumed", workspaceResumed } });
+        string recoveryWarning = rejectedBackups.Count == 0 && !backupRebuilt ? "" : (backupRebuilt ? "The backup set contained no usable snapshot. A new verified backup was created from the checksum-verified live database after the audit chain passed." : rejectedBackups.Count.ToString(CultureInfo.InvariantCulture) + " newer or invalid backup snapshot(s) were skipped; the newest valid verified backup was used.");
+        return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "saved", File.GetLastWriteTimeUtc(manifestPath).ToString("o") }, { "backup", Convert.ToString(envelope["created"]) }, { "filename", Path.GetFileName(latest) }, { "auditHealthy", true }, { "auditEntries", audit.Entries }, { "auditHeadHash", audit.HeadHash }, { "auditVerification", "full-chain" }, { "manifestSha256", manifestSha256 }, { "checksumInitialized", checksumInitialized }, { "manifest", manifestDatabase }, { "localWorkspace", true }, { "workspacePath", workspaceRoot }, { "workspaceResumed", workspaceResumed }, { "backupRecoveryWarning", recoveryWarning }, { "skippedBackupCount", rejectedBackups.Count }, { "backupRebuilt", backupRebuilt } });
     }
 
     public void FinalizeMappedBackups()
@@ -1155,7 +1163,7 @@ internal sealed partial class PortableStorage : IDisposable
             if (!pendingBackups.TryGetValue(systemId, out pending)) pending = new PendingBackupState { SystemId = systemId };
             if (database != null) pending.Database = database;
             if (csvBytes != null) pending.CsvBytes = csvBytes.ToArray();
-            pending.QueuedUtc = DateTime.UtcNow;
+            pending.QueuedUtc = DateTime.UtcNow;pending.FailureReported = false;
             pendingBackups[systemId] = pending;
         }
     }
@@ -1182,10 +1190,7 @@ internal sealed partial class PortableStorage : IDisposable
                     if (pendingBackups.TryGetValue(pending.SystemId, out current) && Object.ReferenceEquals(current, pending)) pendingBackups.Remove(pending.SystemId);
                 }
             }
-            catch (Exception)
-            {
-                if (force) throw;
-            }
+            catch (Exception error) { if (!pending.FailureReported) { pending.FailureReported = true;try { StoreErrorReport(pending.SystemId, "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".txt", "R.A.P.T.O.R. Error Entry\r\nGeneration Time UTC: " + DateTime.UtcNow.ToString("o") + "\r\nContext: Deferred backup or CSV flush failure.\r\nDetails: " + error); } catch { } }if (force) throw; }
         }
     }
 
@@ -2635,16 +2640,17 @@ internal sealed partial class PortableStorage : IDisposable
         }
     }
 
-    public string StoreErrorReport(string systemId, string filename, string text)
-    {
+    public string StoreErrorReport(string systemId, string filename, string text) {
         string safeName = SafePart(filename, 180);if (!safeName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Error reports must use the TXT format.");
         string entry = (text ?? "").TrimEnd('\r', '\n') + "\r\n";byte[] bytes = Encoding.UTF8.GetBytes(entry);if (bytes.Length <= 2 || bytes.Length > 1024 * 1024) throw new InvalidDataException("The error report entry is empty or exceeds the 1 MB limit.");
-        lock (errorReportGate)
-        {
-            string root = Root(systemId), directory = SupportDirectory(root, ErrorReportsDirectoryName), dailyName = "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".txt", path = Path.Combine(directory, dailyName);
-            AppendErrorReportBytes(path, bytes);
-            return json.Serialize(new Dictionary<string, object> { { "saved", Relative(Root(systemId), path).Replace(Path.DirectorySeparatorChar, '/') } });
-        }
+        lock (errorReportGate) { string dailyName = "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".txt";try {
+                string root = Root(systemId), path = Path.Combine(SupportDirectory(root, ErrorReportsDirectoryName), dailyName);AppendErrorReportBytes(path, bytes);
+                return json.Serialize(new Dictionary<string, object> { { "saved", Relative(root, path).Replace(Path.DirectorySeparatorChar, '/') }, { "localFallback", false } });
+            } catch (Exception sharedError) {
+                string workspace = LocalWorkspaceRoot(systemId), path = Path.Combine(SupportDirectory(workspace, ErrorReportsDirectoryName), dailyName), warning = "Error-report shared-folder fallback: " + CleanLine(sharedError.Message, 500) + "\r\n";
+                AppendErrorReportBytes(path, Encoding.UTF8.GetBytes(warning + entry));
+                return json.Serialize(new Dictionary<string, object> { { "saved", "Protected Local Workspace/System/" + ErrorReportsDirectoryName + "/" + dailyName }, { "localFallback", true } });
+            } }
     }
 
     private static void AppendErrorReportBytes(string path, byte[] entry)
@@ -3181,12 +3187,21 @@ internal sealed partial class PortableStorage : IDisposable
         return envelope;
     }
 
+    private bool TryLatestVerifiedSnapshot(string directory, string logicalSystemId, out string path, out Dictionary<string, object> envelope, List<string> rejected)
+    {
+        path = null;envelope = null;
+        foreach (string candidate in SnapshotPaths(directory).Take(SnapshotLimit))
+        {
+            try { Dictionary<string, object> verified = VerifySnapshot(candidate), database = ObjectDictionary(verified["database"]);object[] systems = ObjectArray(database["systems"]);if (systems.Length != 1 || !String.Equals(Convert.ToString(ObjectDictionary(systems[0])["id"]), logicalSystemId, StringComparison.Ordinal)) throw new InvalidDataException("The backup belongs to a different information system.");path = candidate;envelope = verified;return true; }
+            catch (Exception ex) { if (rejected != null) rejected.Add(Path.GetFileName(candidate) + ": " + CleanLine(ex.Message, 300)); }
+        }
+        return false;
+    }
+
     private string LatestCreated(string directory)
     {
-        string latest = SnapshotPaths(directory).FirstOrDefault();
-        if (latest == null) return null;
-        try { return Convert.ToString(VerifySnapshot(latest)["created"]); }
-        catch { return null; }
+        foreach (string candidate in SnapshotPaths(directory).Take(SnapshotLimit)) { try { return Convert.ToString(VerifySnapshot(candidate)["created"]); } catch { } }
+        return null;
     }
 
     private IEnumerable<string> SnapshotPaths(string directory)

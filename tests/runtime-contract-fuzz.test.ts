@@ -21,7 +21,7 @@ test('portable response contracts accept bounded valid payloads',()=>{
  assert.deepEqual(decodeOperationReceipt({operationId:'op-1'}),{operationId:'op-1'});
  assert.deepEqual(decodeLauncherControlResponse({activeStorageRequests:2,longOperationActive:true,activeOperation:'sync'}),{activeStorageRequests:2,longOperationActive:true,activeOperation:'sync'});
  assert.equal(decodePathMutationResponse('archived','Archive')({archived:'Archive/A.zip'}).path,'Archive/A.zip');
- assert.equal(decodeStorageVerificationResponse({saved:'2026-10-16T00:00:00Z',backup:'2026-10-16T00:00:00Z',filename:'manifest.json',auditEntries:1,auditHeadHash:hash,manifestSha256:hash}).auditEntries,1);
+ assert.equal(decodeStorageVerificationResponse({saved:'2026-10-16T00:00:00Z',backup:'2026-10-16T00:00:00Z',filename:'manifest.json',auditEntries:1,auditHeadHash:hash,manifestSha256:hash,backupRecoveryWarning:'Skipped one incomplete snapshot.',skippedBackupCount:1,backupRebuilt:false}).skippedBackupCount,1);
  const publication=decodePublishResponse({saved:'2026-10-16T00:00:00Z',publishedFiles:2,noChanges:false,evidenceFastPath:true,stateHash:hash});
  assert.equal(publication.publishedFiles,2);
  assert.equal(publication.noChanges,false);

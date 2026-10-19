@@ -497,11 +497,12 @@ export default function Guide() {
           date values and never rewrites, flattens, or signs PDF content.
         </p>
         <p>
-          Within a User Record, choose <b>Open File Location</b>. The Windows
+          In Full Access, choose <b>Open File Location</b> within a User Record. The Windows
           launcher opens File Explorer at the verified current location and
           selects the recorded PDF or ZIP; the document is not transferred to or
-          rendered inside the browser. This lookup is available in Read-Only and
-          Full Access. Manually stored evidence records a baseline SHA-256 for
+          rendered inside the browser. This control is unavailable in Read-Only
+          Access because an Explorer window could be used to alter evidence outside
+          the application. Manually stored evidence records a baseline SHA-256 for
           later reconciliation.
         </p>
         <p>
@@ -1048,9 +1049,9 @@ export default function Guide() {
         <p>
           At launch, choose <b>Read-Only Access</b> or <b>Full Access</b>.
           Read-Only Access permits concurrent operators to search, filter, open
-          User Records, locate recorded evidence in File Explorer, and view the audit log. It hides
-          administrative actions and the Windows launcher rejects any attempted
-          shared-folder mutation. Read-Only mapping does not initialize,
+          User Records, and view the audit log. It hides administrative and
+          evidence-location actions, and the Windows launcher rejects File Explorer
+          location requests and every attempted shared-folder mutation. Read-Only mapping does not initialize,
           migrate, repair, or reorganize the selected shared folder. Session
           start, system changes, reconnects, timeouts, and logoff are recorded
           with the active Windows identity in the tamper-evident audit log.
@@ -1058,6 +1059,12 @@ export default function Guide() {
           audit chain before editing is enabled. If that startup health check
           fails, the app preserves the records and opens the system Read-Only
           so the operator can inspect the issue without making changes.
+          Startup verification skips interrupted or invalid newer backups and
+          uses the newest valid verified backup. The skipped backup and full
+          storage diagnostic are written to that day&apos;s text error report.
+          If a disconnected session cannot be reconnected, choose <b>End Session
+          Safely</b> to retain the protected local recovery workspace and release
+          the editor lock when possible.
           Each Windows launcher creates a new authenticated browser session when
           it starts. The temporary session token is removed from the address after
           launch, and the launcher independently enforces the selected access mode.
@@ -1702,8 +1709,10 @@ export default function Guide() {
         and coalesces background edits for five seconds before saving.
       </aside>
       <aside>
-        <b>Error Records:</b> Operational failures show bounded diagnostic
-        details, append an entry to the UTC-daily Notepad-readable file in{" "}
+        <b>Error Records:</b> Handled operational failures, launcher storage
+        exceptions, uncaught browser errors, and unhandled promise rejections
+        show diagnostic details and append an entry to the UTC-daily
+        Notepad-readable file in{" "}
         <code>System/Error Reports</code>, and write an{" "}
         <code>ERROR:</code> entry to the affected system&apos;s audit chain. Each
         entry includes a report ID, UTC time, Windows operator, application
@@ -1715,9 +1724,11 @@ export default function Guide() {
         File-level rename, PDF-read, and validation
         errors do not stop the rest of a large Sync; they are audited and listed
         for operator review after processing finishes. Errors before mapping
-        identify that no audit destination exists. Storage-verification and
-        audit-chain-verification failures are shown but are not appended because
-        an unverified chain must not be extended. A missing evidence path is
+        are queued and written after a system is mapped. If the shared report
+        folder is temporarily unavailable, the launcher preserves the entry in
+        the protected local workspace. Storage-verification and
+        audit-chain-verification failures are written to the text report but are
+        not appended to an unverified audit chain. A missing evidence path is
         identified as a stale move, rename, or deletion rather than automatically
         being described as a network-share outage.
       </aside>

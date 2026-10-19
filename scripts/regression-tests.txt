@@ -18,6 +18,7 @@ tests/document-renamer-utils.test.ts
 tests/document-renamer-filename-fuzz.test.ts
 tests/document-renamer-preview.test.ts
 tests/error-utils.test.ts
+tests/error-reporting.test.ts
 tests/manifest-validation.test.ts
 tests/saar-form-utils.test.ts
 tests/manual-saar-utils.test.ts

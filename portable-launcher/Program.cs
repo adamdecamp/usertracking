@@ -172,6 +172,7 @@ internal sealed class TrackerContext : ApplicationContext
                 Task ignored = Task.Run(async delegate
                 {
                     try { await Handle(client); }
+                    catch (Exception error) { Program.WriteLocalError("Windows launcher request failure", error); }
                     finally { connections.Release(); }
                 });
             }
@@ -333,6 +334,12 @@ internal sealed class TrackerContext : ApplicationContext
                 catch (Exception ex)
                 {
                     string message = StorageError(ex, storageAction) + (String.IsNullOrWhiteSpace(operationId) ? "" : " Operation ID: " + CleanError(operationId).Substring(0, Math.Min(CleanError(operationId).Length, 100)) + ".");
+                    if (!String.Equals(storageAction, "error-report", StringComparison.Ordinal)) try
+                    {
+                        string now = DateTime.UtcNow.ToString("o"), report = "R.A.P.T.O.R. Error Entry\r\nApplication: Role-Based Access Personnel Tracking & Oversight Registry\r\nGeneration Time UTC: " + now + "\r\nWindows Operator: " + user + "\r\nInformation System ID: " + systemId + "\r\nContext: Windows launcher storage operation " + CleanError(storageAction) + ".\r\nDetails: " + ErrorReportDetail(ex) + "\r\nOperation ID: " + CleanError(operationId ?? "Unavailable");
+                        storage.StoreErrorReport(systemId, "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".txt", report);
+                    }
+                    catch { }
                     Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(message)), false, "no-store").GetAwaiter().GetResult(); return;
                 }
                 finally { EndStorageRequest(); if (serializedStorage) { ClearActiveStorageOperation(systemId);systemStorageOperations.Release(); } }
@@ -748,6 +755,7 @@ internal sealed class TrackerContext : ApplicationContext
     }
 
     private static string CleanError(string value) { if (String.IsNullOrWhiteSpace(value)) return "The storage request failed."; string clean = value.Replace("\r", " ").Replace("\n", " ").Replace("\0", " ").Trim(); return clean.Length > 1200 ? clean.Substring(0, 1200) : clean; }
+    private static string ErrorReportDetail(Exception error) { string value = error == null ? "The launcher operation failed without an exception detail." : error.ToString();value = value.Replace("\0", " ").Trim();return value.Length > 64 * 1024 ? value.Substring(0, 64 * 1024) : value; }
     private static string StorageError(Exception ex, string operation)
     {
         string stage = String.IsNullOrWhiteSpace(operation) ? "storage request" : operation.Replace('-', ' ');
@@ -982,12 +990,23 @@ internal sealed class TrackerContext : ApplicationContext
 
 internal static class Program
 {
+    internal static void WriteLocalError(string context, Exception error)
+    {
+        try
+        {
+            string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RAPTOR", "System", "Error Reports"), path = Path.Combine(directory, "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".txt");Directory.CreateDirectory(directory);
+            string detail = error == null ? "The launcher failed without an exception detail." : error.ToString().Replace("\0", " ");if (detail.Length > 64 * 1024) detail = detail.Substring(0, 64 * 1024);
+            File.AppendAllText(path, "R.A.P.T.O.R. Error Entry\r\nGeneration Time UTC: " + DateTime.UtcNow.ToString("o") + "\r\nContext: " + context.Replace("\r", " ").Replace("\n", " ") + ".\r\nDetails: " + detail + "\r\n\r\n", Encoding.UTF8);
+        }
+        catch { }
+    }
+
     [STAThread]
     private static void Main()
     {
         Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
         try { Application.Run(new TrackerContext()); }
         catch (SocketException) { MessageBox.Show("R.A.P.T.O.R. is already running.", "R.A.P.T.O.R.", MessageBoxButtons.OK, MessageBoxIcon.Information); }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "Unable to Start R.A.P.T.O.R.", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (Exception ex) { WriteLocalError("Windows launcher startup failure", ex);MessageBox.Show(ex.Message, "Unable to Start R.A.P.T.O.R.", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 }

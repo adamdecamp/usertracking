@@ -1,5 +1,14 @@
 const clean=(value:string,max=500)=>value.replace(/[\r\n\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
 
+export const oneLineText=(value:string)=>value.replace(/[\r\n\u0000-\u001f\u007f]/g,' ').trim().slice(0,500);
+export const errorReportText=(value:string)=>value.replace(/\u0000/g,' ').replace(/\r\n?/g,'\n').replace(/[\u0001-\u0008\u000b\u000c\u000e-\u001f\u007f]/g,' ').trim().slice(0,64*1024);
+
+export function errorReportDetail(error:unknown,fallback='An unexpected error occurred.'){
+ if(error instanceof Error){const summary=`${error.name||'Error'}: ${error.message||fallback}`,stack=error.stack&&!error.stack.startsWith(summary)?error.stack:'';return errorReportText([summary,stack].filter(Boolean).join('\n'))||fallback}
+ if(typeof error==='string')return errorReportText(error)||fallback;
+ try{return errorReportText(JSON.stringify(error,null,2))||fallback}catch{return fallback}
+}
+
 export function errorDetail(error:unknown,fallback='An unexpected error occurred.'){
  if(error instanceof Error)return clean(`${error.name&&error.name!=='Error'?`${error.name}: `:''}${error.message||fallback}`)||fallback;
  if(typeof error==='string')return clean(error)||fallback;
