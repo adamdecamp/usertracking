@@ -244,14 +244,6 @@ internal sealed partial class PortableStorage : IDisposable
         public long SharedModifiedUnixMs;
     }
 
-    private sealed class LocalWorkspaceState
-    {
-        public string BaseSharedSha256;
-        public bool Dirty;
-        public string PulledAtUtc;
-        public string SavedAtUtc;
-    }
-
     private sealed class PublicationEvidence
     {
         public string Source;
@@ -351,7 +343,7 @@ internal sealed partial class PortableStorage : IDisposable
         Directory.CreateDirectory(Path.Combine(full, "Organizations"));
         Directory.CreateDirectory(Path.Combine(full, TemplateDirectoryName));
         EnsureOrganizationDocumentFolders(full, false);
-        object gate, leaseGate;
+        object gate, leaseGate;bool localWorkspaceRemapped = false;
         lock (mapGate)
         {
             if (!rootLocks.ContainsKey(systemId)) rootLocks[systemId] = new object();
@@ -367,7 +359,10 @@ internal sealed partial class PortableStorage : IDisposable
             lock (mapGate)
             {
                 string current;
-                if (roots.TryGetValue(systemId, out current) && !String.Equals(current, full, StringComparison.OrdinalIgnoreCase) && heldLeases.TryGetValue(systemId, out held)) heldLeases.Remove(systemId);
+                if (roots.TryGetValue(systemId, out current) && !String.Equals(current, full, StringComparison.OrdinalIgnoreCase))
+                {
+                    localWorkspaceRemapped = true;if (heldLeases.TryGetValue(systemId, out held)) heldLeases.Remove(systemId);
+                }
                 roots[systemId] = full;
                 foreach (string duplicate in cachedRoots.Where(item => !String.Equals(item.Key, systemId, StringComparison.Ordinal) && String.Equals(item.Value, full, StringComparison.OrdinalIgnoreCase)).Select(item => item.Key).ToArray()) cachedRoots.Remove(duplicate);
                 cachedRoots[systemId] = full;
@@ -375,6 +370,7 @@ internal sealed partial class PortableStorage : IDisposable
             }
             if (held != null) DisposeLease(held, true);
         }
+        if (localWorkspaceRemapped) ResetLocalWorkspaceWatcher(systemId);
         SaveMappingCache();
         PruneEvidenceValidationCache(full, false);
         StartChangeWatcher(systemId, full);
@@ -400,7 +396,8 @@ internal sealed partial class PortableStorage : IDisposable
             lock (mapGate) { if (hadPreviousRoot) roots[systemId] = previousRoot;else roots.Remove(systemId); }
             return false;
         }
-        try { Map(systemId, full);return true; }
+        bool localWorkspaceRemapped = hadPreviousRoot && !String.Equals(previousRoot, full, StringComparison.OrdinalIgnoreCase);
+        try { if (localWorkspaceRemapped) ResetLocalWorkspaceWatcher(systemId);Map(systemId, full);return true; }
         catch
         {
             ReleaseLease(systemId, sessionId);
@@ -417,8 +414,10 @@ internal sealed partial class PortableStorage : IDisposable
         string manifestPath = Path.Combine(full, SystemDirectoryName, ManifestFilename);
         if (!File.Exists(manifestPath)) throw new FileNotFoundException("The selected folder does not contain an initialized R.A.P.T.O.R. system database.");
         bool manifestCacheHit;string manifestText = ReadManifestOptimized(full, manifestPath, out manifestCacheHit);
+        bool localWorkspaceRemapped = false;
         lock (mapGate)
         {
+            string previousRoot;localWorkspaceRemapped = roots.TryGetValue(systemId, out previousRoot) && !String.Equals(previousRoot, full, StringComparison.OrdinalIgnoreCase);
             roots[systemId] = full;
             if (!rootLocks.ContainsKey(systemId)) rootLocks[systemId] = new object();
             if (!leaseLocks.ContainsKey(systemId)) leaseLocks[systemId] = new object();
@@ -426,6 +425,7 @@ internal sealed partial class PortableStorage : IDisposable
             cachedRoots[systemId] = full;
             lastSystemId = systemId;
         }
+        if (localWorkspaceRemapped) ResetLocalWorkspaceWatcher(systemId);
         // The mapping cache is local to this Windows profile. Read-Only mapping never creates,
         // migrates, repairs, or reorganizes anything inside the selected shared folder.
         SaveMappingCache();
@@ -761,13 +761,14 @@ internal sealed partial class PortableStorage : IDisposable
             {
                 string sharedManifest = SystemFile(Root(systemId), ManifestFilename);
                 if (File.Exists(sharedManifest)) throw new InvalidDataException("The local workspace has not been initialized from the verified shared master database. Reopen the mapped system before saving changes.");
-                WriteLocalWorkspaceState(workspaceRoot, new LocalWorkspaceState { BaseSharedSha256 = AbsentSharedManifestHash, Dirty = false, PulledAtUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), SavedAtUtc = "" });
+                WriteLocalWorkspaceState(workspaceRoot, new LocalWorkspaceState { BaseSharedSha256 = AbsentSharedManifestHash, DatabaseStateHash = "", PendingEvidenceCount = -1, Dirty = false, PulledAtUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), SavedAtUtc = "" });
                 state = ReadLocalWorkspaceState(workspaceRoot);
             }
             if (state == null || !IsSha256(state.BaseSharedSha256)) throw new InvalidDataException("The local workspace has not been initialized from a verified shared master database.");
             string stateHash = StateHash(database), existingHash = null;
             try { existingHash = StateHash(ReadLocalWorkspaceDatabase(workspaceRoot)); } catch { }
             bool unchanged = String.Equals(stateHash, existingHash, StringComparison.OrdinalIgnoreCase);string saved = unchanged ? (String.IsNullOrWhiteSpace(state.SavedAtUtc) ? DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) : state.SavedAtUtc) : WriteLocalWorkspaceDatabase(workspaceRoot, database, state.BaseSharedSha256, true);
+            if (unchanged && !String.Equals(state.DatabaseStateHash, stateHash, StringComparison.OrdinalIgnoreCase)) { state.DatabaseStateHash = stateHash;WriteLocalWorkspaceState(workspaceRoot, state); }
             return json.Serialize(new Dictionary<string, object> { { "saved", saved }, { "backup", state.PulledAtUtc ?? saved }, { "snapshotCreated", false }, { "backupPending", state.Dirty || !unchanged }, { "unchanged", unchanged }, { "stateHash", stateHash }, { "localWorkspace", true }, { "workspacePath", workspaceRoot }, { "sharedCommitPending", state.Dirty || !unchanged } });
         }
     }
@@ -802,7 +803,7 @@ internal sealed partial class PortableStorage : IDisposable
 
     public string LocalWorkspacePath(string systemId)
     {
-        lock (RootLock(systemId)) { string path = LocalWorkspaceRoot(systemId);Directory.CreateDirectory(Path.Combine(path, "Organizations"));return path; }
+        lock (RootLock(systemId)) { string path = LocalWorkspaceRoot(systemId);Directory.CreateDirectory(Path.Combine(path, "Organizations"));ExposeLocalWorkspace(systemId, path);return path; }
     }
 
     public string PublishWorkspace(string systemId, byte[] bytes)
@@ -815,16 +816,18 @@ internal sealed partial class PortableStorage : IDisposable
         if (!requestEnvelope.ContainsKey("database") || !requestEnvelope.ContainsKey("csv")) throw new InvalidDataException("The combined database commit is missing its database or CSV backup.");
         Dictionary<string, object> requestedDatabase = ObjectDictionary(requestEnvelope["database"]);ValidateDatabaseObject(requestedDatabase);
         string requestedStateHash = StateHash(requestedDatabase), initialWorkspaceRoot = LocalWorkspaceRoot(systemId);bool recoverUnindexedLocalEvidence = !File.Exists(SystemFile(initialWorkspaceRoot, LocalWorkspaceEvidenceRecoveryMarkerFilename));
-        Dictionary<string, Dictionary<string, object>> initialLocalEvidence = ReadLocalEvidenceMap(systemId);LocalWorkspaceState initialState = ReadLocalWorkspaceState(initialWorkspaceRoot);string initialDatabaseHash = null;
-        try { initialDatabaseHash = StateHash(ReadLocalWorkspaceDatabase(initialWorkspaceRoot)); } catch { }
+        LocalWorkspaceState initialState = ReadLocalWorkspaceState(initialWorkspaceRoot);bool metadataCurrent = initialState != null && IsSha256(initialState.DatabaseStateHash) && initialState.PendingEvidenceCount >= 0 && !recoverUnindexedLocalEvidence;string initialDatabaseHash = metadataCurrent ? initialState.DatabaseStateHash : null;
+        if (!metadataCurrent) try { initialDatabaseHash = StateHash(ReadLocalWorkspaceDatabase(initialWorkspaceRoot)); } catch { }
         bool databaseChangePending = initialState == null || initialState.Dirty || !String.Equals(initialDatabaseHash, requestedStateHash, StringComparison.OrdinalIgnoreCase);
-        bool pendingEvidence = initialLocalEvidence.Values.Any(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture));
+        bool pendingEvidence = metadataCurrent ? initialState.PendingEvidenceCount > 0 : ReadLocalEvidenceMap(systemId).Values.Any(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture));
         bool interruptedPublication = File.Exists(Path.Combine(initialWorkspaceRoot, SystemDirectoryName, LocalWorkspacePublicationFilename));
-        string transactionDirectory = Path.Combine(initialWorkspaceRoot, SystemDirectoryName, "Storage Transactions");bool interruptedFileOperation = Directory.Exists(transactionDirectory) && Directory.EnumerateFiles(transactionDirectory, "transaction-*.json", SearchOption.TopDirectoryOnly).Any();
-        bool unindexedAssociatedEvidence = !recoverUnindexedLocalEvidence && HasUnindexedAssociatedLocalEvidence(initialWorkspaceRoot, requestedDatabase);
+        bool interruptedFileOperation = File.Exists(StorageTransactionPendingPath(initialWorkspaceRoot));
+        LocalWorkspaceReviewToken workspaceReview = BeginLocalWorkspaceReview(systemId, initialWorkspaceRoot);
+        bool unindexedAssociatedEvidence = !recoverUnindexedLocalEvidence && workspaceReview.Required && HasUnindexedAssociatedLocalEvidence(initialWorkspaceRoot, requestedDatabase);
         bool evidenceFastPath = !recoverUnindexedLocalEvidence && !pendingEvidence && !interruptedPublication && !interruptedFileOperation && !unindexedAssociatedEvidence;
         if (!databaseChangePending && evidenceFastPath)
         {
+            CompleteLocalWorkspaceReview(workspaceReview);
             string unchangedAt = initialState == null || String.IsNullOrWhiteSpace(initialState.SavedAtUtc) ? DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) : initialState.SavedAtUtc;
             return json.Serialize(new Dictionary<string, object> { { "saved", unchangedAt }, { "backup", initialState == null ? unchangedAt : initialState.PulledAtUtc ?? unchangedAt }, { "unchanged", true }, { "noChanges", true }, { "evidenceFastPath", true }, { "stateHash", requestedStateHash }, { "localWorkspace", true }, { "sharedPublished", false }, { "publishedFiles", 0 }, { "completedFiles", 0 }, { "compressedForPublication", 0 }, { "deferredLocalPdfs", 0 }, { "reusedFiles", 0 }, { "archivedConflicts", 0 }, { "completionErrors", new string[0] }, { "manifest", requestedDatabase }, { "manifestSha256", initialState == null ? AbsentSharedManifestHash : initialState.BaseSharedSha256 } });
         }
@@ -841,7 +844,7 @@ internal sealed partial class PortableStorage : IDisposable
             if (state == null) throw new InvalidDataException("The local workspace state is missing.");
             string currentSharedHash = File.Exists(sharedManifest) ? ReadManifestChecksumHash(sharedManifest, false) : AbsentSharedManifestHash;
             string localOrganizations = Path.Combine(workspaceRoot, "Organizations"), sharedOrganizations = Path.Combine(sharedRoot, "Organizations");Directory.CreateDirectory(sharedOrganizations);
-            var staged = new List<PublicationEvidence>();var localEvidence = ReadLocalEvidenceMap(systemId);var mappedLocalSources = new HashSet<string>(localEvidence.Values.Select(item => Path.Combine(workspaceRoot, Convert.ToString(item["localPath"], CultureInfo.InvariantCulture).Replace('/', Path.DirectorySeparatorChar))), StringComparer.OrdinalIgnoreCase);int deferredLocalPdfs = 0;
+            var staged = new List<PublicationEvidence>();var localEvidence = evidenceFastPath && !databaseChangePending ? new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase) : ReadLocalEvidenceMap(systemId);var mappedLocalSources = new HashSet<string>(localEvidence.Values.Select(item => Path.Combine(workspaceRoot, Convert.ToString(item["localPath"], CultureInfo.InvariantCulture).Replace('/', Path.DirectorySeparatorChar))), StringComparer.OrdinalIgnoreCase);int deferredLocalPdfs = 0;
             var associatedPaths = new HashSet<string>(ObjectArray(requestedDatabase["users"]).SelectMany(value => ObjectArray(ObjectDictionary(value)["artifacts"])).Select(value => ObjectDictionary(value)).Where(item => item.ContainsKey("path")).Select(item => Convert.ToString(item["path"], CultureInfo.InvariantCulture).Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
             foreach (Dictionary<string, object> item in localEvidence.Values.Where(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture)))
             {
@@ -912,7 +915,7 @@ internal sealed partial class PortableStorage : IDisposable
             string resultText = manifestAlreadyCommitted ? json.Serialize(new Dictionary<string, object> { { "saved", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "unchanged", true }, { "stateHash", requestedStateHash } }) : SaveSharedSystemState(systemId, bytes);
             string publishedHash = ReadManifestChecksumHash(sharedManifest, false), now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);WritePublicationJournal(workspaceRoot, "manifest-committed", state.BaseSharedSha256, requestedStateHash, staged, copied);
             FailAfter("publication-manifest-committed");
-            WriteLocalWorkspaceState(workspaceRoot, new LocalWorkspaceState { BaseSharedSha256 = publishedHash, Dirty = false, PulledAtUtc = now, SavedAtUtc = now });
+            WriteLocalWorkspaceState(workspaceRoot, new LocalWorkspaceState { BaseSharedSha256 = publishedHash, DatabaseStateHash = requestedStateHash, PendingEvidenceCount = localEvidence.Values.Count(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture)), Dirty = false, PulledAtUtc = now, SavedAtUtc = now });
             var completionErrors = new List<string>(preparationWarnings);int completedFiles = 0;
             foreach (PublicationEvidence item in staged)
             {
@@ -933,7 +936,7 @@ internal sealed partial class PortableStorage : IDisposable
             }
             if (recoverUnindexedLocalEvidence) AtomicWrite(SystemFile(workspaceRoot, LocalWorkspaceEvidenceRecoveryMarkerFilename), Encoding.ASCII.GetBytes("2" + Environment.NewLine));
             DeletePublicationJournal(workspaceRoot);
-            Dictionary<string, object> result = ObjectDictionary(json.DeserializeObject(resultText));result["localWorkspace"] = true;result["sharedPublished"] = true;result["evidenceFastPath"] = evidenceFastPath;result["noChanges"] = false;result["stateHash"] = requestedStateHash;result["publishedFiles"] = staged.Count;result["reusedFiles"] = staged.Count(item => item.Reused);result["archivedConflicts"] = staged.Count(item => !String.Equals(item.Relative, item.OriginalRelative, StringComparison.OrdinalIgnoreCase));result["deferredLocalPdfs"] = deferredLocalPdfs;result["compressedForPublication"] = compressedForPublication;result["manifest"] = requestedDatabase;result["completedFiles"] = completedFiles;result["completionErrors"] = completionErrors.ToArray();result["workspacePath"] = workspaceRoot;result["manifestSha256"] = publishedHash;
+            CompleteLocalWorkspaceReview(workspaceReview);Dictionary<string, object> result = ObjectDictionary(json.DeserializeObject(resultText));result["localWorkspace"] = true;result["sharedPublished"] = true;result["evidenceFastPath"] = evidenceFastPath;result["noChanges"] = false;result["stateHash"] = requestedStateHash;result["publishedFiles"] = staged.Count;result["reusedFiles"] = staged.Count(item => item.Reused);result["archivedConflicts"] = staged.Count(item => !String.Equals(item.Relative, item.OriginalRelative, StringComparison.OrdinalIgnoreCase));result["deferredLocalPdfs"] = deferredLocalPdfs;result["compressedForPublication"] = compressedForPublication;result["manifest"] = requestedDatabase;result["completedFiles"] = completedFiles;result["completionErrors"] = completionErrors.ToArray();result["workspacePath"] = workspaceRoot;result["manifestSha256"] = publishedHash;
             totalTimer.Stop();long transferMilliseconds = Math.Max(1L, transferTimer.ElapsedMilliseconds), bytesPerSecond = transferredBytes == 0 ? 0 : (long)Math.Round(transferredBytes * 1000d / transferMilliseconds);
             AppendPerformanceDiagnostic(sharedRoot, new Dictionary<string, object> { { "operation", "workspace-publish" }, { "durationMs", totalTimer.ElapsedMilliseconds }, { "preparationMs", preparationTimer.ElapsedMilliseconds }, { "transferMs", transferTimer.ElapsedMilliseconds }, { "finalizationMs", Math.Max(0L, totalTimer.ElapsedMilliseconds - preparationTimer.ElapsedMilliseconds - transferTimer.ElapsedMilliseconds) }, { "filesPlanned", staged.Count }, { "filesCopied", copied }, { "bytesTransferred", transferredBytes }, { "bytesPerSecond", bytesPerSecond }, { "legacyTreeRecovery", recoverUnindexedLocalEvidence }, { "evidenceFastPath", evidenceFastPath }, { "hashCacheEnabled", !evidenceFastPath } });
             return json.Serialize(result);
@@ -3120,6 +3123,7 @@ internal sealed partial class PortableStorage : IDisposable
     public void Dispose(bool flushBackups)
     {
         try { backupTimer.Dispose(); } catch { }
+        DisposeWorkspaceStatusWatchers();
         // The launcher normally finalizes backups before disposal. Forced shutdown
         // deliberately skips a second network flush so a stalled share cannot hold
         // the Windows process open indefinitely; the protected local workspace is
@@ -3572,26 +3576,6 @@ internal sealed partial class PortableStorage : IDisposable
         TryDelete(LocalWorkspacePublicationPath(workspaceRoot));TryDelete(LocalWorkspacePublicationProgressPath(workspaceRoot));
     }
 
-    private LocalWorkspaceState ReadLocalWorkspaceState(string workspaceRoot)
-    {
-        try
-        {
-            string path = LocalWorkspaceStatePath(workspaceRoot);if (!File.Exists(path)) return null;
-            Dictionary<string, object> value = ObjectDictionary(json.DeserializeObject(ReadProtectedLocalJson(path, "workspace-state", 1024 * 1024)));
-            if (!value.ContainsKey("version") || Convert.ToInt32(value["version"], CultureInfo.InvariantCulture) != LocalWorkspaceVersion) return null;
-            string baseHash = Convert.ToString(value["baseSharedSha256"], CultureInfo.InvariantCulture);
-            if (!IsSha256(baseHash)) return null;
-            return new LocalWorkspaceState { BaseSharedSha256 = baseHash.ToLowerInvariant(), Dirty = value.ContainsKey("dirty") && Convert.ToBoolean(value["dirty"], CultureInfo.InvariantCulture), PulledAtUtc = value.ContainsKey("pulledAtUtc") ? Convert.ToString(value["pulledAtUtc"], CultureInfo.InvariantCulture) : "", SavedAtUtc = value.ContainsKey("savedAtUtc") ? Convert.ToString(value["savedAtUtc"], CultureInfo.InvariantCulture) : "" };
-        }
-        catch { return null; }
-    }
-
-    private void WriteLocalWorkspaceState(string workspaceRoot, LocalWorkspaceState state)
-    {
-        var value = new Dictionary<string, object> { { "version", LocalWorkspaceVersion }, { "baseSharedSha256", state.BaseSharedSha256 }, { "dirty", state.Dirty }, { "pulledAtUtc", state.PulledAtUtc ?? "" }, { "savedAtUtc", state.SavedAtUtc ?? "" } };
-        WriteProtectedLocalJson(LocalWorkspaceStatePath(workspaceRoot), "workspace-state", json.Serialize(value));
-    }
-
     private Dictionary<string, object> ReadLocalWorkspaceDatabase(string workspaceRoot)
     {
         string path = LocalWorkspaceManifestPath(workspaceRoot), checksumPath = path + ".sha256";
@@ -3607,8 +3591,11 @@ internal sealed partial class PortableStorage : IDisposable
     {
         ValidateDatabaseObject(database);string now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);database["updated"] = now;
         string clear = json.Serialize(database);if (Encoding.UTF8.GetByteCount(clear) > ManifestLimit) throw new InvalidDataException("The local working database exceeds the 50 MB safety limit.");
-        string path = LocalWorkspaceManifestPath(workspaceRoot);WriteProtectedLocalJson(path, "workspace-database", clear);byte[] protectedBytes = File.ReadAllBytes(path);string hash = Sha256Bytes(protectedBytes);AtomicWrite(path + ".sha256", Encoding.ASCII.GetBytes(hash + Environment.NewLine));
-        LocalWorkspaceState previous = ReadLocalWorkspaceState(workspaceRoot);WriteLocalWorkspaceState(workspaceRoot, new LocalWorkspaceState { BaseSharedSha256 = baseSharedSha256.ToLowerInvariant(), Dirty = dirty, PulledAtUtc = previous == null || String.IsNullOrWhiteSpace(previous.PulledAtUtc) ? now : previous.PulledAtUtc, SavedAtUtc = now });
+        LocalWorkspaceState previous = ReadLocalWorkspaceState(workspaceRoot);
+        LocalWorkspaceState writing = previous ?? new LocalWorkspaceState { BaseSharedSha256 = baseSharedSha256.ToLowerInvariant(), PendingEvidenceCount = -1, PulledAtUtc = now, SavedAtUtc = "" };
+        writing.DatabaseStateHash = "";writing.Dirty = true;WriteLocalWorkspaceState(workspaceRoot, writing);
+        string path = LocalWorkspaceManifestPath(workspaceRoot);WriteProtectedLocalJson(path, "workspace-database", clear);byte[] protectedBytes = File.ReadAllBytes(path);string hash = Sha256Bytes(protectedBytes);AtomicWrite(path + ".sha256", Encoding.ASCII.GetBytes(hash + Environment.NewLine));FailAfter("local-workspace-database-before-state");
+        WriteLocalWorkspaceState(workspaceRoot, new LocalWorkspaceState { BaseSharedSha256 = baseSharedSha256.ToLowerInvariant(), DatabaseStateHash = StateHash(database), PendingEvidenceCount = previous == null ? -1 : previous.PendingEvidenceCount, Dirty = dirty, PulledAtUtc = previous == null || String.IsNullOrWhiteSpace(previous.PulledAtUtc) ? now : previous.PulledAtUtc, SavedAtUtc = now });
         EnsureLocalWorkspaceOrganizationFolders(workspaceRoot, database);
         return now;
     }
@@ -3811,7 +3798,14 @@ internal sealed partial class PortableStorage : IDisposable
     {
         string text = json.Serialize(new Dictionary<string, object> { { "version", 1 }, { "items", records.Values.OrderBy(item => Convert.ToString(item["destination"], CultureInfo.InvariantCulture), StringComparer.OrdinalIgnoreCase).Cast<object>().ToArray() } });
         if (Encoding.UTF8.GetByteCount(text) > ManifestLimit || records.Count > 100000) throw new InvalidDataException("The local evidence map exceeds its safety limit.");
-        WriteProtectedLocalJson(SystemFile(LocalWorkspaceRoot(systemId), LocalWorkspaceEvidenceFilename), "workspace-evidence", text);
+        string workspaceRoot = LocalWorkspaceRoot(systemId);LocalWorkspaceState state = ReadLocalWorkspaceState(workspaceRoot);int pending = records.Values.Count(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture));
+        // The evidence map and its constant-time pending count are separate DPAPI
+        // records. Invalidate the count before replacing the map so a crash between
+        // writes can only force conservative recovery; it can never report a false
+        // clean Session Commit from stale metadata.
+        if (state != null && state.PendingEvidenceCount != -1) { state.PendingEvidenceCount = -1;WriteLocalWorkspaceState(workspaceRoot, state); }
+        WriteProtectedLocalJson(SystemFile(workspaceRoot, LocalWorkspaceEvidenceFilename), "workspace-evidence", text);FailAfter("local-evidence-map-before-count");
+        if (state != null) { state.PendingEvidenceCount = pending;WriteLocalWorkspaceState(workspaceRoot, state); }
     }
 
     private Dictionary<string, Dictionary<string, object>> LocalEvidenceAliases(string systemId)
@@ -3988,7 +3982,7 @@ internal sealed partial class PortableStorage : IDisposable
         // OneDrive, and organization paths on legacy Windows filesystem APIs.
         string path = Path.Combine(directory, "transaction-" + transactionGuid + ".json");
         var value = new Dictionary<string, object> { { "version", StorageTransactionVersion }, { "id", id }, { "operation", operation }, { "createdAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "source", RelativeOrSelf(root, source) }, { "destination", RelativeOrSelf(root, destination) }, { "sourceHash", sourceHash ?? "" }, { "destinationHash", destinationHash ?? "" }, { "state", "prepared" } };
-        AtomicWrite(path, Encoding.UTF8.GetBytes(json.Serialize(value)));return path;
+        AtomicWrite(Path.Combine(directory, StorageTransactionPendingFilename), Encoding.ASCII.GetBytes("1" + Environment.NewLine));AtomicWrite(path, Encoding.UTF8.GetBytes(json.Serialize(value)));return path;
     }
 
     private void RecoverTransactions(string root)
@@ -4054,11 +4048,17 @@ internal sealed partial class PortableStorage : IDisposable
             if (sourceExists && destinationExists && !String.IsNullOrEmpty(sourceHash) && String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) { TryDelete(destination);CompleteTransaction(path);continue; }
             throw new InvalidDataException("An interrupted file transaction requires manual review: " + Path.GetFileName(path) + ".");
         }
+        RefreshTransactionPendingMarker(directory);
     }
 
     private static string RelativeOrSelf(string root, string path) { return String.Equals(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) ? "." : Relative(root, path).Replace(Path.DirectorySeparatorChar, '/'); }
     private static string SafeRelativeOrSelf(string root, string relative) { return relative == "." ? root : SafeRelativePath(root, relative); }
-    private static void CompleteTransaction(string path) { if (File.Exists(path)) File.Delete(path); }
+    private static void CompleteTransaction(string path) { if (File.Exists(path)) File.Delete(path);RefreshTransactionPendingMarker(Path.GetDirectoryName(path)); }
+    private static void RefreshTransactionPendingMarker(string directory)
+    {
+        if (String.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory)) return;
+        if (!Directory.EnumerateFiles(directory, "transaction-*.json", SearchOption.TopDirectoryOnly).Any()) TryDelete(Path.Combine(directory, StorageTransactionPendingFilename));
+    }
     private static void FailAfter(string stage) { if (String.Equals(FailAfterStageForTests, stage, StringComparison.Ordinal)) { FailAfterStageForTests = null;throw new IOException("Injected interruption after " + stage + "."); } }
 
     private void RememberLastSystem(string systemId)

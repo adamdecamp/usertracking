@@ -1695,7 +1695,12 @@ export default function Guide() {
         for every file.
       </aside>
       <aside>
-        <b>Efficient Session Commit:</b> Publication streams evidence to the
+        <b>Efficient Session Commit:</b> The initial pending-change check reads a
+        protected, constant-time local status record. When records and evidence
+        are unchanged, it does not rebuild the CSV, renew the network lease,
+        enumerate folders, hash evidence, or open the shared drive. A real change
+        is shown through separate local-check, preparation, shared-publication,
+        verification, and finalization phases. Publication streams evidence to the
         shared drive instead of loading a complete file into memory. Transfer
         progress is appended to a protected local journal, so publishing one
         file does not rewrite the complete recovery plan. Unchanged evidence

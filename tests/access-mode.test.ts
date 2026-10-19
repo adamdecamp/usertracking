@@ -44,7 +44,7 @@ test('portable requests carry an authenticated launcher session and the launcher
  assert.match(page,/headers\.set\('X-RAPTOR-Lease-Session'/);
  assert.match(launcher,/SessionTokenMatches\(presentedToken\)/);
  assert.match(launcher,/OpenSession\(mode\)/);
- assert.match(launcher,/storage\.ReleaseAllLeases\(\);DowngradeSession\(\)/);
+ assert.match(launcher,/DowngradeSessionAndReleaseLeases\(\)/);
  assert.match(launcher,/ReadOnlyStorageActionAllowed\(action, parts\[0\]\)/);
  assert.match(launcher,/Read-Only Access cannot modify the mapped information system/);
  assert.match(policy,/action, "audit-batch"/);
@@ -63,6 +63,8 @@ test('every protected mutation is authorized by the backend lease owner',()=>{
  assert.match(launcher,/The exclusive Full Access lease is missing or is owned by another session/);
  assert.match(storage,/public bool OwnsLease\(string systemId, string sessionId\)/);
  assert.match(storage,/public bool MapForFullSession\(string systemId, string path, string sessionId\)/);
+ assert.match(policy,/String\.Equals\(action, "lease-release", StringComparison\.Ordinal\)/);
+ assert.match(launcher,/The Full Access session ended while this operation was waiting to begin/);
 });
 
 test('Read-Only mapping avoids shared-folder initialization and all session boundaries are audited',()=>{

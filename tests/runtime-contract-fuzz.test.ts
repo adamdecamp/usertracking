@@ -5,7 +5,7 @@ import {
  decodeCachedMappingResponse,decodeEvidenceFilenameResponse,decodeEvidenceStatusResponse,decodeLauncherControlResponse,
  decodeLeaseAcquireResponse,decodeLeaseRenewResponse,decodeOperationReceipt,decodeOrganizationList,
  decodeOrganizationResponse,decodePathMutationResponse,decodePublishResponse,decodeSelectedFolderResponse,
- decodeStorageVerificationResponse,decodeStoredEvidenceResponse,
+ decodeStorageVerificationResponse,decodeStoredEvidenceResponse,decodeWorkspaceStatusResponse,
 } from '../app/infrastructure/portable-contracts.ts';
 
 const hash='a'.repeat(64);
@@ -13,6 +13,7 @@ const hash='a'.repeat(64);
 test('portable response contracts accept bounded valid payloads',()=>{
  assert.deepEqual(decodeLeaseAcquireResponse({acquired:true}),{acquired:true});
  assert.deepEqual(decodeLeaseRenewResponse({renewed:false}),{renewed:false});
+ assert.equal(decodeWorkspaceStatusResponse({noChanges:true,stateHash:hash,databaseChangePending:false,pendingEvidenceCount:0,interruptedRecovery:false,evidenceWorkPending:false,saved:'2026-10-16T00:00:00Z',backup:'2026-10-16T00:00:00Z'}).noChanges,true);
  assert.deepEqual(decodeEvidenceFilenameResponse({filename:'A.pdf'}),{filename:'A.pdf'});
  assert.deepEqual(decodeStoredEvidenceResponse({filename:'A.zip',path:'Org/A.zip',sha256:hash,stored:true}),{filename:'A.zip',path:'Org/A.zip',sha256:hash,pdfSha256:undefined,stored:true});
  assert.equal(decodeEvidenceStatusResponse({filename:'A.zip',path:'Org/A.zip',sha256:hash,stored:true}).stored,true);
@@ -36,6 +37,7 @@ test('portable response contracts accept bounded valid payloads',()=>{
 
 test('portable response contracts reject type confusion, control characters, bad hashes, and oversized arrays',()=>{
  assert.throws(()=>decodeLeaseAcquireResponse({acquired:'true'}),RuntimeDecodeError);
+ assert.throws(()=>decodeWorkspaceStatusResponse({noChanges:true,stateHash:hash,databaseChangePending:false,pendingEvidenceCount:1,interruptedRecovery:false,evidenceWorkPending:false,saved:'now',backup:'now'}),/contradictory/);
  assert.throws(()=>decodeLauncherControlResponse({activeStorageRequests:-1,longOperationActive:true}),RuntimeDecodeError);
  assert.throws(()=>decodeLauncherControlResponse({activeStorageRequests:1,longOperationActive:'yes'}),RuntimeDecodeError);
  assert.throws(()=>decodeEvidenceFilenameResponse({filename:'bad\nname.pdf'}),RuntimeDecodeError);
@@ -69,7 +71,7 @@ test('all portable decoders fail deterministically and never hang on randomized 
   decodeLeaseAcquireResponse,decodeLeaseRenewResponse,decodeEvidenceFilenameResponse,decodeStoredEvidenceResponse,
   decodeEvidenceStatusResponse,decodeSelectedFolderResponse,decodeCachedMappingResponse,decodeLauncherControlResponse,
   decodeStorageVerificationResponse,decodePathMutationResponse('path','Path mutation'),decodeOrganizationList,
-  decodeOrganizationResponse,decodeOperationReceipt,decodePublishResponse,
+  decodeOrganizationResponse,decodeOperationReceipt,decodePublishResponse,decodeWorkspaceStatusResponse,
  ];
  const seed=0x52415054,next=random(seed);
  for(let caseIndex=0;caseIndex<2500;caseIndex++){

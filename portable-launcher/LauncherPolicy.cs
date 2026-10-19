@@ -14,13 +14,20 @@ internal static class LauncherPolicy
     {
         action = action ?? "";
         return !String.Equals(action, "error-report", StringComparison.Ordinal)
+            && !String.Equals(action, "workspace-status", StringComparison.Ordinal)
             && !String.Equals(action, "evidence-status", StringComparison.Ordinal)
             && !String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal)
+            && !String.Equals(action, "evidence-exists", StringComparison.Ordinal)
             && !String.Equals(action, "outlook-draft", StringComparison.Ordinal)
             && !String.Equals(action, "file-location", StringComparison.Ordinal)
             && !String.Equals(action, "performance", StringComparison.Ordinal)
             && !String.Equals(action, "diagnostics", StringComparison.Ordinal)
-            && !action.StartsWith("lease-", StringComparison.Ordinal);
+            // Acquisition and renewal must remain available while a long operation
+            // owns the per-system queue. Release is different: it must enter that
+            // queue so the Windows exclusive lock cannot be dropped while an
+            // already-authorized file mutation is still running.
+            && (!action.StartsWith("lease-", StringComparison.Ordinal)
+                || String.Equals(action, "lease-release", StringComparison.Ordinal));
     }
 
     internal static bool StorageActionRequiresLease(string action, string method)
@@ -55,6 +62,7 @@ internal static class LauncherPolicy
             || String.Equals(action, "organizations", StringComparison.Ordinal)
             || String.Equals(action, "evidence-status", StringComparison.Ordinal)
             || String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal)
+            || String.Equals(action, "evidence-exists", StringComparison.Ordinal)
             || String.Equals(action, "archive-locations", StringComparison.Ordinal);
     }
 
@@ -66,6 +74,7 @@ internal static class LauncherPolicy
         int query = action.IndexOf('?');if (query >= 0) action = action.Substring(0, query);
         if (action == "evidence" || action == "evidence-pdf") return 110L * MiB;
         if (action == "state-commit" || action == "workspace-publish") return 100L * MiB;
+        if (action == "workspace-status") return 4L * KiB;
         if (action == "manifest" || action == "csv" || action == "report") return 50L * MiB;
         if (action == "outlook-draft") return 40L * MiB;
         if (action == "renamer-queue") return 20L * MiB;

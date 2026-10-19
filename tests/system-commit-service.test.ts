@@ -57,6 +57,20 @@ test('system commit cache reuses an identical state snapshot and invalidates on 
  assert.equal(hashes,5);
 });
 
+test('local Session Commit preflight hashes scoped state without constructing the database or CSV payload',async()=>{
+ const cache=new SystemCommitPayloadCache();
+ let hashes=0,csvBuilds=0;
+ const dependencies={hashState:async()=>`hash-${++hashes}`,buildCsv:()=>{csvBuilds++;return'csv'},now:()=> '2026-10-19T12:00:00.000Z'};
+ const state=await cache.getState(systems,users,'alpha',dependencies);
+ assert.equal(state.stateHash,'hash-1');
+ assert.deepEqual(state.scopedUsers.map(item=>item.id),['one','three']);
+ assert.equal(csvBuilds,0,'A no-change preflight must not build the potentially large CSV backup.');
+ const payload=await cache.get(systems,users,'alpha',dependencies);
+ assert.equal(payload.stateHash,state.stateHash);
+ assert.equal(hashes,1,'Building a real publication must reuse the preflight state hash.');
+ assert.equal(csvBuilds,1);
+});
+
 test('system commit payload fails closed for an unknown system',async()=>{
  await assert.rejects(
   buildSystemCommitPayload(systems,users,'missing',{hashState:async()=>'',buildCsv:()=>''}),

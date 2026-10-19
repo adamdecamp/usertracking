@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
+import {formatDeleteUserCompletionAudit} from '../app/application/user-deletion-service.ts';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
+const storage=readFileSync(new URL('../portable-launcher/PortableWorkspaceStatus.cs',import.meta.url),'utf8');
+const evidenceExistence=readFileSync(new URL('../app/infrastructure/evidence-existence.ts',import.meta.url),'utf8');
 const picker=page.slice(page.indexOf('function EvidenceFilePicker('),page.indexOf('function AddUser('));
 const userModal=page.slice(page.indexOf('function UserModal('),page.indexOf('function MessageAutomation('));
 const deleteArchiveFlow=page.slice(page.indexOf('async function archiveAllUserEvidence('),page.indexOf('function archivedCollisionNameMatches('));
@@ -42,4 +46,21 @@ test('delete-user discovery never displays an unrelated scanned filename as an a
  assert.match(deleteArchiveFlow,/scanEvidence\(root,\(processed,total\)=>onProgress\?\.\(processed,total\)\)/);
  assert.doesNotMatch(deleteArchiveFlow,/scanEvidence\(root,onProgress\)/);
  assert.match(deleteArchiveFlow,/onProgress\?\.\(processed,matching\.length,item\.filename\)/);
+});
+
+test('delete-user archival tolerates evidence that was already moved or is missing',()=>{
+ assert.match(deleteArchiveFlow,/!insideArchiveTree\(item\.path\)/,'Scanned Archive and Superseded files must not be queued for another move.');
+ assert.match(deleteArchiveFlow,/insideArchiveTree\(located\.path\).*verifyArchivedEvidenceExists\(located\.path,loadPortableExistence,portableExistenceChecks\)/,'A recorded artifact in permanent Archive storage must be verified without being queued for another move.');
+ assert.match(deleteArchiveFlow,/missingErrors/,'Missing evidence should be recorded separately from true archive failures.');
+ assert.match(deleteArchiveFlow,/evidence-exists\?path=/,'Portable deletion should use the metadata-only path existence check rather than downloading evidence.');
+ assert.match(evidenceExistence,/The archived evidence file no longer exists/,'An absent archived file must be classified through the missing-evidence path.');
+ assert.match(launcher,/action == "evidence-exists" && parts\[0\] == "GET"/,'The launcher must expose the metadata-only existence endpoint.');
+ assert.match(storage,/public string EvidenceExists\(string systemId, string relative\)[\s\S]*?new FileInfo\(path\)[\s\S]*?\{ "exists", true \}/,'The existence endpoint must inspect metadata without reading the evidence contents.');
+ const deleteFlow=page.slice(page.indexOf('async function deleteUserRecord('),page.indexOf('async function openEvidenceLocation('));
+ assert.match(deleteFlow,/if\(archived\.blockingErrors\.length\)/,'Only non-missing archive failures may block record deletion.');
+ assert.match(deleteFlow,/users\.filter\(item=>item\.id!==user\.id\)/,'The user record must still be removed when evidence is already absent.');
+ assert.match(deleteFlow,/formatDeleteUserCompletionAudit/,'The completed deletion must write the structured audit summary.');
+ const audit=formatDeleteUserCompletionAudit({last:'User',first:'Test',justification:'Duplicate record',moved:[],missingErrors:['missing.pdf.zip: The archived evidence file no longer exists.']});
+ assert.match(audit,/1 already-missing evidence reference was logged without blocking deletion/);
+ assert.match(audit,/missing evidence missing\.pdf\.zip: The archived evidence file no longer exists\./,'The deletion audit must retain the missing filename and reason for later review.');
 });

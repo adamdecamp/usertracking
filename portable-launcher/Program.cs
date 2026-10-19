@@ -221,7 +221,11 @@ internal sealed class TrackerContext : ApplicationContext
             byte[] requestBody = contentLength > 0 ? await ReadBody(stream, contentLength, requestLimit) : new byte[0];
             if (path == "/api/session-user") { string json = "{\"user\":\"" + Json(user) + "\"}"; await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/session-open" && parts[0] == "POST") { string mode = QueryValue(target, "mode");if (!OpenSession(mode)) { await Respond(stream, 409, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("This launcher session already has a different access mode. Restart R.A.P.T.O.R. to choose another mode."), false, "no-store");return; }await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"mode\":\"" + Json(SessionAccessMode()) + "\"}"), false, "no-store");return; }
-            if (path == "/api/session-downgrade" && parts[0] == "POST") { storage.ReleaseAllLeases();DowngradeSession();await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"mode\":\"read-only\"}"), false, "no-store");return; }
+            if (path == "/api/session-downgrade" && parts[0] == "POST")
+            {
+                if (!await DowngradeSessionAndReleaseLeases()) { await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The launcher entered Read-Only Access, but an active verified storage operation is still finishing. Its exclusive lease was retained and will be released safely after the operation completes or expires."), false, "no-store");return; }
+                await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"mode\":\"read-only\"}"), false, "no-store");return;
+            }
             if (path == "/api/mappings" && (parts[0] == "GET" || parts[0] == "HEAD")) { bool readOnlyMappings = String.Equals(SessionAccessMode(), "read-only", StringComparison.Ordinal), localOnlyMappings = String.Equals(OptionalQueryValue(target, "local"), "1", StringComparison.Ordinal); if (!readOnlyMappings && !String.Equals(SessionAccessMode(), "full", StringComparison.Ordinal)) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Choose an access mode before opening saved mappings."), false, "no-store");return; }await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(storage.CachedMappings(!readOnlyMappings && !localOnlyMappings, localOnlyMappings)), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/activity" && parts[0] == "POST") { RecordActivity(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/presence" && parts[0] == "POST") { RecordPresence(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
@@ -252,6 +256,11 @@ internal sealed class TrackerContext : ApplicationContext
                 string storageAction = action;
                 try
                 {
+                    // A request can wait behind another operation after the initial
+                    // authorization check. Recheck ownership immediately before
+                    // dispatch so a released lease can never authorize queued work.
+                    if (StorageActionRequiresLease(action, parts[0]) && !String.Equals(SessionAccessMode(), "full", StringComparison.Ordinal)) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The Full Access session ended while this operation was waiting to begin."), false, "no-store");return; }
+                    if (StorageActionRequiresLease(action, parts[0]) && (String.IsNullOrWhiteSpace(leaseSession) || !storage.OwnsLease(systemId, leaseSession))) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The exclusive Full Access lease was released while this operation was waiting to begin."), false, "no-store");return; }
                     string response;
                     if (action == "select" && parts[0] == "POST")
                     {
@@ -285,6 +294,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "csv" && parts[0] == "POST") response = "{\"saved\":\"" + Json(storage.SaveCsv(systemId, requestBody)) + "\"}";
                     else if (action == "state-commit" && parts[0] == "POST") response = storage.SaveSystemState(systemId, requestBody);
                     else if (action == "workspace" && parts[0] == "GET") response = storage.LocalWorkspaceInfo(systemId);
+                    else if (action == "workspace-status" && parts[0] == "POST") response = storage.WorkspaceStatus(systemId, requestBody);
                     else if (action == "workspace-publish" && parts[0] == "POST") response = storage.PublishWorkspace(systemId, requestBody);
                     else if (action == "workspace-open" && parts[0] == "POST") { string workspacePath = storage.LocalWorkspacePath(systemId);Process.Start("explorer.exe", "\"" + workspacePath.Replace("\"", "") + "\"");response = "{\"opened\":true}"; }
                     else if (action == "backups" && parts[0] == "GET") response = storage.ListBackups(systemId, QueryValue(target, "logical"));
@@ -300,8 +310,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "renamer-queue" && parts[0] == "GET") response = storage.ReadRenamerQueue(systemId);
                     else if (action == "renamer-queue" && parts[0] == "POST") response = storage.SaveRenamerQueue(systemId, requestBody);
                     else if (action == "renamer-queue" && parts[0] == "DELETE") response = storage.ClearRenamerQueue(systemId);
-                    else if (action == "file" && parts[0] == "GET") { byte[] fileBytes = storage.ReadRelativeFile(systemId, QueryValue(target, "path")); await Respond(stream, 200, "application/octet-stream", fileBytes, false, "no-store"); return; }
-                    else if (action == "file-location" && parts[0] == "POST") { string evidencePath = storage.EvidenceLocation(systemId, QueryValue(target, "path"));Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + evidencePath.Replace("\"", "") + "\"") { UseShellExecute = true });response = "{\"opened\":true}"; }
+                    else if (action == "file" && parts[0] == "GET") { byte[] fileBytes = storage.ReadRelativeFile(systemId, QueryValue(target, "path")); await Respond(stream, 200, "application/octet-stream", fileBytes, false, "no-store"); return; } else if (action == "evidence-exists" && parts[0] == "GET") response = storage.EvidenceExists(systemId, QueryValue(target, "path")); else if (action == "file-location" && parts[0] == "POST") { string evidencePath = storage.EvidenceLocation(systemId, QueryValue(target, "path"));Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + evidencePath.Replace("\"", "") + "\"") { UseShellExecute = true });response = "{\"opened\":true}"; }
                     else if (action == "archive" && parts[0] == "POST") response = storage.ArchiveEvidence(systemId, QueryValue(target, "path"), OptionalQueryValue(target, "filename"), String.Equals(OptionalQueryValue(target, "rework"), "1", StringComparison.Ordinal));
                     else if (action == "rework" && parts[0] == "POST") response = storage.MoveEvidenceToRework(systemId, QueryValue(target, "path"));
                     else if (action == "rework-retention" && parts[0] == "POST") response = storage.ProcessReworkRetention(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"), String.Equals(OptionalQueryValue(target, "legacy"), "1", StringComparison.Ordinal));
@@ -426,6 +435,34 @@ internal sealed class TrackerContext : ApplicationContext
         {
             if (String.Equals(sessionAccessMode, "unselected", StringComparison.Ordinal)) throw new InvalidOperationException("Choose an access mode before requesting a downgrade.");
             sessionAccessMode = "read-only";
+        }
+    }
+
+    private async Task<bool> DowngradeSessionAndReleaseLeases()
+    {
+        // Change the authorization state before waiting. New mutations are rejected,
+        // and the pre-dispatch mode check above rejects requests that passed their
+        // first authorization check just before this transition.
+        DowngradeSession();
+        KeyValuePair<string, SemaphoreSlim>[] queues;
+        lock (storageOperationsGate) queues = storageOperations.OrderBy(item => item.Key, StringComparer.Ordinal).ToArray();
+        var acquired = new List<SemaphoreSlim>();
+        try
+        {
+            foreach (KeyValuePair<string, SemaphoreSlim> item in queues)
+            {
+                // Do not strand the request forever if a storage provider hangs.
+                // On timeout the lease remains held, which is the safe failure mode;
+                // normal lease expiry can recover it once active storage becomes idle.
+                if (!await item.Value.WaitAsync(120000)) return false;
+                acquired.Add(item.Value);
+            }
+            storage.ReleaseAllLeases();
+            return true;
+        }
+        finally
+        {
+            for (int index = acquired.Count - 1; index >= 0; index--) acquired[index].Release();
         }
     }
 

@@ -9,6 +9,7 @@ const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.met
 const portableIndex=readFileSync(new URL('../portable/index.html',import.meta.url),'utf8');
 const packageData=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as{version:string};
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const deletionService=readFileSync(new URL('../app/application/user-deletion-service.ts',import.meta.url),'utf8');
 const layout=readFileSync(new URL('../app/layout.tsx',import.meta.url),'utf8');
 const guide=readFileSync(new URL('../app/user-guide/page.tsx',import.meta.url),'utf8');
 const attestAction='actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6';
@@ -43,7 +44,8 @@ test('packages the R.A.P.T.O.R. brand and application icons consistently',()=>{
  assert.match(page,/archived\.blockingErrors\.length/);
  assert.doesNotMatch(page,/Delete user completed with missing evidence files/);
  assert.doesNotMatch(page,/Disable user completed with missing evidence files/);
- assert.match(page,/already-missing evidence reference/);
+ assert.match(page,/formatDeleteUserCompletionAudit/);
+ assert.match(deletionService,/already-missing evidence reference/);
  assert.match(page,/<h1>R\.A\.P\.T\.O\.R\.<\/h1>/);
  assert.match(page,/Role-Based Access Personnel Tracking &amp; Oversight Registry/);
  assert.match(page,/src="\/raptor-icon\.png"/);

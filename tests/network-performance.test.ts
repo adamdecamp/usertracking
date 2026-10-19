@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const page=fs.readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const storage=fs.readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
+const workspaceStatus=fs.readFileSync(new URL('../portable-launcher/PortableWorkspaceStatus.cs',import.meta.url),'utf8');
 const launcher=fs.readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const policy=fs.readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 const systemCommitService=fs.readFileSync(new URL('../app/application/system-commit-service.ts',import.meta.url),'utf8');
@@ -86,7 +87,7 @@ test('rapid UI edits are coalesced before background shared-drive saves',()=>{
  assert.match(page,/window\.setTimeout\(\(\)=>void save\(\),backgroundSaveDebounceMs\)/);
  assert.match(page,/systemPayloadCache=useRef\(new SystemCommitPayloadCache\(\)\)/);
  assert.match(systemCommitService,/this\.entry\.systems===systems&&this\.entry\.users===users&&this\.entry\.systemId===systemId/);
- assert.match(systemCommitService,/buildCsv\(scopedUsers,scopedSystems\)/);
+ assert.match(systemCommitService,/buildCsv\(state\.scopedUsers,state\.scopedSystems\)/);
 });
 
 test('verified state is marked committed before React can schedule a redundant startup save',()=>{
@@ -215,13 +216,28 @@ test('workspace publication streams evidence and appends bounded progress withou
  assert.match(publish,/if \(!databaseChangePending && evidenceFastPath\)/);
  assert.match(publish,/evidenceFastPath \? new Dictionary<string, string>[\s\S]*?: PrepareLocalPublicationEvidence/);
  assert.match(publish,/"noChanges", true/);
- assert.match(page,/Checking for Pending Changes/);
+ assert.match(page,/Checking Local Changes/);
  assert.doesNotMatch(page,/Compressing and Verifying Local Evidence/);
  assert.match(publish,/StreamVerifiedEvidenceCopy\(item\.Source, temporary/);
  assert.doesNotMatch(publish,/File\.ReadAllBytes\(item\.Source\)/);
  assert.match(storage,/AppendPublicationProgress/);
  assert.match(storage,/workspace-publication-progress\.jsonl/);
  assert.match(storage,/FileMode\.Append/);
+});
+
+test('Session Commit preflight is constant-time local metadata and never opens the shared drive',()=>{
+ const status=workspaceStatus.slice(workspaceStatus.indexOf('public string WorkspaceStatus'));
+ assert.ok(status.length>0,'WorkspaceStatus must be isolated in its local-only storage boundary.');
+ assert.match(status,/LocalWorkspaceRoot\(systemId\)/);
+ assert.match(status,/databaseChangePending/);
+ assert.match(status,/pendingEvidenceCount/);
+ assert.match(status,/interruptedRecovery/);
+ assert.match(status,/evidenceWorkPending/);
+ assert.doesNotMatch(status,/\bRoot\(systemId\)/,'Local preflight must not resolve or touch the mapped shared-drive root.');
+ assert.doesNotMatch(status,/ReadLocalWorkspaceDatabase|ReadLocalEvidenceMap|PrepareLocalPublicationEvidence|Directory\.Enumerate|EnumerateDirectoryEntries|FileHashWithRetry|Sha256Stream/,'Local preflight must use its bounded status record rather than scan, decrypt, enumerate, or hash records and evidence.');
+ assert.match(policy,/workspace-status/,'The launcher policy must explicitly classify local Session Commit preflight.');
+ const serialization=policy.slice(policy.indexOf('StorageActionRequiresSerialization'),policy.indexOf('StorageActionRequiresLease'));
+ assert.match(serialization,/workspace-status/,'Local Session Commit preflight must not wait behind network storage serialization.');
 });
 
 test('publication receipts are sharded per organization and file hashes stream with per-operation reuse',()=>{

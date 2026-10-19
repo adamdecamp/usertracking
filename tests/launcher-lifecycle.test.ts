@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {formatDeleteUserCompletionAudit} from '../app/application/user-deletion-service.ts';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
@@ -64,12 +65,12 @@ test('operator logoff arms launcher shutdown before final network publication',(
  assert.match(logoff,/finally\{[\s\S]*?shutdown-ready/);
 });
 
-test('a clean manual Session Commit suppresses duplicate close and logoff publication',()=>{
- assert.match(page,/manualSessionCommitHashes=useRef\(new Map<string,string>\(\)\)/);
- assert.match(page,/shutdownPublicationRequired\(manualSessionCommitHashes\.current\.get\(systemId\),stateHash\)/);
- assert.match(page,/manualSessionCommitHashes\.current\.set\(systemId,result\.stateHash\)/);
- assert.match(page,/manualSessionCommitHashes\.current\.delete\(systemId\)/);
- assert.match(page,/repeat publication skipped/);
+test('shutdown always rechecks protected local status after a manual Session Commit',()=>{
+ const shutdown=page.slice(page.indexOf('async function publishForShutdown'),page.indexOf('async function releaseLeaseForShutdown'));
+ assert.match(shutdown,/publishSystemWorkspace\(root,systemId,systems,users,signal\)/,'Logoff must rerun the local workspace-status preflight so a later Incoming drop is not skipped.');
+ assert.match(shutdown,/performed:result\.noChanges!==true/,'Only the launcher workspace-status no-change result may suppress shutdown publication.');
+ assert.doesNotMatch(shutdown,/manualSessionCommitHashes|shutdownPublicationRequired/,'A matching React state hash cannot prove that the local evidence workspace is unchanged.');
+ assert.doesNotMatch(page,/manualSessionCommitHashes|shutdownPublicationRequired/);
 });
 
 test('launcher finalization never blocks its UI thread and has a hard exit deadline',()=>{
@@ -174,7 +175,8 @@ test('successful disable and delete operations keep missing evidence in the audi
  const userModal=page.slice(page.indexOf('function UserModal'),page.indexOf('function MessageAutomation'));
  const userSubmit=userModal.slice(userModal.indexOf(' async function submit(){'),userModal.indexOf(' async function deleteRecord()'));
  assert.doesNotMatch(deleteUser,/Delete user completed with missing evidence files/);
- assert.match(deleteUser,/already-missing evidence reference/);
+ assert.match(deleteUser,/formatDeleteUserCompletionAudit/);
+ assert.match(formatDeleteUserCompletionAudit({last:'Missing',first:'Evidence',justification:'Verified duplicate',moved:[],missingErrors:['missing.pdf.zip']}),/already-missing evidence reference/);
  assert.doesNotMatch(userSubmit,/Disable user completed with missing evidence files/);
  assert.match(userSubmit,/archive exception/);
 });

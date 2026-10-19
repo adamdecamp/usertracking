@@ -7,6 +7,16 @@ export const decodeLeaseAcquireResponse:RuntimeDecoder<LeaseAcquireResponse>=val
 export type LeaseRenewResponse={renewed:boolean};
 export const decodeLeaseRenewResponse:RuntimeDecoder<LeaseRenewResponse>=value=>{const context='Lease renewal',record=objectValue(value,context);return{renewed:booleanValue(record.renewed,context,'$.renewed')}};
 
+export type WorkspaceStatusResponse={noChanges:boolean;stateHash:string;databaseChangePending:boolean;pendingEvidenceCount:number;interruptedRecovery:boolean;evidenceWorkPending:boolean;saved:string;backup:string};
+export const decodeWorkspaceStatusResponse:RuntimeDecoder<WorkspaceStatusResponse>=value=>{
+ const context='Workspace status',record=objectValue(value,context),stateHash=stringValue(record.stateHash,context,'$.stateHash',64),noChanges=booleanValue(record.noChanges,context,'$.noChanges'),databaseChangePending=booleanValue(record.databaseChangePending,context,'$.databaseChangePending'),pendingEvidenceCount=numberValue(record.pendingEvidenceCount,context,'$.pendingEvidenceCount',0,100000),interruptedRecovery=booleanValue(record.interruptedRecovery,context,'$.interruptedRecovery'),evidenceWorkPending=booleanValue(record.evidenceWorkPending,context,'$.evidenceWorkPending');
+ if(!sha256(stateHash))throw new Error(`${context} returned an invalid state hash.`);
+ if((pendingEvidenceCount>0||interruptedRecovery)&&!evidenceWorkPending)throw new Error(`${context} returned contradictory evidence work state.`);
+ if(noChanges&&(databaseChangePending||evidenceWorkPending||pendingEvidenceCount>0||interruptedRecovery))throw new Error(`${context} returned a contradictory no changes result.`);
+ if(!noChanges&&!databaseChangePending&&!evidenceWorkPending)throw new Error(`${context} returned no reason for a pending change.`);
+ return{noChanges,stateHash,databaseChangePending,pendingEvidenceCount,interruptedRecovery,evidenceWorkPending,saved:stringValue(record.saved,context,'$.saved',50),backup:stringValue(record.backup,context,'$.backup',50)};
+};
+
 export type StoredEvidenceResponse={filename:string;path:string;sha256:string;pdfSha256?:string;stored?:boolean};
 export const decodeEvidenceFilenameResponse:RuntimeDecoder<{filename:string}>=value=>{const context='Evidence storage',record=objectValue(value,context);return{filename:stringValue(record.filename,context,'$.filename',500)}};
 export const decodeStoredEvidenceResponse:RuntimeDecoder<StoredEvidenceResponse>=value=>{
