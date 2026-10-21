@@ -1,18 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {existsSync,readFileSync} from 'node:fs';
 
-const workflow=readFileSync(new URL('../.github/workflows/codeql.yml',import.meta.url),'utf8');
-const config=readFileSync(new URL('../.github/codeql-config.yml',import.meta.url),'utf8');
+const advancedCodeqlWorkflow=new URL('../.github/workflows/codeql.yml',import.meta.url);
+const workflow=readFileSync(new URL('../.github/workflows/security-build.yml',import.meta.url),'utf8');
 
-test('CodeQL analyzes both application languages with pinned actions and least privilege',()=>{
- assert.match(workflow,/security-events: write/);
+test('GitHub default CodeQL is not duplicated and the release workflow keeps pinned least-privilege security gates',()=>{
+ assert.equal(existsSync(advancedCodeqlWorkflow),false,'GitHub default CodeQL setup must not be combined with an advanced CodeQL workflow');
  assert.match(workflow,/contents: read/);
- assert.match(workflow,/language: javascript-typescript/);
- assert.match(workflow,/language: csharp/);
- assert.match(workflow,/github\/codeql-action\/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4\.38\.3/);
- assert.match(workflow,/github\/codeql-action\/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4\.38\.3/);
- assert.doesNotMatch(workflow,/github\/codeql-action\/(?:init|analyze)@v\d/);
- assert.match(config,/security-extended/);
- assert.match(config,/security-and-quality/);
+ assert.match(workflow,/pnpm audit --audit-level low/);
+ assert.match(workflow,/pnpm lint/);
+ assert.match(workflow,/pnpm exec playwright test/);
+ assert.match(workflow,/actions\/checkout@[0-9a-f]{40}/);
+ assert.match(workflow,/actions\/upload-artifact@[0-9a-f]{40}/);
+ assert.doesNotMatch(workflow,/uses:\s+[^\s]+@v\d/m);
 });

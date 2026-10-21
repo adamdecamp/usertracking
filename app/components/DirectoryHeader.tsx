@@ -49,7 +49,7 @@ export function DirectoryHeader(props:DirectoryHeaderProps){
    </div>}
   </div>
   <div className="filters">
-   <input placeholder="Search Users, Usernames, Email, Storage Org, Agency, or Contractor…" value={props.query} onChange={change(props.setQuery)}/>
+   <input aria-label="Search User Directory" placeholder="Search Users, Usernames, Email, Storage Org, Agency, or Contractor…" value={props.query} onChange={change(props.setQuery)}/>
    <select aria-label="User Status Filter" value={props.accountFilter} onChange={change(props.setAccountFilter)}><option>Active users</option><option>Disabled users</option><option>All users</option></select>
    <select aria-label="Official Email Filter" value={props.emailFilter} onChange={change(props.setEmailFilter)}><option>All email statuses</option><option>Official Email missing</option><option>Official Email present</option></select>
    <select aria-label="Storage Organization Filter" value={props.organizationFilter} onChange={change(props.setOrganizationFilter)}><option value="All organizations">All Storage Organizations</option>{props.organizations.map(value=><option key={value}>{value}</option>)}</select>

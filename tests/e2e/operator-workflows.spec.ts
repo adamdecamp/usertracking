@@ -67,7 +67,7 @@ test('opens an integrity-checked organization snapshot as a populated read-only 
  await expect(page.getByText('Integrity-verified organization snapshot. Evidence files are not included.')).toBeVisible();
  await expect(page.getByRole('button',{name:'+ Add User'})).toHaveCount(0);
 
- await page.getByPlaceholder('Search Users, Usernames, Email, or Organization…').fill('no-match');
+ await page.getByRole('textbox',{name:'Search User Directory'}).fill('no-match');
  await expect(page.getByText('Shaw, Vivian A')).toHaveCount(0);
  await page.getByRole('button',{name:'Reset Filters'}).click();
  await expect(page.getByText('Shaw, Vivian A')).toBeVisible();

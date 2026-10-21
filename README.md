@@ -84,7 +84,7 @@ pnpm build
 
 The local browser and portable build gates run strict TypeScript and lint checks, the complete regression suite, deterministic filename/PDF/ZIP/audit and launcher-contract fuzz tests, and Windows launcher storage integration. The GitHub validation and signed-release workflows additionally run production-mode Playwright operator workflows, network-share failure injection, and metadata-enumeration qualification using 1,000-, 5,000-, and 10,000-file fixtures. A failed required check stops the build. The standalone executable and checksum are written to `release/`. Both GitHub build workflows stop before publishing if starter records, tracked runtime data, extra package files, or a checksum mismatch are detected.
 
-Architecture boundaries, trust boundaries, and change rules are documented in [ARCHITECTURE.md](ARCHITECTURE.md) and enforced by the regression suite. CodeQL analyzes both the TypeScript application and C# launcher on pushes, pull requests, and a weekly schedule.
+Architecture boundaries, trust boundaries, and change rules are documented in [ARCHITECTURE.md](ARCHITECTURE.md) and enforced by the regression suite. GitHub default CodeQL setup analyzes both the TypeScript application and C# launcher without a conflicting advanced workflow.
 
 ## Public release setup
 
