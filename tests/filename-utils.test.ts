@@ -377,11 +377,11 @@ test('treats a standalone DISABLED marker on a SAAR as archive-only evidence',()
 });
 
 test('recognizes common date formats and normalizes them to DDMMMYYYY',()=>{
- const variants=['20260826','08262026','AUG262026','082626','26-08-2026','2026.8.26','26 AUG 26'];
- for(const value of variants){
+ const variants=[['20260826','2026-08-26T00:00:00.000Z','26AUG2026'],['08262026','2026-08-26T00:00:00.000Z','26AUG2026'],['AUG262026','2026-08-26T00:00:00.000Z','26AUG2026'],['082626','2026-08-26T00:00:00.000Z','26AUG2026'],['26-08-2026','2026-08-26T00:00:00.000Z','26AUG2026'],['2026.8.26','2026-08-26T00:00:00.000Z','26AUG2026'],['26 AUG 26','2026-08-26T00:00:00.000Z','26AUG2026'],['26AUGUST2026','2026-08-26T00:00:00.000Z','26AUG2026'],['26SEPT2026','2026-09-26T00:00:00.000Z','26SEP2026'],['26SEPTEMBER2026','2026-09-26T00:00:00.000Z','26SEP2026']]as const;
+ for(const[value,iso,canonical]of variants){
   const filename=`Brown_Jacob_(LM)_GEN_User_Agreement_${value}.pdf`,result=normalizeFilenameDate(filename);
-  assert.equal(parseDate(filename)?.toISOString(),'2026-08-26T00:00:00.000Z',filename);
-  assert.equal(result?.normalized,'Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf',filename);
+  assert.equal(parseDate(filename)?.toISOString(),iso,filename);
+  assert.equal(result?.normalized,`Brown_Jacob_(LM)_GEN_User_Agreement_${canonical}.pdf`,filename);
   assert.equal(result?.changed,true,filename);
  }
  assert.equal(normalizeFilenameDate('Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf')?.changed,false);

@@ -70,8 +70,9 @@ export default function Guide() {
           <li>
             Choose <b>Sync</b>, then select either the entire information system
             or one immediate folder beneath <b>Organizations</b>. For routine
-            Daily Sync, place new files in that organization&apos;s prefixed
-            <b> Incoming</b> folder. Review Sync Review and the Current,
+            Daily Sync, place new files directly in that organization folder.
+            Put corrected files in its prefixed <b>Rework</b> folder. Review
+            Sync Review and the Current,
             Missing, and Overdue totals afterward.
           </li>
           <li>
@@ -189,6 +190,13 @@ export default function Guide() {
             contractors, and subcontractors that must remain searchable without
             moving the user&apos;s evidence. Separate multiple affiliations with
             commas or semicolons.
+            Incoming SAARs also populate this classification from the selected
+            <b>Designation of Person</b> checkbox: Military becomes <b>MIL</b>,
+            Civilian becomes <b>CIV</b>, and Contractor becomes <b>CTR</b>.
+            This applies to every storage organization. Exactly one selected
+            checkbox is required for automatic classification. For GOV records,
+            explicit CTR or CIV tokens in the Official Email remain a fallback;
+            email text is never used to infer MIL.
           </li>
           <li>
             For a Privileged account, enter the full account name as{" "}
@@ -553,11 +561,10 @@ export default function Guide() {
           Select <b>Legacy Import — Historical Recovery</b> when onboarding an
           unmanaged repository or correcting a historical backlog. In either
           mode, select the entire information system or exactly one immediate
-          organization folder. Every organization includes a prefixed
-          <b> Incoming</b> folder, such as <code>GDMS Incoming</code>. Routine
-          Daily Sync scans only Incoming and Rework in the selected scope, which
+          organization folder. Place new evidence directly in the organization
+          root and corrected evidence in its prefixed Rework folder. Routine
+          Daily Sync scans only organization-root files and Rework in the selected scope, which
           avoids enumerating thousands of already organized evidence files.
-          Place new evidence in Incoming and corrected evidence in Rework. Select
           <b> Full Rescan</b> when you intentionally need to inspect active
           network document-type folders too. Legacy Import scans the broader local
           organization tree for initial onboarding and historical repair; it includes
@@ -604,7 +611,7 @@ export default function Guide() {
         <aside>
           <b>Incremental Operator Sync:</b> When the operator starts Daily Sync,
           the launcher performs one metadata discovery pass through only the
-          selected Incoming and Rework folders. It compares
+          selected organization roots and Rework folders. It compares
           path, filename, byte size, and modified time with the checksum-protected Sync
           index, then opens and validates only new or changed evidence. Unchanged files
           are not written into the per-file recovery journal. Daily Sync also reuses
@@ -618,7 +625,7 @@ export default function Guide() {
         </aside>
         <aside>
           <b>Daily Sync vs. Legacy Import:</b> Daily Sync is the normal operating
-          mode and is intentionally limited to Incoming and Rework. It safely
+          mode and is intentionally limited to organization-root intake files and Rework. It safely
           normalizes recognizable filename dates, organizations, and
           artifact wording, creates new users from a valid SAAR or from strictly
           formatted supporting evidence dated in the current scan year, reuses validated
@@ -715,7 +722,7 @@ export default function Guide() {
           organization&apos;s Archive, Sync restores it to the canonical document-type
           folder and updates its recorded path. SHA-256 provenance is used when
           available; ambiguous Archive matches remain untouched for Clean Up
-          review. At launch, the app checks immediate folders under the selected local workspace&apos;s Organizations folder for manually created organizations and prepares their local Incoming, Rework, and Complete folders. Routine Daily Sync and Legacy Import use the local workspace; network discovery requires Full Rescan. Daily Sync limits preflight to Incoming and
+          review. At launch, the app checks immediate folders under the selected local workspace&apos;s Organizations folder for manually created organizations and prepares their local Rework and Complete folders. Routine Daily Sync and Legacy Import use the local workspace; network discovery requires Full Rescan. Daily Sync limits preflight to organization-root intake files and
           Rework and reuses unchanged Rework validation. Legacy Import performs
           the complete local preflight once per UTC day and revalidates
           all in-scope Rework; later Legacy Import runs use the prior Sync index
@@ -1014,11 +1021,11 @@ export default function Guide() {
           the ZIP is reopened and its embedded PDF hash matches. Shared-drive loose PDFs are preserved and
           never compressed by Sync. Temporary staging files are removed after the action.
           In Full Access, choose <b>Open Local Workspace</b> on the dashboard to
-          open the selected system&apos;s Incoming, Rework, Complete, and protected
+          open the selected system&apos;s organization intake roots, Rework, Complete, and protected
           local System folders directly in Windows File Explorer.
           Each mapped system has its own launcher operation queue, so a slow
           action for one system does not block safe work against another system.
-        Local organizations use only Incoming, Rework, and Complete. Archive-bound files wait in <b>Complete/Pending Upload</b>. Session Commit first checks protected local metadata for actual changes. If nothing changed, it returns without rewriting the database or touching evidence. If only JSON records changed, it publishes the database and backups without scanning, compressing, hashing, or verifying evidence. After a successful manual Session Commit, closing the application, logging off, or reaching the idle limit does not start another publication when the current record-state hash still matches that commit. Any later record change, incomplete publication warning, or recoverable evidence work keeps the final publication safeguard active. Evidence processing runs only when pending evidence, an associated file in the local workflow folders, or interrupted recovery work exists. After an evidence commit copies and verifies files on the shared drive, their local copies move to <b>Complete/Published Evidence</b>. If a duplicate ZIP is later placed in Incoming, Session Commit verifies its embedded PDF against the published receipt and drains the verified duplicate instead of leaving it in Incoming. Files that fail or are explicitly deferred remain available for review and are not reported as completed. Document-type and Archive destinations are tracked in protected local JSON and created on the shared drive during publication. Remaining associated PDFs are validated and zipped locally before upload; their originals are removed only after ZIP verification succeeds.
+        Local organizations use their root for intake plus Rework and Complete. Archive-bound files wait in <b>Complete/Pending Upload</b>. Session Commit first checks protected local metadata for actual changes. If nothing changed, it returns without rewriting the database or touching evidence. If only JSON records changed, it publishes the database and backups without scanning, compressing, hashing, or verifying evidence. After a successful manual Session Commit, closing the application, logging off, or reaching the idle limit does not start another publication when the current record-state hash still matches that commit. Any later record change, incomplete publication warning, or recoverable evidence work keeps the final publication safeguard active. Evidence processing runs only when pending evidence, an associated file in the local workflow folders, or interrupted recovery work exists. After an evidence commit copies and verifies files on the shared drive, their local copies move directly to the organization&apos;s <b>Complete</b> folder. If a duplicate ZIP is later placed at the organization root, Session Commit verifies its embedded PDF against the publication receipt and drains the verified duplicate instead of leaving it at the intake root. Files that fail or are explicitly deferred remain available for review and are not reported as completed. Document-type and Archive destinations are tracked in protected local JSON and created on the shared drive during publication. Remaining associated PDFs are validated and zipped locally before upload; their originals are removed only after ZIP verification succeeds.
         When the exact shared destination already contains a ZIP with the same validated PDF, publication reuses that ZIP even if its packaging differs. Different archived PDFs are both retained using a stable content-hash conflict filename; different active evidence remains available for collision review. Record and CSV references follow the resolved shared file, and retries reuse the same destination without scanning network folders.
         </p>
         <p>

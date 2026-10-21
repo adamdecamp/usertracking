@@ -9,6 +9,7 @@ export function artifactStorageFolder(kind:string){
  return canonical==='SAAR'?'SAAR':canonical==='DoD Cyber Cert'?'DoD Cyber Cert':canonical===agreementArtifactKind?'User Agreement':canonical==='8140 Cert Memo'?'8140 Certification Memo':canonical==='Privileged User Training Cert'?'Privileged User Training':canonical==='DTA Training'?'DTA Training':undefined
 }
 const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+const monthNamePattern='JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUN(?:E)?|JUL(?:Y)?|AUG(?:UST)?|SEP(?:T(?:EMBER)?)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?';
 const clean=(value:string,max=500)=>value.replace(/[\r\n\u0000-\u001f\u007f]/g,' ').trim().slice(0,max);
 const documentTitleIdentityWords=new Set(['ACCESS','AGREEMENT','AWARENESS','CERTIFICATE','CHALLENGE','COMPLETION','COURSE','CYBER','DOD','GENERAL','INFORMATION','NAME','PRIVILEGED','REQUEST','SECURITY','SYSTEM','TRAINING','USER']);
 type DateMatch={date:Date;start:number;end:number;normalized:string;defaultFormat:boolean};
@@ -20,7 +21,7 @@ export const fileTokens=(value:string)=>tokenSetCache.get(value)??remember(token
 const compactFilename=(value:string)=>compactCache.get(value)??remember(compactCache,value,value.toUpperCase().replace(/[^A-Z0-9]+/g,''));
 
 const calendarDate=(year:number,month:number,day:number)=>{const date=new Date(Date.UTC(year,month-1,day));return year>=1900&&year<=2099&&date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day?date:undefined};
-const monthNumber=(value:string)=>/^\d+$/.test(value)?+value:months.indexOf(value.toUpperCase())+1;
+const monthNumber=(value:string)=>/^\d+$/.test(value)?+value:months.indexOf(value.toUpperCase().slice(0,3))+1;
 const fourDigitYear=(value:string)=>value.length===2?(+value>=70?1900+ +value:2000+ +value):+value;
 function computeDateMatch(filename:string):DateMatch|undefined{
  const value=filename.toUpperCase(),candidates:DateMatch[]=[];
@@ -33,11 +34,12 @@ function computeDateMatch(filename:string):DateMatch|undefined{
   }
  };
  add(/(0[1-9]|[12]\d|3[01])(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)((?:19|20)\d{2})/g,m=>[m[3],m[2],m[1]],true);
- add(/(3[01]|[12]\d|0?[1-9])[-_., ]+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-_., ]+((?:19|20)\d{2})/g,m=>[m[3],m[2],m[1]]);
- add(/(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-_., ]*(3[01]|[12]\d|0?[1-9])[-_., ]*((?:19|20)\d{2})/g,m=>[m[3],m[1],m[2]]);
- add(/((?:19|20)\d{2})[-_., ]*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-_., ]*(3[01]|[12]\d|0?[1-9])/g,m=>[m[1],m[2],m[3]]);
- add(/(3[01]|[12]\d|0?[1-9])[-_., ]+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-_., ]+(\d{2})/g,m=>[m[3],m[2],m[1]]);
- add(/(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-_., ]*(3[01]|[12]\d|0?[1-9])[-_., ]*(\d{2})/g,m=>[m[3],m[1],m[2]]);
+ add(new RegExp(`(0[1-9]|[12]\\d|3[01])(${monthNamePattern})((?:19|20)\\d{2})`,'g'),m=>[m[3],m[2],m[1]]);
+ add(new RegExp(`(3[01]|[12]\\d|0?[1-9])[-_., ]+(${monthNamePattern})[-_., ]+((?:19|20)\\d{2})`,'g'),m=>[m[3],m[2],m[1]]);
+ add(new RegExp(`(${monthNamePattern})[-_., ]*(3[01]|[12]\\d|0?[1-9])[-_., ]*((?:19|20)\\d{2})`,'g'),m=>[m[3],m[1],m[2]]);
+ add(new RegExp(`((?:19|20)\\d{2})[-_., ]*(${monthNamePattern})[-_., ]*(3[01]|[12]\\d|0?[1-9])`,'g'),m=>[m[1],m[2],m[3]]);
+ add(new RegExp(`(3[01]|[12]\\d|0?[1-9])[-_., ]+(${monthNamePattern})[-_., ]+(\\d{2})`,'g'),m=>[m[3],m[2],m[1]]);
+ add(new RegExp(`(${monthNamePattern})[-_., ]*(3[01]|[12]\\d|0?[1-9])[-_., ]*(\\d{2})`,'g'),m=>[m[3],m[1],m[2]]);
  add(/((?:19|20)\d{2})[-_., ]*(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12]\d|3[01])/g,m=>[m[1],m[2],m[3]]);
  add(/((?:19|20)\d{2})[-_., ]+(1[0-2]|0?[1-9])[-_., ]+(3[01]|[12]\d|0?[1-9])/g,m=>[m[1],m[2],m[3]]);
  add(/(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12]\d|3[01])[-_., ]*((?:19|20)\d{2})/g,m=>[m[3],m[1],m[2]]);

@@ -226,6 +226,7 @@ internal sealed class TrackerContext : ApplicationContext
                 if (!await DowngradeSessionAndReleaseLeases()) { await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The launcher entered Read-Only Access, but an active verified storage operation is still finishing. Its exclusive lease was retained and will be released safely after the operation completes or expires."), false, "no-store");return; }
                 await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"mode\":\"read-only\"}"), false, "no-store");return;
             }
+            if (path == "/api/session-upgrade" && parts[0] == "POST") { bool upgraded;lock (sessionGate) { upgraded = !String.Equals(sessionAccessMode, "unselected", StringComparison.Ordinal);if (upgraded) sessionAccessMode = "full"; }if (!upgraded) { await Respond(stream, 409, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Choose an access mode before requesting Full Access."), false, "no-store");return; }await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"mode\":\"full\"}"), false, "no-store");return; }
             if (path == "/api/mappings" && (parts[0] == "GET" || parts[0] == "HEAD")) { bool readOnlyMappings = String.Equals(SessionAccessMode(), "read-only", StringComparison.Ordinal), localOnlyMappings = String.Equals(OptionalQueryValue(target, "local"), "1", StringComparison.Ordinal); if (!readOnlyMappings && !String.Equals(SessionAccessMode(), "full", StringComparison.Ordinal)) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Choose an access mode before opening saved mappings."), false, "no-store");return; }await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(storage.CachedMappings(!readOnlyMappings && !localOnlyMappings, localOnlyMappings)), parts[0] == "HEAD", "no-store"); return; }
             if (path == "/api/activity" && parts[0] == "POST") { RecordActivity(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/presence" && parts[0] == "POST") { RecordPresence(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
@@ -1037,7 +1038,6 @@ internal static class Program
         }
         catch { }
     }
-
     [STAThread]
     private static void Main()
     {

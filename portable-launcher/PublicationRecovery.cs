@@ -128,7 +128,7 @@ internal sealed partial class PortableStorage
 
     private static int LocalEvidenceRecoveryPriority(string path)
     {
-        string normalized = path.Replace('\\', '/');if (normalized.IndexOf("/" + PublishedEvidenceDirectoryName + "/", StringComparison.OrdinalIgnoreCase) >= 0) return 0;if (normalized.IndexOf("/" + PendingUploadDirectoryName + "/", StringComparison.OrdinalIgnoreCase) >= 0) return 1;if (normalized.IndexOf(" Incoming/", StringComparison.OrdinalIgnoreCase) >= 0) return 2;if (normalized.IndexOf(" Rework/", StringComparison.OrdinalIgnoreCase) >= 0) return 3;return 4;
+        string normalized = path.Replace('\\', '/');if (normalized.Split('/').Any(IsCompleteStorageDirectory) && normalized.IndexOf("/" + PendingUploadDirectoryName + "/", StringComparison.OrdinalIgnoreCase) < 0) return 0;if (normalized.IndexOf("/" + PendingUploadDirectoryName + "/", StringComparison.OrdinalIgnoreCase) >= 0) return 1;if (normalized.IndexOf(" Incoming/", StringComparison.OrdinalIgnoreCase) >= 0) return 2;if (normalized.IndexOf(" Rework/", StringComparison.OrdinalIgnoreCase) >= 0) return 3;return 4;
     }
 
     private static bool EvidenceHashMatches(string path, string expected, PublicationHashCache hashCache)

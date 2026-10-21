@@ -3,6 +3,8 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const syncScopeComponent=readFileSync(new URL('../app/components/TrackerViewParts.tsx',import.meta.url),'utf8');
+const syncUi=`${page}\n${syncScopeComponent}`;
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 
 test('does not start Sync while restoring, mapping, or selecting a system',()=>{
@@ -12,19 +14,19 @@ test('does not start Sync while restoring, mapping, or selecting a system',()=>{
  assert.doesNotMatch(restore,/syncMapped\s*\(/);
  assert.doesNotMatch(mapping,/syncMapped\s*\(/);
  assert.doesNotMatch(selection,/syncMapped\s*\(/);
- assert.match(page,/Sync never starts automatically/);
+ assert.match(syncUi,/Sync never starts automatically/);
 });
 
 test('offers only entire-system or immediate-organization Sync scope',()=>{
- assert.match(page,/<option value="daily">Daily Sync — Fast and Strict<\/option>/);
- assert.match(page,/<option value="legacy">Legacy Import — Historical Recovery<\/option>/);
- assert.match(page,/<option value="system">Entire Information System<\/option>/);
- assert.match(page,/<option value="organization"[^>]*>One Organization<\/option>/);
- assert.match(page,/deeper subfolders cannot be selected as a separate scope/);
- assert.match(page,/place new evidence in each organization&apos;s prefixed Incoming folder and use Daily Sync/);
- assert.match(page,/Full Rescan — Inspect Active Document Folders and Ignore Cached Validation/);
+ assert.match(syncUi,/<option value="daily">Daily Sync — Fast and Strict<\/option>/);
+ assert.match(syncUi,/<option value="legacy">Legacy Import — Historical Recovery<\/option>/);
+ assert.match(syncUi,/<option value="system">Entire Information System<\/option>/);
+ assert.match(syncUi,/<option value="organization"[^>]*>One Organization<\/option>/);
+ assert.match(syncUi,/deeper subfolders cannot be selected as a separate scope/);
+ assert.match(syncUi,/place new evidence directly in the applicable organization folder and corrected evidence in its Rework folder/);
+ assert.match(syncUi,/Full Rescan — Inspect Active Document Folders and Ignore Cached Validation/);
  assert.match(page,/dailyIncomingOnly=!legacyImport&&!forceFull/);
- assert.match(page,/insideOrganizationIncoming\(path\)/);
+ assert.match(page,/Checking organization-root intake files and Rework/);
  assert.doesNotMatch(page,/onClick=\{\(\)=>void sync\(true\)\}/);
 });
 
@@ -32,8 +34,8 @@ test('allows another scoped Sync while earlier review results are pending',()=>{
  const openScope=page.slice(page.indexOf('async function openSyncScope'),page.indexOf('function stopSync'));
  assert.doesNotMatch(openScope,/if\(pendingSync\).*sync-review/);
  assert.match(openScope,/setModal\(null\);setSyncScopeOpen\(true\)/);
- assert.match(page,/Previous Results Remain Available/);
- assert.match(page,/hasPendingResults\?`Start Another \$\{syncModeLabel\(syncMode\)\}`:`Start \$\{syncModeLabel\(syncMode\)\}`/);
+ assert.match(syncUi,/Previous Results Remain Available/);
+ assert.match(syncUi,/hasPendingResults\?`Start Another \$\{syncModeLabel\(syncMode\)\}`:`Start \$\{syncModeLabel\(syncMode\)\}`/);
  assert.match(page,/tracker:start-another-sync/);
  assert.match(page,/>Start Another Sync<\/button>/);
  assert.doesNotMatch(page,/setSyncText\('Review Matches'\)/);

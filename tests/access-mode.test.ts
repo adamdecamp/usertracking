@@ -25,6 +25,16 @@ test('Read-Only sessions never acquire or renew the editor lease',()=>{
  assert.match(page,/if\(accessMode==='full'\)\{if\(!\(await acquireLease\(root,sessionId\)\)\)/);
 });
 
+test('the dashboard can switch between Read-Only and Full Access without restarting',()=>{
+ assert.match(page,/async function switchAccessMode\(\)/);
+ assert.match(page,/Switch to Read-Only Access/);
+ assert.match(page,/Switch to Full Access/);
+ assert.match(page,/upgradeLauncherSession\(\)/);
+ assert.match(page,/downgradeLauncherSession\(\)/);
+ assert.match(launcher,/path == "\/api\/session-upgrade"/);
+ assert.match(styles,/\.mode-switch \.secondary\{background:#fff;color:#17654f/);
+});
+
 test('Full Access requires startup integrity verification and safely falls back to Read-Only',()=>{
  assert.match(page,/verifyMappedStorageHealth\(root,target,true\)/);
  assert.match(page,/verifyMappedStorageHealth\(h,mappedSystemId,true\)/);

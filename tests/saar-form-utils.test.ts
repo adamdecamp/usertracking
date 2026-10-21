@@ -20,6 +20,28 @@ test('accepts a simplified Official Email AcroForm field name',async()=>{
  assert.equal(result.email,'alternate.user@example.com');
 });
 
+test('reads the selected Designation of Person checkbox from a derived SAAR AcroForm',async()=>{
+ const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm();
+ for(const[name,checked,x]of[['MILITARY',false,20],['CIVILIAN',false,120],['CONTRACTOR',true,220]]as const){const field=form.createCheckBox(name);field.addToPage(page,{x,y:550,width:16,height:16});if(checked)field.check()}
+ const result=await readSaarFormFields(await pdf.save());
+ assert.equal(result.designation,'CTR');
+});
+
+test('reads the selected Designation of Person checkbox from DD2875 XFA data',async()=>{
+ const pdf=await PDFDocument.create();pdf.addPage([612,792]);
+ const xml='<?xml version="1.0"?><xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><page1><Part1><mil9>1</mil9><civ9>0</civ9><ctr9>0</ctr9></Part1></page1></form1></xfa:data></xfa:datasets>',datasets=pdf.context.register(pdf.context.flateStream(xml)),xfa=pdf.context.obj([PDFString.of('datasets'),datasets]),acro=pdf.context.obj({Fields:[],XFA:xfa});
+ pdf.catalog.set(PDFName.of('AcroForm'),pdf.context.register(acro));
+ const result=await readSaarFormFields(await pdf.save({useObjectStreams:false}));
+ assert.equal(result.designation,'MIL');
+});
+
+test('does not classify an ambiguous SAAR with multiple Designation of Person boxes selected',async()=>{
+ const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm();
+ for(const[name,x]of[['MILITARY',20],['CIVILIAN',120]]as const){const field=form.createCheckBox(name);field.addToPage(page,{x,y:550,width:16,height:16});field.check()}
+ const result=await readSaarFormFields(await pdf.save());
+ assert.equal(result.designation,undefined);
+});
+
 test('prioritizes OFFICIAL/ORGANIZATION E-MAIL ADDRESS over other email fields',async()=>{
  const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm(),sponsor=form.createTextField('Sponsor E-mail');sponsor.setText('sponsor@example.mil');sponsor.addToPage(page,{x:20,y:500,width:300,height:20});const official=form.createTextField('4. OFFICIAL/ORGANIZATION E-MAIL ADDRESS');official.setText('user.official@example.mil');official.addToPage(page,{x:20,y:650,width:300,height:20});
  const result=await readSaarFormFields(await pdf.save());

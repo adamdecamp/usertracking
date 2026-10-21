@@ -20,8 +20,9 @@ test('a partial verification failure leaves the scan index retryable',()=>{
  assert.match(apply,/available for retry without rescanning/);
 });
 
-test('Sync reads and applies Official Email for an existing record with a blank email',()=>{
- assert.match(page,/if\(!existing\.email\.trim\(\)\)\{read\?\?=await readSaar\(evidence\.ref,controller\.signal,true\)/);
+test('Sync reads SAAR designation for every existing record and applies a missing Official Email',()=>{
+ assert.match(page,/read\?\?=await readSaar\(evidence\.ref,controller\.signal,!existing\.email\.trim\(\)\)/);
+ assert.match(page,/read\.designation\?withSaarDesignationAffiliation\(existing\.affiliatedOrganizations,read\.designation\)/);
  assert.match(page,/Official Email belongs to another User Directory record/);
  assert.match(page,/\.\.\.\(detectedEmail\?\{email:detectedEmail\}:\{\}\)/);
  assert.match(apply,/email=matches\.find\(match=>match\.email\)\?\.email\?\?user\.email/);

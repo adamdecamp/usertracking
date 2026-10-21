@@ -1,4 +1,4 @@
-import {decodePDFRawStream,PDFArray,PDFDict,PDFDocument,PDFHexString,PDFName,PDFNumber,PDFRawStream,PDFSignature,PDFString,PDFTextField,type PDFField} from 'pdf-lib';
+import {decodePDFRawStream,PDFArray,PDFCheckBox,PDFDict,PDFDocument,PDFHexString,PDFName,PDFNumber,PDFRawStream,PDFSignature,PDFString,PDFTextField,type PDFField} from 'pdf-lib';
 
 const clean=(value:string,max=500)=>value.replace(/<[^>]*>/g,' ').replace(/[\r\n\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
 const normalizedName=(value:string)=>value.toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
@@ -12,7 +12,8 @@ function emailOccurrences(value:string){
 const emailsIn=(value:string)=>Array.from(new Set(emailOccurrences(value).map(item=>item.value)));
 
 export type SaarIdentity={last:string;first:string;middle?:string};
-export type SaarFormFields={fillable:boolean;format?:'AcroForm'|'XFA';identity?:SaarIdentity;organization?:string;email?:string;requestDate?:string;createdDate?:string;disabledDate?:string;createdBySigned?:boolean;disabledBySigned?:boolean;signedFieldNames?:string[]};
+export type SaarDesignation='MIL'|'CIV'|'CTR';
+export type SaarFormFields={fillable:boolean;format?:'AcroForm'|'XFA';identity?:SaarIdentity;organization?:string;email?:string;designation?:SaarDesignation;requestDate?:string;createdDate?:string;disabledDate?:string;createdBySigned?:boolean;disabledBySigned?:boolean;signedFieldNames?:string[]};
 export type PdfDigitalSignatureSummary={signedFieldNames:string[];createdBySigned:boolean;disabledBySigned:boolean;createdDate?:string;disabledDate?:string};
 
 const calendarDate=(year:number,month:number,day:number)=>{const date=new Date(Date.UTC(year,month-1,day));return year>=1900&&year<=2099&&date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day?date:undefined};
@@ -100,6 +101,20 @@ function xmlValue(xml:string,names:string[]){
   const escaped=name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),pattern=new RegExp(`<(?:(?:[A-Za-z_][\\w.-]*):)?${escaped}\\b[^>]*>([\\s\\S]*?)<\\/(?:(?:[A-Za-z_][\\w.-]*):)?${escaped}\\s*>`,'gi');
   for(const match of xml.matchAll(pattern)){const value=clean(decodeXml(match[1]),500);if(value)return value}
  }
+}
+function designationFromValues(values:Partial<Record<SaarDesignation,boolean>>){
+ const selected=(['MIL','CIV','CTR'] as const).filter(value=>values[value]);
+ return selected.length===1?selected[0]:undefined;
+}
+function xfaChecked(xml:string|undefined,names:string[]){
+ if(!xml)return false;const value=xmlValue(xml,names)?.trim().toUpperCase();
+ return !!value&&!['0','FALSE','OFF','NO','UNSELECTED'].includes(value);
+}
+function designationKind(name:string):SaarDesignation|undefined{
+ const normalized=normalizedName(name);
+ if(normalized==='MILITARY'||normalized==='MIL'||normalized==='MIL9')return'MIL';
+ if(normalized==='CIVILIAN'||normalized==='CIV'||normalized==='CIV9')return'CIV';
+ if(normalized==='CONTRACTOR'||normalized==='CTR'||normalized==='CTR9')return'CTR';
 }
 const nonUserEmailField=(name:string)=>/\b(?:SUPERVISOR|SPONSOR|SECURITY\s+MANAGER|APPROVING|SIGNER)\b/i.test(normalizedName(name));
 
@@ -195,20 +210,20 @@ function xfaDatasets(pdf:PDFDocument){
 
 export async function readSaarFormFields(pdfBytes:Uint8Array):Promise<SaarFormFields>{
  const pdf=await PDFDocument.load(pdfBytes,{ignoreEncryption:false,updateMetadata:false});
- const xfa=xfaDatasets(pdf),xfaName=xfa.xml?xmlValue(xfa.xml,['name1']):undefined,xfaOrganization=xfa.xml?xmlValue(xfa.xml,['Organization2']):undefined,xfaEmailRaw=xfa.xml?(xmlValue(xfa.xml,['Email_Address4','Official_Organization_Email_Address','OfficialOrganizationEmailAddress','Email_Address5','Official_Email','OfficialEmail','Official_Email_Address','OfficialEmailAddress'])??xfaEmailFallback(xfa.xml)):undefined,xfaEmail=xfaEmailRaw?emailsIn(xfaEmailRaw)[0]:undefined,xfaRequestDate=xfa.xml?parseSaarRequestDate(xmlValue(xfa.xml,['signedDate12','SignedDate12','typeReqDate'])):undefined,processedBy=xfa.xml?xmlValue(xfa.xml,['NameProcessed','ProcessedByName','CreatedBy']):undefined,xfaCreatedDate=xfa.xml?parseSaarRequestDate(xmlValue(xfa.xml,['ProcessedsignedDate','ProcessedSignedDate','CreatedBySignedDate'])):undefined,disabledBy=xfa.xml?xmlValue(xfa.xml,['NameDisabled','DisabledByName','DisabledBy']):undefined,xfaDisabledDate=xfa.xml?parseSaarRequestDate(xmlValue(xfa.xml,['DisabledsignedDate','DisabledSignedDate','DisabledBySignedDate'])):undefined;
+ const xfa=xfaDatasets(pdf),xfaName=xfa.xml?xmlValue(xfa.xml,['name1']):undefined,xfaOrganization=xfa.xml?xmlValue(xfa.xml,['Organization2']):undefined,xfaEmailRaw=xfa.xml?(xmlValue(xfa.xml,['Email_Address4','Official_Organization_Email_Address','OfficialOrganizationEmailAddress','Email_Address5','Official_Email','OfficialEmail','Official_Email_Address','OfficialEmailAddress'])??xfaEmailFallback(xfa.xml)):undefined,xfaEmail=xfaEmailRaw?emailsIn(xfaEmailRaw)[0]:undefined,xfaDesignation=designationFromValues({MIL:xfaChecked(xfa.xml,['mil9','Military','MIL']),CIV:xfaChecked(xfa.xml,['civ9','Civilian','CIV']),CTR:xfaChecked(xfa.xml,['ctr9','Contractor','CTR'])}),xfaRequestDate=xfa.xml?parseSaarRequestDate(xmlValue(xfa.xml,['signedDate12','SignedDate12','typeReqDate'])):undefined,processedBy=xfa.xml?xmlValue(xfa.xml,['NameProcessed','ProcessedByName','CreatedBy']):undefined,xfaCreatedDate=xfa.xml?parseSaarRequestDate(xmlValue(xfa.xml,['ProcessedsignedDate','ProcessedSignedDate','CreatedBySignedDate'])):undefined,disabledBy=xfa.xml?xmlValue(xfa.xml,['NameDisabled','DisabledByName','DisabledBy']):undefined,xfaDisabledDate=xfa.xml?parseSaarRequestDate(xmlValue(xfa.xml,['DisabledsignedDate','DisabledSignedDate','DisabledBySignedDate'])):undefined;
  const values:Partial<Record<'name'|'organization'|'email'|'requestDate',string>>={},emailCandidates:{priority:number;page:number;top:number;order:number;value:string}[]=widgetEmailCandidates(pdf);let signedRequestDate:string|undefined;
  if(xfaEmail)emailCandidates.push({priority:-1,page:0,top:Infinity,order:-1,value:xfaEmail});
  try{
-  const fields=pdf.getForm().getFields(),signatures=signatureSummary(fields);
+  const fields=pdf.getForm().getFields(),signatures=signatureSummary(fields),acroDesignationValues:Partial<Record<SaarDesignation,boolean>>={};
   for(const[order,field]of fields.entries()){
-   if(field instanceof PDFSignature){signedRequestDate=signedRequestDate??signatureRequestDate(field);continue}if(!(field instanceof PDFTextField))continue;
+   if(field instanceof PDFSignature){signedRequestDate=signedRequestDate??signatureRequestDate(field);continue}if(field instanceof PDFCheckBox){const kind=designationKind(field.getName());if(kind&&field.isChecked())acroDesignationValues[kind]=true;continue}if(!(field instanceof PDFTextField))continue;
    const value=clean(field.getText()??'',500);if(!nonUserEmailField(field.getName()))for(const email of emailsIn(value))emailCandidates.push({priority:emailFieldPriority(field.getName()),page:Number.MAX_SAFE_INTEGER,top:-Infinity,order,value:email});
    const kind=fieldKind(field.getName());if(!kind||kind==='email'||values[kind])continue;
    if(value)values[kind]=value
   }
   values.email=emailCandidates.sort((left,right)=>left.priority-right.priority||left.page-right.page||right.top-left.top||left.order-right.order)[0]?.value;
-  const requestDate=xfaRequestDate??parseSaarRequestDate(values.requestDate)??signedRequestDate,identity=xfaName?parseSaarName(xfaName):values.name?parseSaarName(values.name):undefined,organization=xfaOrganization?clean(xfaOrganization,200):values.organization?clean(values.organization,200):undefined,email=values.email?clean(values.email,254):undefined,createdDate=xfaCreatedDate??signatures.createdDate,disabledDate=xfaDisabledDate??signatures.disabledDate,createdBySigned=(!!processedBy&&!!xfaCreatedDate)||signatures.createdBySigned,disabledBySigned=(!!disabledBy&&!!xfaDisabledDate)||signatures.disabledBySigned;
-  if(xfa.present||fields.length>0)return{fillable:true,format:xfa.present?'XFA':'AcroForm',identity,organization,email,...(requestDate?{requestDate}:{}),...(createdDate?{createdDate}:{}),...(disabledDate?{disabledDate}:{}),createdBySigned,disabledBySigned,signedFieldNames:signatures.signedFieldNames}
+  const requestDate=xfaRequestDate??parseSaarRequestDate(values.requestDate)??signedRequestDate,identity=xfaName?parseSaarName(xfaName):values.name?parseSaarName(values.name):undefined,organization=xfaOrganization?clean(xfaOrganization,200):values.organization?clean(values.organization,200):undefined,email=values.email?clean(values.email,254):undefined,designation=xfaDesignation??designationFromValues(acroDesignationValues),createdDate=xfaCreatedDate??signatures.createdDate,disabledDate=xfaDisabledDate??signatures.disabledDate,createdBySigned=(!!processedBy&&!!xfaCreatedDate)||signatures.createdBySigned,disabledBySigned=(!!disabledBy&&!!xfaDisabledDate)||signatures.disabledBySigned;
+  if(xfa.present||fields.length>0)return{fillable:true,format:xfa.present?'XFA':'AcroForm',identity,organization,email,...(designation?{designation}:{}),...(requestDate?{requestDate}:{}),...(createdDate?{createdDate}:{}),...(disabledDate?{disabledDate}:{}),createdBySigned,disabledBySigned,signedFieldNames:signatures.signedFieldNames}
   }catch{}
- return xfa.present?{fillable:!!xfa.xml,format:xfa.xml?'XFA':undefined,identity:xfaName?parseSaarName(xfaName):undefined,organization:xfaOrganization?clean(xfaOrganization,200):undefined,email:xfaEmail?clean(xfaEmail,254):undefined,...(xfaRequestDate?{requestDate:xfaRequestDate}:{}),...(xfaCreatedDate?{createdDate:xfaCreatedDate}:{}),...(xfaDisabledDate?{disabledDate:xfaDisabledDate}:{}),createdBySigned:!!processedBy&&!!xfaCreatedDate,disabledBySigned:!!disabledBy&&!!xfaDisabledDate,signedFieldNames:[]}:{fillable:false}
+ return xfa.present?{fillable:!!xfa.xml,format:xfa.xml?'XFA':undefined,identity:xfaName?parseSaarName(xfaName):undefined,organization:xfaOrganization?clean(xfaOrganization,200):undefined,email:xfaEmail?clean(xfaEmail,254):undefined,...(xfaDesignation?{designation:xfaDesignation}:{}),...(xfaRequestDate?{requestDate:xfaRequestDate}:{}),...(xfaCreatedDate?{createdDate:xfaCreatedDate}:{}),...(xfaDisabledDate?{disabledDate:xfaDisabledDate}:{}),createdBySigned:!!processedBy&&!!xfaCreatedDate,disabledBySigned:!!disabledBy&&!!xfaDisabledDate,signedFieldNames:[]}:{fillable:false}
 }
