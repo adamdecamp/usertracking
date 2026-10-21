@@ -2,8 +2,8 @@ import {PDFDocument,PageSizes,StandardFonts,rgb,type PDFFont,type PDFPage} from 
 import {normalizePrivilegedTypes} from './privileged-type-utils.ts';
 
 export type ComplianceStatus='Current'|'Missing'|'Overdue';
-export type ReportUser={id:string;systemId:string;systemName:string;organization:string;disabled:boolean;roles:string[];privilegedTypes:string[]};
-export type ReportRequirement={userId:string;systemId:string;systemName:string;organization:string;roles:string[];privilegedTypes:string[];artifact:string;status:ComplianceStatus;daysOverdue:number;exceptionThrough?:string;exceptionApprover?:string};
+export type ReportUser={id:string;systemId:string;systemName:string;organization:string;affiliatedOrganizations:string[];disabled:boolean;roles:string[];privilegedTypes:string[]};
+export type ReportRequirement={userId:string;systemId:string;systemName:string;organization:string;affiliatedOrganizations:string[];roles:string[];privilegedTypes:string[];artifact:string;status:ComplianceStatus;daysOverdue:number;exceptionThrough?:string;exceptionApprover?:string};
 export type ComplianceReportInput={
  reportId:string;
  generatedAtUtc:string;
@@ -40,6 +40,7 @@ export function summarizeCompliance(input:ComplianceReportInput){
   total,current,missing,overdue,exceptions,
   aging,
   byOrganization:breakdown(input.requirements,row=>[row.organization]),
+  byAffiliatedOrganization:breakdown(input.requirements,row=>row.affiliatedOrganizations),
   bySystem:breakdown(input.requirements,row=>[row.systemName]),
   byRole:breakdown(input.requirements,row=>row.roles),
   byPrivilegedType:breakdown(input.requirements,row=>normalizePrivilegedTypes(row.privilegedTypes)),
@@ -48,7 +49,7 @@ export function summarizeCompliance(input:ComplianceReportInput){
 }
 
 export async function createComplianceSnapshotPdf(input:ComplianceReportInput,onProgress?:ComplianceReportProgress){
- const progressTotal=8,yieldToBrowser=()=>new Promise<void>(resolve=>setTimeout(resolve,0));onProgress?.('Calculating Report Scope',0,progressTotal);await yieldToBrowser();
+ const progressTotal=9,yieldToBrowser=()=>new Promise<void>(resolve=>setTimeout(resolve,0));onProgress?.('Calculating Report Scope',0,progressTotal);await yieldToBrowser();
  const summary=summarizeCompliance(input);onProgress?.('Building Executive Summary',1,progressTotal);await yieldToBrowser();
  const document=await PDFDocument.create(),regular=await document.embedFont(StandardFonts.Helvetica),bold=await document.embedFont(StandardFonts.HelveticaBold),navy=rgb(0.07,0.16,0.28),green=rgb(0.04,0.45,0.34),amber=rgb(0.78,0.45,0.05),red=rgb(0.72,0.16,0.18),gray=rgb(0.36,0.41,0.48),light=rgb(0.94,0.96,0.97),margin=42,width=PageSizes.Letter[0],height=PageSizes.Letter[1];
  let page:PDFPage,y:number;
@@ -89,14 +90,15 @@ export async function createComplianceSnapshotPdf(input:ComplianceReportInput,on
  ensure(158);section('Overdue Aging');
  cards(Object.entries(summary.aging).map(([label,value])=>({label:label.replace('days','Days'),value:String(value),color:value?amber:navy})));
  onProgress?.('Building Organization Breakdown',2,progressTotal);await yieldToBrowser();table('Breakdown by Organization',summary.byOrganization);
- onProgress?.('Building Information System Breakdown',3,progressTotal);await yieldToBrowser();table('Breakdown by Information System',summary.bySystem);
- onProgress?.('Building Role Breakdown',4,progressTotal);await yieldToBrowser();table('Breakdown by Role',summary.byRole);
- onProgress?.('Building Privileged Type Breakdown',5,progressTotal);await yieldToBrowser();table('Breakdown by Privileged User Type',summary.byPrivilegedType);
- onProgress?.('Building Artifact Breakdown',6,progressTotal);await yieldToBrowser();table('Breakdown by Artifact',summary.byArtifact);
+ onProgress?.('Building Affiliated Organization Breakdown',3,progressTotal);await yieldToBrowser();table('Breakdown by Affiliated Organization',summary.byAffiliatedOrganization);
+ onProgress?.('Building Information System Breakdown',4,progressTotal);await yieldToBrowser();table('Breakdown by Information System',summary.bySystem);
+ onProgress?.('Building Role Breakdown',5,progressTotal);await yieldToBrowser();table('Breakdown by Role',summary.byRole);
+ onProgress?.('Building Privileged Type Breakdown',6,progressTotal);await yieldToBrowser();table('Breakdown by Privileged User Type',summary.byPrivilegedType);
+ onProgress?.('Building Artifact Breakdown',7,progressTotal);await yieldToBrowser();table('Breakdown by Artifact',summary.byArtifact);
  section('Methodology and Limitations');
  text(`Statuses were calculated as of ${input.reportingDate} using rule set ${input.ruleSetVersion}. SAAR records are labeled Present or Missing and do not expire; Present SAARs are included in Current requirement totals. Other required artifacts become Overdue one year after the valid DDMMMYYYY filename date. Active exceptions are counted separately and do not alter the underlying Missing or Overdue status.`);
  text('This report is an administrative evidence snapshot. It supports audit and inspection evidence gathering but does not independently establish that technical or organizational controls are effective.',9,{gap:5});
  for(let index=0;index<pages.length;index++){const footer=`Report ${input.reportId} | Page ${index+1} of ${pages.length}`;pages[index].drawLine({start:{x:margin,y:36},end:{x:width-margin,y:36},thickness:0.5,color:rgb(0.82,0.85,0.87)});pages[index].drawText(ascii(footer),{x:margin,y:23,size:7,font:regular,color:gray})}
  document.setTitle(`Compliance Snapshot ${input.reportId}`);document.setAuthor(ascii(input.operator));document.setSubject('Administrative user access and training evidence snapshot');document.setCreator(`R.A.P.T.O.R. ${input.applicationVersion}`);document.setCreationDate(new Date(input.generatedAtUtc));
- onProgress?.('Finalizing PDF',7,progressTotal);await yieldToBrowser();const bytes=await document.save({useObjectStreams:true});onProgress?.('PDF Ready',8,progressTotal);return bytes;
+ onProgress?.('Finalizing PDF',8,progressTotal);await yieldToBrowser();const bytes=await document.save({useObjectStreams:true});onProgress?.('PDF Ready',9,progressTotal);return bytes;
 }

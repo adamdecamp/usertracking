@@ -49,7 +49,10 @@ export type ChangeRecord={
 export type UserRecord={
  id:string;
  systemId:string;
+ /** Authoritative evidence-folder organization. */
  organization:string;
+ /** Searchable agencies, divisions, contractors, or subcontractors. */
+ affiliatedOrganizations:string[];
  last:string;
  first:string;
  middle:string;

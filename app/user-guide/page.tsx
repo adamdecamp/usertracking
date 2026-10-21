@@ -183,6 +183,14 @@ export default function Guide() {
             SAARs remain prohibited.
           </li>
           <li>
+            Treat <b>Storage Organization</b> as the authoritative organization
+            folder used for evidence paths and filenames. Use the optional{" "}
+            <b>Affiliated Organization(s)</b> field for agencies, divisions,
+            contractors, and subcontractors that must remain searchable without
+            moving the user&apos;s evidence. Separate multiple affiliations with
+            commas or semicolons.
+          </li>
+          <li>
             For a Privileged account, enter the full account name as{" "}
             <code>username_type</code>. The tracker derives the Privileged User
             Type from everything after the final underscore. Separate multiple
@@ -243,9 +251,12 @@ export default function Guide() {
           to work against the stored ZIP filename.
         </aside>
         <p>
-          The User Directory can be searched by privileged username and filtered
+          The User Directory can be searched by name, Official Email, Storage
+          Organization, Affiliated Organization, agency, contractor,
+          subcontractor, privileged username, or Privileged User Type and filtered
           by Active, Disabled, or All users; General or Privileged role; derived
-          Privileged User Type; organization; artifact; and compliance status.
+          Privileged User Type; Storage Organization; Affiliated Organization;
+          artifact; and compliance status.
           When General is selected, the inapplicable Privileged User Type filter
           and column are hidden. Choose{" "}
           <b>Reset Filters</b> to clear the search and restore every directory
@@ -1262,13 +1273,15 @@ export default function Guide() {
         </p>
         <h3>Export Filtered User Directory Results</h3>
         <p>
-          Set the Information System, search text, Organization, Role,
+          Set the Information System, search text, Storage Organization,
+          Affiliated Organization, Role,
           Privileged User Type, Official Email status, Artifact, and Compliance
           Status filters in the{" "}
           <b>User Directory</b>, then choose <b>Export CSV</b> beside{" "}
           <b>Add User</b>. The CSV contains only the users and applicable
           requirement rows that match the current directory filters, including
-          exact status and active-exception details. Choose <b>Reset Filters</b>{" "}
+          exact status, affiliated-organization values, and active-exception details.
+          Choose <b>Reset Filters</b>{" "}
           to return to the full directory before exporting all results for the
           selected system.
         </p>

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const directoryHeader=readFileSync(new URL('../app/components/DirectoryHeader.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
@@ -78,6 +79,6 @@ test('encrypted evidence requires the complete filename gate in manual storage a
  assert.match(page,/readOnly=\{!item\.missingOfficialEmail\}/);
  assert.match(page,/Official Email Missing · Manual Entry Required/);
  assert.match(page,/missingEmailUsers=discoveredUsers\.filter\(item=>!failedNewUserIds\.has\(item\.record\.id\)/);
- assert.match(page,/aria-label="Official Email Filter"/);
+ assert.match(directoryHeader,/aria-label="Official Email Filter"/);
  assert.match(page,/emailFilter==='Official Email missing'/);
 });

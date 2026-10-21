@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {backupFilename,buildBackupSnapshot,buildCompressedBackupSnapshot,checksumFilename,checksumFromText,compressedBackupFilename,sha256Hex,staleSnapshotNames,verifyBackupSnapshot,verifyStoredBackupSnapshot} from '../app/backup-utils.ts';
 
 const database={
- version:2,
+ version:3,
  updated:'ignored-on-build',
  systems:[{id:'system-1',name:'Test System',type:'Administrative',organization:'GOV',archived:false}],
- users:[{id:'user-1',systemId:'system-1',organization:'GOV',last:'Shaw',first:'Vivian',middle:'',email:'vivian@example.mil',disabled:false,roles:['Privileged'],privilegedUsernames:['vshaw_dta'],privilegedTypes:['DTA'],artifacts:[{kind:'SAAR',filename:'Shaw_Vivian_(GOV)_PRIV_DTA_SAAR_24AUG2026.pdf.zip'}],changes:[{timestamp:'2026-08-26T10:00:00.000Z',actor:'DOMAIN\\operator',action:'Add user',description:'Created',rolesBefore:[],rolesAfter:['Privileged'],files:['Shaw_Vivian_(GOV)_PRIV_DTA_SAAR_24AUG2026.pdf.zip']}]}],
+ users:[{id:'user-1',systemId:'system-1',organization:'GOV',affiliatedOrganizations:['Agency A','Subcontractor B'],last:'Shaw',first:'Vivian',middle:'',email:'vivian@example.mil',disabled:false,roles:['Privileged'],privilegedUsernames:['vshaw_dta'],privilegedTypes:['DTA'],artifacts:[{kind:'SAAR',filename:'Shaw_Vivian_(GOV)_PRIV_DTA_SAAR_24AUG2026.pdf.zip'}],changes:[{timestamp:'2026-08-26T10:00:00.000Z',actor:'DOMAIN\\operator',action:'Add user',description:'Created',rolesBefore:[],rolesAfter:['Privileged'],files:['Shaw_Vivian_(GOV)_PRIV_DTA_SAAR_24AUG2026.pdf.zip']}]}],
 };
 
 test('creates a full-fidelity, timestamped backup and checksum',async()=>{
@@ -47,6 +47,14 @@ test('creates and verifies a compressed backup while retaining legacy JSON compa
 
  const legacy=await buildBackupSnapshot(database,created),legacyBytes=new TextEncoder().encode(legacy.text);
  assert.deepEqual((await verifyStoredBackupSnapshot(legacyBytes,legacy.filename,legacy.integrityHash)).database.users,database.users);
+});
+
+test('retains restore compatibility with version 2 database backups',async()=>{
+ const legacyUsers=database.users.map(user=>{const copy:Partial<typeof user>={...user};delete copy.affiliatedOrganizations;return copy}),legacyDatabase={...database,version:2,users:legacyUsers};
+ const snapshot=await buildBackupSnapshot(legacyDatabase,'2026-08-26T17:18:26.123Z');
+ const verified=await verifyBackupSnapshot(snapshot.text,snapshot.integrityHash);
+ assert.equal(verified.database.version,2);
+ assert.equal(verified.database.users.length,1);
 });
 
 test('rejects a changed compressed backup before decompression',async()=>{

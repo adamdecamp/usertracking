@@ -9,11 +9,12 @@ test('migrates released manifest v1 to the current schema without changing ident
  const migrated=migrateManifestPayload(fixture('manifest-v1.json'))!;
  assert.equal(migrated.version,currentManifestVersion);
  const user=(migrated.users as Record<string,unknown>[])[0];
- assert.equal(user.last,'Sample');assert.deepEqual(user.privilegedTypes,[]);assert.deepEqual(user.exceptions,[]);
+ assert.equal(user.last,'Sample');assert.deepEqual(user.affiliatedOrganizations,[]);assert.deepEqual(user.privilegedTypes,[]);assert.deepEqual(user.exceptions,[]);
 });
 
 test('accepts each currently released persisted format and rejects future versions',()=>{
- assert.ok(migrateManifestPayload(fixture('manifest-v2.json')));
+ const v2=migrateManifestPayload(fixture('manifest-v2.json'))!;assert.equal(v2.version,currentManifestVersion);assert.deepEqual(v2.users,[]);
+ const v2User=migrateManifestPayload({version:2,systems:[],users:[{id:'legacy-v2'}]})!;assert.deepEqual((v2User.users as Record<string,unknown>[])[0].affiliatedOrganizations,[]);
  assert.equal((migrateBackupPayload(fixture('backup-v1.json'))!.database as Record<string,unknown>).version,currentManifestVersion);
  assert.ok(migrateAuditEntryPayload(fixture('audit-v1.json')));
  assert.ok(migrateSyncIndexPayload(fixture('sync-index-v1.json')));
@@ -21,6 +22,12 @@ test('accepts each currently released persisted format and rejects future versio
  assert.equal(migrateBackupPayload({backupVersion:999,database:{}}),undefined);
  assert.equal(migrateAuditEntryPayload({version:999}),undefined);
  assert.equal(migrateSyncIndexPayload({version:999}),undefined);
+});
+
+test('normalizes multi-value affiliated organizations in current manifests',()=>{
+ const migrated=migrateManifestPayload({version:currentManifestVersion,systems:[],users:[{id:'u1',affiliatedOrganizations:[' Agency One ','agency one','Prime Contractor','Subcontractor Blue']}]})!;
+ const users=migrated.users as Array<{affiliatedOrganizations:string[]}>;
+ assert.deepEqual(users[0].affiliatedOrganizations,['Agency One','Prime Contractor','Subcontractor Blue']);
 });
 
 test('normalizes privileged account types case-insensitively in current manifests',()=>{

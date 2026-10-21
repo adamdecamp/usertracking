@@ -637,7 +637,7 @@ internal sealed partial class PortableStorage : IDisposable
         }
         if (positionedUsers.Count != expectedTotal) throw new InvalidDataException("The sharded database catalog user count does not match its organization shards.");
         object[] users = positionedUsers.OrderBy(value => value.Item1).Select(value => value.Item2).ToArray();
-        var storedLogical = new Dictionary<string, object> { { "version", 2 }, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
+        var storedLogical = new Dictionary<string, object> { { "version", 3 }, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
         // Verify the exact persisted representation before applying backward-compatible
         // defaults. Otherwise a legitimate migration (for example adding an empty
         // historical change.files array) would incorrectly look like tampering.
@@ -3267,7 +3267,8 @@ internal sealed partial class PortableStorage : IDisposable
     {
         int version = value.ContainsKey("version") ? Convert.ToInt32(value["version"], CultureInfo.InvariantCulture) : 1;
         if (version == 1) { if (!value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid.");value["version"] = 2;version = 2; }
-        if (version != 2 || !value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid or uses a newer unsupported schema.");
+        if (version == 2) { value["version"] = 3;version = 3; }
+        if (version != 3 || !value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid or uses a newer unsupported schema.");
         object[] systems = ObjectArray(value["systems"]), users = ObjectArray(value["users"]);
         if (systems.Length > 1000 || users.Length > 100000) throw new InvalidDataException("The database manifest exceeds its record limits.");
         var systemIds = new HashSet<string>(StringComparer.Ordinal);
@@ -3282,7 +3283,7 @@ internal sealed partial class PortableStorage : IDisposable
         foreach (object raw in users)
         {
             Dictionary<string, object> user = ObjectDictionary(raw);
-            if (!user.ContainsKey("privilegedUsernames")) user["privilegedUsernames"] = new object[0];if (!user.ContainsKey("privilegedTypes")) user["privilegedTypes"] = new object[0];if (!user.ContainsKey("changes")) user["changes"] = new object[0];if (!user.ContainsKey("exceptions")) user["exceptions"] = new object[0];
+            if (!user.ContainsKey("affiliatedOrganizations")) user["affiliatedOrganizations"] = new object[0];if (!user.ContainsKey("privilegedUsernames")) user["privilegedUsernames"] = new object[0];if (!user.ContainsKey("privilegedTypes")) user["privilegedTypes"] = new object[0];if (!user.ContainsKey("changes")) user["changes"] = new object[0];if (!user.ContainsKey("exceptions")) user["exceptions"] = new object[0];
             foreach (object changeRaw in ObjectArray(user["changes"]))
             {
                 Dictionary<string, object> change = ObjectDictionary(changeRaw);
@@ -3296,7 +3297,7 @@ internal sealed partial class PortableStorage : IDisposable
             string id = RequiredBoundedString(user, "id", 100, false, "user"), systemId = RequiredBoundedString(user, "systemId", 100, false, "user");
             if (!userIds.Add(id)) throw new InvalidDataException("The database contains a duplicate user ID: " + CleanLine(id, 100) + ".");
             if (!systemIds.Contains(systemId)) throw new InvalidDataException("A user references an unknown information system.");
-            RequiredBoundedString(user, "organization", 200, true, "user");RequiredBoundedString(user, "last", 100, true, "user");RequiredBoundedString(user, "first", 100, true, "user");RequiredBoundedString(user, "middle", 10, true, "user");RequiredBoundedString(user, "email", 254, true, "user");RequiredBoolean(user, "disabled", "user");
+            RequiredBoundedString(user, "organization", 200, true, "user");ValidateStringArray(user, "affiliatedOrganizations", 50, 200, "user");RequiredBoundedString(user, "last", 100, true, "user");RequiredBoundedString(user, "first", 100, true, "user");RequiredBoundedString(user, "middle", 10, true, "user");RequiredBoundedString(user, "email", 254, true, "user");RequiredBoolean(user, "disabled", "user");
             ValidateStringArray(user, "roles", 20, 100, "user");foreach (string role in ObjectArray(user["roles"]).Cast<object>().Select(item => Convert.ToString(item, CultureInfo.InvariantCulture))) if (role != "General" && role != "Privileged" && role != "DTA") throw new InvalidDataException("A user contains an unsupported role.");
             ValidateStringArray(user, "privilegedUsernames", 50, 200, "user");ValidateStringArray(user, "privilegedTypes", 50, 200, "user");
             object[] artifacts = RequiredArray(user, "artifacts", 100, "user");foreach (object artifactRaw in artifacts) ValidateArtifactRecord(ObjectDictionary(artifactRaw));

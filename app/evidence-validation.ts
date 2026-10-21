@@ -1,4 +1,7 @@
 import {unzipSync} from 'fflate';
+import {organizationFromFolderPath} from './document-renamer-utils.ts';
+import {errorDetail} from './error-utils.ts';
+import {evidenceFilenamePassesStorageGate,filenameIdentityMatches,filenameMatchesKind,identityFromFilename} from './filename-utils.ts';
 
 export const evidenceFileLimit=100*1024*1024;
 const zipEntryLimit=8,zipExpansionRatioLimit=200;
@@ -72,3 +75,17 @@ export function inspectEvidenceBytes(filename:string,bytes:Uint8Array):Inspected
 }
 
 export function acceptsEvidenceExtension(filename:string){const lower=filename.toLowerCase();return lower.endsWith('.pdf')||lower.endsWith('.zip')}
+
+type ExpectedEvidenceIdentity={last:string;first:string;organization:string;kind:string};
+
+function encryptedFilenameOverrideAllowed(filename:string,path:string,rootName='',expected?:ExpectedEvidenceIdentity){
+ const identity=identityFromFilename(filename),organization=organizationFromFolderPath(path,rootName,identity);
+ return evidenceFilenamePassesStorageGate(filename,organization)&&(!expected||filenameIdentityMatches(filename,expected)&&organization.toUpperCase()===expected.organization.toUpperCase()&&filenameMatchesKind(filename,expected.kind));
+}
+
+export async function validateReadableOrStrictEncryptedEvidence(inspected:InspectedEvidence,filename:string,path:string,rootName='',expected?:ExpectedEvidenceIdentity){
+ try{const{PDFDocument}=await import('pdf-lib');await PDFDocument.load(inspected.pdfBytes);return false}
+ catch(error){if(!inspected.encryptedPdf||!/encrypt/i.test(errorDetail(error,'PDF validation failed.')))throw error}
+ if(!encryptedFilenameOverrideAllowed(filename,path,rootName,expected))throw new Error('The encrypted PDF cannot be content-validated and its filename does not pass the complete Last_First_(ORG)_Artifact_DDMMMYYYY gate. Move it to Rework for correction.');
+ return true;
+}

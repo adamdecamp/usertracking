@@ -8,7 +8,7 @@ const systems:SystemRecord[]=[
  {id:'bravo',name:'Bravo',type:'Support',organization:'Field',archived:false},
 ];
 const user=(id:string,systemId:string):UserRecord=>({
- id,systemId,organization:'HQ',last:`Last-${id}`,first:'First',middle:'',email:`${id}@example.test`,disabled:false,
+ id,systemId,organization:'HQ',affiliatedOrganizations:[],last:`Last-${id}`,first:'First',middle:'',email:`${id}@example.test`,disabled:false,
  roles:['General'],privilegedUsernames:[],privilegedTypes:[],artifacts:[],changes:[],exceptions:[],
 });
 const users=[user('one','alpha'),user('two','bravo'),user('three','alpha')];
