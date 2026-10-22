@@ -28,6 +28,7 @@ tests/saar-ingest-utils.test.ts
 tests/manual-evidence-storage.test.ts
 tests/operation-timeout.test.ts
 tests/portable-request-utils.test.ts
+tests/portable-storage-request.test.ts
 tests/launcher-lifecycle.test.ts
 tests/access-mode.test.ts
 tests/organization-status-package.test.ts

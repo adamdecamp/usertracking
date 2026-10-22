@@ -1133,6 +1133,17 @@ export default function Guide() {
           advisory.
         </p>
         <p>
+          Full Access editors work sequentially across computers. After the next
+          editor acquires the lock, R.A.P.T.O.R. verifies the newest shared master
+          before enabling changes. Non-conflicting protected local edits are
+          reconciled onto that master automatically. If two operators changed the
+          same system or user record, Full Access stops and reports the conflicting
+          record instead of overwriting either operator. All operator computers
+          must use the same current application release before that release first
+          commits to the shared database; the stored minimum-client policy blocks
+          an older build from modifying a newer database.
+        </p>
+        <p>
           Full Access edits use a local working directory protected for the signed-in
           Windows account. Its database, state, and pending-publication journal are
           encrypted with Windows user protection and integrity checked. When the

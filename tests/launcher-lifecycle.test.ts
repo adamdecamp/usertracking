@@ -6,6 +6,7 @@ import {formatDeleteUserCompletionAudit} from '../app/application/user-deletion-
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
+const storageRequest=readFileSync(new URL('../app/infrastructure/portable-storage-request.ts',import.meta.url),'utf8');
 
 test('the portable page sends presence immediately and throughout an open session',()=>{
  assert.match(page,/startPortablePresenceHeartbeat\(\(\)=>launcherPost\('\/api\/presence',true\)\)/);
@@ -23,7 +24,7 @@ test('mapped-drive operations use bounded network-lag retries',()=>{
  assert.match(storage,/NetworkRetryDelay/);
  assert.match(storage,/EnumerateScanFilesOnce/);
  assert.match(storage,/NetworkReadAttempts/);
- assert.match(page,/stage==='evidence-status'\|\|stage==='evidence-pdf-status'\?90_000:5\*60\*1000/);
+ assert.match(storageRequest,/stage==='evidence-status'\|\|stage==='evidence-pdf-status'\?90_000:5\*60\*1000/);
 });
 
 test('slow network storage queues safely instead of failing after five seconds',()=>{
@@ -102,7 +103,7 @@ test('long scans and verified updates hold the launcher and browser session acti
  assert.match(apply,/syncInProgress\.current=true/);
  assert.match(apply,/setLauncherLongOperation\(true,true\)/);
  assert.match(apply,/finally\{window\.clearInterval\(launcherKeepAlive\);syncInProgress\.current=false/);
- assert.match(page,/stage==='scan'\|\|stage==='rework-retention'\|\|stage==='sync-pipeline'\|\|stage==='workspace-publish'\?4\*60\*60\*1000/);
+ assert.match(storageRequest,/stage==='scan'\|\|stage==='rework-retention'\|\|stage==='sync-pipeline'\|\|stage==='workspace-publish'\?4\*60\*60\*1000/);
 });
 
 test('evidence that fails canonical folder routing cannot enter database matching',()=>{

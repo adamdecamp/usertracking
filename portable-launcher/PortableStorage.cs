@@ -53,6 +53,7 @@ internal sealed partial class PortableStorage : IDisposable
     private const string ManifestShardDirectoryName = "Database Shards";
     private const string LocalManifestCacheFilename = "verified-manifest.cache";
     private const string LocalWorkspaceManifestFilename = "information-system-user-tracker.local.json";
+    private const string LocalWorkspaceBaseFilename = "information-system-user-tracker.base.json";
     private const string LocalWorkspaceStateFilename = "workspace-state.json";
     private const string LocalWorkspaceEvidenceFilename = "workspace-evidence.json";
     private const string LocalWorkspaceEvidenceRecoveryMarkerFilename = "workspace-evidence-map.v2";
@@ -607,7 +608,8 @@ internal sealed partial class PortableStorage : IDisposable
         catch (Exception) { throw new InvalidDataException("The database manifest is invalid JSON."); }
         string storageFormat = stored.ContainsKey("storageFormat") ? Convert.ToString(stored["storageFormat"], CultureInfo.InvariantCulture) : "";
         if (!String.Equals(storageFormat, ManifestStorageFormat, StringComparison.Ordinal)) return MigrateDatabaseObject(stored);
-        if (!stored.ContainsKey("version") || Convert.ToInt32(stored["version"], CultureInfo.InvariantCulture) != 2 || !stored.ContainsKey("systems") || !stored.ContainsKey("userShards") || !stored.ContainsKey("stateHash") || !stored.ContainsKey("userCount")) throw new InvalidDataException("The sharded database catalog is invalid.");
+        if (!stored.ContainsKey("version") || !stored.ContainsKey("systems") || !stored.ContainsKey("userShards") || !stored.ContainsKey("stateHash") || !stored.ContainsKey("userCount")) throw new InvalidDataException("The sharded database catalog is invalid.");
+        int catalogVersion = Convert.ToInt32(stored["version"], CultureInfo.InvariantCulture);if (catalogVersion != 2 && catalogVersion != 3) throw new InvalidDataException("The sharded database catalog uses an unsupported version.");
         int expectedTotal = Convert.ToInt32(stored["userCount"], CultureInfo.InvariantCulture);if (expectedTotal < 0 || expectedTotal > 100000) throw new InvalidDataException("The sharded database catalog user count is invalid.");
         object[] shardReferences = ObjectArray(stored["userShards"]);if (shardReferences.Length > 1000) throw new InvalidDataException("The sharded database catalog exceeds its organization limit.");
         string systemDirectory = Path.Combine(root, SystemDirectoryName), shardRoot = Path.Combine(systemDirectory, ManifestShardDirectoryName), shardRootPrefix = Path.GetFullPath(shardRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
@@ -637,7 +639,8 @@ internal sealed partial class PortableStorage : IDisposable
         }
         if (positionedUsers.Count != expectedTotal) throw new InvalidDataException("The sharded database catalog user count does not match its organization shards.");
         object[] users = positionedUsers.OrderBy(value => value.Item1).Select(value => value.Item2).ToArray();
-        var storedLogical = new Dictionary<string, object> { { "version", 4 }, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
+        var storedLogical = new Dictionary<string, object> { { "version", catalogVersion == 3 ? 5 : 4 }, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
+        if (catalogVersion == 3) { storedLogical["minimumApplicationVersion"] = stored["minimumApplicationVersion"];storedLogical["lastWriterVersion"] = stored["lastWriterVersion"]; }
         // Verify the exact persisted representation before applying backward-compatible
         // defaults. Otherwise a legitimate migration (for example adding an empty
         // historical change.files array) would incorrectly look like tampering.
@@ -661,7 +664,7 @@ internal sealed partial class PortableStorage : IDisposable
             else { AtomicWrite(path, bytes);if (!String.Equals(TryFileHash(path), hash, StringComparison.OrdinalIgnoreCase)) throw new IOException("A database organization shard failed post-write SHA-256 verification."); }
             references.Add(new Dictionary<string, object> { { "organization", group.Key }, { "file", ManifestShardDirectoryName + "/" + filename }, { "sha256", hash }, { "records", records.Length } });
         }
-        var catalog = new Dictionary<string, object> { { "version", 2 }, { "updated", updated }, { "storageFormat", ManifestStorageFormat }, { "stateHash", StateHash(database) }, { "systems", database["systems"] }, { "userCount", users.Length }, { "userShards", references.ToArray() } };
+        var catalog = new Dictionary<string, object> { { "version", 3 }, { "minimumApplicationVersion", database["minimumApplicationVersion"] }, { "lastWriterVersion", CurrentApplicationVersion }, { "updated", updated }, { "storageFormat", ManifestStorageFormat }, { "stateHash", StateHash(database) }, { "systems", database["systems"] }, { "userCount", users.Length }, { "userShards", references.ToArray() } };
         byte[] catalogBytes = Encoding.UTF8.GetBytes(json.Serialize(catalog));if (catalogBytes.LongLength > ManifestLimit) throw new InvalidDataException("The sharded database catalog exceeds the 50 MB safety limit.");
         return catalogBytes;
     }
@@ -916,6 +919,7 @@ internal sealed partial class PortableStorage : IDisposable
             string publishedHash = ReadManifestChecksumHash(sharedManifest, false), now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);WritePublicationJournal(workspaceRoot, "manifest-committed", state.BaseSharedSha256, requestedStateHash, staged, copied);
             FailAfter("publication-manifest-committed");
             WriteLocalWorkspaceState(workspaceRoot, new LocalWorkspaceState { BaseSharedSha256 = publishedHash, DatabaseStateHash = requestedStateHash, PendingEvidenceCount = localEvidence.Values.Count(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture)), Dirty = false, PulledAtUtc = now, SavedAtUtc = now });
+            WriteLocalWorkspaceBaseDatabase(workspaceRoot, ObjectDictionary(json.DeserializeObject(json.Serialize(requestedDatabase))), publishedHash);
             var completionErrors = new List<string>(preparationWarnings);int completedFiles = 0;
             foreach (PublicationEvidence item in staged)
             {
@@ -1120,15 +1124,24 @@ internal sealed partial class PortableStorage : IDisposable
         // catalog-and-shard read across a slow SMB/VPN connection. Full Access also uses
         // a checksum-protected local working database so routine edits do not touch SMB.
         SaveLocalManifestCache(Root(systemId), json.Serialize(manifestDatabase), manifestSha256);
-        string workspaceRoot = LocalWorkspaceRoot(systemId);LocalWorkspaceState workspaceState = ReadLocalWorkspaceState(workspaceRoot);bool workspaceResumed = false;
+        string workspaceRoot = LocalWorkspaceRoot(systemId);LocalWorkspaceState workspaceState = ReadLocalWorkspaceState(workspaceRoot);bool workspaceResumed = false, workspaceRebased = false;
         if (workspaceState != null && workspaceState.Dirty)
         {
-            if (!String.Equals(workspaceState.BaseSharedSha256, manifestSha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The shared master database changed after this computer created its local working copy. Publishing is blocked to prevent a stale overwrite. Finish or discard the earlier session before continuing.");
-            manifestDatabase = ReadLocalWorkspaceDatabase(workspaceRoot);workspaceResumed = true;
+            Dictionary<string, object> localDatabase = ReadLocalWorkspaceDatabase(workspaceRoot);
+            if (!String.Equals(workspaceState.BaseSharedSha256, manifestSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                Dictionary<string, object> baseDatabase;string baseSharedHash;
+                if (!TryReadLocalWorkspaceBaseDatabase(workspaceRoot, out baseDatabase, out baseSharedHash) || !String.Equals(baseSharedHash, workspaceState.BaseSharedSha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The shared master database changed after this computer created its local working copy. The earlier workspace predates safe cross-computer reconciliation, so publishing remains blocked. Preserve or discard that local session before continuing.");
+                Dictionary<string, object> latestSharedDatabase = ObjectDictionary(json.DeserializeObject(json.Serialize(manifestDatabase)));manifestDatabase = MergeLocalWorkspaceDatabase(baseDatabase, localDatabase, latestSharedDatabase);
+                WriteLocalWorkspaceBaseDatabase(workspaceRoot, latestSharedDatabase, manifestSha256);
+                WriteLocalWorkspaceDatabase(workspaceRoot, manifestDatabase, manifestSha256, true);workspaceRebased = true;
+            }
+            else manifestDatabase = localDatabase;
+            workspaceResumed = true;
         }
-        else WriteLocalWorkspaceDatabase(workspaceRoot, manifestDatabase, manifestSha256, false);
+        else { WriteLocalWorkspaceBaseDatabase(workspaceRoot, ObjectDictionary(json.DeserializeObject(json.Serialize(manifestDatabase))), manifestSha256);WriteLocalWorkspaceDatabase(workspaceRoot, manifestDatabase, manifestSha256, false); }
         string recoveryWarning = rejectedBackups.Count == 0 && !backupRebuilt ? "" : (backupRebuilt ? "The backup set contained no usable snapshot. A new verified backup was created from the checksum-verified live database after the audit chain passed." : rejectedBackups.Count.ToString(CultureInfo.InvariantCulture) + " newer or invalid backup snapshot(s) were skipped; the newest valid verified backup was used.");
-        return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "saved", File.GetLastWriteTimeUtc(manifestPath).ToString("o") }, { "backup", Convert.ToString(envelope["created"]) }, { "filename", Path.GetFileName(latest) }, { "auditHealthy", true }, { "auditEntries", audit.Entries }, { "auditHeadHash", audit.HeadHash }, { "auditVerification", "full-chain" }, { "manifestSha256", manifestSha256 }, { "checksumInitialized", checksumInitialized }, { "manifest", manifestDatabase }, { "localWorkspace", true }, { "workspacePath", workspaceRoot }, { "workspaceResumed", workspaceResumed }, { "backupRecoveryWarning", recoveryWarning }, { "skippedBackupCount", rejectedBackups.Count }, { "backupRebuilt", backupRebuilt } });
+        return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "saved", File.GetLastWriteTimeUtc(manifestPath).ToString("o") }, { "backup", Convert.ToString(envelope["created"]) }, { "filename", Path.GetFileName(latest) }, { "auditHealthy", true }, { "auditEntries", audit.Entries }, { "auditHeadHash", audit.HeadHash }, { "auditVerification", "full-chain" }, { "manifestSha256", manifestSha256 }, { "checksumInitialized", checksumInitialized }, { "manifest", manifestDatabase }, { "localWorkspace", true }, { "workspacePath", workspaceRoot }, { "workspaceResumed", workspaceResumed }, { "workspaceRebased", workspaceRebased }, { "backupRecoveryWarning", recoveryWarning }, { "skippedBackupCount", rejectedBackups.Count }, { "backupRebuilt", backupRebuilt } });
     }
 
     public void FinalizeMappedBackups()
@@ -1973,7 +1986,10 @@ internal sealed partial class PortableStorage : IDisposable
     {
         lock (RootLock(systemId))
         {
-            string root, source = ResolveEvidencePath(systemId, relative, out root);RecoverTransactions(root);string normalized = Relative(root, source);
+            string alreadyArchived, root, source;
+            try { source = ResolveEvidencePath(systemId, relative, out root); }
+            catch (FileNotFoundException) { if (TryResolveCompletedArchive(systemId, relative, requestedFilename, out alreadyArchived)) return json.Serialize(new Dictionary<string, object> { { "archived", alreadyArchived }, { "alreadyCompleted", true } });throw; }
+            RecoverTransactions(root);string normalized = Relative(root, source);
             if (IsLocalWorkspaceRoot(systemId, root))
             {
                 string currentDestination = LocalPublicEvidencePath(systemId, source);
@@ -1981,7 +1997,7 @@ internal sealed partial class PortableStorage : IDisposable
                     return json.Serialize(new Dictionary<string, object> { { "archived", currentDestination }, { "alreadyCompleted", true } });
             }
             if (ContainsManagedStorageDirectory(normalized) && !(allowReworkSource && IsOrganizationReworkEvidencePath(normalized))) throw new InvalidDataException("Only active evidence files can be moved to an organization Archive folder. Collision cleanup may move a verified file from its organization Rework folder.");
-            if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
+            if (!File.Exists(source)) { if (TryResolveCompletedArchive(systemId, relative, requestedFilename, out alreadyArchived)) return json.Serialize(new Dictionary<string, object> { { "archived", alreadyArchived }, { "alreadyCompleted", true } });throw new FileNotFoundException("The selected evidence file no longer exists."); }
             string validationError;
             if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
             if (IsLocalWorkspaceRoot(systemId, root)) return json.Serialize(new Dictionary<string, object> { { "archived", StageLocalArchive(systemId, source, requestedFilename) } });
@@ -1998,6 +2014,21 @@ internal sealed partial class PortableStorage : IDisposable
             string archived = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
             return json.Serialize(new Dictionary<string, object> { { "archived", archived } });
         }
+    }
+
+    private bool TryResolveCompletedArchive(string systemId, string relative, string requestedFilename, out string archived)
+    {
+        archived = null;string normalized = (relative ?? "").Replace('\\', '/'), requested = String.IsNullOrWhiteSpace(requestedFilename) ? Path.GetFileName(normalized) : Path.GetFileName(requestedFilename), workspace = LocalWorkspaceRoot(systemId);
+        foreach (Dictionary<string, object> record in ReadLocalEvidenceMap(systemId).Values)
+        {
+            string destination = Convert.ToString(record["destination"], CultureInfo.InvariantCulture).Replace('\\', '/'), localPath = Convert.ToString(record["localPath"], CultureInfo.InvariantCulture), candidate = Path.GetFileName(destination);bool alias = record.ContainsKey("aliases") && ObjectArray(record["aliases"]).Any(item => String.Equals(Convert.ToString(item, CultureInfo.InvariantCulture).Replace('\\', '/'), normalized, StringComparison.OrdinalIgnoreCase));
+            if (!IsArchiveEvidencePath(destination) || (!alias && !String.Equals(candidate, requested, StringComparison.OrdinalIgnoreCase))) continue;
+            string physical;try { physical = SafeRelativePath(workspace, localPath); } catch { continue; }
+            string shared;try { shared = SafeRelativePath(Root(systemId), destination); } catch { continue; }
+            if (File.Exists(physical) || File.Exists(shared)) { archived = destination;return true; }
+        }
+        if (IsArchiveEvidencePath(normalized)) { string existing;try { existing = SafeRelativePath(Root(systemId), normalized); } catch { return false; }if (File.Exists(existing)) { archived = normalized;return true; } }
+        return false;
     }
 
     private static DateTime? EvidenceDate(string filename)
@@ -3279,7 +3310,11 @@ internal sealed partial class PortableStorage : IDisposable
         if (version == 1) { if (!value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid.");value["version"] = 2;version = 2; }
         if (version == 2) { value["version"] = 3;version = 3; }
         if (version == 3) { value["version"] = 4;version = 4; }
-        if (version != 4 || !value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid or uses a newer unsupported schema.");
+        if (version == 4) { value["version"] = 5;value["minimumApplicationVersion"] = CurrentApplicationVersion;value["lastWriterVersion"] = CurrentApplicationVersion;version = 5; }
+        if (version != 5 || !value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid or uses a newer unsupported schema.");
+        string minimumVersion = RequiredBoundedString(value, "minimumApplicationVersion", 40, false, "database"), lastWriterVersion = RequiredBoundedString(value, "lastWriterVersion", 40, false, "database");
+        if (CompareApplicationVersions(minimumVersion, CurrentApplicationVersion) > 0) throw new InvalidDataException("This shared system requires R.A.P.T.O.R. " + CleanLine(minimumVersion, 40) + " or newer. Install the current approved release before opening this system.");
+        if (!ValidApplicationVersion(lastWriterVersion)) throw new InvalidDataException("The database manifest contains an invalid writer version.");
         object[] systems = ObjectArray(value["systems"]), users = ObjectArray(value["users"]);
         if (systems.Length > 1000 || users.Length > 100000) throw new InvalidDataException("The database manifest exceeds its record limits.");
         var systemIds = new HashSet<string>(StringComparer.Ordinal);
@@ -3403,50 +3438,6 @@ internal sealed partial class PortableStorage : IDisposable
         ValidateSystemId(systemId);
         lock (mapGate) { string root; if (roots.TryGetValue(systemId, out root)) return root; }
         throw new InvalidOperationException("Map the selected information system folder first.");
-    }
-
-    private string LocalWorkspaceRoot(string systemId)
-    {
-        string sharedRoot = Root(systemId), parent = Path.GetDirectoryName(mappingCachePath);
-        if (String.IsNullOrWhiteSpace(parent)) parent = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InformationSystemUserTracker");
-        string rootKey = Sha256(Path.GetFullPath(sharedRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).ToUpperInvariant()).Substring(0, 24);
-        string workspace = Path.Combine(parent, "Local Workspaces", rootKey);
-        // Custom/test profiles and some redirected corporate profiles can already
-        // consume most of MAX_PATH before an evidence filename is appended. Keep
-        // the normal documented location stable, but use a deterministic compact
-        // form when the workspace base itself is unusually long.
-        if (workspace.Length > 120) workspace = Path.Combine(parent, "W", rootKey.Substring(0, 16));
-        Directory.CreateDirectory(workspace);
-        bool harden;
-        lock (localWorkspaceAclGate) harden = hardenedLocalWorkspaces.Add(workspace);
-        if (harden)
-        {
-            try { HardenLocalWorkspaceAcl(workspace); }
-            catch { lock (localWorkspaceAclGate) hardenedLocalWorkspaces.Remove(workspace);throw; }
-        }
-        return workspace;
-    }
-
-    private static string LocalWorkspaceManifestPath(string workspaceRoot)
-    {
-        string system = Path.Combine(workspaceRoot, SystemDirectoryName);Directory.CreateDirectory(system);
-        return Path.Combine(system, LocalWorkspaceManifestFilename);
-    }
-
-    private static string LocalWorkspaceStatePath(string workspaceRoot)
-    {
-        string system = Path.Combine(workspaceRoot, SystemDirectoryName);Directory.CreateDirectory(system);
-        return Path.Combine(system, LocalWorkspaceStateFilename);
-    }
-
-    private static string LocalWorkspacePublicationPath(string workspaceRoot)
-    {
-        string system = Path.Combine(workspaceRoot, SystemDirectoryName);Directory.CreateDirectory(system);return Path.Combine(system, LocalWorkspacePublicationFilename);
-    }
-
-    private static string LocalWorkspacePublicationProgressPath(string workspaceRoot)
-    {
-        string system = Path.Combine(workspaceRoot, SystemDirectoryName);Directory.CreateDirectory(system);return Path.Combine(system, LocalWorkspacePublicationProgressFilename);
     }
 
     private void WritePublicationJournal(string workspaceRoot, string phase, string baseSharedSha256, string targetStateHash, List<PublicationEvidence> staged, int completedCopies)

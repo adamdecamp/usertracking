@@ -7,6 +7,7 @@ const directoryHeader=readFileSync(new URL('../app/components/DirectoryHeader.ts
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
+const storageRequest=readFileSync(new URL('../app/infrastructure/portable-storage-request.ts',import.meta.url),'utf8');
 const store=page.slice(page.indexOf('type StoredEvidenceResult'),page.indexOf('function withStorageMutationTimeout'));
 
 test('manual evidence storage uses bounded stages instead of one composite two-minute timer',()=>{
@@ -15,7 +16,7 @@ test('manual evidence storage uses bounded stages instead of one composite two-m
  assert.doesNotMatch(artifact,/standardArtifactFile/);
  assert.match(store,/evidence-pdf\?organization=/);
  assert.match(store,/pdfUploadBytes=new Uint8Array\(inspected\.pdfBytes\.byteLength\)/);
- assert.match(page,/stage==='evidence'\|\|stage==='evidence-pdf'\|\|stage==='file'\?5\*60\*1000/);
+ assert.match(storageRequest,/stage==='evidence'\|\|stage==='evidence-pdf'\|\|stage==='file'\?5\*60\*1000/);
 });
 
 test('a late portable write is reconciled from its exact path and SHA-256 receipt',()=>{

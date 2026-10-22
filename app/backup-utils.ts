@@ -4,7 +4,7 @@ import {currentManifestVersion} from './data-migrations.ts';
 export const backupSnapshotLimit=30;
 const maximumBackupBytes=50*1024*1024;
 
-export type BackupDatabase={version:number;updated:string;systems:unknown[];users:unknown[]};
+export type BackupDatabase={version:number;updated:string;systems:unknown[];users:unknown[];minimumApplicationVersion?:string;lastWriterVersion?:string};
 export type BackupEnvelope={backupVersion:1;created:string;contentHash:string;database:BackupDatabase};
 
 const encoder=new TextEncoder();
@@ -50,7 +50,7 @@ export async function verifyBackupSnapshot(text:string,expectedIntegrityHash:str
 
 async function validateBackupEnvelope(text:string){
  const value=JSON.parse(text) as Partial<BackupEnvelope>;
- if(value.backupVersion!==1||typeof value.created!=='string'||typeof value.contentHash!=='string'||!value.database||![2,currentManifestVersion].includes(value.database.version)||!Array.isArray(value.database.systems)||!Array.isArray(value.database.users))throw new Error('The backup format is invalid.');
+ if(value.backupVersion!==1||typeof value.created!=='string'||typeof value.contentHash!=='string'||!value.database||![2,3,4,currentManifestVersion].includes(value.database.version)||!Array.isArray(value.database.systems)||!Array.isArray(value.database.users))throw new Error('The backup format is invalid.');
  const contentHash=await sha256Hex(JSON.stringify({systems:value.database.systems,users:value.database.users}));
  if(contentHash!==value.contentHash)throw new Error('The backup content hash does not match its records.');
  return value as BackupEnvelope;

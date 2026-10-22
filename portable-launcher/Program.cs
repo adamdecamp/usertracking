@@ -53,10 +53,8 @@ internal sealed class TrackerContext : ApplicationContext
     private bool longOperationActive;
     private DateTime lastLongOperationHeartbeatUtc = DateTime.MinValue;
     private int outlookDraftActive;
-
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr windowHandle);
-
     [ComImport, Guid("42F85136-DB7E-439C-85F1-E4075D135FC8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IFileDialog
     {
@@ -85,7 +83,6 @@ internal sealed class TrackerContext : ApplicationContext
         void ClearClientData();
         void SetFilter(IntPtr filter);
     }
-
     [ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IShellItem
     {
@@ -95,7 +92,6 @@ internal sealed class TrackerContext : ApplicationContext
         void GetAttributes(uint mask, out uint attributes);
         void Compare(IShellItem item, uint hint, out int order);
     }
-
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
     private static extern void SHCreateItemFromParsingName([MarshalAs(UnmanagedType.LPWStr)] string path, IntPtr bindContext, ref Guid interfaceId, [MarshalAs(UnmanagedType.Interface)] out IShellItem item);
 
@@ -296,6 +292,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "sync-job" && parts[0] == "GET") response = storage.ReadSyncJob(systemId);
                     else if (action == "sync-job" && parts[0] == "POST") response = storage.SaveSyncJob(systemId, requestBody);
                     else if (action == "sync-job" && parts[0] == "DELETE") response = storage.ClearSyncJob(systemId);
+                    else if (action == "operation-status" && parts[0] == "GET") response = storage.ReadOperationReceipt(systemId, QueryValue(target, "operation"));
                     else if (action == "workspace-publish" && parts[0] == "POST") response = storage.PublishWorkspace(systemId, requestBody);
                     else if (action == "workspace-open" && parts[0] == "POST") { string workspacePath = storage.LocalWorkspacePath(systemId);Process.Start("explorer.exe", "\"" + workspacePath.Replace("\"", "") + "\"");response = "{\"opened\":true}"; }
                     else if (action == "backups" && parts[0] == "GET") response = storage.ListBackups(systemId, QueryValue(target, "logical"));
@@ -340,7 +337,9 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "lease-renew" && parts[0] == "POST") response = "{\"renewed\":" + (storage.RenewLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
                     else if (action == "lease-release" && parts[0] == "POST") { storage.ReleaseLease(systemId, QueryValue(target, "session")); response = "{\"released\":true}"; }
                     else { await Respond(stream, 404, "text/plain", Encoding.UTF8.GetBytes("Not Found"), false, "no-store"); return; }
-                    await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(response), false, "no-store"); return;
+                    if ((parts[0] == "POST" || parts[0] == "DELETE") && !String.IsNullOrWhiteSpace(operationId)) try { storage.SaveOperationReceipt(systemId, operationId, action, response); } catch { /* The primary mutation already succeeded; a local receipt failure must not reverse or misreport it. */ }
+                    try { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(response), false, "no-store"); } catch (IOException) { } catch (SocketException) { }
+                    return;
                 }
                 catch (Exception ex)
                 {
@@ -351,7 +350,8 @@ internal sealed class TrackerContext : ApplicationContext
                         storage.StoreErrorReport(systemId, "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".txt", report);
                     }
                     catch { }
-                    Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(message)), false, "no-store").GetAwaiter().GetResult(); return;
+                    try { Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(message)), false, "no-store").GetAwaiter().GetResult(); } catch (IOException) { } catch (SocketException) { }
+                    return;
                 }
                 finally { EndStorageRequest(); if (serializedStorage) { ClearActiveStorageOperation(systemId);systemStorageOperations.Release(); } }
             }

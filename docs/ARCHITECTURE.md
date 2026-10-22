@@ -17,6 +17,7 @@ R.A.P.T.O.R. is a local-first Windows application. The React client works agains
 3. Operator review changes the local manifest only after exact evidence provenance verification.
 4. Session Commit publishes changed immutable evidence and changed organization shards, then commits the small catalog last.
 5. Audit, backup, publication, and transaction journals make interrupted work recoverable.
+6. Multiple Read-Only operators may use the same shared system concurrently. Full Access remains a single cross-computer writer: the next editor must acquire the native shared-file lease, verify the latest master, and rebase only non-conflicting protected local changes before editing. Same-record conflicts stop Full Access rather than applying a stale overwrite.
 
 ## Security boundaries
 
@@ -25,6 +26,7 @@ R.A.P.T.O.R. is a local-first Windows application. The React client works agains
 - Runtime decoders reject malformed persisted and launcher data.
 - Evidence inputs are bounded by endpoint, validated by signature and extension, and stored with SHA-256 provenance.
 - Audit records are append-only, hash-chained, and anchored with Windows-user-protected signing material.
+- Shared manifests carry a minimum-client version. Once a newer client commits that schema, older clients fail closed; deployments therefore update all operator copies together.
 
 ## Maintainability guardrails
 

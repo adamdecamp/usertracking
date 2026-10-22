@@ -9,6 +9,7 @@ const directoryHeader=readFileSync(new URL('../app/components/DirectoryHeader.ts
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
+const workspaceReconciliation=readFileSync(new URL('../portable-launcher/PortableWorkspaceReconciliation.cs',import.meta.url),'utf8');
 const portableEntry=readFileSync(new URL('../portable/src/main.tsx',import.meta.url),'utf8');
 
 test('startup requires an explicit Read-Only or Full Access choice',()=>{
@@ -121,7 +122,7 @@ test('the live JSON database has an independently verified SHA-256 sidecar',()=>
 
 test('the local working database is Windows-user protected and publication is journaled',()=>{
  assert.match(storage,/ProtectedData\.Protect\(clear, LocalWorkspaceEntropy\(purpose\), DataProtectionScope\.CurrentUser\)/);
- assert.match(storage,/HardenLocalWorkspaceAcl\(workspace\)/);
+ assert.match(workspaceReconciliation,/HardenLocalWorkspaceAcl\(workspace\)/);
  assert.match(storage,/WritePublicationJournal\(workspaceRoot, "prepared"/);
  assert.match(storage,/WritePublicationJournal\(workspaceRoot, "evidence-verified"/);
  assert.match(storage,/WritePublicationJournal\(workspaceRoot, "manifest-committed"/);

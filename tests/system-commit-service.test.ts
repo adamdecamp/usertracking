@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildSystemCommitPayload,SystemCommitPayloadCache} from '../app/application/system-commit-service.ts';
 import type {SystemRecord,UserRecord} from '../app/domain/tracker-models.ts';
+import {applicationVersion} from '../app/version.ts';
 
 const systems:SystemRecord[]=[
  {id:'alpha',name:'Alpha',type:'Operational',organization:'HQ',archived:false},
@@ -24,6 +25,9 @@ test('system commit payload strictly scopes records and serialized state to one 
  assert.deepEqual(payload.scopedSystems.map(item=>item.id),['alpha']);
  assert.deepEqual(payload.scopedUsers.map(item=>item.id),['one','three']);
  assert.equal(payload.database.updated,'2026-10-16T12:00:00.000Z');
+ assert.equal(payload.database.version,5);
+ assert.equal(payload.database.minimumApplicationVersion,applicationVersion);
+ assert.equal(payload.database.lastWriterVersion,applicationVersion);
  assert.equal(payload.stateHash,'abc123');
  assert.equal(payload.csv,'csv');
  assert.deepEqual(csvUsers,['one','three']);

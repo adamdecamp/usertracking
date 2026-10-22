@@ -23,6 +23,7 @@ internal static class LauncherPolicy
             && !String.Equals(action, "performance", StringComparison.Ordinal)
             && !String.Equals(action, "diagnostics", StringComparison.Ordinal)
             && !String.Equals(action, "sync-job", StringComparison.Ordinal)
+            && !String.Equals(action, "operation-status", StringComparison.Ordinal)
             // Acquisition and renewal must remain available while a long operation
             // owns the per-system queue. Release is different: it must enter that
             // queue so the Windows exclusive lock cannot be dropped while an
@@ -60,6 +61,7 @@ internal static class LauncherPolicy
             || String.Equals(action, "audit-view", StringComparison.Ordinal)
             || String.Equals(action, "performance", StringComparison.Ordinal)
             || String.Equals(action, "sync-job", StringComparison.Ordinal)
+            || String.Equals(action, "operation-status", StringComparison.Ordinal)
             || String.Equals(action, "diagnostics", StringComparison.Ordinal)
             || String.Equals(action, "organizations", StringComparison.Ordinal)
             || String.Equals(action, "evidence-status", StringComparison.Ordinal)
