@@ -25,6 +25,9 @@ export type SystemRecord={
 };
 
 export type ArtifactSource='Manual Add'|'Manual Update'|'Sync';
+export type ExtractionSource='Filename'|'Organization Folder'|'SAAR AcroForm'|'DD2875 XFA'|'Selectable PDF Text'|'Operator';
+export type FieldProvenance={source:ExtractionSource;detail:string;verifiedAtUtc:string;filename?:string};
+export type UserExtractionProvenance=Partial<Record<'identity'|'organization'|'officialEmail'|'designation'|'accountType',FieldProvenance>>;
 
 export type Artifact={
  kind:string;
@@ -62,6 +65,7 @@ export type UserRecord={
  privilegedUsernames:string[];
  privilegedTypes:string[];
  artifacts:Artifact[];
+ extractionProvenance?:UserExtractionProvenance;
  changes?:ChangeRecord[];
  exceptions?:ComplianceException[];
 };

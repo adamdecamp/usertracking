@@ -1,0 +1,3 @@
+import type {NetworkQualificationResponse} from './portable-contracts.ts';
+
+export function qualificationPerformanceOperation(value:NetworkQualificationResponse){return{operation:`on-site-network-qualification (${value.rating})`,runs:1,averageMs:value.totalMs,p50Ms:value.totalMs,p95Ms:value.totalMs,maximumMs:value.totalMs,averagePreparationMs:value.writeMs,averageTransferMs:value.readVerifyMs,averageFinalizationMs:value.renameMs+value.exclusiveLockMs+value.enumerateMs,averageBytesTransferred:value.payloadBytes,averageBytesPerSecond:value.readVerifyMs?value.payloadBytes/(value.readVerifyMs/1000):value.payloadBytes}}

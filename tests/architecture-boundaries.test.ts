@@ -54,7 +54,8 @@ test('architectural size budgets prevent silent monolith growth',()=>{
  const pageBytes=statSync(join(appRoot,'page.tsx')).size;
  const storageLines=readFileSync(join(root,'portable-launcher','PortableStorage.cs'),'utf8').split(/\r?\n/).length;
  const launcherLines=readFileSync(join(root,'portable-launcher','Program.cs'),'utf8').split(/\r?\n/).length;
- assert.ok(pageBytes<=480_000,`app/page.tsx is ${pageBytes} bytes; extract behavior before exceeding 480,000.`);
+ assert.ok(pageBytes<=479_000,`app/page.tsx is ${pageBytes} bytes; extract behavior before exceeding 479,000.`);
  assert.ok(storageLines<=5_100,`PortableStorage.cs is ${storageLines} lines; extract a storage service before exceeding 5,100.`);
  assert.ok(launcherLines<=1_050,`Program.cs is ${launcherLines} lines; extract endpoint policy before exceeding 1,050.`);
+ for(const file of ['PortableSyncJob.cs','PortableNetworkQualification.cs','PortableManifestValidation.cs']){const lines=readFileSync(join(root,'portable-launcher',file),'utf8').split(/\r?\n/).length;assert.ok(lines<=300,`${file} is ${lines} lines; keep the launcher capability focused.`)}
 });

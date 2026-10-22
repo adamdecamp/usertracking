@@ -15,7 +15,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
-
 internal sealed class TrackerContext : ApplicationContext
 {
     private const int DefaultPort = 38473;
@@ -257,9 +256,7 @@ internal sealed class TrackerContext : ApplicationContext
                 string storageAction = action;
                 try
                 {
-                    // A request can wait behind another operation after the initial
-                    // authorization check. Recheck ownership immediately before
-                    // dispatch so a released lease can never authorize queued work.
+                    // Recheck authorization after queueing so a released lease cannot authorize work.
                     if (StorageActionRequiresLease(action, parts[0]) && !String.Equals(SessionAccessMode(), "full", StringComparison.Ordinal)) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The Full Access session ended while this operation was waiting to begin."), false, "no-store");return; }
                     if (StorageActionRequiresLease(action, parts[0]) && (String.IsNullOrWhiteSpace(leaseSession) || !storage.OwnsLease(systemId, leaseSession))) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The exclusive Full Access lease was released while this operation was waiting to begin."), false, "no-store");return; }
                     string response;
@@ -296,6 +293,9 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "state-commit" && parts[0] == "POST") response = storage.SaveSystemState(systemId, requestBody);
                     else if (action == "workspace" && parts[0] == "GET") response = storage.LocalWorkspaceInfo(systemId);
                     else if (action == "workspace-status" && parts[0] == "POST") response = storage.WorkspaceStatus(systemId, requestBody);
+                    else if (action == "sync-job" && parts[0] == "GET") response = storage.ReadSyncJob(systemId);
+                    else if (action == "sync-job" && parts[0] == "POST") response = storage.SaveSyncJob(systemId, requestBody);
+                    else if (action == "sync-job" && parts[0] == "DELETE") response = storage.ClearSyncJob(systemId);
                     else if (action == "workspace-publish" && parts[0] == "POST") response = storage.PublishWorkspace(systemId, requestBody);
                     else if (action == "workspace-open" && parts[0] == "POST") { string workspacePath = storage.LocalWorkspacePath(systemId);Process.Start("explorer.exe", "\"" + workspacePath.Replace("\"", "") + "\"");response = "{\"opened\":true}"; }
                     else if (action == "backups" && parts[0] == "GET") response = storage.ListBackups(systemId, QueryValue(target, "logical"));
@@ -334,6 +334,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "audit-verify" && parts[0] == "GET") response = storage.VerifyAuditLogs(systemId);
                     else if (action == "audit-view" && parts[0] == "GET") response = storage.ReadAuditLogs(systemId);
                     else if (action == "performance" && parts[0] == "GET") response = storage.ReadPerformanceDiagnostics(systemId);
+                    else if (action == "network-qualification" && parts[0] == "POST") response = storage.RunNetworkQualification(systemId);
                     else if (action == "diagnostics" && parts[0] == "GET") response = storage.ReadSanitizedDiagnostics(systemId);
                     else if (action == "lease-acquire" && parts[0] == "POST") response = "{\"acquired\":" + (storage.AcquireLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
                     else if (action == "lease-renew" && parts[0] == "POST") response = "{\"renewed\":" + (storage.RenewLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
@@ -1008,8 +1009,7 @@ internal sealed class TrackerContext : ApplicationContext
     protected override void ExitThreadCore()
     {
         if (Interlocked.Exchange(ref exitStarted, 1) != 0) return;
-        // A final watchdog guarantees that a slow network share, lease release, or
-        // cache cleanup cannot strand the tray process after shutdown was accepted.
+        // A final watchdog prevents the tray process from being stranded during shutdown.
         Task.Run(delegate { Thread.Sleep(8000);Environment.Exit(0); });
         try { lifecycleTimer.Stop(); lifecycleTimer.Dispose(); } catch { }
         try { stop.Cancel(); listener.Stop(); } catch { }

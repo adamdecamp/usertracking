@@ -637,7 +637,7 @@ internal sealed partial class PortableStorage : IDisposable
         }
         if (positionedUsers.Count != expectedTotal) throw new InvalidDataException("The sharded database catalog user count does not match its organization shards.");
         object[] users = positionedUsers.OrderBy(value => value.Item1).Select(value => value.Item2).ToArray();
-        var storedLogical = new Dictionary<string, object> { { "version", 3 }, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
+        var storedLogical = new Dictionary<string, object> { { "version", 4 }, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
         // Verify the exact persisted representation before applying backward-compatible
         // defaults. Otherwise a legitimate migration (for example adding an empty
         // historical change.files array) would incorrectly look like tampering.
@@ -3273,13 +3273,13 @@ internal sealed partial class PortableStorage : IDisposable
         catch (Exception) { throw new InvalidDataException("The database manifest is invalid JSON."); }
         return MigrateDatabaseObject(value);
     }
-
     private static Dictionary<string, object> MigrateDatabaseObject(Dictionary<string, object> value)
     {
         int version = value.ContainsKey("version") ? Convert.ToInt32(value["version"], CultureInfo.InvariantCulture) : 1;
         if (version == 1) { if (!value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid.");value["version"] = 2;version = 2; }
         if (version == 2) { value["version"] = 3;version = 3; }
-        if (version != 3 || !value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid or uses a newer unsupported schema.");
+        if (version == 3) { value["version"] = 4;version = 4; }
+        if (version != 4 || !value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid or uses a newer unsupported schema.");
         object[] systems = ObjectArray(value["systems"]), users = ObjectArray(value["users"]);
         if (systems.Length > 1000 || users.Length > 100000) throw new InvalidDataException("The database manifest exceeds its record limits.");
         var systemIds = new HashSet<string>(StringComparer.Ordinal);
@@ -3294,7 +3294,7 @@ internal sealed partial class PortableStorage : IDisposable
         foreach (object raw in users)
         {
             Dictionary<string, object> user = ObjectDictionary(raw);
-            if (!user.ContainsKey("affiliatedOrganizations")) user["affiliatedOrganizations"] = new object[0];if (!user.ContainsKey("privilegedUsernames")) user["privilegedUsernames"] = new object[0];if (!user.ContainsKey("privilegedTypes")) user["privilegedTypes"] = new object[0];if (!user.ContainsKey("changes")) user["changes"] = new object[0];if (!user.ContainsKey("exceptions")) user["exceptions"] = new object[0];
+            if (!user.ContainsKey("affiliatedOrganizations")) user["affiliatedOrganizations"] = new object[0];if (!user.ContainsKey("privilegedUsernames")) user["privilegedUsernames"] = new object[0];if (!user.ContainsKey("privilegedTypes")) user["privilegedTypes"] = new object[0];if (!user.ContainsKey("changes")) user["changes"] = new object[0];if (!user.ContainsKey("exceptions")) user["exceptions"] = new object[0];if (!user.ContainsKey("extractionProvenance")) user["extractionProvenance"] = new Dictionary<string, object>();
             foreach (object changeRaw in ObjectArray(user["changes"]))
             {
                 Dictionary<string, object> change = ObjectDictionary(changeRaw);
@@ -3314,10 +3314,10 @@ internal sealed partial class PortableStorage : IDisposable
             object[] artifacts = RequiredArray(user, "artifacts", 100, "user");foreach (object artifactRaw in artifacts) ValidateArtifactRecord(ObjectDictionary(artifactRaw));
             object[] changes = RequiredArray(user, "changes", 10000, "user");foreach (object changeRaw in changes) ValidateChangeRecord(ObjectDictionary(changeRaw));
             object[] exceptions = RequiredArray(user, "exceptions", 1000, "user");foreach (object exceptionRaw in exceptions) ValidateExceptionRecord(ObjectDictionary(exceptionRaw));
+            ValidateExtractionProvenance(ObjectDictionary(user["extractionProvenance"]));
         }
         return value;
     }
-
     private static string RequiredBoundedString(Dictionary<string, object> record, string key, int maximum, bool allowEmpty, string label)
     {
         object raw;if (!record.TryGetValue(key, out raw) || !(raw is string)) throw new InvalidDataException("A " + label + " record has an invalid " + key + " field.");

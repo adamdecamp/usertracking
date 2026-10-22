@@ -6,6 +6,8 @@ R.A.P.T.O.R. is a portable Windows administrative evidence tracker for informati
 
 A lightweight Windows administrative tool for tracking information-system users, access roles, training requirements, and supporting evidence. The portable application runs locally, opens its interface in the default browser, stages day-to-day work in a protected per-user local workspace, and publishes verified records and ZIP evidence to a user-selected shared directory.
 
+The current architecture, trust boundaries, recovery flow, and module rules are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Sync keeps a Windows-user-protected stage checkpoint in addition to its per-file journal, extracted user fields retain source provenance, and the Full Access Performance action includes a bounded on-site storage qualification probe.
+
 ## Download
 
 Use the executable attached to the latest GitHub Release. Every release also includes a one-page executive capability summary. Public releases are blocked unless the Windows executable has a valid Microsoft-backed Authenticode signature. Verify the signature from **Properties → Digital Signatures** and compare the executable and PDF SHA-256 values with `SHA256SUMS.txt` before use.

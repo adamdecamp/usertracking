@@ -1,7 +1,7 @@
 import type {SystemRecord,UserRecord} from '../domain/tracker-models';
 
 export type SystemCommitDatabase={
- version:3;
+ version:4;
  updated:string;
  systems:SystemRecord[];
  users:UserRecord[];
@@ -61,7 +61,7 @@ export async function buildSystemCommitPayload(
 ):Promise<SystemCommitPayload>{
  const state=await buildSystemCommitState(systems,users,systemId,dependencies);
  const database:SystemCommitDatabase={
-  version:3,
+  version:4,
   updated:(dependencies.now??(()=>new Date().toISOString()))(),
   systems:state.scopedSystems,
   users:state.scopedUsers,
@@ -106,7 +106,7 @@ export class SystemCommitPayloadCache{
  ):Promise<SystemCommitPayload>{
   const entry=this.ensure(systems,users,systemId,dependencies);
   if(!entry.payload)entry.payload=entry.state.then(state=>{
-   const database:SystemCommitDatabase={version:3,updated:(dependencies.now??(()=>new Date().toISOString()))(),systems:state.scopedSystems,users:state.scopedUsers};
+   const database:SystemCommitDatabase={version:4,updated:(dependencies.now??(()=>new Date().toISOString()))(),systems:state.scopedSystems,users:state.scopedUsers};
    return{...state,database,csv:dependencies.buildCsv(state.scopedUsers,state.scopedSystems)};
   });
   return entry.payload;

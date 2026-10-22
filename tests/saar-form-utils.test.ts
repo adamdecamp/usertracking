@@ -2,6 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PDFDict,PDFDocument,PDFName,PDFString} from 'pdf-lib';
 import {firstEmailFromText,officialEmailFromText,parseSaarName,parseSaarRequestDate,readSaarFormFields} from '../app/saar-form-utils.ts';
+import {sanitizedXfaCases} from './fixtures/saar/compatibility-cases.ts';
+
+test('supports every sanitized DD2875 compatibility-corpus packet',async()=>{
+ for(const item of sanitizedXfaCases){
+  const pdf=await PDFDocument.create();pdf.addPage([612,792]);const datasets=pdf.context.register(pdf.context.flateStream(item.xml)),xfa=pdf.context.obj([PDFString.of('datasets'),datasets]),acro=pdf.context.obj({Fields:[],XFA:xfa});pdf.catalog.set(PDFName.of('AcroForm'),pdf.context.register(acro));
+  const result=await readSaarFormFields(await pdf.save({useObjectStreams:false}));
+  assert.equal(result.identity?.last,item.expected.last,item.name);assert.equal(result.identity?.first,item.expected.first,item.name);assert.equal(result.identity?.middle,item.expected.middle,item.name);assert.equal(result.organization,item.expected.organization,item.name);assert.equal(result.email,item.expected.email,item.name);assert.equal(result.designation,item.expected.designation,item.name);
+ }
+});
 
 test('reads name, organization, and official email from the derived SAAR AcroForm',async()=>{
  const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),form=pdf.getForm();

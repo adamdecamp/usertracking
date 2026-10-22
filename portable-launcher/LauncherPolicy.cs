@@ -22,6 +22,7 @@ internal static class LauncherPolicy
             && !String.Equals(action, "file-location", StringComparison.Ordinal)
             && !String.Equals(action, "performance", StringComparison.Ordinal)
             && !String.Equals(action, "diagnostics", StringComparison.Ordinal)
+            && !String.Equals(action, "sync-job", StringComparison.Ordinal)
             // Acquisition and renewal must remain available while a long operation
             // owns the per-system queue. Release is different: it must enter that
             // queue so the Windows exclusive lock cannot be dropped while an
@@ -58,6 +59,7 @@ internal static class LauncherPolicy
             || String.Equals(action, "audit-verify", StringComparison.Ordinal)
             || String.Equals(action, "audit-view", StringComparison.Ordinal)
             || String.Equals(action, "performance", StringComparison.Ordinal)
+            || String.Equals(action, "sync-job", StringComparison.Ordinal)
             || String.Equals(action, "diagnostics", StringComparison.Ordinal)
             || String.Equals(action, "organizations", StringComparison.Ordinal)
             || String.Equals(action, "evidence-status", StringComparison.Ordinal)
@@ -75,6 +77,7 @@ internal static class LauncherPolicy
         if (action == "evidence" || action == "evidence-pdf") return 110L * MiB;
         if (action == "state-commit" || action == "workspace-publish") return 100L * MiB;
         if (action == "workspace-status") return 4L * KiB;
+        if (action == "sync-job") return 64L * KiB;
         if (action == "manifest" || action == "csv" || action == "report") return 50L * MiB;
         if (action == "outlook-draft") return 40L * MiB;
         if (action == "renamer-queue") return 20L * MiB;

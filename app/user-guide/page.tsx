@@ -78,7 +78,10 @@ export default function Guide() {
           <li>
             Choose <b>Stop Sync</b> while a scan is running if you need to
             cancel it. Cancelled scan results are discarded and no partial
-            database update is applied.
+            database update is applied. The portable app retains a protected
+            Sync-stage checkpoint and per-file journal. If Windows, the browser,
+            or the network interrupts Sync, the next run reports the stopped
+            stage and reuses completed discovery and validation work where safe.
           </li>
           <li>
             You may close Sync Review or apply verified updates without running
@@ -1057,12 +1060,24 @@ export default function Guide() {
           pending backup state, organization index-shard count, advisory change-
           notification health, and protected audit-checkpoint availability. It can
           be downloaded as JSON and contains no user records or evidence contents.
+          In Full Access, opening Performance also runs a bounded on-site storage
+          qualification probe: verified 64 KiB write/read, atomic rename,
+          exclusive lock, and top-level metadata enumeration. The temporary probe
+          is removed immediately and its timings appear as a performance entry.
           Choose <b>Download Sanitized Diagnostic Bundle</b> when technical support
           needs a troubleshooting package. That bundle uses a fixed, privacy-
           reviewed schema containing version, session, storage-health, performance,
           audit-summary, and categorized error-count data only. It excludes operator,
           user, and system identities; email addresses; filenames; paths; document
           contents; and audit-entry text.
+        </p>
+        <p>
+          User Records retain field-level extraction provenance for identity,
+          organization, Official Email, Designation of Person, and account type.
+          Sources distinguish canonical filenames, authoritative organization
+          folders, AcroForm fields, DD2875 XFA data, bounded selectable-text
+          fallback, and operator edits. Provenance supplements—but never replaces—
+          the original evidence and tamper-evident change history.
         </p>
         <p>
           At launch, choose <b>Read-Only Access</b> or <b>Full Access</b>.

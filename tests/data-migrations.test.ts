@@ -48,3 +48,9 @@ test('does not use compatibility defaults to hide malformed persisted arrays',()
  const users=migrated.users as Array<{changes:Array<{files:unknown}>}>;
  assert.equal(users[0].changes[0].files,null);
 });
+
+test('migrates version 3 manifests to extraction-provenance schema version 4',()=>{
+ const migrated=migrateManifestPayload({version:3,systems:[],users:[{id:'u1'}]})!;
+ assert.equal(migrated.version,4);
+ assert.deepEqual((migrated.users as Array<{extractionProvenance:unknown}>)[0].extractionProvenance,{});
+});

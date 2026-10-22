@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {backupFilename,buildBackupSnapshot,buildCompressedBackupSnapshot,checksumFilename,checksumFromText,compressedBackupFilename,sha256Hex,staleSnapshotNames,verifyBackupSnapshot,verifyStoredBackupSnapshot} from '../app/backup-utils.ts';
 
 const database={
- version:3,
+ version:4,
  updated:'ignored-on-build',
  systems:[{id:'system-1',name:'Test System',type:'Administrative',organization:'GOV',archived:false}],
  users:[{id:'user-1',systemId:'system-1',organization:'GOV',affiliatedOrganizations:['Agency A','Subcontractor B'],last:'Shaw',first:'Vivian',middle:'',email:'vivian@example.mil',disabled:false,roles:['Privileged'],privilegedUsernames:['vshaw_dta'],privilegedTypes:['DTA'],artifacts:[{kind:'SAAR',filename:'Shaw_Vivian_(GOV)_PRIV_DTA_SAAR_24AUG2026.pdf.zip'}],changes:[{timestamp:'2026-08-26T10:00:00.000Z',actor:'DOMAIN\\operator',action:'Add user',description:'Created',rolesBefore:[],rolesAfter:['Privileged'],files:['Shaw_Vivian_(GOV)_PRIV_DTA_SAAR_24AUG2026.pdf.zip']}]}],

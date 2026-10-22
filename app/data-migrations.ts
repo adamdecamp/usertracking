@@ -1,7 +1,7 @@
 import {normalizePrivilegedTypes} from './privileged-type-utils.ts';
 import {normalizeAffiliatedOrganizations} from './affiliated-organization-utils.ts';
 
-export const currentManifestVersion=3;
+export const currentManifestVersion=4;
 export const currentBackupVersion=1;
 export const currentAuditVersion=1;
 export const currentSyncIndexVersion=1;
@@ -33,6 +33,7 @@ export function migrateManifestPayload(value:unknown):JsonRecord|undefined{
    privilegedTypes:Array.isArray(item.privilegedTypes)?normalizePrivilegedTypes(item.privilegedTypes.filter((value):value is string=>typeof value==='string')):(legacyVersion?[]:item.privilegedTypes),
    changes,
    exceptions:Array.isArray(item.exceptions)?item.exceptions:(legacyVersion?[]:item.exceptions),
+   extractionProvenance:record(item.extractionProvenance)?item.extractionProvenance:{},
   };
  });
  input.version=currentManifestVersion;
