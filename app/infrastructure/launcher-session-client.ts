@@ -1,0 +1,15 @@
+import {portableFetch} from '../portable-request-utils.ts';
+import type {AccessMode} from '../session-utils.ts';
+import {decodeLauncherControlResponse,type LauncherControlResponse} from './portable-contracts.ts';
+import {decodeJsonResponse} from './runtime-decoders.ts';
+
+type LauncherWindow=Window&{__portableHost?:boolean;__trackerSessionToken?:string;__trackerSessionId?:string};
+const host=()=>window as LauncherWindow;
+
+export function launcherHeaders(initial?:HeadersInit){const headers=new Headers(initial),current=host();if(current.__trackerSessionToken)headers.set('X-RAPTOR-Session-Token',current.__trackerSessionToken);if(current.__trackerSessionId)headers.set('X-RAPTOR-Lease-Session',current.__trackerSessionId);return headers}
+export async function readLauncherControl():Promise<LauncherControlResponse>{if(!host().__portableHost)return{activeStorageRequests:0,longOperationActive:false};const response=await portableFetch(fetch,'/api/control','launcher activity',{credentials:'same-origin',cache:'no-store',headers:launcherHeaders()},false,0,10000);if(!response.ok)throw new Error((await response.text()).replace(/[\r\n\0]+/g,' ').trim()||'The Windows launcher activity could not be read.');return decodeJsonResponse(response,'Launcher activity',decodeLauncherControlResponse,64*1024)}
+export async function launcherPost(path:string,keepalive=false){if(!host().__portableHost)return;try{await portableFetch(fetch,path,path,{method:'POST',credentials:'same-origin',cache:'no-store',keepalive,headers:launcherHeaders()},false,0,10000)}catch{}}
+export async function openLauncherSession(mode:Exclude<AccessMode,'unselected'>){if(!host().__portableHost)return;const response=await portableFetch(fetch,`/api/session-open?mode=${encodeURIComponent(mode)}`,'open launcher session',{method:'POST',credentials:'same-origin',cache:'no-store',headers:launcherHeaders()},false,0,10000);if(!response.ok)throw new Error((await response.text()).replace(/[\r\n\0]+/g,' ').trim()||'The Windows launcher did not accept the access mode.')}
+export async function downgradeLauncherSession(){if(!host().__portableHost)return;const response=await portableFetch(fetch,'/api/session-downgrade','downgrade launcher session',{method:'POST',credentials:'same-origin',cache:'no-store',headers:launcherHeaders()},false,0,10000);if(!response.ok)throw new Error((await response.text()).replace(/[\r\n\0]+/g,' ').trim()||'The Windows launcher could not enter Read-Only Access.')}
+export async function upgradeLauncherSession(){if(!host().__portableHost)return;const response=await portableFetch(fetch,'/api/session-upgrade','upgrade launcher session',{method:'POST',credentials:'same-origin',cache:'no-store',headers:launcherHeaders()},false,0,10000);if(!response.ok)throw new Error((await response.text()).replace(/[\r\n\0]+/g,' ').trim()||'The Windows launcher could not enter Full Access.')}
+export async function setLauncherLongOperation(active:boolean,keepalive=false){await launcherPost(active?'/api/operation-active':'/api/operation-idle',keepalive)}

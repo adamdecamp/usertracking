@@ -268,6 +268,25 @@ internal static class PortableStorageTests
         }
     }
 
+    private static void RunLegacyWorkspaceRecovery(string parent)
+    {
+        string root = Path.Combine(parent, "legacy-workspace-recovery"), cache = Path.Combine(parent, "legacy-recovery-cache", "mappings.json");Directory.CreateDirectory(root);Directory.CreateDirectory(Path.GetDirectoryName(cache));
+        var storage = new PortableStorage("DOMAIN\\recovery-operator", cache);
+        try
+        {
+            storage.Map("legacy-recovery", root);storage.SaveManifest("legacy-recovery", Database("shared-base@example.mil"));storage.FinalizeMappedBackups();storage.VerifyLatest("legacy-recovery", "system-1");
+            byte[] localCommit = Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", Json.DeserializeObject(Database("unsent-local@example.mil")) }, { "csv", "local" } }));storage.SaveSystemState("legacy-recovery", localCommit);
+            string workspace = storage.LocalWorkspacePath("legacy-recovery"), system = Path.Combine(workspace, "System");File.Delete(Path.Combine(system, "information-system-user-tracker.base.json"));File.Delete(Path.Combine(system, "information-system-user-tracker.base.json.sha256"));
+            storage.SaveManifest("legacy-recovery", Database("newer-shared@example.mil"));storage.FinalizeMappedBackups();bool blocked = false;try { storage.VerifyLatest("legacy-recovery", "system-1"); } catch (InvalidDataException error) { blocked = error.Message.IndexOf("predates safe cross-computer reconciliation", StringComparison.OrdinalIgnoreCase) >= 0; }
+            Assert(blocked, "A dirty legacy workspace without its three-way merge base must fail closed after the shared master changes.");
+            var status = (Dictionary<string, object>)Json.DeserializeObject(storage.LegacyWorkspaceRecoveryStatus("legacy-recovery", "system-1"));Assert(Convert.ToBoolean(status["required"]) && !Convert.ToBoolean(status["baseSnapshotAvailable"]) && !Convert.ToBoolean(status["sharedDataWillChange"]) && Convert.ToInt32(status["userCount"]) == 1, "Guided recovery status must explain the preserved local workspace without claiming shared mutations.");
+            byte[] exportRequest = Encoding.UTF8.GetBytes("{\"logicalSystemId\":\"system-1\"}"), resetRequest = Encoding.UTF8.GetBytes("{\"logicalSystemId\":\"system-1\",\"confirmation\":\"BACK UP AND RESET\"}");var review = (Dictionary<string, object>)Json.DeserializeObject(storage.ExportLegacyWorkspaceRecovery("legacy-recovery", exportRequest));string reviewPath = Convert.ToString(review["path"], CultureInfo.InvariantCulture);Assert(File.Exists(reviewPath) && File.Exists(reviewPath + ".sha256") && Convert.ToString(review["sha256"]).Length == 64, "Recovery export must create a protected SHA-256-verified review ZIP.");
+            string sharedBefore = storage.ReadManifest("legacy-recovery");var recovered = (Dictionary<string, object>)Json.DeserializeObject(storage.ResetLegacyWorkspaceRecovery("legacy-recovery", resetRequest));Assert(Convert.ToBoolean(recovered["recoveryCompleted"]) && Directory.Exists(Convert.ToString(recovered["archivedWorkspacePath"], CultureInfo.InvariantCulture)) && storage.ReadWorkingManifest("legacy-recovery").Contains("newer-shared@example.mil") && storage.ReadManifest("legacy-recovery") == sharedBefore, "Recovery must archive rather than delete the stale workspace, rebuild from the newest verified shared master, and leave shared records unchanged.");
+            string audit = storage.ReadAuditLogs("legacy-recovery");Assert(audit.Contains("LEGACY WORKSPACE RECOVERY EXPORT") && audit.Contains("LEGACY WORKSPACE RECOVERY COMPLETED"), "Review export and recovery completion must be recorded in the tamper-evident shared audit chain.");
+        }
+        finally { storage.Dispose(); }
+    }
+
     private static byte[] TimestampedEvidenceZip(string entry, byte[] pdf, int day)
     {
         using (var memory = new MemoryStream())
@@ -516,7 +535,7 @@ internal static class PortableStorageTests
         Assert(TrackerContext.ShutdownShouldExit("operator-logoff", TimeSpan.FromSeconds(1), false, true, true, true), "A fully finalized operator logoff should exit immediately after the browser confirms readiness.");
         Assert(TrackerContext.ShutdownShouldExit("operator-exit", TimeSpan.FromSeconds(2), false, true, true, false), "Tray Exit should close promptly after pending backups finish without waiting for a browser callback.");
         Assert(!TrackerContext.ShutdownShouldExit("idle", TimeSpan.FromMinutes(2), true, false, false, false) && TrackerContext.ShutdownShouldExit("idle", TimeSpan.FromMinutes(3), true, false, false, false), "Idle shutdown should retain the longer recovery window but still terminate deterministically.");
-        Assert(TrackerContext.RequestBodyLimit("/api/storage/system/audit", "POST") == 8L * 1024 && TrackerContext.RequestBodyLimit("/api/storage/system/audit-batch", "POST") == 5L * 1024 * 1024 && TrackerContext.RequestBodyLimit("/api/storage/system/workspace-status", "POST") == 4L * 1024 && TrackerContext.RequestBodyLimit("/api/storage/system/evidence?ignored=1", "POST") == 110L * 1024 * 1024 && TrackerContext.RequestBodyLimit("/api/storage/system/scan", "POST") == 0 && TrackerContext.RequestBodyLimit("/api/storage/system/evidence", "GET") == 0, "Every launcher endpoint should have an explicit least-privilege request-body limit, independent of its query string.");
+        Assert(TrackerContext.RequestBodyLimit("/api/storage/system/audit", "POST") == 8L * 1024 && TrackerContext.RequestBodyLimit("/api/storage/system/audit-batch", "POST") == 5L * 1024 * 1024 && TrackerContext.RequestBodyLimit("/api/storage/system/workspace-status", "POST") == 4L * 1024 && TrackerContext.RequestBodyLimit("/api/storage/system/workspace-recovery-reset", "POST") == 4L * 1024 && TrackerContext.RequestBodyLimit("/api/storage/system/evidence?ignored=1", "POST") == 110L * 1024 * 1024 && TrackerContext.RequestBodyLimit("/api/storage/system/scan", "POST") == 0 && TrackerContext.RequestBodyLimit("/api/storage/system/evidence", "GET") == 0, "Every launcher endpoint should have an explicit least-privilege request-body limit, independent of its query string.");
         Assert(PortableStorage.ValidApplicationVersion(PortableStorage.CurrentApplicationVersion) && PortableStorage.CompareApplicationVersions("1.3.17", "1.3.16") > 0, "The launcher must enforce a deterministic semantic client-version policy before allowing an older editor to overwrite a newer database.");
         string root = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(root);
@@ -529,6 +548,7 @@ internal static class PortableStorageTests
         finally { PortableStorage.ReparseTagOverrideForTests = null; }
         RunStorageEnumerationFuzz(Path.GetDirectoryName(root));
         RunLocalDatabaseScanBoundary(Path.GetDirectoryName(root));
+        RunLegacyWorkspaceRecovery(Path.GetDirectoryName(root));
         RunLocalWorkflowLayout(Path.GetDirectoryName(root));
         RunPublicationRecovery(Path.GetDirectoryName(root));
         RunPublicationCollisions(Path.GetDirectoryName(root));

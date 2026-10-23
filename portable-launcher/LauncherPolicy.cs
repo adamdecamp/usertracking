@@ -78,7 +78,7 @@ internal static class LauncherPolicy
         int query = action.IndexOf('?');if (query >= 0) action = action.Substring(0, query);
         if (action == "evidence" || action == "evidence-pdf") return 110L * MiB;
         if (action == "state-commit" || action == "workspace-publish") return 100L * MiB;
-        if (action == "workspace-status") return 4L * KiB;
+        if (action == "workspace-status" || action == "workspace-recovery-export" || action == "workspace-recovery-reset") return 4L * KiB;
         if (action == "sync-job") return 64L * KiB;
         if (action == "manifest" || action == "csv" || action == "report") return 50L * MiB;
         if (action == "outlook-draft") return 40L * MiB;

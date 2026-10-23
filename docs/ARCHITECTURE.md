@@ -18,6 +18,7 @@ R.A.P.T.O.R. is a local-first Windows application. The React client works agains
 4. Session Commit publishes changed immutable evidence and changed organization shards, then commits the small catalog last.
 5. Audit, backup, publication, and transaction journals make interrupted work recoverable.
 6. Multiple Read-Only operators may use the same shared system concurrently. Full Access remains a single cross-computer writer: the next editor must acquire the native shared-file lease, verify the latest master, and rebase only non-conflicting protected local changes before editing. Same-record conflicts stop Full Access rather than applying a stale overwrite.
+7. A legacy dirty workspace without a valid three-way-merge base enters a dedicated lease-protected recovery flow. Recovery exports a hash-verified local review package, archives the complete old workspace without deletion, initializes from the verified shared master, and records the action in the shared audit chain. Shared records and evidence are never mutated by the recovery operation.
 
 ## Security boundaries
 

@@ -1144,6 +1144,21 @@ export default function Guide() {
           an older build from modifying a newer database.
         </p>
         <p>
+          If an older dirty local workspace predates safe cross-computer
+          reconciliation, R.A.P.T.O.R. opens <b>Recover Legacy Workspace</b>
+          instead of overwriting the newer shared master. <b>Export Preserved
+          Workspace For Review</b> creates a SHA-256-verified local ZIP of the
+          stale database and recovery details. <b>Back Up And Discard Stale
+          Workspace</b> requires the typed confirmation shown in the panel,
+          creates another review package, moves the complete old workspace into
+          the protected local Recovery Archive, and rebuilds the working copy
+          from the newest verified shared master. No files are automatically
+          deleted, shared records and evidence remain unchanged, the exclusive
+          editor lock stays active during recovery, and the actions are recorded
+          in the shared tamper-evident audit log. Choose <b>Continue In Read-Only</b>
+          to leave the stale workspace preserved without resetting it.
+        </p>
+        <p>
           Full Access edits use a local working directory protected for the signed-in
           Windows account. Its database, state, and pending-publication journal are
           encrypted with Windows user protection and integrity checked. When the

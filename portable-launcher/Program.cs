@@ -94,7 +94,6 @@ internal sealed class TrackerContext : ApplicationContext
     }
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
     private static extern void SHCreateItemFromParsingName([MarshalAs(UnmanagedType.LPWStr)] string path, IntPtr bindContext, ref Guid interfaceId, [MarshalAs(UnmanagedType.Interface)] out IShellItem item);
-
     public TrackerContext()
     {
         indexHtml = LoadResource("Tracker.Index");
@@ -120,7 +119,6 @@ internal sealed class TrackerContext : ApplicationContext
         Task.Run((Func<Task>)ListenLoop);
         OpenTracker();
     }
-
     // The build gate uses the real loopback listener and storage router without
     // opening a browser or installing a tray icon. This keeps the HTTP boundary,
     // origin/session enforcement, and failure recovery in the executable test path.
@@ -142,7 +140,6 @@ internal sealed class TrackerContext : ApplicationContext
         if (!storage.MapForFullSession("e2e-system", mapped, "e2e-session")) throw new IOException("The E2E launcher could not acquire its test lease.");
         Task.Run((Func<Task>)ListenLoop);
     }
-
     internal int E2EPort { get { return port; } }
     internal string E2ESessionToken { get { return sessionToken; } }
     internal void StopE2E()
@@ -289,6 +286,9 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "state-commit" && parts[0] == "POST") response = storage.SaveSystemState(systemId, requestBody);
                     else if (action == "workspace" && parts[0] == "GET") response = storage.LocalWorkspaceInfo(systemId);
                     else if (action == "workspace-status" && parts[0] == "POST") response = storage.WorkspaceStatus(systemId, requestBody);
+                    else if (action == "workspace-recovery" && parts[0] == "GET") response = storage.LegacyWorkspaceRecoveryStatus(systemId, QueryValue(target, "logical"));
+                    else if (action == "workspace-recovery-export" && parts[0] == "POST") response = storage.ExportLegacyWorkspaceRecovery(systemId, requestBody);
+                    else if (action == "workspace-recovery-reset" && parts[0] == "POST") response = storage.ResetLegacyWorkspaceRecovery(systemId, requestBody);
                     else if (action == "sync-job" && parts[0] == "GET") response = storage.ReadSyncJob(systemId);
                     else if (action == "sync-job" && parts[0] == "POST") response = storage.SaveSyncJob(systemId, requestBody);
                     else if (action == "sync-job" && parts[0] == "DELETE") response = storage.ClearSyncJob(systemId);

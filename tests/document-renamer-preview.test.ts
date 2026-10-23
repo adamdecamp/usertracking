@@ -9,9 +9,10 @@ const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.met
 const operationalPanels=readFileSync(new URL('../app/components/OperationalPanels.tsx',import.meta.url),'utf8');
 const statusUtils=readFileSync(new URL('../app/user-status-utils.ts',import.meta.url),'utf8');
 const csvUtils=readFileSync(new URL('../app/csv-utils.ts',import.meta.url),'utf8');
+const previewWindow=readFileSync(new URL('../app/application/pdf-preview-window.ts',import.meta.url),'utf8');
 
 test('Document Renamer preview reserves a full browser window before asynchronous PDF validation',()=>{
- assert.match(page,/function reservePdfPreviewWindow\(filename:string\)\{const target=window\.open\('about:blank','_blank'\)/);
+ assert.match(previewWindow,/function reservePdfPreviewWindow\(filename:string\)\{const target=window\.open\('about:blank','_blank'\)/);
  assert.match(page,/async function showPreview\(item:RenamerItem\)\{const sequence=\+\+previewSequence\.current,target=reservePdfPreviewWindow\(item\.filename\)/);
  assert.match(page,/target&&openPdfInReservedWindow\(target,url\)/);
  assert.match(page,/async function showCollisionPreview\(item:ScannedEvidence\)[\s\S]*?target=reservePdfPreviewWindow\(item\.filename\)/);

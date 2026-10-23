@@ -11,6 +11,7 @@ const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',impor
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
 const workspaceReconciliation=readFileSync(new URL('../portable-launcher/PortableWorkspaceReconciliation.cs',import.meta.url),'utf8');
 const portableEntry=readFileSync(new URL('../portable/src/main.tsx',import.meta.url),'utf8');
+const launcherSessionClient=readFileSync(new URL('../app/infrastructure/launcher-session-client.ts',import.meta.url),'utf8');
 
 test('startup requires an explicit Read-Only or Full Access choice',()=>{
  assert.match(sessionPanels,/Choose Your Access/);
@@ -52,8 +53,8 @@ test('Read-Only controls expose lookup without mutation workflows',()=>{
 });
 
 test('portable requests carry an authenticated launcher session and the launcher rejects Read-Only mutations',()=>{
- assert.match(page,/headers\.set\('X-RAPTOR-Session-Token'/);
- assert.match(page,/headers\.set\('X-RAPTOR-Lease-Session'/);
+ assert.match(launcherSessionClient,/headers\.set\('X-RAPTOR-Session-Token'/);
+ assert.match(launcherSessionClient,/headers\.set\('X-RAPTOR-Lease-Session'/);
  assert.match(launcher,/SessionTokenMatches\(presentedToken\)/);
  assert.match(launcher,/OpenSession\(mode\)/);
  assert.match(launcher,/DowngradeSessionAndReleaseLeases\(\)/);

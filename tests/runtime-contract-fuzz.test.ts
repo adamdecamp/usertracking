@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {decodeJsonResponse,RuntimeDecodeError} from '../app/infrastructure/runtime-decoders.ts';
 import {
  decodeCachedMappingResponse,decodeEvidenceFilenameResponse,decodeEvidenceStatusResponse,decodeLauncherControlResponse,
+ decodeLegacyWorkspaceRecoveryResult,decodeLegacyWorkspaceRecoveryStatus,decodeLegacyWorkspaceReviewPackage,
  decodeLeaseAcquireResponse,decodeLeaseRenewResponse,decodeNetworkQualificationResponse,decodeOperationReceipt,decodeOrganizationList,
  decodeOrganizationResponse,decodePathMutationResponse,decodePublishResponse,decodeSelectedFolderResponse,
  decodeStorageOperationReceipt,decodeStorageVerificationResponse,decodeStoredEvidenceResponse,decodeWorkspaceStatusResponse,
@@ -35,6 +36,10 @@ test('portable response contracts accept bounded valid payloads',()=>{
  assert.equal(mapping.mappings?.[0].folderName,'System One');
  assert.deepEqual(Object.keys(mapping.mappings?.[0]??{}).sort(),['cachedAtUtc','folderName','manifest','source','stateHash','storageId','systemId']);
  assert.deepEqual(decodeSelectedFolderResponse({cancelled:true}),{cancelled:true,folderName:undefined,manifest:undefined});
+ const reviewPackage={created:true,filename:'review.zip',path:'C:\\Recovery\\review.zip',sha256:hash,createdAtUtc:'2026-10-22T12:00:00.000Z',sharedDataChanged:false,evidenceIncluded:false};
+ assert.equal(decodeLegacyWorkspaceRecoveryStatus({required:true,dirty:true,legacy:true,baseSnapshotAvailable:false,systemName:'System One',userCount:2,savedAtUtc:'2026-10-20T12:00:00.000Z',baseSharedSha256:'',sharedManifestSha256:hash,sharedDataWillChange:false,automaticDeletion:false}).required,true);
+ assert.equal(decodeLegacyWorkspaceReviewPackage(reviewPackage).created,true);
+ assert.equal(decodeLegacyWorkspaceRecoveryResult({saved:'2026-10-22T12:00:00.000Z',backup:'2026-10-22T12:00:00.000Z',filename:'backup.json.gz',auditEntries:1,auditHeadHash:hash,manifestSha256:hash,recoveryCompleted:true,archivedWorkspacePath:'C:\\Recovery\\workspace',reviewPackage}).recoveryCompleted,true);
 });
 
 test('portable response contracts reject type confusion, control characters, bad hashes, and oversized arrays',()=>{
@@ -56,6 +61,8 @@ test('portable response contracts reject type confusion, control characters, bad
  assert.throws(()=>decodePublishResponse({saved:'now',stateHash:'bad'}),/state hash/);
  assert.throws(()=>decodeStorageOperationReceipt({completed:true,action:'archive',completedAtUtc:'invalid',responseAvailable:false,response:''}),/timestamp/);
  assert.throws(()=>decodeStorageOperationReceipt({completed:true,action:'archive',completedAtUtc:'2026-10-22T12:00:00.000Z',responseAvailable:false,response:'{}'}),/contradictory/);
+ assert.throws(()=>decodeLegacyWorkspaceRecoveryStatus({required:true,dirty:true,legacy:true,baseSnapshotAvailable:false,systemName:'System',userCount:1,savedAtUtc:'now',baseSharedSha256:'',sharedManifestSha256:hash,sharedDataWillChange:true,automaticDeletion:false}),/unsafe recovery policy/);
+ assert.throws(()=>decodeLegacyWorkspaceReviewPackage({created:true,filename:'x.zip',path:'x.zip',sha256:hash,createdAtUtc:'now',sharedDataChanged:false,evidenceIncluded:true}),/unsafe or invalid/);
 });
 
 function random(seed:number){let state=seed>>>0;return()=>{state=(state+0x6D2B79F5)>>>0;let value=state;value=Math.imul(value^(value>>>15),value|1);value^=value+Math.imul(value^(value>>>7),value|61);return((value^(value>>>14))>>>0)/4294967296}}
@@ -78,6 +85,7 @@ test('all portable decoders fail deterministically and never hang on randomized 
   decodeEvidenceStatusResponse,decodeSelectedFolderResponse,decodeCachedMappingResponse,decodeLauncherControlResponse,
   decodeStorageVerificationResponse,decodePathMutationResponse('path','Path mutation'),decodeOrganizationList,
   decodeOrganizationResponse,decodeOperationReceipt,decodeStorageOperationReceipt,decodePublishResponse,decodeWorkspaceStatusResponse,
+  decodeLegacyWorkspaceRecoveryStatus,decodeLegacyWorkspaceReviewPackage,decodeLegacyWorkspaceRecoveryResult,
  ];
  const seed=0x52415054,next=random(seed);
  for(let caseIndex=0;caseIndex<2500;caseIndex++){
