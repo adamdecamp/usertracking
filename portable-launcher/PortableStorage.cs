@@ -150,6 +150,7 @@ internal sealed partial class PortableStorage : IDisposable
         public string SessionId;
         public FileStream Stream;
         public DateTime LastRenewedUtc;
+        public long Generation;
     }
 
     private sealed class AuditState
@@ -254,6 +255,7 @@ internal sealed partial class PortableStorage : IDisposable
         public string SourceSha256;
         public string Sha256;
         public string PdfSha256;
+        public string OperationKey;
         public bool Reused;
     }
 
@@ -674,10 +676,11 @@ internal sealed partial class PortableStorage : IDisposable
         string clean = CleanLine(value, 200).Trim();return clean.Length == 0 ? "Unassigned" : clean;
     }
 
-    private static void PruneManifestShardFiles(string root, HashSet<string> activeShardFiles)
+    private void PruneManifestShardFiles(string root, HashSet<string> activeShardFiles)
     {
         try
         {
+            activeShardFiles.UnionWith(CatalogRecoveryShardFiles(root));
             string directory = Path.Combine(root, SystemDirectoryName, ManifestShardDirectoryName);if (!Directory.Exists(directory)) return;
             foreach (string stale in Directory.EnumerateFiles(directory, "org-*.json", SearchOption.TopDirectoryOnly).Where(path => !activeShardFiles.Contains(Path.GetFileName(path))).ToArray()) TryDelete(stale);
             foreach (string legacyDirectory in Directory.EnumerateDirectories(directory).ToArray()) try { Directory.Delete(legacyDirectory, true); } catch { }
@@ -719,6 +722,7 @@ internal sealed partial class PortableStorage : IDisposable
                     bool cacheHit;string existingText = ReadManifestOptimized(root, manifest, out cacheHit);Dictionary<string, object> existing = ValidateDatabase(existingText);
                     if (String.Equals(StateHash(existing), requestedStateHash, StringComparison.OrdinalIgnoreCase))
                     {
+                        EnsureCatalogRecoveryHeads(root, manifest);
                         string existingSaved = existing.ContainsKey("updated") ? Convert.ToString(existing["updated"], CultureInfo.InvariantCulture) : now;
                         return json.Serialize(new Dictionary<string, object> { { "saved", existingSaved }, { "backup", existingSaved }, { "snapshotCreated", false }, { "unchanged", true }, { "stateHash", requestedStateHash }, { "cacheHit", cacheHit } });
                     }
@@ -728,8 +732,8 @@ internal sealed partial class PortableStorage : IDisposable
             }
             database["updated"] = now;string canonical = json.Serialize(database);
             HashSet<string> activeShardFiles;byte[] manifestBytes = BuildShardedManifest(root, database, now, out activeShardFiles);
-            string destinationHash = Sha256Bytes(manifestBytes), transaction = BeginTransaction(root, "manifest-write", manifest, manifest, TryFileHash(manifest), destinationHash);
-            try { AtomicWrite(manifest, manifestBytes);FailAfter("manifest-write-before-checksum");WriteManifestChecksum(manifest, destinationHash);SaveLocalManifestCache(root, canonical, destinationHash);FailAfter("manifest-write");CompleteTransaction(transaction);PruneManifestShardFiles(root,activeShardFiles); }
+            string destinationHash = Sha256Bytes(manifestBytes), transaction = BeginTransaction(root, "manifest-write", manifest, manifest, TryFileHash(manifest), destinationHash);CatalogRecoveryHead previousCatalog = CaptureCatalogRecoveryHead(root, manifest);
+            try { AtomicWrite(manifest, manifestBytes);FailAfter("manifest-write-before-checksum");WriteManifestChecksum(manifest, destinationHash);SaveLocalManifestCache(root, canonical, destinationHash);FailAfter("manifest-write");CommitCatalogRecoveryHeads(root, manifestBytes, destinationHash, previousCatalog);CompleteTransaction(transaction);PruneManifestShardFiles(root,activeShardFiles); }
             catch { if (!String.Equals(TryFileHash(manifest), destinationHash, StringComparison.OrdinalIgnoreCase)) CompleteTransaction(transaction);throw; }
             string backupDirectory = SupportDirectory(root, "backup");
             QueueBackup(systemId, database, null);
@@ -851,10 +855,11 @@ internal sealed partial class PortableStorage : IDisposable
             var associatedPaths = new HashSet<string>(ObjectArray(requestedDatabase["users"]).SelectMany(value => ObjectArray(ObjectDictionary(value)["artifacts"])).Select(value => ObjectDictionary(value)).Where(item => item.ContainsKey("path")).Select(item => Convert.ToString(item["path"], CultureInfo.InvariantCulture).Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
             foreach (Dictionary<string, object> item in localEvidence.Values.Where(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture)))
             {
-                string relative = Convert.ToString(item["destination"], CultureInfo.InvariantCulture), source = SafeRelativePath(workspaceRoot, Convert.ToString(item["localPath"], CultureInfo.InvariantCulture)), hash = Convert.ToString(item["sha256"], CultureInfo.InvariantCulture);
+                string relative = Convert.ToString(item["destination"], CultureInfo.InvariantCulture), originalRelative = relative, source = SafeRelativePath(workspaceRoot, Convert.ToString(item["localPath"], CultureInfo.InvariantCulture)), hash = Convert.ToString(item["sha256"], CultureInfo.InvariantCulture);
                 if (!source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) { if (associatedPaths.Contains(relative)) throw new InvalidDataException("A locally associated evidence PDF must be compressed before publication: " + Path.GetFileName(source));deferredLocalPdfs++;continue; }
                 if (!String.Equals(hashCache.Container(source), hash, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A locally prepared evidence file changed before publication. The local session was preserved.");
-                staged.Add(PreparePublicationDestination(sharedRoot, source, relative, hash, hashCache));
+                relative = CanonicalPublicationRelative(requestedDatabase, relative, Path.GetFileName(source));
+                PublicationEvidence publication = PreparePublicationDestination(sharedRoot, source, relative, hash, hashCache);publication.OriginalRelative = originalRelative;staged.Add(publication);
             }
             // The protected evidence map is authoritative during routine commits.
             // A full tree enumeration is retained only for one-time recovery of a
@@ -868,6 +873,8 @@ internal sealed partial class PortableStorage : IDisposable
                     if (segments.Any(segment => IsIncomingStorageDirectory(segment) || IsReworkStorageDirectory(segment) || segment.EndsWith(" Complete", StringComparison.OrdinalIgnoreCase) || String.Equals(segment, "Complete", StringComparison.OrdinalIgnoreCase))) continue;
                     if (!localFile.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && !localFile.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
                     if (localFile.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) { if (associatedPaths.Contains(relative)) throw new InvalidDataException("A locally associated evidence PDF must be compressed before publication: " + Path.GetFileName(localFile));deferredLocalPdfs++;continue; }
+                    try { relative = CanonicalPublicationRelative(requestedDatabase, relative, Path.GetFileName(localFile)); }
+                    catch (InvalidDataException error) { preparationWarnings.Add(Path.GetFileName(localFile) + ": " + CleanLine(error.Message, 240));continue; }
                     string sourceHash = hashCache.Container(localFile);
                     if (!IsSha256(sourceHash)) throw new IOException("A locally staged evidence file failed SHA-256 verification before publication.");
                     staged.Add(PreparePublicationDestination(sharedRoot, localFile, relative, sourceHash, hashCache));
@@ -890,30 +897,24 @@ internal sealed partial class PortableStorage : IDisposable
                 if (!manifestAlreadyCommitted) throw new InvalidDataException("The shared master database changed during this session. No local records were published. Reopen the system and reconcile the newer shared copy before retrying.");
             }
             WritePublicationJournal(workspaceRoot, "prepared", state.BaseSharedSha256, requestedStateHash, staged, 0);
-            int copied = 0;long transferredBytes = 0L;var transferTimer = Stopwatch.StartNew();
+            int copied = 0;long transferredBytes = 0L;var transferTimer = Stopwatch.StartNew();var successfulPublications = new List<PublicationEvidence>();var publicationFailures = new List<string>();
             // Transfer and verify evidence first. The shared JSON remains the commit record.
             foreach (PublicationEvidence item in staged)
             {
-                if (!File.Exists(item.Destination))
+                try
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(item.Destination));
-                    string temporary = Path.Combine(Path.GetDirectoryName(item.Destination), ".isut-" + Guid.NewGuid().ToString("N") + ".tmp.zip");
-                    try
-                    {
-                        long copiedBytes;string streamedHash = StreamVerifiedEvidenceCopy(item.Source, temporary, out copiedBytes);
-                        if (copiedBytes > EvidenceLimit) throw new InvalidDataException("A staged evidence file exceeds the publication size limit.");
-                        if (!String.Equals(streamedHash, item.SourceSha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A locally prepared evidence file changed before transfer. The local session was preserved.");
-                        try { File.Move(temporary, item.Destination); } catch (IOException) { if (!File.Exists(item.Destination)) throw; }
-                        transferredBytes += copiedBytes;hashCache.Invalidate(item.Destination);
-                    }
-                    finally { TryDelete(temporary); }
+                    transferredBytes += TransferPublicationEvidence(item, hashCache);
+                    copied++;successfulPublications.Add(item);WritePublicationJournal(workspaceRoot, "evidence-copy", state.BaseSharedSha256, requestedStateHash, staged, copied);FailAfter("publication-evidence-copy");
                 }
-                if (!String.Equals(hashCache.Container(item.Destination), item.Sha256, StringComparison.OrdinalIgnoreCase)) throw new IOException("A shared evidence copy failed post-transfer SHA-256 verification. The shared master database was not changed.");
-                copied++;WritePublicationJournal(workspaceRoot, "evidence-copy", state.BaseSharedSha256, requestedStateHash, staged, copied);FailAfter("publication-evidence-copy");
+                catch (Exception error)
+                {
+                    string organization = PublicationOrganization(item.Relative), detail = organization + ": " + Path.GetFileName(item.Relative) + " — " + CleanLine(error.Message, 300);publicationFailures.Add(detail);QueueRecoveryFileFailure(systemId, item.OperationKey, organization, detail);
+                }
             }
             transferTimer.Stop();
 
-            RecordPublishedEvidence(sharedRoot, staged);
+            RecordPublishedEvidence(sharedRoot, successfulPublications);
+            if (publicationFailures.Count > 0) throw new IOException(publicationFailures.Count.ToString(CultureInfo.InvariantCulture) + " organization-scoped evidence publication action(s) failed while independent files continued: " + String.Join("; ", publicationFailures.Take(20)));
             WritePublicationJournal(workspaceRoot, "evidence-verified", state.BaseSharedSha256, requestedStateHash, staged, copied);
             string resultText = manifestAlreadyCommitted ? json.Serialize(new Dictionary<string, object> { { "saved", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "unchanged", true }, { "stateHash", requestedStateHash } }) : SaveSharedSystemState(systemId, bytes);
             string publishedHash = ReadManifestChecksumHash(sharedManifest, false), now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);WritePublicationJournal(workspaceRoot, "manifest-committed", state.BaseSharedSha256, requestedStateHash, staged, copied);
@@ -949,9 +950,12 @@ internal sealed partial class PortableStorage : IDisposable
 
     private PublicationEvidence PreparePublicationDestination(string sharedRoot, string source, string relative, string sourceHash, PublicationHashCache hashCache)
     {
+        string[] publicationParts = (relative ?? "").Replace('\\', '/').Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+        if (publicationParts.Length == 3 && String.Equals(publicationParts[0], "Organizations", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Evidence cannot be published at an organization root. Associate it with a user and document type through Sync so it can be routed directly to its final shared folder.");
         string validationError;
         if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException("A locally staged publication ZIP failed validation: " + validationError);
         var item = new PublicationEvidence { Source = source, OriginalRelative = relative, Relative = relative, Destination = SafeRelativePath(sharedRoot, relative), SourceSha256 = sourceHash, Sha256 = sourceHash, PdfSha256 = hashCache.Pdf(source) };
+        item.OperationKey = Sha256("publish-file-v1\n" + item.Relative.ToUpperInvariant() + "\n" + item.SourceSha256.ToLowerInvariant() + "\n" + item.PdfSha256.ToLowerInvariant());
         string[] parts = relative.Replace('\\', '/').Split('/');
         bool archive = parts.Skip(2).Take(Math.Max(0, parts.Length - 3)).Any(part => String.Equals(part, "Archive", StringComparison.OrdinalIgnoreCase) || part.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase));
         if (TryReusePublicationDestination(item, archive, hashCache)) return item;
@@ -3105,6 +3109,7 @@ internal sealed partial class PortableStorage : IDisposable
             held = new HeldLease { SessionId = sessionId, Stream = stream };
             try
             {
+                InitializeLeaseFence(systemId, held);
                 WriteLeaseMetadata(held, false);
                 lock (mapGate) heldLeases[systemId] = held;
                 RememberLastSystem(systemId);
@@ -3134,7 +3139,7 @@ internal sealed partial class PortableStorage : IDisposable
         {
             HeldLease held;
             lock (mapGate) heldLeases.TryGetValue(systemId, out held);
-            return held != null && String.Equals(held.SessionId, sessionId, StringComparison.Ordinal);
+            return held != null && String.Equals(held.SessionId, sessionId, StringComparison.Ordinal) && LeaseFenceMatches(systemId, held);
         }
     }
 
@@ -3407,7 +3412,7 @@ internal sealed partial class PortableStorage : IDisposable
     {
         for (int attempt = 0; attempt < 2; attempt++)
         {
-            try { WriteLeaseMetadata(held, released); return true; }
+            try { if (!LeaseFenceMatches(systemId, held)) throw new InvalidDataException("The exclusive editor lease was superseded by a newer fenced session.");WriteLeaseMetadata(held, released); return true; }
             catch { if (attempt == 0) Thread.Sleep(50); }
         }
         lock (mapGate) { HeldLease current; if (heldLeases.TryGetValue(systemId, out current) && Object.ReferenceEquals(current, held)) heldLeases.Remove(systemId); }
@@ -3417,7 +3422,7 @@ internal sealed partial class PortableStorage : IDisposable
 
     private void WriteLeaseMetadata(HeldLease held, bool released)
     {
-        var value = new Dictionary<string, object> { { "sessionId", held.SessionId }, { "actor", actor }, { "computer", Environment.MachineName }, { "processId", System.Diagnostics.Process.GetCurrentProcess().Id }, { "updated", DateTime.UtcNow.ToString("o") }, { "released", released }, { "lockType", "exclusive-windows-file-lock" } };
+        var value = new Dictionary<string, object> { { "sessionId", held.SessionId }, { "generation", held.Generation }, { "actor", actor }, { "computer", Environment.MachineName }, { "processId", System.Diagnostics.Process.GetCurrentProcess().Id }, { "updated", DateTime.UtcNow.ToString("o") }, { "released", released }, { "lockType", "exclusive-windows-file-lock-with-fencing" } };
         byte[] bytes = Encoding.UTF8.GetBytes(json.Serialize(value));
         held.Stream.Position = 0;
         held.Stream.Write(bytes, 0, bytes.Length);
@@ -3447,7 +3452,7 @@ internal sealed partial class PortableStorage : IDisposable
             AppendPublicationProgress(workspaceRoot, phase, targetStateHash, completedCopies);
             return;
         }
-        var items = staged.Select(item => (object)new Dictionary<string, object> { { "source", Relative(workspaceRoot, item.Source).Replace(Path.DirectorySeparatorChar, '/') }, { "destination", item.Relative }, { "sha256", item.Sha256 }, { "sourceSha256", item.SourceSha256 }, { "pdfSha256", item.PdfSha256 } }).ToArray();
+        var items = staged.Select(item => (object)new Dictionary<string, object> { { "operationKey", item.OperationKey ?? Sha256("publish-file-v1\n" + item.Relative.ToUpperInvariant() + "\n" + item.SourceSha256.ToLowerInvariant() + "\n" + item.PdfSha256.ToLowerInvariant()) }, { "source", Relative(workspaceRoot, item.Source).Replace(Path.DirectorySeparatorChar, '/') }, { "destination", item.Relative }, { "sha256", item.Sha256 }, { "sourceSha256", item.SourceSha256 }, { "pdfSha256", item.PdfSha256 } }).ToArray();
         var journal = new Dictionary<string, object> { { "version", LocalWorkspacePublicationVersion }, { "updatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "phase", phase }, { "baseSharedSha256", baseSharedSha256 }, { "targetStateHash", targetStateHash }, { "completedCopies", completedCopies }, { "items", items } };
         WriteProtectedLocalJson(LocalWorkspacePublicationPath(workspaceRoot), "workspace-publication", json.Serialize(journal));
         if (String.Equals(phase, "prepared", StringComparison.Ordinal) || String.Equals(phase, "manifest-committed", StringComparison.Ordinal)) TryDelete(LocalWorkspacePublicationProgressPath(workspaceRoot));
@@ -3471,7 +3476,7 @@ internal sealed partial class PortableStorage : IDisposable
             foreach (PublicationEvidence item in group)
             {
                 var info = new FileInfo(item.Destination);info.Refresh();if (!info.Exists) throw new FileNotFoundException("A published evidence file disappeared before its publication receipt was recorded.", item.Destination);
-                string relative = item.Relative.Replace('\\', '/');records[relative] = new Dictionary<string, object> { { "path", relative }, { "size", info.Length }, { "lastModifiedUnixMs", new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds() }, { "sha256", item.Sha256 }, { "publishedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "publishedBy", actor } };
+                string relative = item.Relative.Replace('\\', '/');records[relative] = new Dictionary<string, object> { { "operationKey", item.OperationKey ?? Sha256("publish-file-v1\n" + relative.ToUpperInvariant() + "\n" + item.SourceSha256.ToLowerInvariant() + "\n" + item.PdfSha256.ToLowerInvariant()) }, { "path", relative }, { "size", info.Length }, { "lastModifiedUnixMs", new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds() }, { "sha256", item.Sha256 }, { "publishedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "publishedBy", actor } };
             }
             Dictionary<string, object> reference = WritePublishedEvidenceShard(directory, organization, records);shardReferences[organization] = reference;
         }

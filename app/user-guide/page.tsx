@@ -1179,6 +1179,22 @@ export default function Guide() {
           disconnects, the shared database is not partially advanced and the protected
           local session remains available for a safe retry.
         </p>
+        <h3>Recovery Center</h3>
+        <p>
+          Use <b>Recovery Center</b> on the dashboard to review the latest durable
+          operation stage, failed actions grouped by organization, and the verified
+          current and previous database catalog heads. You can retry through Sync,
+          defer an item without deleting it, download a recovery report, or restore
+          the previous catalog when Full Access is available. Restoration is always
+          an explicit operator action and does not move or delete evidence.
+        </p>
+        <p>
+          Every Full Access session receives a newer fencing generation. This blocks
+          a stale launcher from writing after another operator receives the exclusive
+          session. Changed evidence receives a deterministic operation key, and an
+          exact repeated request replays the recorded result rather than repeating
+          the file change.
+        </p>
         <p>
           After 15 minutes without activity, a Read-Only operator is disconnected
           and the session end is audited. Full Access retains the existing
@@ -1537,6 +1553,10 @@ export default function Guide() {
         checksum, snapshot, and
         daily CSV updates are submitted through one serialized launcher commit to
         reduce shared-drive round trips. The verified live catalog commit is immediate;
+        evidence ZIPs publish directly to the organization&apos;s final document-type
+        folder. R.A.P.T.O.R. blocks publication to an organization root; a legacy
+        or unindexed ZIP without one unambiguous user-artifact association remains
+        in the local workspace for Sync review.
         repeated snapshot and daily CSV work is coalesced for up to 30 seconds and
         is force-flushed before logoff or shutdown. If record state did not change,
         the launcher leaves the verified database, snapshot, and daily CSV untouched.

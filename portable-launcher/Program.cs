@@ -246,13 +246,15 @@ internal sealed class TrackerContext : ApplicationContext
                 if (serializedStorage && !await systemStorageOperations.WaitAsync(queueWaitMilliseconds)) { string activeOperation = ActiveStorageOperation(systemId);await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("This information system is busy completing " + (String.IsNullOrWhiteSpace(activeOperation) ? "another verified operation" : activeOperation) + " after waiting " + (queueWaitMilliseconds / 1000).ToString(System.Globalization.CultureInfo.InvariantCulture) + " seconds. Other mapped systems remain available. Safe reads retry automatically; file-changing actions remain uncommitted until their turn begins."), false, "no-store"); return; }
                 if (serializedStorage) SetActiveStorageOperation(systemId, StorageActionDisplayName(action));
                 BeginStorageRequest();
-                string storageAction = action;
+                string storageAction = action, requestSha256 = OperationRequestSha256(parts[0], target, requestBody), recoveryRunId = null;bool mutation = parts[0] == "POST" || parts[0] == "DELETE";
                 try
                 {
                     // Recheck authorization after queueing so a released lease cannot authorize work.
                     if (StorageActionRequiresLease(action, parts[0]) && !String.Equals(SessionAccessMode(), "full", StringComparison.Ordinal)) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The Full Access session ended while this operation was waiting to begin."), false, "no-store");return; }
                     if (StorageActionRequiresLease(action, parts[0]) && (String.IsNullOrWhiteSpace(leaseSession) || !storage.OwnsLease(systemId, leaseSession))) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The exclusive Full Access lease was released while this operation was waiting to begin."), false, "no-store");return; }
                     string response;
+                    if (mutation && !String.IsNullOrWhiteSpace(operationId) && storage.TryReplayOperation(systemId, operationId, action, requestSha256, out response)) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(response), false, "no-store");return; }
+                    if (mutation && serializedStorage && StorageActionRequiresLease(action, parts[0])) recoveryRunId = storage.BeginRecoveryOperation(systemId, operationId, action, requestSha256, OptionalQueryValue(target, "organization"));
                     if (action == "select" && parts[0] == "POST")
                     {
                         string selected = await ChooseFolder();
@@ -293,6 +295,10 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "sync-job" && parts[0] == "POST") response = storage.SaveSyncJob(systemId, requestBody);
                     else if (action == "sync-job" && parts[0] == "DELETE") response = storage.ClearSyncJob(systemId);
                     else if (action == "operation-status" && parts[0] == "GET") response = storage.ReadOperationReceipt(systemId, QueryValue(target, "operation"));
+                    else if (action == "recovery" && parts[0] == "GET") response = storage.ReadRecoveryCenter(systemId);
+                    else if (action == "recovery-defer" && parts[0] == "POST") response = storage.DeferRecoveryRetry(systemId, QueryValue(target, "key"));
+                    else if (action == "catalog-recovery" && parts[0] == "GET") response = storage.ReadCatalogRecoveryStatus(systemId);
+                    else if (action == "catalog-restore-previous" && parts[0] == "POST") response = storage.RestorePreviousCatalog(systemId);
                     else if (action == "workspace-publish" && parts[0] == "POST") response = storage.PublishWorkspace(systemId, requestBody);
                     else if (action == "workspace-open" && parts[0] == "POST") { string workspacePath = storage.LocalWorkspacePath(systemId);Process.Start("explorer.exe", "\"" + workspacePath.Replace("\"", "") + "\"");response = "{\"opened\":true}"; }
                     else if (action == "backups" && parts[0] == "GET") response = storage.ListBackups(systemId, QueryValue(target, "logical"));
@@ -337,12 +343,14 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "lease-renew" && parts[0] == "POST") response = "{\"renewed\":" + (storage.RenewLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
                     else if (action == "lease-release" && parts[0] == "POST") { storage.ReleaseLease(systemId, QueryValue(target, "session")); response = "{\"released\":true}"; }
                     else { await Respond(stream, 404, "text/plain", Encoding.UTF8.GetBytes("Not Found"), false, "no-store"); return; }
-                    if ((parts[0] == "POST" || parts[0] == "DELETE") && !String.IsNullOrWhiteSpace(operationId)) try { storage.SaveOperationReceipt(systemId, operationId, action, response); } catch { /* The primary mutation already succeeded; a local receipt failure must not reverse or misreport it. */ }
+                    if (mutation && !String.IsNullOrWhiteSpace(operationId)) storage.SaveOperationReceipt(systemId, operationId, action, requestSha256, response);
+                    if (!String.IsNullOrWhiteSpace(recoveryRunId)) storage.CompleteRecoveryOperation(systemId, recoveryRunId, action);
                     try { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(response), false, "no-store"); } catch (IOException) { } catch (SocketException) { }
                     return;
                 }
                 catch (Exception ex)
                 {
+                    if (!String.IsNullOrWhiteSpace(recoveryRunId)) try { storage.FailRecoveryOperation(systemId, recoveryRunId, action, operationId, requestSha256, OptionalQueryValue(target, "organization"), ex); } catch { }
                     string message = StorageError(ex, storageAction) + (String.IsNullOrWhiteSpace(operationId) ? "" : " Operation ID: " + CleanError(operationId).Substring(0, Math.Min(CleanError(operationId).Length, 100)) + ".");
                     if (!String.Equals(storageAction, "error-report", StringComparison.Ordinal)) try
                     {
@@ -758,10 +766,7 @@ internal sealed class TrackerContext : ApplicationContext
         throw new InvalidDataException("The HTTP request headers are invalid or too large.");
     }
 
-    internal static long RequestBodyLimit(string path, string method)
-    {
-        return LauncherPolicy.RequestBodyLimit(path, method);
-    }
+    internal static long RequestBodyLimit(string path, string method) { return LauncherPolicy.RequestBodyLimit(path, method); }
 
     private static async Task<byte[]> ReadBody(NetworkStream stream, long length, long endpointLimit)
     {
@@ -779,21 +784,13 @@ internal sealed class TrackerContext : ApplicationContext
         }
     }
 
-    private static string QueryValue(string target, string name)
-    {
-        int question = target.IndexOf('?'); if (question < 0) throw new InvalidDataException("A required request value is missing.");
-        foreach (string pair in target.Substring(question + 1).Split('&')) { int equals = pair.IndexOf('='); if (equals >= 0 && Uri.UnescapeDataString(pair.Substring(0, equals)) == name) return Uri.UnescapeDataString(pair.Substring(equals + 1)); }
-        throw new InvalidDataException("A required request value is missing.");
-    }
+    private static string QueryValue(string target, string name) { int question = target.IndexOf('?'); if (question < 0) throw new InvalidDataException("A required request value is missing.");foreach (string pair in target.Substring(question + 1).Split('&')) { int equals = pair.IndexOf('='); if (equals >= 0 && Uri.UnescapeDataString(pair.Substring(0, equals)) == name) return Uri.UnescapeDataString(pair.Substring(equals + 1)); }throw new InvalidDataException("A required request value is missing."); }
 
-    private static string OptionalQueryValue(string target, string name)
-    {
-        int question = target.IndexOf('?'); if (question < 0) return null;
-        foreach (string pair in target.Substring(question + 1).Split('&')) { int equals = pair.IndexOf('='); if (equals >= 0 && Uri.UnescapeDataString(pair.Substring(0, equals)) == name) return Uri.UnescapeDataString(pair.Substring(equals + 1)); }
-        return null;
-    }
+    private static string OptionalQueryValue(string target, string name) { int question = target.IndexOf('?'); if (question < 0) return null;foreach (string pair in target.Substring(question + 1).Split('&')) { int equals = pair.IndexOf('='); if (equals >= 0 && Uri.UnescapeDataString(pair.Substring(0, equals)) == name) return Uri.UnescapeDataString(pair.Substring(equals + 1)); }return null; }
 
     private static string CleanError(string value) { if (String.IsNullOrWhiteSpace(value)) return "The storage request failed."; string clean = value.Replace("\r", " ").Replace("\n", " ").Replace("\0", " ").Trim(); return clean.Length > 1200 ? clean.Substring(0, 1200) : clean; }
+
+    private static string OperationRequestSha256(string method, string target, byte[] body) { byte[] prefix = Encoding.UTF8.GetBytes((method ?? "") + "\n" + (target ?? "") + "\n"), payload = body ?? new byte[0];using (SHA256 sha = SHA256.Create()) { sha.TransformBlock(prefix, 0, prefix.Length, null, 0);sha.TransformFinalBlock(payload, 0, payload.Length);return BitConverter.ToString(sha.Hash).Replace("-", "").ToLowerInvariant(); } }
     private static string ErrorReportDetail(Exception error) { string value = error == null ? "The launcher operation failed without an exception detail." : error.ToString();value = value.Replace("\0", " ").Trim();return value.Length > 64 * 1024 ? value.Substring(0, 64 * 1024) : value; }
     private static string StorageError(Exception ex, string operation)
     {

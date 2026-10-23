@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const page=fs.readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const storage=fs.readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
+const publicationRecovery=fs.readFileSync(new URL('../portable-launcher/PublicationRecovery.cs',import.meta.url),'utf8');
 const workspaceStatus=fs.readFileSync(new URL('../portable-launcher/PortableWorkspaceStatus.cs',import.meta.url),'utf8');
 const launcher=fs.readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const policy=fs.readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
@@ -218,7 +219,7 @@ test('workspace publication streams evidence and appends bounded progress withou
  assert.match(publish,/"noChanges", true/);
  assert.match(page,/Checking Local Changes/);
  assert.doesNotMatch(page,/Compressing and Verifying Local Evidence/);
- assert.match(publish,/StreamVerifiedEvidenceCopy\(item\.Source, temporary/);
+ assert.match(publicationRecovery,/StreamVerifiedEvidenceCopy\(item\.Source, temporary/);
  assert.doesNotMatch(publish,/File\.ReadAllBytes\(item\.Source\)/);
  assert.match(storage,/AppendPublicationProgress/);
  assert.match(storage,/workspace-publication-progress\.jsonl/);

@@ -6,6 +6,26 @@ using System.Linq;
 
 internal sealed partial class PortableStorage
 {
+    private long TransferPublicationEvidence(PublicationEvidence item, PublicationHashCache hashCache)
+    {
+        long transferred = 0L;
+        if (!File.Exists(item.Destination))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(item.Destination));string temporary = Path.Combine(Path.GetDirectoryName(item.Destination), ".isut-" + Guid.NewGuid().ToString("N") + ".tmp.zip");
+            try
+            {
+                long copiedBytes;string streamedHash = StreamVerifiedEvidenceCopy(item.Source, temporary, out copiedBytes);
+                if (copiedBytes > EvidenceLimit) throw new InvalidDataException("A staged evidence file exceeds the publication size limit.");
+                if (!String.Equals(streamedHash, item.SourceSha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A locally prepared evidence file changed before transfer. The local session was preserved.");
+                try { File.Move(temporary, item.Destination); } catch (IOException) { if (!File.Exists(item.Destination)) throw; }
+                transferred = copiedBytes;hashCache.Invalidate(item.Destination);
+            }
+            finally { TryDelete(temporary); }
+        }
+        if (!String.Equals(hashCache.Container(item.Destination), item.Sha256, StringComparison.OrdinalIgnoreCase)) throw new IOException("A shared evidence copy failed post-transfer SHA-256 verification. The shared master database was not changed.");
+        return transferred;
+    }
+
     private static bool HasUnindexedAssociatedLocalEvidence(string workspaceRoot, Dictionary<string, object> database)
     {
         var filenames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -165,5 +185,28 @@ internal sealed partial class PortableStorage
     private static void AddEvidenceReferenceVariants(HashSet<string> references, string value)
     {
         string normalized = (value ?? "").Replace('\\', '/');if (!normalized.StartsWith("Organizations/", StringComparison.OrdinalIgnoreCase)) return;references.Add(normalized);if (normalized.EndsWith(".pdf.zip", StringComparison.OrdinalIgnoreCase)) references.Add(normalized.Substring(0, normalized.Length - 4));else if (normalized.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) references.Add(normalized + ".zip");
+    }
+
+    private static string CanonicalPublicationRelative(Dictionary<string, object> database, string relative, string filename)
+    {
+        string normalized = (relative ?? "").Replace('\\', '/');string[] parts = normalized.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 3 || !String.Equals(parts[0], "Organizations", StringComparison.OrdinalIgnoreCase)) return normalized;
+        string organization = ValidOrganizationName(parts[1]), stagedFilename = Path.GetFileName(filename ?? parts[2]);var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (object userValue in ObjectArray(database["users"]))
+        {
+            Dictionary<string, object> user = ObjectDictionary(userValue);string userOrganization = user.ContainsKey("organization") ? Convert.ToString(user["organization"], CultureInfo.InvariantCulture) : "";
+            if (!String.Equals(userOrganization, organization, StringComparison.OrdinalIgnoreCase)) continue;
+            foreach (object artifactValue in ObjectArray(user["artifacts"]))
+            {
+                Dictionary<string, object> artifact = ObjectDictionary(artifactValue);string recordedFilename = artifact.ContainsKey("filename") ? Path.GetFileName(Convert.ToString(artifact["filename"], CultureInfo.InvariantCulture)) : "";
+                bool same = String.Equals(recordedFilename, stagedFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(recordedFilename + ".zip", stagedFilename, StringComparison.OrdinalIgnoreCase) || String.Equals(recordedFilename, stagedFilename + ".zip", StringComparison.OrdinalIgnoreCase);
+                if (!same) continue;
+                string folder = ArtifactStorageFolder(Convert.ToString(artifact["kind"], CultureInfo.InvariantCulture));
+                candidates.Add(Path.Combine("Organizations", organization, OrganizationArtifactStorageFolder(folder, organization), stagedFilename).Replace(Path.DirectorySeparatorChar, '/'));
+            }
+        }
+        if (candidates.Count == 1) return candidates.Single();
+        if (candidates.Count > 1) throw new InvalidDataException("The staged ZIP matches more than one user artifact. Resolve the record association before publication.");
+        throw new InvalidDataException("The staged ZIP is not associated with a user artifact. It was kept locally for Sync review and was not copied to the shared organization root.");
     }
 }
