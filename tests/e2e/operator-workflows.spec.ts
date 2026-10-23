@@ -43,6 +43,9 @@ test('keeps the user guide reachable and branded',async({page})=>{
 
 test('access chooser remains keyboard operable',async({page})=>{
  await page.goto('/');
+ const gate=page.getByRole('dialog',{name:'Choose Your Access'});
+ await expect(gate).toBeVisible();
+ await expect(gate.getByRole('button',{name:'Read-Only Access'})).toBeFocused();
  await page.keyboard.press('Tab');
  const focused=page.locator(':focus');
  await expect(focused).toBeVisible();
