@@ -56,3 +56,4 @@ tests/runtime-contract-fuzz.test.ts
 tests/architecture-boundaries.test.ts
 tests/security-workflow.test.ts
 tests/legacy-workspace-recovery.test.ts
+tests/read-only-recovery.test.ts

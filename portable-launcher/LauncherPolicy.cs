@@ -53,6 +53,7 @@ internal static class LauncherPolicy
         if (String.Equals(action, "select-readonly", StringComparison.Ordinal) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
         if (String.Equals(action, "error-report", StringComparison.Ordinal) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
         if ((String.Equals(action, "audit", StringComparison.Ordinal) || String.Equals(action, "audit-batch", StringComparison.Ordinal)) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
+        if (String.Equals(action, "restore-drill", StringComparison.Ordinal) && String.Equals(method, "POST", StringComparison.Ordinal)) return true;
         if (!String.Equals(method, "GET", StringComparison.Ordinal) && !String.Equals(method, "HEAD", StringComparison.Ordinal)) return false;
         return String.Equals(action, "local-manifest", StringComparison.Ordinal)
             || String.Equals(action, "manifest", StringComparison.Ordinal)
@@ -67,7 +68,8 @@ internal static class LauncherPolicy
             || String.Equals(action, "evidence-status", StringComparison.Ordinal)
             || String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal)
             || String.Equals(action, "evidence-exists", StringComparison.Ordinal)
-            || String.Equals(action, "archive-locations", StringComparison.Ordinal);
+            || String.Equals(action, "archive-locations", StringComparison.Ordinal)
+            || String.Equals(action, "backups", StringComparison.Ordinal);
     }
 
     internal static long RequestBodyLimit(string path, string method)

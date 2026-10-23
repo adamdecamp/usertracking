@@ -11,6 +11,7 @@ type DirectoryHeaderProps={
  query:string;
  accountFilter:string;
  emailFilter:string;
+ saarFilter:string;
  organizationFilter:string;
  affiliationFilter:string;
  roleFilter:string;
@@ -24,6 +25,7 @@ type DirectoryHeaderProps={
  setQuery:Setter;
  setAccountFilter:Setter;
  setEmailFilter:Setter;
+ setSaarFilter:Setter;
  setOrganizationFilter:Setter;
  setAffiliationFilter:Setter;
  setRoleFilter:Setter;
@@ -52,6 +54,7 @@ export function DirectoryHeader(props:DirectoryHeaderProps){
    <input aria-label="Search User Directory" placeholder="Search Users, Usernames, Email, Storage Org, Agency, or Contractor…" value={props.query} onChange={change(props.setQuery)}/>
    <select aria-label="User Status Filter" value={props.accountFilter} onChange={change(props.setAccountFilter)}><option>Active users</option><option>Disabled users</option><option>All users</option></select>
    <select aria-label="Official Email Filter" value={props.emailFilter} onChange={change(props.setEmailFilter)}><option>All email statuses</option><option>Official Email missing</option><option>Official Email present</option></select>
+   <select aria-label="SAAR Status Filter" value={props.saarFilter} onChange={change(props.setSaarFilter)}><option>All SAAR statuses</option><option>SAAR missing</option><option>SAAR present</option></select>
    <select aria-label="Storage Organization Filter" value={props.organizationFilter} onChange={change(props.setOrganizationFilter)}><option value="All organizations">All Storage Organizations</option>{props.organizations.map(value=><option key={value}>{value}</option>)}</select>
    <select aria-label="Affiliated Organization Filter" value={props.affiliationFilter} onChange={change(props.setAffiliationFilter)}><option value="All affiliated organizations">All Affiliated Organizations</option>{props.affiliatedOrganizations.map(value=><option key={value}>{value}</option>)}</select>
    <select aria-label="Role Filter" value={props.roleFilter} onChange={event=>{props.setRoleFilter(event.target.value);if(event.target.value==='General')props.setPrivilegedTypeFilter('All privileged user types');props.onFiltersChanged()}}><option value="All roles">All Roles</option><option>General</option><option>Privileged</option></select>

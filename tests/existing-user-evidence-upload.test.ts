@@ -4,10 +4,10 @@ import {readFileSync} from 'node:fs';
 import {formatDeleteUserCompletionAudit} from '../app/application/user-deletion-service.ts';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const picker=readFileSync(new URL('../app/components/EvidenceFilePicker.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableWorkspaceStatus.cs',import.meta.url),'utf8');
 const evidenceExistence=readFileSync(new URL('../app/infrastructure/evidence-existence.ts',import.meta.url),'utf8');
-const picker=page.slice(page.indexOf('function EvidenceFilePicker('),page.indexOf('function AddUser('));
 const userModal=page.slice(page.indexOf('function UserModal('),page.indexOf('function MessageAutomation('));
 const deleteArchiveFlow=page.slice(page.indexOf('async function archiveAllUserEvidence('),page.indexOf('function archivedCollisionNameMatches('));
 

@@ -83,3 +83,11 @@ test('encrypted evidence requires the complete filename gate in manual storage a
  assert.match(directoryHeader,/aria-label="Official Email Filter"/);
  assert.match(page,/emailFilter==='Official Email missing'/);
 });
+
+test('User Directory can directly isolate records with a missing SAAR',()=>{
+ assert.match(directoryHeader,/aria-label="SAAR Status Filter"/);
+ assert.match(directoryHeader,/<option>SAAR missing<\/option>/);
+ assert.match(page,/saarFilter==='SAAR missing'\?statusFor\(u,'SAAR',asOf\)==='Missing'/);
+ assert.match(page,/setSaarFilter\('All SAAR statuses'\)/);
+ assert.match(page,/SAAR \$\{saarFilter\}/);
+});

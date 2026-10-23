@@ -267,7 +267,9 @@ export default function Guide() {
           subcontractor, privileged username, or Privileged User Type and filtered
           by Active, Disabled, or All users; General or Privileged role; derived
           Privileged User Type; Storage Organization; Affiliated Organization;
-          artifact; and compliance status.
+          Official Email status; SAAR status; artifact; and compliance status.
+          Choose <b>SAAR Missing</b> in the SAAR Status filter to isolate users
+          whose non-expiring access request is not present.
           When General is selected, the inapplicable Privileged User Type filter
           and column are hidden. Choose{" "}
           <b>Reset Filters</b> to clear the search and restore every directory
@@ -1092,6 +1094,16 @@ export default function Guide() {
           audit chain before editing is enabled. If that startup health check
           fails, the app preserves the records and opens the system Read-Only
           so the operator can inspect the issue without making changes.
+          A <b>Protected Read-Only Recovery</b> panel explains whether the cause
+          is shared-storage availability, another editor, database integrity,
+          audit integrity, application compatibility, or the protected local
+          workspace. Choose the guided retry after correcting the stated cause,
+          or continue lookup in Read-Only. For eligible database-integrity
+          failures only, <b>Restore Verified Backup</b> permits read-only backup
+          inspection and a non-destructive drill. An actual restore still needs
+          the exclusive editor lease and must pass database, backup, and audit
+          verification before Full Access opens. Audit or version failures cannot
+          be bypassed by restoring database records.
           Startup verification skips interrupted or invalid newer backups and
           uses the newest valid verified backup. The skipped backup and full
           storage diagnostic are written to that day&apos;s text error report.
