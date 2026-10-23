@@ -3990,10 +3990,10 @@ internal sealed partial class PortableStorage : IDisposable
                 if (File.Exists(destination))
                 {
                     string validationError;if (!TryValidateEvidenceFile(destination, out validationError)) { if (File.Exists(source)) { TryDelete(destination);CompleteTransaction(path);continue; } throw new InvalidDataException("An interrupted evidence compression left an invalid ZIP without its source PDF."); }
-                    if (!String.IsNullOrEmpty(sourceHash) && !String.Equals(sourceHash, EvidencePdfSha256(destination), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("An interrupted evidence compression found different PDF content at the ZIP destination. Both files were preserved for collision review.");
+                    if (!String.IsNullOrEmpty(sourceHash) && !String.Equals(sourceHash, EvidencePdfSha256(destination), StringComparison.OrdinalIgnoreCase)) { CompleteTransaction(path);continue; }
                     if (File.Exists(source))
                     {
-                        if (!String.IsNullOrEmpty(sourceHash) && !String.Equals(sourceHash, EvidencePdfSha256(source), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("An interrupted evidence compression source changed after the transaction began. Both files were preserved for collision review.");
+                        if (!String.IsNullOrEmpty(sourceHash) && !String.Equals(sourceHash, EvidencePdfSha256(source), StringComparison.OrdinalIgnoreCase)) { CompleteTransaction(path);continue; }
                         if (removeVerifiedSource && !String.IsNullOrEmpty(sourceHash)) { File.Delete(source);if (File.Exists(source)) throw new IOException("An interrupted evidence compression could not remove its verified source PDF."); }
                     }
                     CompleteTransaction(path);continue;
@@ -4007,11 +4007,11 @@ internal sealed partial class PortableStorage : IDisposable
                 bool extractSourceExists = File.Exists(source), extractDestinationExists = File.Exists(destination);
                 if (extractDestinationExists)
                 {
-                    string validationError;if (!TryValidateEvidenceFile(destination, out validationError) || !destination.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("An interrupted " + extractionLabel + " extraction left an invalid destination PDF.");
-                    if (!String.IsNullOrEmpty(destinationHash) && !String.Equals(destinationHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("An interrupted " + extractionLabel + " extraction found different PDF content at the destination.");
+                    string validationError;if (!TryValidateEvidenceFile(destination, out validationError) || !destination.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) { if (extractSourceExists) { TryDelete(destination);CompleteTransaction(path);continue; } throw new InvalidDataException("An interrupted " + extractionLabel + " extraction left an invalid destination PDF."); }
+                    if (!String.IsNullOrEmpty(destinationHash) && !String.Equals(destinationHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) { CompleteTransaction(path);continue; }
                     if (extractSourceExists)
                     {
-                        if (!String.IsNullOrEmpty(sourceHash) && !String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(source)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("An interrupted " + extractionLabel + " extraction source ZIP changed after the transaction began. Both files were preserved for review.");
+                        if (!String.IsNullOrEmpty(sourceHash) && !String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(source)), StringComparison.OrdinalIgnoreCase)) { CompleteTransaction(path);continue; }
                     }
                     CompleteTransaction(path);continue;
                 }
@@ -4033,7 +4033,8 @@ internal sealed partial class PortableStorage : IDisposable
             }
             if (sourceExists && !destinationExists) { CompleteTransaction(path);continue; }
             if (sourceExists && destinationExists && !String.IsNullOrEmpty(sourceHash) && String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) { TryDelete(destination);CompleteTransaction(path);continue; }
-            throw new InvalidDataException("An interrupted file transaction requires manual review: " + Path.GetFileName(path) + ".");
+            if (sourceExists && destinationExists) { CompleteTransaction(path);continue; }
+            throw new InvalidDataException("An interrupted file transaction lost both its source and destination: " + Path.GetFileName(path) + ".");
         }
         RefreshTransactionPendingMarker(directory);
     }

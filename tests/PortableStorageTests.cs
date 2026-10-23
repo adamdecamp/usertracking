@@ -865,6 +865,8 @@ internal static class PortableStorageTests
         byte[] alternatePdf = Encoding.ASCII.GetBytes("%PDF-1.4\n% alternate evidence\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n");File.WriteAllBytes(conflictPath, PdfBytes());File.WriteAllBytes(conflictZipPath, EvidenceZip(Path.GetFileName(conflictPath), alternatePdf));bool compressionCollisionObserved = false;
         try { storage.CompressEvidence("mapping-key", conflictRelative); } catch (IOException error) { compressionCollisionObserved = error.Message.Contains("collision review"); }
         Assert(compressionCollisionObserved && File.Exists(conflictPath) && File.Exists(conflictZipPath), "Different PDFs sharing one compression destination must both remain intact for collision review.");
+        MethodInfo beginCollisionTransaction = typeof(PortableStorage).GetMethod("BeginTransaction", BindingFlags.Instance | BindingFlags.NonPublic);string collisionTransaction = Convert.ToString(beginCollisionTransaction.Invoke(storage, new object[] { localEvidenceRoot, "compression-delete-source", conflictPath, conflictZipPath, Sha256(PdfBytes()), "" }));
+        storage.LocalWorkspaceInfo("mapping-key");Assert(File.Exists(conflictPath) && File.Exists(conflictZipPath) && !File.Exists(collisionTransaction), "Recovering an interrupted compression collision must preserve both files, clear the stale transaction, and allow later work to continue so Sync can flag the pair for review.");
         string longCompressionDirectory = Path.Combine(localEvidenceRoot, "Organizations", "GOV", "GOV User Agreement");
         Directory.CreateDirectory(longCompressionDirectory);
         string longCompressionPrefix = "Shaw_Vivian_GEN_User_Agreement_", longCompressionSuffix = "_24AUG2026.pdf";
