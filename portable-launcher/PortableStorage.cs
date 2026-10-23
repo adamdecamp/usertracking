@@ -926,9 +926,9 @@ internal sealed partial class PortableStorage : IDisposable
             {
                 try
                 {
-                    if (!File.Exists(item.Source)) continue;
+                    if (!File.Exists(item.Source)) throw new FileNotFoundException("The verified local publication copy was no longer available for transfer to Complete.", item.Source);
                     string relative = Relative(workspaceRoot, item.Source);string[] parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
-                    if (parts.Length < 3 || !String.Equals(parts[0], "Organizations", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (parts.Length < 3 || !String.Equals(parts[0], "Organizations", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The verified local publication copy was outside its organization workspace and could not be transferred to Complete.");
                     string organization = parts[1], completeRoot = Path.Combine(workspaceRoot, "Organizations", organization, SafePart(organization, 80) + " Complete"), completeDirectory = completeRoot;Directory.CreateDirectory(completeDirectory);
                     string completed = String.Equals(Path.GetDirectoryName(Path.GetFullPath(item.Source)), Path.GetFullPath(completeDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) ? item.Source : UniqueDestination(completeDirectory, Path.GetFileName(item.Source));
                     bool moved = !String.Equals(item.Source, completed, StringComparison.OrdinalIgnoreCase);if (moved) File.Move(item.Source, completed);
@@ -939,6 +939,8 @@ internal sealed partial class PortableStorage : IDisposable
                 }
                 catch (Exception error) { completionErrors.Add(Path.GetFileName(item.Source) + ": " + CleanLine(error.Message, 240)); }
             }
+            int remainingPendingEvidence = localEvidence.Values.Count(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture));
+            WriteLocalWorkspaceState(workspaceRoot, new LocalWorkspaceState { BaseSharedSha256 = publishedHash, DatabaseStateHash = requestedStateHash, PendingEvidenceCount = remainingPendingEvidence, Dirty = false, PulledAtUtc = now, SavedAtUtc = now });
             if (recoverUnindexedLocalEvidence) AtomicWrite(SystemFile(workspaceRoot, LocalWorkspaceEvidenceRecoveryMarkerFilename), Encoding.ASCII.GetBytes("2" + Environment.NewLine));
             DeletePublicationJournal(workspaceRoot);
             CompleteLocalWorkspaceReview(workspaceReview);Dictionary<string, object> result = ObjectDictionary(json.DeserializeObject(resultText));result["localWorkspace"] = true;result["sharedPublished"] = true;result["evidenceFastPath"] = evidenceFastPath;result["noChanges"] = false;result["stateHash"] = requestedStateHash;result["publishedFiles"] = staged.Count;result["reusedFiles"] = staged.Count(item => item.Reused);result["archivedConflicts"] = staged.Count(item => !String.Equals(item.Relative, item.OriginalRelative, StringComparison.OrdinalIgnoreCase));result["deferredLocalPdfs"] = deferredLocalPdfs;result["compressedForPublication"] = compressedForPublication;result["manifest"] = requestedDatabase;result["completedFiles"] = completedFiles;result["completionErrors"] = completionErrors.ToArray();result["workspacePath"] = workspaceRoot;result["manifestSha256"] = publishedHash;
@@ -956,47 +958,35 @@ internal sealed partial class PortableStorage : IDisposable
         if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException("A locally staged publication ZIP failed validation: " + validationError);
         var item = new PublicationEvidence { Source = source, OriginalRelative = relative, Relative = relative, Destination = SafeRelativePath(sharedRoot, relative), SourceSha256 = sourceHash, Sha256 = sourceHash, PdfSha256 = hashCache.Pdf(source) };
         item.OperationKey = Sha256("publish-file-v1\n" + item.Relative.ToUpperInvariant() + "\n" + item.SourceSha256.ToLowerInvariant() + "\n" + item.PdfSha256.ToLowerInvariant());
-        string[] parts = relative.Replace('\\', '/').Split('/');
-        bool archive = parts.Skip(2).Take(Math.Max(0, parts.Length - 3)).Any(part => String.Equals(part, "Archive", StringComparison.OrdinalIgnoreCase) || part.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase));
-        if (TryReusePublicationDestination(item, archive, hashCache)) return item;
-        if (!archive) throw PublicationCollision(relative);
+        if (TryReusePublicationDestination(item, hashCache)) return item;
         string filename = Path.GetFileName(relative), extension = filename.EndsWith(".pdf.zip", StringComparison.OrdinalIgnoreCase) ? ".pdf.zip" : ".zip", stem = filename.Substring(0, filename.Length - extension.Length), directory = Path.GetDirectoryName(item.Destination);
         stem = Regex.Replace(stem, @"_CONFLICT_[A-F0-9]{8,64}(?:_[0-9]{1,3})?$", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         foreach (int hashLength in new[] { 8, 16, 32, 64 })
         {
             string conflict = FitFilenameForDirectory(directory, stem + "_CONFLICT_" + item.PdfSha256.Substring(0, hashLength).ToUpperInvariant() + extension, extension);
             item.Destination = SafeRelativePath(sharedRoot, Path.Combine(Path.GetDirectoryName(relative), conflict));item.Relative = Relative(sharedRoot, item.Destination).Replace(Path.DirectorySeparatorChar, '/');
-            if (TryReusePublicationDestination(item, true, hashCache)) return item;
+            if (TryReusePublicationDestination(item, hashCache)) return item;
         }
         for (int index = 2; index <= 100; index++)
         {
             string conflict = FitFilenameForDirectory(directory, stem + "_CONFLICT_" + item.PdfSha256.ToUpperInvariant() + "_" + index.ToString(CultureInfo.InvariantCulture) + extension, extension);
             item.Destination = SafeRelativePath(sharedRoot, Path.Combine(Path.GetDirectoryName(relative), conflict));item.Relative = Relative(sharedRoot, item.Destination).Replace(Path.DirectorySeparatorChar, '/');
-            if (TryReusePublicationDestination(item, true, hashCache)) return item;
+            if (TryReusePublicationDestination(item, hashCache)) return item;
         }
-        throw new IOException("The Archive contains too many conflicting copies of " + Path.GetFileName(relative) + ". All copies were preserved for review.");
+        throw new IOException("The destination folder contains too many conflicting copies of " + Path.GetFileName(relative) + ". All copies were preserved for review.");
     }
 
-    // Return false only for two valid ZIPs with genuinely different PDFs.
-    // Invalid active evidence remains an explicit failure. Invalid Archive evidence
-    // is preserved and receives a deterministic conflict destination so it cannot
-    // block unrelated database publication.
-    private bool TryReusePublicationDestination(PublicationEvidence item, bool archive, PublicationHashCache hashCache)
+    private bool TryReusePublicationDestination(PublicationEvidence item, PublicationHashCache hashCache)
     {
         if (!File.Exists(item.Destination)) return true;
         string sharedHash = hashCache.Container(item.Destination), validationError;
-        if (!IsSha256(sharedHash)) { if (archive) return false;throw new IOException("The existing shared evidence could not be verified at " + item.Relative + ". The local session was preserved."); }
+        if (!IsSha256(sharedHash)) return false;
         if (!String.Equals(sharedHash, item.SourceSha256, StringComparison.OrdinalIgnoreCase))
         {
-            if (!TryValidateEvidenceFile(item.Destination, out validationError)) { if (archive) return false;throw PublicationCollision(item.Relative); }
+            if (!TryValidateEvidenceFile(item.Destination, out validationError)) return false;
             if (!String.Equals(hashCache.Pdf(item.Destination), item.PdfSha256, StringComparison.OrdinalIgnoreCase)) return false;
         }
         item.Sha256 = sharedHash;item.Reused = true;return true;
-    }
-
-    private static InvalidDataException PublicationCollision(string relative)
-    {
-        return new InvalidDataException("A different shared evidence file already exists at " + relative + ". The local session was preserved for collision review.");
     }
 
     private static void ReconcilePublicationReferences(Dictionary<string, object> database, PublicationEvidence[] evidence, Dictionary<string, string> renamed)
@@ -4340,7 +4330,7 @@ internal sealed partial class PortableStorage : IDisposable
     private static string ArtifactStorageFolder(string kind)
     {
         string normalized = (kind ?? "").Trim().ToUpperInvariant();
-        if (normalized == "SAAR") return "SAAR";if (normalized == "DOD CYBER CERT") return "DoD Cyber Cert";if (normalized == "USER AGREEMENT" || normalized == "GEN USER AGREEMENT" || normalized == "GEN AND PRIV AGREEMENT" || normalized == "DTA AGREEMENT") return "User Agreement";if (normalized == "8140 CERT MEMO") return "8140 Certification Memo";if (normalized == "PRIVILEGED USER TRAINING CERT") return "Privileged User Training";if (normalized == "DTA TRAINING" || normalized == "DTA TRAINING CERT") return "DTA Training";
+        if (normalized == "SAAR") return "SAAR";if (normalized == "DOD CYBER CERT") return "DoD Cyber Cert";if (normalized == "USER AGREEMENT" || normalized == "GEN USER AGREEMENT" || normalized == "GEN AND PRIV AGREEMENT" || normalized == "DTA AGREEMENT") return "User Agreement";if (normalized == "8140 CERT MEMO" || normalized == "8140 CERTIFICATION MEMO") return "8140 Certification Memo";if (normalized == "PRIVILEGED USER TRAINING CERT" || normalized == "PRIVILEGED USER TRAINING") return "Privileged User Training";if (normalized == "DTA TRAINING" || normalized == "DTA TRAINING CERT") return "DTA Training";
         throw new InvalidDataException("The associated evidence document type is invalid.");
     }
     private static string OrganizationArtifactStorageFolder(string folder, string organization)

@@ -26,6 +26,8 @@ test('maps canonical evidence kinds to organization document-type folders',()=>{
  assert.equal(artifactStorageFolder('DoD Cyber Cert'),'DoD Cyber Cert');
  assert.equal(artifactStorageFolder('8140 Cert Memo'),'8140 Certification Memo');
  assert.equal(artifactStorageFolder('Privileged User Training Cert'),'Privileged User Training');
+ assert.equal(artifactStorageFolder('Privileged User Training'),'Privileged User Training');
+ assert.equal(artifactStorageFolder('8140 Certification Memo'),'8140 Certification Memo');
  assert.equal(artifactStorageFolder('DTA Training'),'DTA Training');
  assert.equal(artifactStorageFolder('DTA Training Cert'),'DTA Training');
  assert.equal(organizationArtifactStorageFolder('SAAR','LM'),'LM SAAR');

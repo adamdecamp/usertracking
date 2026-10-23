@@ -190,7 +190,11 @@ internal sealed partial class PortableStorage
     private static string CanonicalPublicationRelative(Dictionary<string, object> database, string relative, string filename)
     {
         string normalized = (relative ?? "").Replace('\\', '/');string[] parts = normalized.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 3 || !String.Equals(parts[0], "Organizations", StringComparison.OrdinalIgnoreCase)) return normalized;
+        if (parts.Length < 3 || !String.Equals(parts[0], "Organizations", StringComparison.OrdinalIgnoreCase)) return normalized;
+        // Archive destinations are intentional retention locations and must not be
+        // promoted back into an active document-type folder merely because a
+        // disabled or historical user record still references the filename.
+        if (IsArchiveEvidencePath(normalized)) return normalized;
         string organization = ValidOrganizationName(parts[1]), stagedFilename = Path.GetFileName(filename ?? parts[2]);var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (object userValue in ObjectArray(database["users"]))
         {
@@ -207,6 +211,7 @@ internal sealed partial class PortableStorage
         }
         if (candidates.Count == 1) return candidates.Single();
         if (candidates.Count > 1) throw new InvalidDataException("The staged ZIP matches more than one user artifact. Resolve the record association before publication.");
-        throw new InvalidDataException("The staged ZIP is not associated with a user artifact. It was kept locally for Sync review and was not copied to the shared organization root.");
+        if (parts.Length == 4 && IsArtifactStorageDirectory(parts[2])) return normalized;
+        throw new InvalidDataException("The staged ZIP " + stagedFilename + " is not associated with a user artifact. It was kept locally for Sync review and was not copied to an active shared organization folder.");
     }
 }
