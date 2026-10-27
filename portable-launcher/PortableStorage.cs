@@ -32,7 +32,7 @@ internal sealed partial class PortableStorage : IDisposable
     private const int SyncJournalVersion = 1;
     private const int ManifestCacheVersion = 3;
     private const int ManifestCacheFreshMinutes = 10;
-    private const int AuditCheckpointVersion = 2;
+    private const int AuditCheckpointVersion = 3;
     private const int AuditAnchorVersion = 1;
     private const int BackupCoalesceSeconds = 30;
     private const int SyncJournalBatchEntryLimit = 64;
@@ -166,6 +166,15 @@ internal sealed partial class PortableStorage : IDisposable
         public bool Incremental;
         public string AnchorHash = AuditGenesisHash;
         public long AnchoredEntries;
+        public string LastLogonActor;
+        public string LastLogonTimestamp;
+        public string LastLogonAccessMode;
+        public int LastLogonActionCount;
+        public int LastLogonSyncActions;
+        public int LastLogonUserChanges;
+        public int LastLogonEvidenceActions;
+        public int LastLogonReportActions;
+        public int LastLogonAdministrativeActions;
     }
 
     private sealed class AuditAnchorState
@@ -1135,7 +1144,7 @@ internal sealed partial class PortableStorage : IDisposable
         }
         else { WriteLocalWorkspaceBaseDatabase(workspaceRoot, ObjectDictionary(json.DeserializeObject(json.Serialize(manifestDatabase))), manifestSha256);WriteLocalWorkspaceDatabase(workspaceRoot, manifestDatabase, manifestSha256, false); }
         string recoveryWarning = rejectedBackups.Count == 0 && !backupRebuilt ? "" : (backupRebuilt ? "The backup set contained no usable snapshot. A new verified backup was created from the checksum-verified live database after the audit chain passed." : rejectedBackups.Count.ToString(CultureInfo.InvariantCulture) + " newer or invalid backup snapshot(s) were skipped; the newest valid verified backup was used.");
-        return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "saved", File.GetLastWriteTimeUtc(manifestPath).ToString("o") }, { "backup", Convert.ToString(envelope["created"]) }, { "filename", Path.GetFileName(latest) }, { "auditHealthy", true }, { "auditEntries", audit.Entries }, { "auditHeadHash", audit.HeadHash }, { "auditVerification", "full-chain" }, { "manifestSha256", manifestSha256 }, { "checksumInitialized", checksumInitialized }, { "manifest", manifestDatabase }, { "localWorkspace", true }, { "workspacePath", workspaceRoot }, { "workspaceResumed", workspaceResumed }, { "workspaceRebased", workspaceRebased }, { "backupRecoveryWarning", recoveryWarning }, { "skippedBackupCount", rejectedBackups.Count }, { "backupRebuilt", backupRebuilt } });
+        return json.Serialize(new Dictionary<string, object> { { "healthy", true }, { "saved", File.GetLastWriteTimeUtc(manifestPath).ToString("o") }, { "backup", Convert.ToString(envelope["created"]) }, { "filename", Path.GetFileName(latest) }, { "auditHealthy", true }, { "auditEntries", audit.Entries }, { "auditHeadHash", audit.HeadHash }, { "auditVerification", "full-chain" }, { "lastLogon", LastLogonResult(audit) }, { "manifestSha256", manifestSha256 }, { "checksumInitialized", checksumInitialized }, { "manifest", manifestDatabase }, { "localWorkspace", true }, { "workspacePath", workspaceRoot }, { "workspaceResumed", workspaceResumed }, { "workspaceRebased", workspaceRebased }, { "backupRecoveryWarning", recoveryWarning }, { "skippedBackupCount", rejectedBackups.Count }, { "backupRebuilt", backupRebuilt } });
     }
 
     public void FinalizeMappedBackups()
@@ -2795,6 +2804,7 @@ internal sealed partial class PortableStorage : IDisposable
                 state.LastInstant = now;
                 state.LastTimestamp = timestamp;
                 state.FirstTimestamp = state.FirstTimestamp ?? timestamp;
+                TrackLogonActivity(state, actor, timestamp, cleanAction);
             }
             if (currentPath != null) AppendAuditBytes(currentPath, Encoding.UTF8.GetBytes(buffer.ToString()));
             AppendAuditAnchor(directory, state);
@@ -2863,7 +2873,7 @@ internal sealed partial class PortableStorage : IDisposable
             string root = Path.GetDirectoryName(Path.GetDirectoryName(directory));if (String.IsNullOrWhiteSpace(root)) return;
             string[] paths = Directory.Exists(directory) ? Directory.EnumerateFiles(directory, "audit-*.jsonl", SearchOption.TopDirectoryOnly).OrderBy(Path.GetFileName, StringComparer.Ordinal).ToArray() : new string[0];
             var files = new List<object>();foreach (string path in paths) { var info = new FileInfo(path);files.Add(new Dictionary<string, object> { { "name", info.Name }, { "length", info.Length }, { "modifiedUnixMs", new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds() } }); }
-            var envelope = new Dictionary<string, object> { { "version", AuditCheckpointVersion }, { "verifiedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "entries", state.Entries }, { "filesCount", state.Files }, { "legacyFiles", state.LegacyFiles }, { "headHash", state.HeadHash }, { "anchorHash", state.AnchorHash ?? AuditGenesisHash }, { "anchoredEntries", state.AnchoredEntries }, { "firstTimestamp", state.FirstTimestamp ?? "" }, { "lastTimestamp", state.LastTimestamp ?? "" }, { "files", files.ToArray() } };
+            var envelope = new Dictionary<string, object> { { "version", AuditCheckpointVersion }, { "verifiedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "entries", state.Entries }, { "filesCount", state.Files }, { "legacyFiles", state.LegacyFiles }, { "headHash", state.HeadHash }, { "anchorHash", state.AnchorHash ?? AuditGenesisHash }, { "anchoredEntries", state.AnchoredEntries }, { "firstTimestamp", state.FirstTimestamp ?? "" }, { "lastTimestamp", state.LastTimestamp ?? "" }, { "lastLogonActor", state.LastLogonActor ?? "" }, { "lastLogonTimestamp", state.LastLogonTimestamp ?? "" }, { "lastLogonAccessMode", state.LastLogonAccessMode ?? "" }, { "lastLogonActionCount", state.LastLogonActionCount }, { "lastLogonSyncActions", state.LastLogonSyncActions }, { "lastLogonUserChanges", state.LastLogonUserChanges }, { "lastLogonEvidenceActions", state.LastLogonEvidenceActions }, { "lastLogonReportActions", state.LastLogonReportActions }, { "lastLogonAdministrativeActions", state.LastLogonAdministrativeActions }, { "files", files.ToArray() } };
             byte[] clear = Encoding.UTF8.GetBytes(json.Serialize(envelope)), encrypted = ProtectedData.Protect(clear, AuditCheckpointEntropy(), DataProtectionScope.CurrentUser);AtomicWrite(Path.Combine(LocalPerformanceCacheDirectory(root, "Audit"), LocalAuditCheckpointFilename), encrypted);
         }
         catch { }
@@ -2883,7 +2893,7 @@ internal sealed partial class PortableStorage : IDisposable
             }
             string headHash = Convert.ToString(envelope["headHash"], CultureInfo.InvariantCulture), firstTimestamp = Convert.ToString(envelope["firstTimestamp"], CultureInfo.InvariantCulture), lastTimestamp = Convert.ToString(envelope["lastTimestamp"], CultureInfo.InvariantCulture);if (!IsSha256(headHash)) return null;DateTimeOffset instant;DateTimeOffset? parsedInstant = String.IsNullOrWhiteSpace(lastTimestamp) ? (DateTimeOffset?)null : DateTimeOffset.TryParse(lastTimestamp, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out instant) ? instant : (DateTimeOffset?)null;if (!String.IsNullOrWhiteSpace(lastTimestamp) && !parsedInstant.HasValue) return null;
             string anchorHash = Convert.ToString(envelope["anchorHash"], CultureInfo.InvariantCulture);if (!IsSha256(anchorHash)) return null;
-            return new AuditState { Entries = Convert.ToInt64(envelope["entries"], CultureInfo.InvariantCulture), Files = Convert.ToInt32(envelope["filesCount"], CultureInfo.InvariantCulture), LegacyFiles = Convert.ToInt32(envelope["legacyFiles"], CultureInfo.InvariantCulture), HeadHash = headHash.ToLowerInvariant(), AnchorHash = anchorHash.ToLowerInvariant(), AnchoredEntries = Convert.ToInt64(envelope["anchoredEntries"], CultureInfo.InvariantCulture), FirstTimestamp = String.IsNullOrWhiteSpace(firstTimestamp) ? null : firstTimestamp, LastTimestamp = String.IsNullOrWhiteSpace(lastTimestamp) ? null : lastTimestamp, LastInstant = parsedInstant, Incremental = true };
+            return new AuditState { Entries = Convert.ToInt64(envelope["entries"], CultureInfo.InvariantCulture), Files = Convert.ToInt32(envelope["filesCount"], CultureInfo.InvariantCulture), LegacyFiles = Convert.ToInt32(envelope["legacyFiles"], CultureInfo.InvariantCulture), HeadHash = headHash.ToLowerInvariant(), AnchorHash = anchorHash.ToLowerInvariant(), AnchoredEntries = Convert.ToInt64(envelope["anchoredEntries"], CultureInfo.InvariantCulture), FirstTimestamp = String.IsNullOrWhiteSpace(firstTimestamp) ? null : firstTimestamp, LastTimestamp = String.IsNullOrWhiteSpace(lastTimestamp) ? null : lastTimestamp, LastInstant = parsedInstant, Incremental = true, LastLogonActor = EmptyToNull(Convert.ToString(envelope["lastLogonActor"], CultureInfo.InvariantCulture)), LastLogonTimestamp = EmptyToNull(Convert.ToString(envelope["lastLogonTimestamp"], CultureInfo.InvariantCulture)), LastLogonAccessMode = EmptyToNull(Convert.ToString(envelope["lastLogonAccessMode"], CultureInfo.InvariantCulture)), LastLogonActionCount = Convert.ToInt32(envelope["lastLogonActionCount"], CultureInfo.InvariantCulture), LastLogonSyncActions = Convert.ToInt32(envelope["lastLogonSyncActions"], CultureInfo.InvariantCulture), LastLogonUserChanges = Convert.ToInt32(envelope["lastLogonUserChanges"], CultureInfo.InvariantCulture), LastLogonEvidenceActions = Convert.ToInt32(envelope["lastLogonEvidenceActions"], CultureInfo.InvariantCulture), LastLogonReportActions = Convert.ToInt32(envelope["lastLogonReportActions"], CultureInfo.InvariantCulture), LastLogonAdministrativeActions = Convert.ToInt32(envelope["lastLogonAdministrativeActions"], CultureInfo.InvariantCulture) };
         }
         catch { if (!String.IsNullOrWhiteSpace(path)) TryDelete(path);return null; }
     }
@@ -3053,6 +3063,7 @@ internal sealed partial class PortableStorage : IDisposable
                     state.FirstTimestamp = state.FirstTimestamp ?? timestamp;
                     state.LastTimestamp = timestamp;
                     state.LastInstant = instant;
+                    TrackLogonActivity(state, entryActor, timestamp, entryAction);
                     state.Recent.Add(new Dictionary<string, object> { { "version", version }, { "sequence", sequence }, { "timestampUtc", timestamp }, { "actor", entryActor }, { "action", entryAction }, { "previousHash", previousHash }, { "entryHash", entryHash } });
                     if (state.Recent.Count > 500) state.Recent.RemoveAt(0);
                     fileEntries++;

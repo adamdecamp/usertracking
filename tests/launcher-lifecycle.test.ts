@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {formatDeleteUserCompletionAudit} from '../app/application/user-deletion-service.ts';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const workflowTypes=readFileSync(new URL('../app/tracker-workflow-types.ts',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 const storageRequest=readFileSync(new URL('../app/infrastructure/portable-storage-request.ts',import.meta.url),'utf8');
@@ -146,7 +147,7 @@ test('a recoverable verified Sync error preserves review and cleanup actions',()
 
 test('selected updates retain exact paths through optional PDF compression',()=>{
  const apply=page.slice(page.indexOf('async function applyVerifiedSync'),page.indexOf('function resetFilters'));
- assert.match(page,/type SyncCandidate=\{[^}]*path:string/);
+ assert.match(workflowTypes,/type SyncCandidate=\{[^}]*path:string/);
  assert.match(apply,/compressionResults\.get\(scanPathKey\(match\.path\)\)/);
  assert.match(apply,/path:compressedResult\?\.path\?\?match\.path/);
 });

@@ -62,6 +62,7 @@ internal static class LauncherPolicy
             || String.Equals(action, "file", StringComparison.Ordinal)
             || String.Equals(action, "audit-verify", StringComparison.Ordinal)
             || String.Equals(action, "audit-view", StringComparison.Ordinal)
+            || String.Equals(action, "last-logon", StringComparison.Ordinal)
             || String.Equals(action, "performance", StringComparison.Ordinal)
             || String.Equals(action, "sync-job", StringComparison.Ordinal)
             || String.Equals(action, "operation-status", StringComparison.Ordinal)

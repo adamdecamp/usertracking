@@ -88,6 +88,7 @@ $compilerArgs = New-Object System.Collections.Generic.List[string]
 $assetResourceArgs | ForEach-Object { $compilerArgs.Add($_) }
 $compilerArgs.Add((Join-Path $portableRoot "Program.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableStorage.cs"))
+$compilerArgs.Add((Join-Path $portableRoot "PortableLastLogon.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableWorkspaceStatus.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableSyncJob.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableNetworkQualification.cs"))

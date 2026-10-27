@@ -336,6 +336,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "audit-batch" && parts[0] == "POST") { storage.AppendAuditBatchJson(systemId, Encoding.UTF8.GetString(requestBody)); response = "{\"ok\":true}"; }
                     else if (action == "audit-verify" && parts[0] == "GET") response = storage.VerifyAuditLogs(systemId);
                     else if (action == "audit-view" && parts[0] == "GET") response = storage.ReadAuditLogs(systemId);
+                    else if (action == "last-logon" && parts[0] == "GET") response = storage.ReadLastLogon(systemId);
                     else if (action == "performance" && parts[0] == "GET") response = storage.ReadPerformanceDiagnostics(systemId);
                     else if (action == "network-qualification" && parts[0] == "POST") response = storage.RunNetworkQualification(systemId);
                     else if (action == "diagnostics" && parts[0] == "GET") response = storage.ReadSanitizedDiagnostics(systemId);
