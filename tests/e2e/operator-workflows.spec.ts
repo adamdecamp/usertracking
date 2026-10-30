@@ -80,12 +80,11 @@ test('rejects a tampered organization snapshot and keeps the access gate closed'
  const statusPackage=await createOrganizationStatusPackage(snapshotPayload);
  statusPackage.payload.users[0].email='attacker@example.test';
  await page.goto('/');
- const dialogPromise=page.waitForEvent('dialog');
  await page.locator('input[type="file"][accept*="raptor-status"]').setInputFiles({
   name:'tampered.raptor-status.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(statusPackage)),
  });
- const dialog=await dialogPromise;
- expect(dialog.message()).toMatch(/failed.*integrity check|integrity check.*failed/i);
- await dialog.dismiss();
+ const notification=page.getByRole('alert').filter({hasText:'Organization status file could not be opened'});
+ await expect(notification).toBeVisible();
+ await expect(notification).toContainText(/failed.*integrity check|integrity check.*failed/i);
  await expect(page.getByRole('dialog',{name:'Choose Your Access'})).toBeVisible();
 });
