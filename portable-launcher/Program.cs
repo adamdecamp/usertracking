@@ -288,6 +288,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "state-commit" && parts[0] == "POST") response = storage.SaveSystemState(systemId, requestBody);
                     else if (action == "workspace" && parts[0] == "GET") response = storage.LocalWorkspaceInfo(systemId);
                     else if (action == "workspace-status" && parts[0] == "POST") response = storage.WorkspaceStatus(systemId, requestBody);
+                    else if (action == "workspace-progress" && parts[0] == "GET") response = storage.ReadWorkspacePublicationProgress(systemId);
                     else if (action == "workspace-recovery" && parts[0] == "GET") response = storage.LegacyWorkspaceRecoveryStatus(systemId, QueryValue(target, "logical"));
                     else if (action == "workspace-recovery-export" && parts[0] == "POST") response = storage.ExportLegacyWorkspaceRecovery(systemId, requestBody);
                     else if (action == "workspace-recovery-reset" && parts[0] == "POST") response = storage.ResetLegacyWorkspaceRecovery(systemId, requestBody);

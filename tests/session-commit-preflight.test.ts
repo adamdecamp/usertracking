@@ -57,7 +57,16 @@ test('Session Commit reports distinct local, publication, verification, and fina
  assert.match(publish,/Publishing to Shared Drive/);
  assert.match(publish,/Verifying Shared Publication/);
  assert.match(publish,/Finalizing Session Commit/);
+ assert.match(publish,/monitorWorkspacePublication/,'Manual Session Commit must poll the durable launcher journal while publication is running.');
+ assert.match(page,/progress\.processed,progress\.total/,'The status bar must show file movement progress, not only an indeterminate stage.');
  assert.doesNotMatch(commit,/Checking for Pending Changes/,'The former catch-all phase must not conceal network publication work.');
+});
+
+test('Session Commit queue wait matches its long-running transport window',()=>{
+ const policy=readFileSync('portable-launcher/LauncherPolicy.cs','utf8');
+ const request=readFileSync('app/infrastructure/portable-storage-request.ts','utf8');
+ assert.match(policy,/String\.Equals\(action, "workspace-publish"[\s\S]*?4 \* 60 \* 60 \* 1000/,'The launcher must not reject Session Commit after the ordinary two-minute mutation queue wait.');
+ assert.match(request,/stage==='scan'\|\|stage==='rework-retention'\|\|stage==='sync-pipeline'\|\|stage==='workspace-publish'\?4\*60\*60\*1000/,'The browser transport must remain open for the same long Session Commit window.');
 });
 
 test('logoff rechecks local evidence after a clean manual commit even when React state is unchanged',()=>{

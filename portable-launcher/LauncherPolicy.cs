@@ -15,6 +15,7 @@ internal static class LauncherPolicy
         action = action ?? "";
         return !String.Equals(action, "error-report", StringComparison.Ordinal)
             && !String.Equals(action, "workspace-status", StringComparison.Ordinal)
+            && !String.Equals(action, "workspace-progress", StringComparison.Ordinal)
             && !String.Equals(action, "evidence-status", StringComparison.Ordinal)
             && !String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal)
             && !String.Equals(action, "evidence-exists", StringComparison.Ordinal)
@@ -46,6 +47,12 @@ internal static class LauncherPolicy
     internal static int StorageQueueWaitMilliseconds(string action, string method)
     {
         if (!StorageActionRequiresSerialization(action)) return 0;
+        // Session Commit can legitimately follow a long Sync or evidence operation.
+        // The browser already gives workspace-publish a four-hour transport window,
+        // so a two-minute queue deadline made Commit fail before publication began
+        // on slow shared drives. Keep ordinary mutations bounded, but let the durable,
+        // journaled publication wait for the operation ahead of it to finish.
+        if (String.Equals(action, "workspace-publish", StringComparison.Ordinal)) return 4 * 60 * 60 * 1000;
         return String.Equals(method, "GET", StringComparison.Ordinal) || String.Equals(method, "HEAD", StringComparison.Ordinal) ? 30000 : 120000;
     }
 
@@ -66,6 +73,7 @@ internal static class LauncherPolicy
             || String.Equals(action, "performance", StringComparison.Ordinal)
             || String.Equals(action, "sync-job", StringComparison.Ordinal)
             || String.Equals(action, "operation-status", StringComparison.Ordinal)
+            || String.Equals(action, "workspace-progress", StringComparison.Ordinal)
             || String.Equals(action, "recovery", StringComparison.Ordinal)
             || String.Equals(action, "catalog-recovery", StringComparison.Ordinal)
             || String.Equals(action, "diagnostics", StringComparison.Ordinal)

@@ -17,6 +17,9 @@ export const decodeWorkspaceStatusResponse:RuntimeDecoder<WorkspaceStatusRespons
  return{noChanges,stateHash,databaseChangePending,pendingEvidenceCount,interruptedRecovery,evidenceWorkPending,saved:stringValue(record.saved,context,'$.saved',50),backup:stringValue(record.backup,context,'$.backup',50)};
 };
 
+export type WorkspacePublicationProgress={active:boolean;phase:string;processed:number;total:number;filename:string;updatedAtUtc?:string};
+export const decodeWorkspacePublicationProgress:RuntimeDecoder<WorkspacePublicationProgress>=value=>{const context='Workspace publication progress',record=objectValue(value,context),active=booleanValue(record.active,context,'$.active'),phase=stringValue(record.phase,context,'$.phase',100),processed=numberValue(record.processed,context,'$.processed',0,1000000),total=numberValue(record.total,context,'$.total',0,1000000),filename=stringValue(record.filename,context,'$.filename',500),updatedAtUtc=optionalString(record,'updatedAtUtc',context,50);if(processed>total)throw new Error(`${context} returned progress beyond its total.`);if(updatedAtUtc&&Number.isNaN(Date.parse(updatedAtUtc)))throw new Error(`${context} returned an invalid UTC timestamp.`);return{active,phase,processed,total,filename,updatedAtUtc}};
+
 export type StoredEvidenceResponse={filename:string;path:string;sha256:string;pdfSha256?:string;stored?:boolean};
 export const decodeEvidenceFilenameResponse:RuntimeDecoder<{filename:string}>=value=>{const context='Evidence storage',record=objectValue(value,context);return{filename:stringValue(record.filename,context,'$.filename',500)}};
 export const decodeStoredEvidenceResponse:RuntimeDecoder<StoredEvidenceResponse>=value=>{
@@ -63,10 +66,15 @@ export const decodeOrganizationResponse:RuntimeDecoder<{organization:string}>=va
 
 export const decodeOperationReceipt:RuntimeDecoder<{operationId?:string}>=value=>{const context='Operation receipt',record=objectValue(value,context);return{operationId:optionalString(record,'operationId',context,100)}};
 
-export type StorageOperationReceipt={completed:boolean;action?:string;completedAtUtc?:string;responseAvailable?:boolean;response?:string};
+export type StorageOperationReceipt={completed:boolean;running?:boolean;failed?:boolean;action?:string;startedAtUtc?:string;message?:string;completedAtUtc?:string;responseAvailable?:boolean;response?:string};
 export const decodeStorageOperationReceipt:RuntimeDecoder<StorageOperationReceipt>=value=>{
  const context='Storage operation receipt',record=objectValue(value,context),completed=booleanValue(record.completed,context,'$.completed');
- if(!completed)return{completed:false};
+ if(!completed){
+  const running=record.running===undefined?false:booleanValue(record.running,context,'$.running'),failed=record.failed===undefined?false:booleanValue(record.failed,context,'$.failed'),action=record.action===undefined?undefined:stringValue(record.action,context,'$.action',100),startedAtUtc=record.startedAtUtc===undefined?undefined:stringValue(record.startedAtUtc,context,'$.startedAtUtc',50),message=record.message===undefined?undefined:stringValue(record.message,context,'$.message',1000);
+  if(running&&failed)throw new Error(`${context} returned contradictory in-progress and failed states.`);
+  if(startedAtUtc&&Number.isNaN(Date.parse(startedAtUtc)))throw new Error(`${context} returned an invalid start timestamp.`);
+  return{completed:false,running,failed,action,startedAtUtc,message};
+ }
  const completedAtUtc=stringValue(record.completedAtUtc,context,'$.completedAtUtc',50),responseAvailable=booleanValue(record.responseAvailable,context,'$.responseAvailable'),response=stringValue(record.response,context,'$.response',2*1024*1024);
  if(Number.isNaN(Date.parse(completedAtUtc)))throw new Error(`${context} returned an invalid UTC timestamp.`);
  if(responseAvailable!==Boolean(response))throw new Error(`${context} returned a contradictory response state.`);

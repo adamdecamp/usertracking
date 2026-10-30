@@ -16,6 +16,21 @@ test('reconciles a completed mutating operation after its browser response is lo
  }finally{globalThis.fetch=original}
 });
 
+test('waits for a known-running Session Commit after its browser response is lost',async()=>{
+ const original=globalThis.fetch,calls:string[]=[];let statusReads=0;
+ globalThis.fetch=async input=>{const url=String(input);calls.push(url);if(!url.includes('operation-status'))throw new TypeError('connection lost');statusReads++;return new Response(JSON.stringify(statusReads===1?{completed:false,running:true,failed:false,action:'workspace-publish',startedAtUtc:new Date().toISOString(),message:'Publishing evidence.'}:{completed:true,action:'workspace-publish',completedAtUtc:new Date().toISOString(),responseAvailable:true,response:'{"saved":"complete"}'}),{status:200})};
+ try{
+  const response=await portableStorageRequest({systemId:'storage-1',action:'workspace-publish',init:{method:'POST'},networkWriteTimeoutMs:1000,launcherHeaders:headers,onStart:()=>undefined,onFinish:()=>undefined,reconciliationPollDelayMs:1});
+  assert.deepEqual(await response.json(),{saved:'complete'});assert.equal(statusReads,2);assert.equal(calls.length,3);
+ }finally{globalThis.fetch=original}
+});
+
+test('reports a background Session Commit failure instead of the lost browser response',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async input=>String(input).includes('operation-status')?new Response(JSON.stringify({completed:false,running:false,failed:true,action:'workspace-publish',startedAtUtc:new Date().toISOString(),message:'Shared publication verification failed.'}),{status:200}):Promise.reject(new TypeError('connection lost'));
+ try{await assert.rejects(()=>portableStorageRequest({systemId:'storage-1',action:'workspace-publish',init:{method:'POST'},networkWriteTimeoutMs:1000,launcherHeaders:headers,onStart:()=>undefined,onFinish:()=>undefined,reconciliationPollDelayMs:1}),/Shared publication verification failed/)}finally{globalThis.fetch=original}
+});
+
 test('retains exclusive-lease failures as session ownership errors',async()=>{
  const original=globalThis.fetch;
  globalThis.fetch=async()=>new Response('The exclusive Full Access lease is missing or is owned by another session.',{status:403});

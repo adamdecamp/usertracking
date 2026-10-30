@@ -6,7 +6,7 @@ import {
  decodeLegacyWorkspaceRecoveryResult,decodeLegacyWorkspaceRecoveryStatus,decodeLegacyWorkspaceReviewPackage,
  decodeLeaseAcquireResponse,decodeLeaseRenewResponse,decodeNetworkQualificationResponse,decodeOperationReceipt,decodeOrganizationList,
  decodeOrganizationResponse,decodePathMutationResponse,decodePublishResponse,decodeSelectedFolderResponse,
- decodeStorageOperationReceipt,decodeStorageVerificationResponse,decodeStoredEvidenceResponse,decodeWorkspaceStatusResponse,
+ decodeStorageOperationReceipt,decodeStorageVerificationResponse,decodeStoredEvidenceResponse,decodeWorkspacePublicationProgress,decodeWorkspaceStatusResponse,
 } from '../app/infrastructure/portable-contracts.ts';
 
 const hash='a'.repeat(64);
@@ -22,6 +22,8 @@ test('portable response contracts accept bounded valid payloads',()=>{
  assert.deepEqual(decodeOrganizationResponse({organization:'Alpha'}),{organization:'Alpha'});
  assert.deepEqual(decodeOperationReceipt({operationId:'op-1'}),{operationId:'op-1'});
  assert.equal(decodeStorageOperationReceipt({completed:true,action:'state-commit',completedAtUtc:'2026-10-22T12:00:00.000Z',responseAvailable:true,response:'{"saved":true}'}).completed,true);
+ assert.deepEqual(decodeWorkspacePublicationProgress({active:true,phase:'evidence-copy',processed:7,total:12,filename:'Example.pdf.zip',updatedAtUtc:'2026-10-22T12:00:00.000Z'}),{active:true,phase:'evidence-copy',processed:7,total:12,filename:'Example.pdf.zip',updatedAtUtc:'2026-10-22T12:00:00.000Z'});
+ assert.deepEqual(decodeStorageOperationReceipt({completed:false,running:true,failed:false,action:'workspace-publish',startedAtUtc:'2026-10-22T12:00:00.000Z',message:'Publishing evidence.'}),{completed:false,running:true,failed:false,action:'workspace-publish',startedAtUtc:'2026-10-22T12:00:00.000Z',message:'Publishing evidence.'});
  assert.deepEqual(decodeLauncherControlResponse({activeStorageRequests:2,longOperationActive:true,activeOperation:'sync'}),{activeStorageRequests:2,longOperationActive:true,activeOperation:'sync'});
  assert.equal(decodeNetworkQualificationResponse({generatedAtUtc:'2026-10-21T12:00:00.000Z',rating:'Ready',networkRoot:true,writeMs:10,readVerifyMs:20,renameMs:5,exclusiveLockMs:5,enumerateMs:15,totalMs:55,payloadBytes:65536,sha256Verified:true,recommendation:'Ready.'}).totalMs,55);
  assert.equal(decodePathMutationResponse('archived','Archive')({archived:'Archive/A.zip'}).path,'Archive/A.zip');

@@ -22,6 +22,8 @@ type DirectoryHeaderProps={
  affiliatedOrganizations:string[];
  privilegedTypes:string[];
  artifactKinds:readonly string[];
+ directoryColumns:readonly (readonly [string,string])[];
+ visibleColumnKinds:string[];
  setQuery:Setter;
  setAccountFilter:Setter;
  setEmailFilter:Setter;
@@ -32,6 +34,7 @@ type DirectoryHeaderProps={
  setPrivilegedTypeFilter:Setter;
  setArtifactFilter:Setter;
  setStatusFilter:Setter;
+ setVisibleColumnKinds:(value:string[])=>void;
  onFiltersChanged:()=>void;
  onReset:()=>void;
  onSnapshot:()=>void;
@@ -41,6 +44,7 @@ type DirectoryHeaderProps={
 
 export function DirectoryHeader(props:DirectoryHeaderProps){
  const change=(setter:Setter)=>(event:React.ChangeEvent<HTMLInputElement|HTMLSelectElement>)=>{setter(event.target.value);props.onFiltersChanged()};
+ const toggleColumn=(kind:string,checked:boolean)=>props.setVisibleColumnKinds(checked?Array.from(new Set([...props.visibleColumnKinds,kind])):props.visibleColumnKinds.filter(value=>value!==kind));
  return <div className="directory-head">
   <div className="directory-title-row">
    <div><p className="eyebrow">User Directory</p><h2>{props.title??'No Information Systems Configured'}</h2></div>
@@ -61,6 +65,7 @@ export function DirectoryHeader(props:DirectoryHeaderProps){
    {props.roleFilter!=='General'&&<select aria-label="Privileged User Type Filter" value={props.privilegedTypeFilter} onChange={change(props.setPrivilegedTypeFilter)}><option value="All privileged user types">All Privileged User Types</option>{props.privilegedTypes.map(value=><option key={value}>{value}</option>)}</select>}
    <select aria-label="Artifact Filter" value={props.artifactFilter} onChange={change(props.setArtifactFilter)}><option value="All artifacts">All Artifacts</option>{props.artifactKinds.map(value=><option key={value}>{value}</option>)}</select>
    <select aria-label="Compliance Status Filter" value={props.statusFilter} onChange={change(props.setStatusFilter)}><option value="All statuses">All Statuses</option><option>Missing</option><option>Due Within 30 Days</option><option>Overdue</option><option>Current</option></select>
+   <details className="column-picker"><summary>Columns</summary><div>{props.directoryColumns.map(([label,kind])=><label key={kind}><input type="checkbox" checked={props.visibleColumnKinds.includes(kind)} onChange={event=>toggleColumn(kind,event.target.checked)}/>{label}</label>)}<button type="button" onClick={()=>props.setVisibleColumnKinds(props.directoryColumns.map(([,kind])=>kind))}>Show All</button></div></details>
    <button type="button" onClick={props.onReset}>Reset Filters</button>
   </div>
  </div>

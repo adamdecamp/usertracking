@@ -77,9 +77,33 @@ internal sealed partial class PortableStorage
 
     public string ReadOperationReceipt(string systemId, string operationId)
     {
+        // A lost browser connection must be able to observe a long publication
+        // while PublishWorkspace owns the per-system root lock. Checking the
+        // protected recovery marker before taking that lock prevents the status
+        // request from blocking behind the very operation it is monitoring.
+        string path = OperationReceiptPath(systemId, operationId);
+        if (!File.Exists(path))
+        {
+            try
+            {
+                string recoveryPath = RecoveryRunPath(systemId);
+                if (File.Exists(recoveryPath))
+                {
+                    Dictionary<string, object> run = ObjectDictionary(json.DeserializeObject(ReadProtectedLocalJson(recoveryPath, "recovery-run", RecoveryFileLimit)));
+                    string runOperationId = Convert.ToString(run["operationId"], CultureInfo.InvariantCulture), state = Convert.ToString(run["state"], CultureInfo.InvariantCulture), action = Convert.ToString(run["action"], CultureInfo.InvariantCulture);
+                    if (String.Equals(runOperationId, operationId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        bool running = String.Equals(state, "running", StringComparison.Ordinal), failed = String.Equals(state, "failed", StringComparison.Ordinal);
+                        return json.Serialize(new Dictionary<string, object> { { "completed", false }, { "running", running }, { "failed", failed }, { "action", action }, { "startedAtUtc", Convert.ToString(run["startedAtUtc"], CultureInfo.InvariantCulture) }, { "message", Convert.ToString(run["message"], CultureInfo.InvariantCulture) } });
+                    }
+                }
+            }
+            catch { /* A receipt may be appearing atomically; retry on the next poll. */ }
+            return "{\"completed\":false,\"running\":false,\"failed\":false}";
+        }
         lock (RootLock(systemId))
         {
-            string path = OperationReceiptPath(systemId, operationId);if (!File.Exists(path)) return "{\"completed\":false}";
+            if (!File.Exists(path)) return "{\"completed\":false,\"running\":false,\"failed\":false}";
             Dictionary<string, object> value = ObjectDictionary(json.DeserializeObject(ReadProtectedLocalJson(path, "operation-receipt", OperationReceiptLimit)));
             int version = Convert.ToInt32(value["version"], CultureInfo.InvariantCulture);if ((version != 1 && version != OperationReceiptVersion) || !String.Equals(Convert.ToString(value["operationId"], CultureInfo.InvariantCulture), operationId, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The operation receipt failed validation.");
             string response = Convert.ToString(value["response"], CultureInfo.InvariantCulture) ?? "";if (!String.Equals(Convert.ToString(value["responseSha256"], CultureInfo.InvariantCulture), Sha256(response), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The operation receipt failed its SHA-256 check.");

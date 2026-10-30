@@ -64,6 +64,7 @@ internal sealed partial class PortableStorage : IDisposable
     private const int LocalWorkspaceProtectionVersion = 1;
     private const string LocalWorkspacePublicationFilename = "workspace-publication.json";
     private const string LocalWorkspacePublicationProgressFilename = "workspace-publication-progress.jsonl";
+    private const string LocalWorkspacePublicationLiveFilename = "workspace-publication-live.json";
     private const int LocalWorkspacePublicationVersion = 1;
     private static readonly string AbsentSharedManifestHash = Sha256("RAPTOR absent shared manifest v1");
     private const string LocalAuditCheckpointFilename = "verified-audit-head.cache";
@@ -930,7 +931,7 @@ internal sealed partial class PortableStorage : IDisposable
             FailAfter("publication-manifest-committed");
             WriteLocalWorkspaceState(workspaceRoot, new LocalWorkspaceState { BaseSharedSha256 = publishedHash, DatabaseStateHash = requestedStateHash, PendingEvidenceCount = localEvidence.Values.Count(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture)), Dirty = false, PulledAtUtc = now, SavedAtUtc = now });
             WriteLocalWorkspaceBaseDatabase(workspaceRoot, ObjectDictionary(json.DeserializeObject(json.Serialize(requestedDatabase))), publishedHash);
-            var completionErrors = new List<string>(preparationWarnings);int completedFiles = 0;
+            var completionErrors = new List<string>(preparationWarnings);int completedFiles = 0, finalizationProcessed = 0;
             foreach (PublicationEvidence item in staged)
             {
                 try
@@ -947,6 +948,7 @@ internal sealed partial class PortableStorage : IDisposable
                     string pendingDirectory = Path.Combine(completeRoot, PendingUploadDirectoryName);try { if (Directory.Exists(pendingDirectory) && !Directory.EnumerateFileSystemEntries(pendingDirectory).Any()) Directory.Delete(pendingDirectory); } catch { }
                 }
                 catch (Exception error) { completionErrors.Add(Path.GetFileName(item.Source) + ": " + CleanLine(error.Message, 240)); }
+                finally { finalizationProcessed++;WriteLivePublicationProgress(workspaceRoot, "local-completion", requestedStateHash, staged, finalizationProcessed, Path.GetFileName(item.Relative)); }
             }
             int remainingPendingEvidence = localEvidence.Values.Count(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture));
             WriteLocalWorkspaceState(workspaceRoot, new LocalWorkspaceState { BaseSharedSha256 = publishedHash, DatabaseStateHash = requestedStateHash, PendingEvidenceCount = remainingPendingEvidence, Dirty = false, PulledAtUtc = now, SavedAtUtc = now });
@@ -3446,27 +3448,6 @@ internal sealed partial class PortableStorage : IDisposable
         throw new InvalidOperationException("Map the selected information system folder first.");
     }
 
-    private void WritePublicationJournal(string workspaceRoot, string phase, string baseSharedSha256, string targetStateHash, List<PublicationEvidence> staged, int completedCopies)
-    {
-        if (String.Equals(phase, "evidence-copy", StringComparison.Ordinal) || String.Equals(phase, "evidence-verified", StringComparison.Ordinal))
-        {
-            AppendPublicationProgress(workspaceRoot, phase, targetStateHash, completedCopies);
-            return;
-        }
-        var items = staged.Select(item => (object)new Dictionary<string, object> { { "operationKey", item.OperationKey ?? Sha256("publish-file-v1\n" + item.Relative.ToUpperInvariant() + "\n" + item.SourceSha256.ToLowerInvariant() + "\n" + item.PdfSha256.ToLowerInvariant()) }, { "source", Relative(workspaceRoot, item.Source).Replace(Path.DirectorySeparatorChar, '/') }, { "destination", item.Relative }, { "sha256", item.Sha256 }, { "sourceSha256", item.SourceSha256 }, { "pdfSha256", item.PdfSha256 } }).ToArray();
-        var journal = new Dictionary<string, object> { { "version", LocalWorkspacePublicationVersion }, { "updatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "phase", phase }, { "baseSharedSha256", baseSharedSha256 }, { "targetStateHash", targetStateHash }, { "completedCopies", completedCopies }, { "items", items } };
-        WriteProtectedLocalJson(LocalWorkspacePublicationPath(workspaceRoot), "workspace-publication", json.Serialize(journal));
-        if (String.Equals(phase, "prepared", StringComparison.Ordinal) || String.Equals(phase, "manifest-committed", StringComparison.Ordinal)) TryDelete(LocalWorkspacePublicationProgressPath(workspaceRoot));
-    }
-
-    private void AppendPublicationProgress(string workspaceRoot, string phase, string targetStateHash, int completedCopies)
-    {
-        var progress = new Dictionary<string, object> { { "version", LocalWorkspacePublicationVersion }, { "updatedAtUtc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "phase", phase }, { "targetStateHash", targetStateHash }, { "completedCopies", completedCopies } };
-        byte[] clear = Encoding.UTF8.GetBytes(json.Serialize(progress)), protectedBytes = ProtectedData.Protect(clear, LocalWorkspaceEntropy("workspace-publication-progress"), DataProtectionScope.CurrentUser), line = Encoding.ASCII.GetBytes(Convert.ToBase64String(protectedBytes) + Environment.NewLine);
-        string path = LocalWorkspacePublicationProgressPath(workspaceRoot);var info = new FileInfo(path);if (info.Exists && info.Length + line.LongLength > JournalLimit) throw new InvalidDataException("The local publication progress journal exceeds its safety limit.");
-        using (var stream = OpenCompatibleFileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, Math.Max(4096, Math.Min(line.Length, 65536)))) { stream.Write(line, 0, line.Length);FlushCompatible(stream); }
-    }
-
     private void RecordPublishedEvidence(string root, List<PublicationEvidence> staged)
     {
         if (staged == null || staged.Count == 0) return;
@@ -3578,11 +3559,6 @@ internal sealed partial class PortableStorage : IDisposable
         Dictionary<string, object> item;if (published == null || !published.TryGetValue(relative, out item)) return false;
         try { return Convert.ToInt64(item["size"], CultureInfo.InvariantCulture) == size && Convert.ToInt64(item["lastModifiedUnixMs"], CultureInfo.InvariantCulture) == modified; }
         catch { return false; }
-    }
-
-    private static void DeletePublicationJournal(string workspaceRoot)
-    {
-        TryDelete(LocalWorkspacePublicationPath(workspaceRoot));TryDelete(LocalWorkspacePublicationProgressPath(workspaceRoot));
     }
 
     private Dictionary<string, object> ReadLocalWorkspaceDatabase(string workspaceRoot)

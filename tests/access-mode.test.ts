@@ -6,6 +6,8 @@ const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const styles=readFileSync(new URL('../app/globals.css',import.meta.url),'utf8');
 const sessionPanels=readFileSync(new URL('../app/components/SessionPanels.tsx',import.meta.url),'utf8');
 const directoryHeader=readFileSync(new URL('../app/components/DirectoryHeader.tsx',import.meta.url),'utf8');
+const operatorHeader=readFileSync(new URL('../app/components/OperatorDashboardHeader.tsx',import.meta.url),'utf8');
+const dashboard=`${page}\n${operatorHeader}`;
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
@@ -46,7 +48,7 @@ test('Full Access requires startup integrity verification and safely falls back 
 });
 
 test('Read-Only controls expose lookup without mutation workflows',()=>{
- assert.match(page,/canWrite&&<button[\s\S]{0,300}openSyncScope/);
+ assert.match(dashboard,/props\.canWrite&&<button[\s\S]{0,300}props\.onSync/);
  assert.match(directoryHeader,/props\.canWrite&&<div className="directory-actions"/);
  assert.match(page,/system\.archived\|\|trackerWindow\(\)\.__trackerAccessMode==='read-only'/);
  assert.match(page,/accessMode==='read-only'\)\{setStatusFilter\(state\)/);
@@ -90,7 +92,7 @@ test('Read-Only mapping avoids shared-folder initialization and all session boun
 });
 
 test('the dashboard opens the selected protected local workspace in File Explorer',()=>{
- assert.match(page,/Open Local Workspace/);
+ assert.match(dashboard,/Open Local Workspace/);
  assert.match(page,/portableRequest\(root,'workspace-open',\{method:'POST'\}\)/);
  assert.match(launcher,/action == "workspace-open"[\s\S]*?LocalWorkspacePath\(systemId\)[\s\S]*?Process\.Start\("explorer\.exe"/);
 });

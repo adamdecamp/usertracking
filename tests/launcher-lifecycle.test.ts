@@ -30,10 +30,12 @@ test('mapped-drive operations use bounded network-lag retries',()=>{
 
 test('slow network storage queues safely instead of failing after five seconds',()=>{
  assert.match(launcher,/StorageQueueWaitMilliseconds\(action, parts\[0\]\)/);
- assert.match(policy,/\? 30000 : 120000/);
+ assert.match(policy,/String\.Equals\(action, "workspace-publish"[\s\S]*?4 \* 60 \* 60 \* 1000/,'Session Commit must be allowed to wait behind a legitimate long-running storage operation instead of failing after two minutes.');
+ assert.match(policy,/\? 30000 : 120000/,'Ordinary storage reads and writes must retain their bounded queue waits.');
  assert.doesNotMatch(launcher,/storageOperations\.WaitAsync\(5000\)/);
  assert.match(launcher,/client\.ReceiveTimeout = 120000; client\.SendTimeout = 120000/);
  assert.match(launcher,/ActiveStorageOperation\(systemId\)/);
+ assert.match(policy,/!String\.Equals\(action, "workspace-progress"/,'Session Commit progress reads must not wait behind the publication they monitor.');
  assert.match(launcher,/activeOperation/);
 });
 

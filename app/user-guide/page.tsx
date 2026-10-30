@@ -123,6 +123,43 @@ export default function Guide() {
           start until the operator chooses a scope. User records are not copied
           into browser storage.
         </aside>
+        <h3>Dashboard Navigation and Status</h3>
+        <ul>
+          <li>
+            The header contains only routine operator actions: map, Sync, Clean
+            Up, Commit Session, and Log Off. Less-frequent controls are grouped
+            under <b>User Administration</b>, <b>Reports &amp; Oversight</b>, and
+            <b>System Tools</b> beside the Information System selector.
+          </li>
+          <li>
+            The persistent local-change indicator shows whether the protected
+            workspace is clean, has changes pending Commit, is committing, or
+            needs recovery. <b>Recent Activity</b> retains the last five
+            completed or failed operations for the current browser session.
+          </li>
+          <li>
+            Completion and error notices appear in the notification center
+            without blocking other work. Expand a notice to review or copy its
+            full details. Destructive actions show a review summary before any
+            files or records are changed.
+          </li>
+          <li>
+            Read-Only Access is identified by a persistent banner and gold
+            frame. It permits review, search, reporting, and export, but not
+            record or evidence changes.
+          </li>
+          <li>
+            User Directory filters, page size, and selected evidence columns
+            persist on that Windows browser profile. Use <b>Columns</b> to hide
+            requirements that are not needed for the current review. User and
+            Account Status remain visible while the table scrolls horizontally.
+          </li>
+          <li>
+            Dialogs support keyboard navigation: Tab remains inside the active
+            dialog, Escape closes it when safe, and focus returns to the control
+            that opened it.
+          </li>
+        </ul>
       </section>
       <section id="systems">
         <h2>2. Manage Information Systems</h2>
@@ -601,9 +638,10 @@ export default function Guide() {
           The <b>Processing Status</b> panel appears during Sync, verified
           clean-up actions, backup restoration, storage verification, and
           Compliance Snapshot generation. It displays the current phase,
-          processed count, exact percentage when a total is known, and the final
-          result. Initial folder discovery shows an indeterminate progress bar
-          until the launcher knows how many files are present.
+          named stage, elapsed time, processed count, exact percentage when a total is
+          known, the current file or action, and the final result. This same format is
+          used for every processing bar. Initial folder discovery shows an indeterminate
+          progress bar and states that the workload total is still being discovered.
         </p>
         <p>
           Both Sync modes use filename-first processing. Files that contain
@@ -1795,8 +1833,13 @@ export default function Guide() {
         is shown through separate local-check, preparation, shared-publication,
         verification, and finalization phases. Publication streams evidence to the
         shared drive instead of loading a complete file into memory. Transfer
-        progress is appended to a protected local journal, so publishing one
-        file does not rewrite the complete recovery plan. Unchanged evidence
+        progress is appended to a protected local journal, and the status bar reads a
+        separate protected live-progress record to show the current transfer stage,
+        latest filename, and completed/total file movement without waiting behind the
+        shared-drive write. If the browser response is interrupted, it reconnects to
+        the running publication and consumes its durable completion receipt instead of
+        reporting a false timeout. Publishing one file does not rewrite the complete
+        recovery plan. Unchanged evidence
         reuses hashes already verified during the current operation, and normal
         commits use the protected local evidence map instead of walking every
         local workspace folder. Published-evidence receipts are separated by

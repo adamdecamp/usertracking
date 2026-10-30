@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const operatorHeader=readFileSync(new URL('../app/components/OperatorDashboardHeader.tsx',import.meta.url),'utf8');
+const dashboard=`${page}\n${operatorHeader}`;
 const styles=readFileSync(new URL('../app/globals.css',import.meta.url),'utf8');
 const versions=readFileSync(new URL('../app/version.ts',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
@@ -20,9 +22,9 @@ test('Document Renamer preview reserves a full browser window before asynchronou
 
 test('Document Renamer keeps a full-window in-app fallback when popups are blocked',()=>{
  assert.match(page,/if\(!target\)setPreview\(\{loading:true,filename:item\.filename,path:item\.path\}\)/);
- assert.match(page,/import \{createPortal\} from 'react-dom'/);
- assert.match(page,/className="renamer-preview-overlay" role="dialog" aria-modal="true"/);
- assert.match(page,/createPortal\(<div className="renamer-preview-overlay"/);
+ assert.match(page,/import \{AccessibleModal\} from '\.\/components\/AccessibleModal'/);
+ assert.match(page,/<AccessibleModal label=\{`\$\{preview\.filename\} Preview`\}/);
+ assert.match(page,/backdropClassName="renamer-preview-overlay" contentClassName="renamer-preview-dialog"/);
  assert.match(page,/src=\{`\$\{preview\.url\}#zoom=page-width`\}/);
  assert.match(styles,/\.renamer-preview-overlay\{position:fixed!important;inset:0!important;z-index:2147483647/);
  assert.match(styles,/\.renamer-preview-dialog\{position:fixed;inset:0;display:flex;flex-direction:column;width:100vw;max-width:none;height:100vh;height:100dvh/);
@@ -132,10 +134,10 @@ test('dashboard reports user-level compliance and age never removes overdue evid
 });
 
 test('Inspection Package is removed while core audit and reporting controls remain',()=>{
- assert.doesNotMatch(page,/Inspection Package|generateInspectionPackage|inspection-package/);
- assert.match(page,/>Compliance Snapshot</);
- assert.match(page,/>View Audit Log</);
- assert.match(page,/>Release Health</);
+ assert.doesNotMatch(dashboard,/Inspection Package|generateInspectionPackage|inspection-package/);
+ assert.match(dashboard,/>Compliance Snapshot</);
+ assert.match(dashboard,/>View Audit Log</);
+ assert.match(dashboard,/>Release Health</);
 });
 
 test('location refresh and discovery workflows use metadata without reopening every PDF',()=>{
@@ -249,6 +251,6 @@ test('Manage Systems supports verified editing and recoverable deletion',()=>{
  assert.match(page,/async function deleteInformationSystem/);
  assert.match(page,/DELETE SYSTEM REGISTRATION/);
  assert.match(page,/Delete System/);
- assert.match(page,/mapped folder, evidence, database, and backups will be retained/i);
+ assert.match(page,/Shared evidence, backups, and the mapped database remain available for recovery/i);
  assert.match(launcher,/action == "forget"/);
 });
