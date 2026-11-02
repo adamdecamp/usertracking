@@ -44,6 +44,19 @@ internal static class LauncherPolicy
         return !ReadOnlyStorageActionAllowed(action, method);
     }
 
+    internal static bool StorageActionUsesOperationReceipt(string action)
+    {
+        action = action ?? "";
+        // Mapping is the bootstrap that makes the local receipt store available.
+        // It cannot safely consult that store beforehand, and replaying a prior
+        // folder-picker response would not recreate the in-memory mapping. Forget
+        // removes the mapping before a receipt could be saved. These session-boundary
+        // actions are deliberately repeatable instead of receipt-replayed.
+        return !String.Equals(action, "select", StringComparison.Ordinal)
+            && !String.Equals(action, "select-readonly", StringComparison.Ordinal)
+            && !String.Equals(action, "forget", StringComparison.Ordinal);
+    }
+
     internal static int StorageQueueWaitMilliseconds(string action, string method)
     {
         if (!StorageActionRequiresSerialization(action)) return 0;

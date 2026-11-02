@@ -57,22 +57,24 @@ internal sealed partial class PortableStorage
     public bool TryReplayOperation(string systemId, string operationId, string action, string requestSha256, out string response)
     {
         response = null;if (String.IsNullOrWhiteSpace(operationId)) return false;
-        lock (RootLock(systemId))
+        try
         {
-            string path;
-            try { path = OperationReceiptPath(systemId, operationId); }
-            catch (InvalidOperationException) { return false; }
-            if (!File.Exists(path)) return false;
-            Dictionary<string, object> value = ObjectDictionary(json.DeserializeObject(ReadProtectedLocalJson(path, "operation-receipt", OperationReceiptLimit)));
-            int version = Convert.ToInt32(value["version"], CultureInfo.InvariantCulture);
-            if ((version != 1 && version != OperationReceiptVersion) || !String.Equals(Convert.ToString(value["operationId"], CultureInfo.InvariantCulture), operationId, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The operation receipt failed validation.");
-            string storedAction = Convert.ToString(value["action"], CultureInfo.InvariantCulture);
-            if (!String.Equals(storedAction, CleanLine(action, 100), StringComparison.Ordinal)) throw new InvalidDataException("The operation identity was already used for a different action.");
-            if (version >= 2 && !String.Equals(Convert.ToString(value["requestSha256"], CultureInfo.InvariantCulture), requestSha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The operation identity was already used for a different request.");
-            response = Convert.ToString(value["response"], CultureInfo.InvariantCulture) ?? "";
-            if (!String.Equals(Convert.ToString(value["responseSha256"], CultureInfo.InvariantCulture), Sha256(response), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The operation receipt failed its SHA-256 check.");
-            return true;
+            lock (RootLock(systemId))
+            {
+                string path = OperationReceiptPath(systemId, operationId);
+                if (!File.Exists(path)) return false;
+                Dictionary<string, object> value = ObjectDictionary(json.DeserializeObject(ReadProtectedLocalJson(path, "operation-receipt", OperationReceiptLimit)));
+                int version = Convert.ToInt32(value["version"], CultureInfo.InvariantCulture);
+                if ((version != 1 && version != OperationReceiptVersion) || !String.Equals(Convert.ToString(value["operationId"], CultureInfo.InvariantCulture), operationId, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The operation receipt failed validation.");
+                string storedAction = Convert.ToString(value["action"], CultureInfo.InvariantCulture);
+                if (!String.Equals(storedAction, CleanLine(action, 100), StringComparison.Ordinal)) throw new InvalidDataException("The operation identity was already used for a different action.");
+                if (version >= 2 && !String.Equals(Convert.ToString(value["requestSha256"], CultureInfo.InvariantCulture), requestSha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The operation identity was already used for a different request.");
+                response = Convert.ToString(value["response"], CultureInfo.InvariantCulture) ?? "";
+                if (!String.Equals(Convert.ToString(value["responseSha256"], CultureInfo.InvariantCulture), Sha256(response), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The operation receipt failed its SHA-256 check.");
+                return true;
+            }
         }
+        catch (InvalidOperationException) { response = null;return false; }
     }
 
     public string ReadOperationReceipt(string systemId, string operationId)

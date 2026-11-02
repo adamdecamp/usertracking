@@ -246,14 +246,14 @@ internal sealed class TrackerContext : ApplicationContext
                 if (serializedStorage && !await systemStorageOperations.WaitAsync(queueWaitMilliseconds)) { string activeOperation = ActiveStorageOperation(systemId);await Respond(stream, 503, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("This information system is busy completing " + (String.IsNullOrWhiteSpace(activeOperation) ? "another verified operation" : activeOperation) + " after waiting " + (queueWaitMilliseconds / 1000).ToString(System.Globalization.CultureInfo.InvariantCulture) + " seconds. Other mapped systems remain available. Safe reads retry automatically; file-changing actions remain uncommitted until their turn begins."), false, "no-store"); return; }
                 if (serializedStorage) SetActiveStorageOperation(systemId, StorageActionDisplayName(action));
                 BeginStorageRequest();
-                string storageAction = action, requestSha256 = OperationRequestSha256(parts[0], target, requestBody), recoveryRunId = null;bool mutation = parts[0] == "POST" || parts[0] == "DELETE";
+                string storageAction = action, requestSha256 = OperationRequestSha256(parts[0], target, requestBody), recoveryRunId = null;bool mutation = parts[0] == "POST" || parts[0] == "DELETE", operationReceiptEnabled = mutation && LauncherPolicy.StorageActionUsesOperationReceipt(action);
                 try
                 {
                     // Recheck authorization after queueing so a released lease cannot authorize work.
                     if (StorageActionRequiresLease(action, parts[0]) && !String.Equals(SessionAccessMode(), "full", StringComparison.Ordinal)) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The Full Access session ended while this operation was waiting to begin."), false, "no-store");return; }
                     if (StorageActionRequiresLease(action, parts[0]) && (String.IsNullOrWhiteSpace(leaseSession) || !storage.OwnsLease(systemId, leaseSession))) { await Respond(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The exclusive Full Access lease was released while this operation was waiting to begin."), false, "no-store");return; }
                     string response;
-                    if (mutation && !String.IsNullOrWhiteSpace(operationId) && storage.TryReplayOperation(systemId, operationId, action, requestSha256, out response)) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(response), false, "no-store");return; }
+                    if (operationReceiptEnabled && !String.IsNullOrWhiteSpace(operationId) && storage.TryReplayOperation(systemId, operationId, action, requestSha256, out response)) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(response), false, "no-store");return; }
                     if (mutation && serializedStorage && StorageActionRequiresLease(action, parts[0])) recoveryRunId = storage.BeginRecoveryOperation(systemId, operationId, action, requestSha256, OptionalQueryValue(target, "organization"));
                     if (action == "select" && parts[0] == "POST")
                     {
@@ -345,13 +345,14 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "lease-renew" && parts[0] == "POST") response = "{\"renewed\":" + (storage.RenewLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
                     else if (action == "lease-release" && parts[0] == "POST") { storage.ReleaseLease(systemId, QueryValue(target, "session")); response = "{\"released\":true}"; }
                     else { await Respond(stream, 404, "text/plain", Encoding.UTF8.GetBytes("Not Found"), false, "no-store"); return; }
-                    if (mutation && !String.IsNullOrWhiteSpace(operationId)) storage.SaveOperationReceipt(systemId, operationId, action, requestSha256, response);
+                    if (operationReceiptEnabled && !String.IsNullOrWhiteSpace(operationId)) storage.SaveOperationReceipt(systemId, operationId, action, requestSha256, response);
                     if (!String.IsNullOrWhiteSpace(recoveryRunId)) storage.CompleteRecoveryOperation(systemId, recoveryRunId, action);
                     try { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(response), false, "no-store"); } catch (IOException) { } catch (SocketException) { }
                     return;
                 }
                 catch (Exception ex)
                 {
+                    Program.WriteLocalError("Windows launcher storage operation " + CleanError(storageAction), ex);
                     if (!String.IsNullOrWhiteSpace(recoveryRunId)) try { storage.FailRecoveryOperation(systemId, recoveryRunId, action, operationId, requestSha256, OptionalQueryValue(target, "organization"), ex); } catch { }
                     string message = StorageError(ex, storageAction) + (String.IsNullOrWhiteSpace(operationId) ? "" : " Operation ID: " + CleanError(operationId).Substring(0, Math.Min(CleanError(operationId).Length, 100)) + ".");
                     if (!String.Equals(storageAction, "error-report", StringComparison.Ordinal)) try

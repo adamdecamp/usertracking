@@ -82,6 +82,15 @@ test('every protected mutation is authorized by the backend lease owner',()=>{
  assert.match(launcher,/The Full Access session ended while this operation was waiting to begin/);
 });
 
+test('clean-install folder mapping does not require a pre-existing mapped workspace',()=>{
+ assert.match(policy,/StorageActionUsesOperationReceipt/);
+ assert.match(policy,/action, "select"[\s\S]*?action, "select-readonly"[\s\S]*?action, "forget"/);
+ assert.match(launcher,/operationReceiptEnabled = mutation && LauncherPolicy\.StorageActionUsesOperationReceipt\(action\)/);
+ assert.match(launcher,/if \(operationReceiptEnabled && !String\.IsNullOrWhiteSpace\(operationId\) && storage\.TryReplayOperation/);
+ assert.match(launcher,/if \(operationReceiptEnabled && !String\.IsNullOrWhiteSpace\(operationId\)\) storage\.SaveOperationReceipt/);
+ assert.match(launcher,/Program\.WriteLocalError\("Windows launcher storage operation "/);
+});
+
 test('Read-Only mapping avoids shared-folder initialization and all session boundaries are audited',()=>{
  const mapReadOnly=storage.slice(storage.indexOf('public void MapReadOnly'),storage.indexOf('public string CachedMappings'));
  assert.doesNotMatch(mapReadOnly,/MigrateSupportDirectories|EnsureOrganizationDocumentFolders|ProbeMappedFolder/);
