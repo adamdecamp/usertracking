@@ -15,5 +15,6 @@ test('identity edits safely relabel evidence and roll back failed saves',()=>{
  assert.match(page,/relabelUserArtifacts\(root,previous,proposed\)/);
  assert.match(page,/rollbackRelabeledArtifacts\(root,previous,updated,moves\)/);
  assert.match(page,/relabel-user-evidence\?path=/);
+ assert.match(page,/sha256=\$\{encodeURIComponent\(expectedSha256\)\}/);
  assert.match(page,/Resolve that file collision before changing this user/);
 });

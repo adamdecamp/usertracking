@@ -2440,11 +2440,11 @@ internal sealed partial class PortableStorage : IDisposable
         }
     }
 
-    public string RelabelUserEvidence(string systemId, string relative, string organization, string kind, string filename)
+    public string RelabelUserEvidence(string systemId, string relative, string organization, string kind, string filename, string expectedSha256 = null)
     {
         lock (RootLock(systemId))
         {
-            string root, source = ResolveEvidencePath(systemId, relative, out root);RecoverTransactions(root);string normalized = Relative(root, source);
+            string root, source = ResolveRelabelEvidencePath(systemId, relative, expectedSha256, out root);RecoverTransactions(root);string normalized = Relative(root, source);
             if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active user evidence can be relabeled from the User Record.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string safeOrganization = ValidOrganizationName(organization), folder = ArtifactStorageFolder(kind), safeName = SafePart(filename, 180);
@@ -3125,11 +3125,17 @@ internal sealed partial class PortableStorage : IDisposable
     public bool RenewLease(string systemId, string sessionId)
     {
         ValidateSessionId(sessionId);
-        lock (LeaseLock(systemId))
+        // The open FileStream is the authoritative Windows/SMB exclusive lock.
+        // A periodic browser heartbeat must never turn into a second synchronous
+        // network write while a long Session Commit is already using the share.
+        // Actual storage mutations still call OwnsLease before they start (and
+        // again after queueing), which validates the shared fencing metadata.
+        lock (mapGate)
         {
             HeldLease held;
-            lock (mapGate) heldLeases.TryGetValue(systemId, out held);
-            return held != null && String.Equals(held.SessionId, sessionId, StringComparison.Ordinal) && RefreshLease(systemId, held, false);
+            if (!heldLeases.TryGetValue(systemId, out held) || !String.Equals(held.SessionId, sessionId, StringComparison.Ordinal)) return false;
+            held.LastRenewedUtc = DateTime.UtcNow;
+            return true;
         }
     }
 

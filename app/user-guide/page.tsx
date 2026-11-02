@@ -1745,16 +1745,18 @@ export default function Guide() {
         records to the live manifest and does not move or delete evidence.
       </aside>
       <aside>
-        <b>Long Sync Sessions:</b> While Sync is active, the tracker suspends
+        <b>Long Sync and Session Commit Operations:</b> While Sync or Session Commit is active, the tracker suspends
           the browser-session idle disconnect and keeps the portable Windows
           launcher active. A renewable long-operation hold covers the complete scan,
           review application, update, and cleanup sequence, including the gaps between
           individual storage requests. Every active launcher storage operation also counts as browser
-          presence. Exclusive lease renewal uses a
-        separate launcher path, and automatic manifest or backup saves pause until
-        Sync finishes. Only one lease-renewal request may be outstanding, preventing
-        long scans from building a queue of redundant requests. The
-        idle clocks restart from zero only after Sync completes, fails, or is
+          presence. The Windows exclusive file handle remains authoritative during
+        protected work; periodic lease heartbeats update launcher-local liveness and
+        never start a competing shared-drive write. Actual file-changing requests
+        still verify the shared fencing record before they begin. Automatic manifest
+        or backup saves pause until Sync finishes. Only one lease-renewal request may
+        be outstanding, preventing long operations from building a queue of redundant
+        requests. The idle clocks restart from zero only after Sync or Session Commit completes, fails, or is
         stopped by the operator, so a large directory scan cannot log off the
           operator merely because it exceeds an idle limit. The hold automatically
           expires only if its browser heartbeat disappears for five minutes, preventing
@@ -1839,7 +1841,10 @@ export default function Guide() {
         shared-drive write. If the browser response is interrupted, it reconnects to
         the running publication and consumes its durable completion receipt instead of
         reporting a false timeout. Publishing one file does not rewrite the complete
-        recovery plan. Unchanged evidence
+        recovery plan. During Log Off, the browser may be closed after the closing
+        notice; the Windows tray launcher retains the exclusive lease, completes the
+        publication in the background, finalizes the backup, and exits only afterward.
+        Unchanged evidence
         reuses hashes already verified during the current operation, and normal
         commits use the protected local evidence map instead of walking every
         local workspace folder. Published-evidence receipts are separated by

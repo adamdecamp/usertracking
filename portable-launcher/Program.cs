@@ -228,8 +228,8 @@ internal sealed class TrackerContext : ApplicationContext
             if (path == "/api/backup-complete" && parts[0] == "POST") { SetBackupClean(true); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/backup-failed" && parts[0] == "POST") { SetBackupClean(false); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/browser-closing" && parts[0] == "POST") { RequestShutdown("browser-closed"); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
-            if (path == "/api/logoff" && parts[0] == "POST") { RequestShutdown("operator-logoff"); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
-            if (path == "/api/shutdown-ready" && parts[0] == "POST") { MarkShutdownReady(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
+            if (path == "/api/logoff" && parts[0] == "POST") { SetLongOperation(true);RequestShutdown("operator-logoff"); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
+            if (path == "/api/shutdown-ready" && parts[0] == "POST") { SetLongOperation(false);MarkShutdownReady(); await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true}"), false, "no-store"); return; }
             if (path == "/api/control" && (parts[0] == "GET" || parts[0] == "HEAD")) { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(ControlJson()), parts[0] == "HEAD", "no-store"); return; }
             if (path.StartsWith("/api/storage/", StringComparison.Ordinal))
             {
@@ -323,7 +323,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "organize" && parts[0] == "POST") response = storage.OrganizeEvidence(systemId, QueryValue(target, "path"), QueryValue(target, "folder"));
                     else if (action == "restore-active" && parts[0] == "POST") response = storage.RestoreActiveEvidence(systemId, requestBody);
                     else if (action == "normalize-date" && parts[0] == "POST") response = storage.NormalizeEvidenceFilename(systemId, QueryValue(target, "path"), QueryValue(target, "filename"));
-                    else if (action == "relabel-user-evidence" && parts[0] == "POST") response = storage.RelabelUserEvidence(systemId, QueryValue(target, "path"), QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"));
+                    else if (action == "relabel-user-evidence" && parts[0] == "POST") response = storage.RelabelUserEvidence(systemId, QueryValue(target, "path"), QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"), OptionalQueryValue(target, "sha256"));
                     else if (action == "organizations" && parts[0] == "GET") response = storage.ListOrganizations(systemId);
                     else if (action == "organizations" && parts[0] == "POST") response = storage.CreateOrganization(systemId, QueryValue(target, "name"));
                     else if (action == "evidence" && parts[0] == "POST") response = "{\"filename\":\"" + Json(storage.StoreEvidence(systemId, QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"), requestBody)) + "\"}";
@@ -363,7 +363,7 @@ internal sealed class TrackerContext : ApplicationContext
                     try { Respond(stream, 400, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(CleanError(message)), false, "no-store").GetAwaiter().GetResult(); } catch (IOException) { } catch (SocketException) { }
                     return;
                 }
-                finally { EndStorageRequest(); if (serializedStorage) { ClearActiveStorageOperation(systemId);systemStorageOperations.Release(); } }
+                finally { if (serializedStorage && StorageActionRequiresLease(action, parts[0]) && !String.IsNullOrWhiteSpace(leaseSession)) storage.RenewLease(systemId, leaseSession);EndStorageRequest();if (serializedStorage) { ClearActiveStorageOperation(systemId);systemStorageOperations.Release(); } }
             }
             WebAsset asset;
             if (assets.TryGetValue(path, out asset)) { string cache = path == "/favicon.ico" || path == "/raptor-icon.png" ? "no-cache, max-age=0" : "public, max-age=31536000, immutable"; await Respond(stream, 200, asset.ContentType, asset.Bytes, parts[0] == "HEAD", cache, "gzip"); return; }
@@ -930,7 +930,7 @@ internal sealed class TrackerContext : ApplicationContext
     internal static bool ShutdownShouldExit(string reason, TimeSpan waiting, bool operationBusy, bool backupClean, bool finalizationComplete, bool ready)
     {
         bool graceful = !operationBusy && backupClean && finalizationComplete && (ready || (reason == "operator-exit" && waiting >= TimeSpan.FromSeconds(2)) || ((reason == "browser-closed" || reason == "operator-logoff") && waiting >= TimeSpan.FromSeconds(12)) || (reason == "idle" && waiting >= TimeSpan.FromSeconds(30)));
-        return graceful || waiting >= ForcedShutdownLimit(reason);
+        return graceful || !operationBusy && backupClean && finalizationComplete && waiting >= ForcedShutdownLimit(reason);
     }
 
     private void EvaluateLifecycle()

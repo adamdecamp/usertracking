@@ -54,11 +54,11 @@ test('idle disconnect arms bounded shutdown, reuses final publication, and relea
  assert.doesNotMatch(disconnect,/finally\{[^}]*releaseLease/);
 });
 
-test('shutdown waits are bounded and retain local-first recovery state',()=>{
+test('shutdown never interrupts active publication and retains local-first recovery state',()=>{
  const wait=page.slice(page.indexOf('async function waitForPortableStorageIdle'),page.indexOf('async function portableRequest'));
  assert.match(wait,/Date\.now\(\)-started>=timeoutMs/);
  assert.match(wait,/OperationTimeoutError/);
- assert.match(page,/shutdownPublicationTimeoutMs=2\*60\*1000/);
+ assert.match(page,/shutdownPublicationTimeoutMs=4\*60\*60\*1000/);
  assert.match(page,/protected local workspace (?:remains|was retained)/i);
 });
 
@@ -66,6 +66,8 @@ test('operator logoff arms launcher shutdown before final network publication',(
  const logoff=page.slice(page.indexOf('async function logOff()'),page.indexOf('async function reconnect'));
  assert.ok(logoff.indexOf("'/api/logoff'")<logoff.indexOf('publishForShutdown'));
  assert.match(logoff,/syncAbort\.current\?\.abort\(\)/);
+ assert.match(logoff,/You may close this window; R\.A\.P\.T\.O\.R\. will finish publishing in the system tray/);
+ assert.match(launcher,/\/api\/logoff[\s\S]*?SetLongOperation\(true\);RequestShutdown\("operator-logoff"\)/);
  assert.match(logoff,/finally\{[\s\S]*?shutdown-ready/);
 });
 
@@ -77,7 +79,7 @@ test('shutdown always rechecks protected local status after a manual Session Com
  assert.doesNotMatch(page,/manualSessionCommitHashes|shutdownPublicationRequired/);
 });
 
-test('launcher finalization never blocks its UI thread and has a hard exit deadline',()=>{
+test('launcher finalization never blocks its UI thread or interrupts active storage',()=>{
  const request=launcher.slice(launcher.indexOf('private void RequestShutdown'),launcher.indexOf('private void StartBackupFinalization'));
  assert.doesNotMatch(request,/FinalizeMappedBackups\(\)/);
  const finalizer=launcher.slice(launcher.indexOf('private void StartBackupFinalization'),launcher.indexOf('private void MarkShutdownReady'));
@@ -86,6 +88,7 @@ test('launcher finalization never blocks its UI thread and has a hard exit deadl
  const lifecycle=launcher.slice(launcher.indexOf('private void EvaluateLifecycle'),launcher.indexOf('private static async Task Respond'));
  assert.match(lifecycle,/ShutdownShouldExit\(shutdownReason, waiting, operationBusy, backupClean, shutdownFinalizationComplete, shutdownReady\)/);
  assert.match(launcher,/internal static bool ShutdownShouldExit[\s\S]*?ForcedShutdownLimit\(reason\)/);
+ assert.match(launcher,/return graceful \|\| !operationBusy && backupClean && finalizationComplete/);
  assert.match(lifecycle,/shutdownFinalizationComplete/);
  const exit=launcher.slice(launcher.indexOf('protected override void ExitThreadCore'),launcher.indexOf('internal static class Program'));
  assert.match(exit,/Thread\.Sleep\(8000\);Environment\.Exit\(0\)/);
@@ -107,6 +110,22 @@ test('long scans and verified updates hold the launcher and browser session acti
  assert.match(apply,/setLauncherLongOperation\(true,true\)/);
  assert.match(apply,/finally\{window\.clearInterval\(launcherKeepAlive\);syncInProgress\.current=false/);
  assert.match(storageRequest,/stage==='scan'\|\|stage==='rework-retention'\|\|stage==='sync-pipeline'\|\|stage==='workspace-publish'\?4\*60\*60\*1000/);
+});
+
+test('Session Commit cannot be disconnected by its independent lease heartbeat',()=>{
+ const commit=page.slice(page.indexOf('async function commitSession'),page.indexOf('async function logOff'));
+ const leaseEffect=page.slice(page.indexOf('const protectedOperationActive='),page.indexOf('// This effect intentionally runs once after hydration'));
+ const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
+ const renew=storage.slice(storage.indexOf('public bool RenewLease'),storage.indexOf('public bool OwnsLease'));
+ assert.match(commit,/syncInProgress\.current=true/,'Session Commit must suspend browser inactivity handling before it begins.');
+ assert.match(commit,/setLauncherLongOperation\(true,true\)/,'Session Commit must keep the Windows launcher alive while it publishes.');
+ assert.match(commit,/finally\{[\s\S]*?syncInProgress\.current=false[\s\S]*?setLauncherLongOperation\(false,true\)/,'Session Commit must release its long-operation hold only after completion or failure.');
+ assert.match(leaseEffect,/protectedOperationActive=\(systemId:string\)=>syncInProgress\.current\|\|publicationBySystem\.current\.has\(systemId\)/);
+ assert.match(leaseEffect,/leaseRenewPending\.current\|\|protectedWork\)return/,'The periodic lease request must not compete with an active commit or Sync.');
+ assert.match(leaseEffect,/if\(protectedOperationActive\(systemId\)\)return;syncAbort/,'A late lease response must not falsely block protected work that is still active.');
+ assert.match(renew,/held\.LastRenewedUtc = DateTime\.UtcNow/,'Lease heartbeat renewal must update launcher-local liveness.');
+ assert.doesNotMatch(renew,/RefreshLease|WriteLeaseMetadata|LeaseFenceMatches/,'Periodic lease heartbeat renewal must not perform a blocking shared-drive write.');
+ assert.match(launcher,/if \(serializedStorage && StorageActionRequiresLease\(action, parts\[0\]\)[\s\S]*?storage\.RenewLease\(systemId, leaseSession\)/,'Authorized storage operations must refresh local lease liveness before becoming idle.');
 });
 
 test('evidence that fails canonical folder routing cannot enter database matching',()=>{
@@ -132,7 +151,7 @@ test('a live heartbeat cancels only a pending browser-closed shutdown',()=>{
 });
 
 test('lease loss stops active work and preserves the current Sync review',()=>{
- assert.match(page,/if\(!ok\)\{syncAbort\.current\?\.abort\(\)/);
+ assert.match(page,/if\(!ok\)\{if\(protectedOperationActive\(systemId\)\)return;syncAbort\.current\?\.abort\(\)/);
  const apply=page.slice(page.indexOf('async function applyVerifiedSync'),page.indexOf('function resetFilters'));
  assert.match(apply,/if\(error instanceof SessionLeaseLostError\)throw error/g);
  assert.match(apply,/pendingSyncBySystem\.current\.set\(failedSystemId,pendingSync\)/);

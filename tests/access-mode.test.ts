@@ -25,7 +25,7 @@ test('startup requires an explicit Read-Only or Full Access choice',()=>{
 
 test('Read-Only sessions never acquire or renew the editor lease',()=>{
  assert.match(page,/if\(accessMode==='read-only'\)\{[\s\S]*?setSessionState\('active'\)/);
- assert.match(page,/if\(!root\|\|accessMode!=='full'\|\|leaseRenewPending\.current\)return/);
+ assert.match(page,/if\(!root\|\|accessMode!=='full'\|\|leaseRenewPending\.current\|\|protectedWork\)return/);
  assert.match(page,/if\(accessMode==='full'\)\{if\(!\(await acquireLease\(root,sessionId\)\)\)/);
 });
 

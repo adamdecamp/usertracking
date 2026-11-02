@@ -62,6 +62,14 @@ test('Session Commit reports distinct local, publication, verification, and fina
  assert.doesNotMatch(commit,/Checking for Pending Changes/,'The former catch-all phase must not conceal network publication work.');
 });
 
+test('Session Commit owns a renewable long-operation hold until its final result',()=>{
+ const commit=page.slice(page.indexOf('async function commitSession'),page.indexOf('async function logOff'));
+ assert.ok(commit.indexOf('syncInProgress.current=true')<commit.indexOf("startProcessing('Commit Session'"),'The browser idle guard must be active before Commit starts.');
+ assert.ok(commit.indexOf('setLauncherLongOperation(true,true)')<commit.indexOf('publishSystemWorkspace'),'The launcher hold must be active before publication starts.');
+ assert.match(commit,/setInterval\(\(\)=>void setLauncherLongOperation\(true,true\),30\*1000\)/,'A slow publication must renew its launcher hold.');
+ assert.match(commit,/finally\{[\s\S]*?clearInterval\(launcherKeepAlive\)[\s\S]*?syncInProgress\.current=false[\s\S]*?lastActivity\.current=Date\.now\(\)[\s\S]*?setLauncherLongOperation\(false,true\)/,'The idle timer must restart only after Commit finishes.');
+});
+
 test('Session Commit queue wait matches its long-running transport window',()=>{
  const policy=readFileSync('portable-launcher/LauncherPolicy.cs','utf8');
  const request=readFileSync('app/infrastructure/portable-storage-request.ts','utf8');
