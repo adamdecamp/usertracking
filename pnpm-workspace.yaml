@@ -20,3 +20,4 @@ overrides:
   source-map-js: ">=1.2.2"
   postcss: ">=8.5.23"
   js-yaml: "4.3.2"
+  minimatch: "11.0.1"

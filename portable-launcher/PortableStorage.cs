@@ -923,7 +923,7 @@ internal sealed partial class PortableStorage : IDisposable
             }
             transferTimer.Stop();
 
-            RecordPublishedEvidence(sharedRoot, successfulPublications);
+            preparationWarnings.AddRange(RecordPublishedEvidence(sharedRoot, successfulPublications, requestedDatabase));
             if (publicationFailures.Count > 0) throw new IOException(publicationFailures.Count.ToString(CultureInfo.InvariantCulture) + " organization-scoped evidence publication action(s) failed while independent files continued: " + String.Join("; ", publicationFailures.Take(20)));
             WritePublicationJournal(workspaceRoot, "evidence-verified", state.BaseSharedSha256, requestedStateHash, staged, copied);
             string resultText = manifestAlreadyCommitted ? json.Serialize(new Dictionary<string, object> { { "saved", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }, { "unchanged", true }, { "stateHash", requestedStateHash } }) : SaveSharedSystemState(systemId, bytes);
@@ -3454,13 +3454,19 @@ internal sealed partial class PortableStorage : IDisposable
         throw new InvalidOperationException("Map the selected information system folder first.");
     }
 
-    private void RecordPublishedEvidence(string root, List<PublicationEvidence> staged)
+    private List<string> RecordPublishedEvidence(string root, List<PublicationEvidence> staged, Dictionary<string, object> database)
     {
-        if (staged == null || staged.Count == 0) return;
+        var recoveries = new List<string>();
+        if (staged == null || staged.Count == 0) return recoveries;
         string directory = SupportDirectory(root, PublicationDirectoryName);Dictionary<string, Dictionary<string, object>> shardReferences = EnsurePublishedEvidenceShards(root);
         foreach (var group in staged.GroupBy(item => PublicationOrganization(item.Relative), StringComparer.OrdinalIgnoreCase))
         {
-            string organization = group.Key;var records = LoadPublishedEvidence(root, organization);
+            string organization = group.Key;var damaged = new List<string>();var records = LoadPublishedEvidence(root, organization, damaged);
+            if (damaged.Count > 0)
+            {
+                records = RebuildPublishedEvidenceRecords(root, organization, database);
+                recoveries.Add("Recovered the " + organization + " publication-receipt cache from " + records.Count.ToString(CultureInfo.InvariantCulture) + " verified database evidence reference(s) after its prior SHA-256 check failed. Evidence files and the master database were preserved.");
+            }
             foreach (PublicationEvidence item in group)
             {
                 var info = new FileInfo(item.Destination);info.Refresh();if (!info.Exists) throw new FileNotFoundException("A published evidence file disappeared before its publication receipt was recorded.", item.Destination);
@@ -3469,15 +3475,23 @@ internal sealed partial class PortableStorage : IDisposable
             Dictionary<string, object> reference = WritePublishedEvidenceShard(directory, organization, records);shardReferences[organization] = reference;
         }
         WritePublishedEvidenceCatalog(directory, shardReferences);
+        return recoveries;
     }
 
-    private Dictionary<string, Dictionary<string, object>> LoadPublishedEvidence(string root, string organization = null)
+    private Dictionary<string, Dictionary<string, object>> LoadPublishedEvidence(string root, string organization = null, List<string> damagedOrganizations = null)
     {
         var result = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);string directory = Path.Combine(root, SystemDirectoryName, PublicationDirectoryName), path = Path.Combine(directory, PublicationIndexFilename);Dictionary<string, Dictionary<string, object>> references;
         if (TryReadPublishedEvidenceCatalog(path, out references))
         {
             IEnumerable<Dictionary<string, object>> selected = String.IsNullOrWhiteSpace(organization) ? references.Values : references.Where(item => String.Equals(item.Key, organization, StringComparison.OrdinalIgnoreCase)).Select(item => item.Value);
-            foreach (Dictionary<string, object> reference in selected) LoadPublishedEvidenceShard(directory, reference, result);
+            foreach (Dictionary<string, object> reference in selected)
+            {
+                string referencedOrganization = Convert.ToString(reference["organization"], CultureInfo.InvariantCulture);
+                try { LoadPublishedEvidenceShard(directory, reference, result); }
+                catch (InvalidDataException) { if (damagedOrganizations != null && !damagedOrganizations.Contains(referencedOrganization, StringComparer.OrdinalIgnoreCase)) damagedOrganizations.Add(referencedOrganization); }
+                catch (FileNotFoundException) { if (damagedOrganizations != null && !damagedOrganizations.Contains(referencedOrganization, StringComparer.OrdinalIgnoreCase)) damagedOrganizations.Add(referencedOrganization); }
+                catch (DirectoryNotFoundException) { if (damagedOrganizations != null && !damagedOrganizations.Contains(referencedOrganization, StringComparer.OrdinalIgnoreCase)) damagedOrganizations.Add(referencedOrganization); }
+            }
             return result;
         }
         return LoadLegacyPublishedEvidence(path, organization);
@@ -3521,9 +3535,15 @@ internal sealed partial class PortableStorage : IDisposable
 
     private void LoadPublishedEvidenceShard(string directory, Dictionary<string, object> reference, Dictionary<string, Dictionary<string, object>> result)
     {
-        string file = Convert.ToString(reference["file"], CultureInfo.InvariantCulture), expected = Convert.ToString(reference["sha256"], CultureInfo.InvariantCulture), path = Path.Combine(directory, PublicationIndexShardDirectoryName, file);byte[] bytes = ReadAllBytesWithRetry(path, SyncIndexLimit);
+        string referencedOrganization = ValidOrganizationName(Convert.ToString(reference["organization"], CultureInfo.InvariantCulture)), file = Convert.ToString(reference["file"], CultureInfo.InvariantCulture), expected = Convert.ToString(reference["sha256"], CultureInfo.InvariantCulture), path = Path.Combine(directory, PublicationIndexShardDirectoryName, file);byte[] bytes = ReadAllBytesWithRetry(path, SyncIndexLimit);
         if (!String.Equals(Sha256Bytes(bytes), expected, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A published-evidence organization shard failed its SHA-256 check.");
-        Dictionary<string, object> envelope = ObjectDictionary(json.DeserializeObject(new UTF8Encoding(false, true).GetString(bytes)));if (Convert.ToInt32(envelope["version"], CultureInfo.InvariantCulture) != PublicationIndexShardVersion) throw new InvalidDataException("A published-evidence organization shard uses an unsupported version.");LoadPublishedEvidenceItems(ObjectArray(envelope["items"]), Convert.ToString(envelope["organization"], CultureInfo.InvariantCulture), result);
+        Dictionary<string, object> envelope;
+        try { envelope = ObjectDictionary(json.DeserializeObject(new UTF8Encoding(false, true).GetString(bytes))); }
+        catch (Exception) { throw new InvalidDataException("A published-evidence organization shard contains invalid JSON."); }
+        string envelopeOrganization = envelope.ContainsKey("organization") ? Convert.ToString(envelope["organization"], CultureInfo.InvariantCulture) : "";
+        if (!envelope.ContainsKey("version") || !envelope.ContainsKey("items") || Convert.ToInt32(envelope["version"], CultureInfo.InvariantCulture) != PublicationIndexShardVersion) throw new InvalidDataException("A published-evidence organization shard uses an unsupported version.");
+        if (!String.Equals(envelopeOrganization, referencedOrganization, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A published-evidence organization shard is assigned to the wrong organization.");
+        LoadPublishedEvidenceItems(ObjectArray(envelope["items"]), referencedOrganization, result);
     }
 
     private static void LoadPublishedEvidenceItems(object[] items, string organization, Dictionary<string, Dictionary<string, object>> result)
