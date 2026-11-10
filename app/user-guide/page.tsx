@@ -1,1888 +1,307 @@
-import "./user-guide.css";
+import './user-guide.css';
 /* eslint-disable @next/next/no-img-element -- The small static logo must remain compatible with the portable Vite build. */
 
-const formats = [
-  ["General System Access Request", "Last_First_(ORG)_GEN_SAAR_DDMMMYYYY"],
-  [
-    "Privileged System Access Request",
-    "Last_First_(ORG)_PRIV_TYPE_SAAR_DDMMMYYYY",
-  ],
-  ["DoD Cyber Awareness", "Last_First_(ORG)_DoD_Cyber_Cert_DDMMMYYYY"],
-  ["User Agreement", "Last_First_(ORG)_User_Agreement_DDMMMYYYY"],
-  ["8140 Certification Memo", "Last_First_(ORG)_8140_Cert_Memo_DDMMMYYYY"],
-  ["Privileged User Training", "Last_First_(ORG)_PRIV_Training_Cert_DDMMMYYYY"],
-  ["DTA Training", "Last_First_(ORG)_DTA_Training_DDMMMYYYY"],
+const formats=[
+ ['General System Access Request','Last_First_(ORG)_GEN_SAAR_DDMMMYYYY'],
+ ['Privileged System Access Request','Last_First_(ORG)_PRIV_TYPE_SAAR_DDMMMYYYY'],
+ ['DoD Cyber Awareness','Last_First_(ORG)_DoD_Cyber_Cert_DDMMMYYYY'],
+ ['User Agreement','Last_First_(ORG)_User_Agreement_DDMMMYYYY'],
+ ['8140 Certification Memo','Last_First_(ORG)_8140_Cert_Memo_DDMMMYYYY'],
+ ['Privileged User Training','Last_First_(ORG)_PRIV_Training_Cert_DDMMMYYYY'],
+ ['DTA Training','Last_First_(ORG)_DTA_Training_DDMMMYYYY'],
 ];
 
-export default function Guide() {
-  return (
-    <main className="guide">
-      {/* Plain anchor keeps the same guide compatible with the portable Vite build. */}
-      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-      <a href="/">← Return to R.A.P.T.O.R.</a>
-      <header>
-        <div className="guide-brand">
-          <img src="/raptor-icon.png" alt="R.A.P.T.O.R. raptor claw and verified document logo" />
-          <div>
-            <p>Reference</p>
-            <h1>R.A.P.T.O.R. User Guide</h1>
-            <p>Role-Based Access Personnel Tracking &amp; Oversight Registry</p>
-          </div>
-        </div>
-      </header>
-      <nav>
-        {[
-          "Getting Started",
-          "Systems",
-          "Users",
-          "Evidence",
-          "Sync & Backup",
-          "Reconciliation & Exceptions",
-          "Exports & Notifications",
-          "Archive",
-        ].map((x) => (
-          <a key={x} href={`#${x.toLowerCase().split(" ")[0]}`}>
-            {x}
-          </a>
-        ))}
-      </nav>
-      <aside>
-        Every validation build and signed public release includes a freshly
-        generated, one-page <b>Executive Capability Summary</b> PDF beside the
-        Windows executable and checksum file. It describes mission value,
-        operational capabilities, audit readiness, secure deployment, and the
-        tool&apos;s administrative scope.
-      </aside>
-      <section id="getting">
-        <h2>1. Getting Started</h2>
-        <ol>
-          <li>Open the tracker in Chrome or Edge.</li>
-          <li>
-            Add a new information system, or choose <b>Map System Folder</b> to
-            load an existing one.
-          </li>
-          <li>
-            Map that system&apos;s shared folder and approve folder access. Mapping
-            loads the saved records but does not start Sync. It also creates a
-            top-level <code>Template</code> folder for approved User Management
-            templates.
-          </li>
-          <li>
-            Choose <b>Sync</b>, then select either the entire information system
-            or one immediate folder beneath <b>Organizations</b>. For routine
-            Daily Sync, place new files directly in that organization folder.
-            Put corrected files in its prefixed <b>Rework</b> folder. Review
-            Sync Review and the Current,
-            Missing, and Overdue totals afterward.
-          </li>
-          <li>
-            Choose <b>Stop Sync</b> while a scan is running if you need to
-            cancel it. Cancelled scan results are discarded and no partial
-            database update is applied. The portable app retains a protected
-            Sync-stage checkpoint and per-file journal. If Windows, the browser,
-            or the network interrupts Sync, the next run reports the stopped
-            stage and reuses completed discovery and validation work where safe.
-          </li>
-          <li>
-            You may close Sync Review or apply verified updates without running
-            cleanup. Deferred and failed actions remain available under the
-            correct system&apos;s main <b>Clean Up</b> button until completed or
-            replaced by a later successful Sync of that system. The main{" "}
-            <b>Sync</b> button always opens the scope chooser, even while earlier
-            review results remain pending, so another full or targeted
-            organization Sync can be started without completing Clean Up first.
-            The Review Sync Results window also provides{" "}
-            <b>Start Another Sync</b>, so logging off or relaunching is never
-            required. If that new Sync is stopped or fails, the earlier review
-            remains available.
-          </li>
-          <li>
-            Click the Missing or Overdue total to filter affected users and
-            prepare notifications.
-          </li>
-          <li>
-            Choose <b>View Audit Log</b> to verify and review the selected
-            system&apos;s read-only audit entries.
-          </li>
-          <li>
-            When finished, choose <b>Log Off</b>. The tracker completes its
-            final backup, records the logoff, releases the shared-folder lock,
-            and terminates the portable Windows application.
-          </li>
-        </ol>
-        <aside>
-          Folder Sync is the primary way to create and update records. Manual
-          Add User remains available only as a fallback. Every release opens
-          without bundled systems or users. The portable launcher remembers only
-          each mapped folder path in the signed-in Windows user&apos;s Local
-          AppData. It also keeps a Windows-user-protected, checksum-matched local
-          read cache of the last verified database. On the next launch, cached
-          status can appear immediately while the authoritative shared database
-          is verified in the background; editing remains unavailable until that
-          verification and the selected system&apos;s lock succeed. Sync does not
-          start until the operator chooses a scope. User records are not copied
-          into browser storage.
-        </aside>
-        <h3>Dashboard Navigation and Status</h3>
-        <ul>
-          <li>
-            The header contains only routine operator actions: map, Sync, Clean
-            Up, Commit Session, and Log Off. Less-frequent controls are grouped
-            under <b>User Administration</b>, <b>Reports &amp; Oversight</b>, and
-            <b>System Tools</b> beside the Information System selector.
-          </li>
-          <li>
-            The persistent local-change indicator shows whether the protected
-            workspace is clean, has changes pending Commit, is committing, or
-            needs recovery. <b>Recent Activity</b> retains the last five
-            completed or failed operations for the current browser session.
-          </li>
-          <li>
-            Completion and error notices appear in the notification center
-            without blocking other work. Expand a notice to review or copy its
-            full details. Destructive actions show a review summary before any
-            files or records are changed.
-          </li>
-          <li>
-            Read-Only Access is identified by a persistent banner and gold
-            frame. It permits review, search, reporting, and export, but not
-            record or evidence changes.
-          </li>
-          <li>
-            User Directory filters, page size, and selected evidence columns
-            persist on that Windows browser profile. Use <b>Columns</b> to hide
-            requirements that are not needed for the current review. User and
-            Account Status remain visible while the table scrolls horizontally.
-          </li>
-          <li>
-            Dialogs support keyboard navigation: Tab remains inside the active
-            dialog, Escape closes it when safe, and focus returns to the control
-            that opened it.
-          </li>
-        </ul>
-      </section>
-      <section id="systems">
-        <h2>2. Manage Information Systems</h2>
-        <p>
-          Use <b>Manage Systems</b> to add a system; edit its name, type, and
-          organization; map its shared folder; archive it; unarchive it; or delete
-          its registration. Deleting a system removes it and its linked users from
-          the current app view, but deliberately retains the mapped folder,
-          evidence, database, and backups so it can be mapped again if needed.
-          Every system folder contains only that system&apos;s users, evidence,
-          manifest, audit logs, and backups. The portable app remembers valid
-          mappings for the current Windows account, so normally each folder is
-          selected only once per computer. Remap a system if its shared path
-          changes or becomes unavailable. Archiving locks the system and its
-          users while preserving all records.
-        </p>
-        <p>
-          Mapping creates a top-level <code>Organizations</code> folder. Choose{" "}
-          <b>Manage Organizations</b> to create each organization beneath it,
-          then place that organization&apos;s evidence in the corresponding folder.
-          The descriptive Organization field on an Information System does not
-          create a local or shared organization folder. Workflow folders are
-          prepared only for organizations created by an operator or represented
-          by an actual User Record.
-          Every active document-type folder begins with its organization name,
-          such as <code>LM SAAR</code>, <code>LM DoD Cyber Cert</code>,{" "}
-          <code>LM User Agreement</code>, and <code>LM DTA Training</code>.
-          These folders belong inside LM and are never listed as separate
-          organizations. Existing legacy unprefixed and Last_First layouts remain
-          readable; Sync safely moves accepted evidence into the prefixed folders,
-          and all new organization and manual-evidence storage uses this structure.
-        </p>
-      </section>
-      <section id="users">
-        <h2>3. Add and Update Users</h2>
-        <p>
-          Map the selected system&apos;s shared folder and choose{" "}
-          <b>Add User</b> in the User Directory header. <b>General</b> and{" "}
-          <b>Privileged</b> are the only user roles. DTA is a Privileged User
-          Type, not a separate role.
-        </p>
-        <h3>Upload and Store New-User Evidence</h3>
-        <ol>
-          <li>
-            Start by dragging the completed SAAR onto its upload area or choose{" "}
-            <b>Browse Files</b> to select it in Windows File Explorer. The app
-            reads Last Name, First Name, and Organization from the filename
-            first. When those values are unavailable or still use template
-            placeholders, it reads them from supported fillable DD2875 XFA or
-            derived-SAAR AcroForm fields instead. Middle Initial and Official
-            Email are read from the fillable form when available. If the
-            form&apos;s stored Official Email value is blank or invalid, the app
-            searches selectable PDF text immediately after the{" "}
-            <b>Official Email</b> label for a valid address. It does not use
-            unrelated sponsor, supervisor, or security-manager email addresses.
-          </li>
-          <li>
-            Review and correct the prepopulated identity, organization, Official
-            Email, and role. For manual Add User only, a valid Official Email
-            can be entered when both the fillable field and labeled-text
-            fallback are blank or invalid. Image-only scanned or unreadable
-            SAARs remain prohibited.
-          </li>
-          <li>
-            Treat <b>Storage Organization</b> as the authoritative organization
-            folder used for evidence paths and filenames. Use the optional{" "}
-            <b>Affiliated Organization(s)</b> field for agencies, divisions,
-            contractors, and subcontractors that must remain searchable without
-            moving the user&apos;s evidence. Separate multiple affiliations with
-            commas or semicolons.
-            Incoming SAARs also populate this classification from the selected
-            <b>Designation of Person</b> checkbox: Military becomes <b>MIL</b>,
-            Civilian becomes <b>CIV</b>, and Contractor becomes <b>CTR</b>.
-            This applies to every storage organization. Exactly one selected
-            checkbox is required for automatic classification. For GOV records,
-            explicit CTR or CIV tokens in the Official Email remain a fallback;
-            email text is never used to infer MIL.
-          </li>
-          <li>
-            For a Privileged account, enter the full account name as{" "}
-            <code>username_type</code>. The tracker derives the Privileged User
-            Type from everything after the final underscore. Separate multiple
-            accounts with commas—for example,{" "}
-            <code>jsmith_admin, jsmith_dta</code>. A <code>_dta</code> suffix
-            keeps the user&apos;s role as Privileged and adds DTA as a
-            Privileged User Type. Privileged User Types are case-insensitive
-            and stored consistently in uppercase, so <code>_DEV</code>,{" "}
-            <code>_dev</code>, and <code>_Dev</code> are the same type.
-          </li>
-          <li>
-            Drag and drop or browse for either a readable PDF or a ZIP
-            containing exactly one PDF for each available evidence requirement.
-            An encrypted PDF is accepted only when its complete filename passes
-            the strict Last Name, First Name, organization, artifact type, and
-            DDMMMYYYY date gate. The app records that exception as
-            filename-verified and content-unverified. Other file types,
-            encrypted ZIP containers, mixed-content ZIPs, and multi-document
-            ZIPs are rejected. If supporting evidence is not yet
-            available, select <b>Override Missing Supporting Evidence</b> and
-            enter the required justification. The SAAR cannot be overridden.
-            Every omitted supporting requirement remains visibly <b>Missing</b>
-            and remains available to filters and notifications; the override
-            only permits creation of the user record. The missing artifact list
-            and justification are preserved in Administrative Change History
-            and the tamper-evident audit log.
-          </li>
-          <li>
-            Choose <b>Add User</b>. A direct PDF is compressed into its own ZIP
-            before storage; an already valid one-PDF ZIP is stored without
-            another compression layer. For an explicitly selected PDF or ZIP,
-            the tracker uses the selected user, artifact type, organization,
-            and the date in the ZIP or contained PDF to create the canonical
-            evidence filename. A previously archived ZIP therefore counts as
-            the selected requirement after validation instead of remaining
-            Missing. A ZIP that needs a canonical outer or contained filename
-            is safely repackaged around the same validated PDF content.
-          </li>
-          <li>
-            Manual storage applies separate safety limits to the source read,
-            PDF validation, compression, verified write, and database save. A
-            completed ZIP is hashed before transfer and is not downloaded and
-            hashed a second time. If the Windows launcher finishes a verified
-            write as the browser connection reaches its limit, the app checks
-            the exact destination path and SHA-256 receipt before deciding that
-            the upload failed. Supporting evidence omitted under the documented
-            override does not add extra storage work.
-          </li>
-          <li>
-            The files are saved under{" "}
-            <code>Organizations / Organization / Last_First</code> inside that
-            information system&apos;s mapped shared folder.
-          </li>
-        </ol>
-        <aside>
-          Each ZIP retains the evidence filename, including its artifact
-          keywords and date. Missing and Overdue validation therefore continues
-          to work against the stored ZIP filename.
-        </aside>
-        <p>
-          The User Directory can be searched by name, Official Email, Storage
-          Organization, Affiliated Organization, agency, contractor,
-          subcontractor, privileged username, or Privileged User Type and filtered
-          by Active, Disabled, or All users; General or Privileged role; derived
-          Privileged User Type; Storage Organization; Affiliated Organization;
-          Official Email status; SAAR status; artifact; and compliance status.
-          Choose <b>SAAR Missing</b> in the SAAR Status filter to isolate users
-          whose non-expiring access request is not present.
-          When General is selected, the inapplicable Privileged User Type filter
-          and column are hidden. Choose{" "}
-          <b>Reset Filters</b> to clear the search and restore every directory
-          filter to its default. The User Record displays Privileged User Types.
-          During Modify Privileges, enter one or more types directly, separated by
-          commas; a leading underscore such as <code>_admin</code> or <code>_dta</code>
-          is optional. The directory displays each document category required by
-          at least one user currently shown and marks nonapplicable cells as N/A.
-          Every user requires one consolidated User Agreement. Privileged users
-          require the Privileged User Training certificate. The 8140 memo applies
-          to non-DTA privileged types; a DTA-only privileged user is marked N/A for
-          the 8140 memo and requires DTA Training. A user with DTA plus another
-          privileged type still requires the 8140 memo for the other privileged
-          role. Open a User Record and choose{" "}
-          <b>Edit User Information</b> to correct Official Email, Last Name, First
-          Name, Middle Initial, or organization. The app validates replacement
-          email addresses and rejects an address assigned to another record in the
-          same information system. If a name or organization changes, active
-          evidence is transactionally moved to the correct organization folder and
-          relabeled with the updated identity; a collision or unrecognizable
-          evidence date stops the edit without overwriting a file. Disabled names
-          and organizations stay locked as historical identities until the user is
-          re-enabled, while Official Email and Middle Initial remain correctable.
-          Because SAARs do not expire, their displayed status is <b>Present</b> or
-          <b>Missing</b> rather than Current or Overdue.
-          Every successful edit updates the manifest and backup and records the old
-          and new values in the change history and tamper-evident audit log. Open a
-          User Record to replace evidence, disable or enable access, modify
-          privileges, or delete the database record under controlled conditions.
-          Each existing-user evidence
-          card accepts drag and drop or File Explorer selection for a PDF or a ZIP
-          containing exactly one PDF. The Updated SAAR control uses the same upload
-          methods and validation. Either selection method immediately runs the
-          Document Renamer filename gate, shows the canonical stored filename, and
-          rejects an upload when the user identity, organization, account type, or
-          complete evidence date cannot produce a valid name. Access and privilege changes
-          require an updated SAAR by default. The date recorded for a SAAR is the
-          date the account was created or disabled; it is never an expiration date,
-          and SAARs are never classified as Overdue. Disabling or deleting a user moves only
-          evidence still associated with that specific record into the organization Archive folder.
-          Evidence reassigned to another active record is protected, including when duplicate
-          records share the same name and organization. Supporting
-          artifact statuses remain visible while the account is disabled, including
-          Current, Due Within 30 Days, Missing, and Overdue. The User Directory and
-          CSV exports preserve those statuses to support evidence review before a
-          future reactivation. New supporting documents for a disabled user are
-          matched normally and update that user&apos;s retained compliance dates without
-          changing the account status. Disabled account state, evidence associations, compliance dates, and
-          administrative history are read from the protected local JSON database.
-          Sync does not search Archive folders to reconstruct disabled users. Disabled users remain excluded from active-user
-          compliance totals, reports, and notification emails. When
-          disabling without an updated SAAR, an operator may select the documented
-          override and must enter a justification. An updated SAAR supplied while
-          disabling is stored with a <b>DISABLED</b> marker and moved into the
-          organization&apos;s permanent SAAR Archive. To re-enable a disabled user,
-          select that user through the Disabled Users filter and upload a fresh
-          SAAR plus every artifact required for the user&apos;s role. When an authorized
-          inactivity reactivation uses the documented evidence override without a
-          new SAAR, the app restores the newest dated disabled SAAR from the permanent
-          SAAR Archive to the active SAAR folder and removes the <b>DISABLED</b>
-          marker from its canonical filename. A newly uploaded SAAR takes precedence.
-          Supporting-evidence history remains associated with the record. Sync can also flag
-          a disabled account for operator-approved reactivation, but only when the
-          active SAAR date is strictly newer than the recorded disabled SAAR date.
-          The account remains Disabled until the operator selects Approve Reactivation
-           in Sync Review and the SAAR passes provenance verification. Reactivation may
-          also use a documented override with a required justification. Overrides,
-          comments, and archive results are preserved in the user history and
-          tamper-evident audit log. Privilege changes require an updated SAAR by
-          default. When the SAAR is unavailable or its Privileged User Type cannot
-          be recovered, the operator may select the Updated SAAR override and enter
-          a required justification. The manually entered Privileged User Type and
-          override justification are preserved in the user history and audit log.
-          Updated PDF evidence is validated and stored as a ZIP, and newly added
-          roles or Privileged User Types require their additional evidence before
-          submission. A verified updated SAAR can elevate the account even when
-          newly required annual supporting evidence is not supplied; each absent
-          requirement remains visibly Missing and the Administrative Change History
-          records the gap. An active, unexpired compliance exception remains visible
-          and auditable until evidence is supplied or the exception expires. Exceptions for multiple missing requirements are
-          cumulative: recording a second document exception does not replace the first.
-          Manual validation and storage uses bounded stage-specific
-          safety limits, so a damaged file or interrupted launcher request returns
-          an actionable error without a healthy multi-stage upload being cut off by
-          one shared timer. If the exact
-          evidence is associated with another profile, the app uses its SHA-256,
-          stored path, or identity-matching filename to release that association,
-          archive the prior location, associate it with the selected profile, and
-          record the transfer on both profiles and in the audit log. Deleting a
-          user requires a written justification and a
-          second confirmation. The app first scans the mapped system for active
-          PDF and ZIP evidence matching the user&apos;s Last Name, First Name, and
-          authoritative organization folder. Every matching SAAR moves to the
-          organization&apos;s permanent SAAR Archive, while all other matching evidence
-          moves to the organization Archive. The user is removed from the active
-          database after the verified manifest and backup save succeed. A source
-          file that was already removed or renamed is recorded in the daily error
-          report and tamper-evident audit log without blocking a manual Disable or
-          Delete action. Other archive failures, such as permission, integrity, or
-          destination-write errors, still retain the user record for safe review.
-          During deletion, the discovery stage reports only its count; individual
-          filenames appear only when evidence belonging to the selected user is
-          actually being archived.
-          The request, justification, Windows operator, completion result, archive
-          destinations, and any already-missing evidence are recorded.
-        </p>
-        <p>
-          For responsive display with very large user populations, identical
-          controls above and below the User Directory show the current user range
-          and page. Choose 20, 40, 50, or 100 records per page; 100 is the maximum.
-          Filters, totals, CSV exports, reports, and notification recipient
-          selection continue to use the complete matching result rather than only
-          the visible page.
-        </p>
-      </section>
-      <section id="evidence">
-        <h2>4. Filename Rules</h2>
-        <p>
-          Use the formats below. The filename must begin with the user&apos;s{" "}
-          <b>Last Name</b> followed by <b>First Name</b> in that order.
-          Underscores remain the recommended separator, but Sync also accepts a
-          comma or ordinary spaces between Last and First, missing underscores
-          between the other sections, and additional spaces. For example, both{" "}
-          <code>Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf</code> and{" "}
-          <code>Brown, Jacob (LM) DoD Cyber Cert 26AUG2026.pdf</code> are
-          recognized as fault-tolerant input. When enough metadata is present, Sync renames every
-          recognized active evidence file to the complete canonical structure
-          shown below. A file accepted as Cyber Awareness evidence is therefore
-          stored as <code>Last_First_(ORG)_DoD_Cyber_Cert_DDMMMYYYY.pdf</code>,
-          rather than retaining its previous artifact wording. General,
-          Privileged, and legacy combined agreement filenames are all stored as
-          the single canonical{" "}
-          <code>Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf</code> form in
-          every active organization folder. The standard date is{" "}
-          <b>DDMMMYYYY</b>, such as <b>24AUG2026</b>. Sync also recognizes
-          common valid alternatives, including <code>YYYYMMDD</code>,{" "}
-          <code>MMDDYYYY</code>, <code>MMMDDYYYY</code>, <code>MMDDYY</code>,
-          and separated numeric or month-name dates. It converts a recognized
-          nonstandard date in an active evidence filename to DDMMMYYYY before
-          matching. When an all-numeric date could be read more than one way,
-          Sync uses U.S. month-day order; impossible dates remain invalid and
-          are never guessed. For a privileged SAAR, replace <code>_TYPE</code>{" "}
-          with the privileged-account suffix—for example, <code>_admin</code>,{" "}
-          <code>_DTA</code>, <code>_dev</code>, or <code>_cyber</code>. A
-          complete canonical example is{" "}
-          <code>Smith_John_(LM)_PRIV_admin_SAAR_24AUG2026.pdf</code>. The first
-          value in parentheses becomes the user&apos;s organization—for example,{" "}
-          <b>(LM)</b> becomes LM, <b>(GOV)</b> becomes GOV, and <b>(Boeing)</b>{" "}
-          becomes Boeing. The validator checks the ordered Last-First identity,
-          required artifact key words, and a valid calendar date without
-          requiring one exact separator style during intake. The final storage
-          gate is strict: every file must exactly match its complete canonical
-          filename after normalization before it can enter a managed SAAR, User
-          Agreement, DoD Cyber Cert, 8140 Certification Memo, Privileged User
-          Training, or DTA Training folder. A SAAR that still lacks any required
-          Last Name, First Name, parenthesized organization, GEN or PRIV role,
-          privileged type when applicable, DDMMMYYYY date, or PDF/ZIP extension
-          is sent to the organization Rework folder and is never organized into
-          SAAR. The same fail-closed rule applies to every other document type.
-          For a completed fillable SAAR
-          whose filename date is missing, Sync may use the signed Part IV
-          <b> Created By</b> or <b>Disabled By</b> account-action date from a
-          supported DD2875 or derived SAAR; it never uses the requester,
-          investigation, print, or unrelated official&apos;s date. A populated
-          Disabled By signature also supplies the Disabled account state. A DoD Cyber
-          certificate must contain the separate <code>DoD</code> token;{" "}
-          <code>_cyber</code> in a privileged SAAR is only an account type and
-          does not count as the certificate. A SAAR filename date records the
-          account creation or disable action; it is not an expiration date. A SAAR
-          is therefore either Current or Missing and never becomes Overdue. DoD
-          Cyber Certifications, 8140 Certification Memos, DTA Training,
-          Privileged User Training, and User Agreements expire after one year and
-          require annual revalidation. They remain Overdue indefinitely while that
-          usable artifact remains in the active record. Missing means that no usable artifact is recorded;
-          age alone never changes Overdue evidence to Missing.
-        </p>
-        <p>
-          A non-DTA filename containing <code>Responsibilities</code> or{" "}
-          <code>Course</code> is treated as Privileged User Training. A DTA
-          filename containing <code>Course</code> or <code>Responsibilities</code>
-          is treated as DTA Training. A filename containing{" "}
-          <code>Awareness</code>, <code>Cyber Awareness</code>, or{" "}
-          <code>Awareness Challenge</code> is treated as DoD Cyber Awareness.
-          When the identity, authoritative organization, and date are available,
-          Sync applies the canonical artifact label: <code>DoD_Cyber_Cert</code>,{" "}
-          <code>User_Agreement</code>, <code>8140_Cert_Memo</code>,{" "}
-          <code>Privileged_User_Training_Cert</code>, or{" "}
-          <code>DTA_Training</code>. SAAR filenames retain the validated GEN
-          or PRIV role and privileged type.
-           Readable loose PDFs that remain incomplete or cannot be identified are
-           preselected for the organization&apos;s Rework folder instead of remaining
-           unhandled in an active evidence folder. Sync applies the same canonical
-           naming rules to validated one-PDF ZIP containers. A ZIP with complete,
-           unambiguous identity, organization, artifact-type, and date metadata is
-           renamed in place to the canonical <code>.pdf.zip</code> convention. A
-           ZIP that cannot be normalized safely is offered in Clean Up so its
-           single PDF can be extracted to the local organization Rework folder.
-           The source ZIP is retained after the extracted PDF is verified.
-        </p>
-        <p>
-          <b>Incomplete</b> is an operator-review marker. During Archive
-          Preflight, a file whose name contains <code>Incomplete</code> as a
-          standalone word is preserved and recorded with its relative path and
-          SHA-256 hash. The app never automatically deletes that evidence; an
-          operator must decide its final disposition outside the automated flow.
-        </p>
-        <h3>Unarchive Evidence for Correction</h3>
-        <p>
-          In the portable Windows app, choose <b>Unarchive</b> from the main
-          toolbar. <b>Choose Folder</b> opens a topmost Windows folder picker and
-          finds ZIP evidence throughout that folder and its subfolders.{" "}
-          <b>Choose ZIP Files</b> opens a multi-file picker for individual
-          evidence packages. Review 20 results at a time, then select individual
-          files, all files on the current page, or all discovered files. Each
-          selected ZIP is extracted in its current folder without overwriting an
-          existing PDF. The source ZIP remains in place after the package is
-          confirmed to contain exactly one readable PDF and the extracted bytes
-          pass SHA-256 verification. Failures leave the ZIP unchanged, appear in
-          the result, and are written to the daily error report while remaining
-          files continue. Make the needed correction to the loose PDF, then run
-          Sync. Any ZIP moved into an organization Rework folder is automatically
-          extracted under these same safeguards so Rework always provides a
-          loose PDF that can be edited.
-        </p>
-        <h3>Automatic Filename Normalization During Sync</h3>
-        <p>
-          Filename normalization is part of Sync; there is no separate Document
-          Renamer button. Sync limits content analysis to new or changed loose PDFs
-          and every in-scope Rework PDF that still fails the canonical filename
-          gate. Exact canonical names and unchanged previously analyzed active files
-          stay on the fast path without opening PDF content. The scan checks every
-          active organization folder and each organization&apos;s Rework folder, so a
-          corrected Rework PDF can be normalized and promoted by the next Sync.
-          Archive, SAAR Archive, Superseded, and Archive Review files are historical
-          records and are excluded from normalization.
-        </p>
-        <p>
-          Matching is case-insensitive and recognizes supported separators and legacy
-          labels, including DD Form 2875 and System Access Request; Cyber Awareness
-          and Awareness Challenge; Acceptable Use; 8140 and 8570; Responsibilities
-          and Course; and DTA or Delegated Trusted Agent training. A usable
-          <code> Last_First </code> identity in the filename is authoritative. Sync
-          reads selectable text and supported SAAR form fields only when needed to
-          recover supported metadata. The immediate organization folder is
-          authoritative for the canonical filename. Unique high-confidence results
-          are renamed automatically, verified by unchanged SHA-256, and audited.
-          Ambiguous, incomplete, unreadable, or colliding files stay available in
-          Sync review or move to Rework; the app never invents missing identity or
-          date values and never rewrites, flattens, or signs PDF content.
-        </p>
-        <p>
-          In Full Access, choose <b>Open File Location</b> within a User Record. The Windows
-          launcher opens File Explorer at the verified current location and
-          selects the recorded PDF or ZIP; the document is not transferred to or
-          rendered inside the browser. This control is unavailable in Read-Only
-          Access because an Explorer window could be used to alter evidence outside
-          the application. Manually stored evidence records a baseline SHA-256 for
-          later reconciliation.
-        </p>
-        <p>
-          Collision review uses the same full-window PDF layout for both the
-          incoming and organized copies, leaving only a compact filename header
-          above the document.
-        </p>
-        <div className="formats">
-          {formats.map(([label, format]) => (
-            <div key={label}>
-              <span>{label}</span>
-              <code>{format}</code>
-            </div>
-          ))}
-        </div>
-      </section>
-      <section id="sync">
-        <h2>5. Shared-Folder Sync, Audit Logs, and Backups</h2>
-        <p>
-          <b>Map System Folder</b> opens the modern Windows Explorer folder picker
-          in the foreground and authorizes the selected information system&apos;s
-          evidence root. Both mapped drive letters and UNC paths are supported.
-          If a network share disconnects, reconnect it under the same Windows
-          account and remap when necessary. The launcher applies bounded exponential
-          retries to folder enumeration, metadata reads, evidence validation,
-          hashing, manifest reads, and verified writes. Safe read-only requests also
-          retry temporary busy, throttling, and gateway responses. Reads may wait up
-          to 30 seconds for another storage action; file-changing requests may wait
-          up to two minutes without being duplicated. The launcher uses compatible
-          temporary files and verifies replacement bytes before reporting success. If a replacement
-          cannot be verified, the previous file is preserved or restored. If
-          that folder already contains a single-system tracker manifest, its
-          system and users are loaded before anything is written. Mapping,
-          application launch, and information-system selection never start Sync
-          automatically. <b>Sync</b> opens a mode and scope chooser. Use the
-          default <b>Daily Sync — Fast and Strict</b> for routine operations.
-          Select <b>Legacy Import — Historical Recovery</b> when onboarding an
-          unmanaged repository or correcting a historical backlog. In either
-          mode, select the entire information system or exactly one immediate
-          organization folder. Place new evidence directly in the organization
-          root and corrected evidence in its prefixed Rework folder. Routine
-          Daily Sync scans only organization-root files and Rework in the selected scope, which
-          avoids enumerating thousands of already organized evidence files.
-          <b> Full Rescan</b> when you intentionally need to inspect active
-          network document-type folders too. Legacy Import scans the broader local
-          organization tree for initial onboarding and historical repair; it includes
-          network folders only when Full Rescan is selected. Document-type and
-          deeper subfolders cannot be chosen as independent scopes. The
-          filename parser treats the first recognized identity value as{" "}
-          <b>Last Name</b> and the second as <b>First Name</b>, accepting
-          underscores, a comma, ordinary spaces, and additional surrounding
-          spaces. All filename rules are case-insensitive; upper-, lower-, and
-          mixed-case identity, organization, artifact, extension, and month text
-          are evaluated the same way. When multiple valid files match the same user and artifact
-          type, the tracker uses the file with the newest normalized filename
-          date for compliance status, display, notifications, and exports.
-        </p>
-        <p>
-          The top-level <code>Template</code> folder is reserved for operator-
-          supplied User Management templates and is excluded from Sync. For User
-          Agreement notification attachments, the only recognized file is{" "}
-          <code>Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf</code>. Other files
-          in that folder are ignored by that automation. For 8140 Certification
-          Memo notices, use <code>8140_Qualification_Memo DDMMMYYYY.pdf</code>,
-          for example <code>8140_Qualification_Memo 06OCT2026.pdf</code>. A
-          space, underscore, or hyphen is accepted before the date. If more
-          than one dated 8140 template is present, the newest filename date is
-          attached. The literal placeholder filename remains a fallback when
-          no dated template is present.
-        </p>
-        <p>
-          The <b>Processing Status</b> panel appears during Sync, verified
-          clean-up actions, backup restoration, storage verification, and
-          Compliance Snapshot generation. It displays the current phase,
-          named stage, elapsed time, processed count, exact percentage when a total is
-          known, the current file or action, and the final result. This same format is
-          used for every processing bar. Initial folder discovery shows an indeterminate
-          progress bar and states that the workload total is still being discovered.
-        </p>
-        <p>
-          Both Sync modes use filename-first processing. Files that contain
-          a recognizable identity, organization, artifact type, and date are matched
-          without opening the PDF. System Sync does not open incomplete training
-          certificates or attempt to recover their names or dates from PDF content.
-          Unresolved certificates remain in Sync review or Rework for operator
-          correction and do not delay clean-file Sync.
-        </p>
-        <aside>
-          <b>Incremental Operator Sync:</b> When the operator starts Daily Sync,
-          the launcher performs one metadata discovery pass through only the
-          selected organization roots and Rework folders. It compares
-          path, filename, byte size, and modified time with the checksum-protected Sync
-          index, then opens and validates only new or changed evidence. Unchanged files
-          are not written into the per-file recovery journal. Daily Sync also reuses
-          unchanged Rework results; a corrected or renamed Rework file changes its
-          metadata and is validated on the next run. Full Rescan and Legacy Import
-          deliberately
-          revalidates every in-scope Rework file. The evidence-cache
-          version is independent from interface and reporting releases; it changes only
-          when evidence-validation semantics change. Select <b>Full Rescan</b> in the Sync
-          scope window to deliberately ignore this cache for the selected scope.
-        </aside>
-        <aside>
-          <b>Daily Sync vs. Legacy Import:</b> Daily Sync is the normal operating
-          mode and is intentionally limited to organization-root intake files and Rework. It safely
-          normalizes recognizable filename dates, organizations, and
-          artifact wording, creates new users from a valid SAAR or from strictly
-          formatted supporting evidence dated in the current scan year, reuses validated
-          unchanged Rework evidence, and limits PDF-assisted renaming to new, changed,
-          or moved files. Legacy Import adds a full historical PDF-renaming sweep,
-          bounded SAAR filename-field recovery, complete Rework revalidation, and
-          additional historical recovery. Both modes can propose a missing-SAAR user
-          from same-year supporting evidence, but neither mode lets older supporting
-          evidence create an account record without a SAAR. Both modes retain
-          strict final storage gates, audit logging, retention, compression,
-          collision review, and operator verification before database changes.
-        </aside>
-        <p>
-          Sync accepts direct PDFs and ZIPs containing exactly one PDF. It
-          checks actual PDF and ZIP structure instead of trusting the extension.
-          For a valid ZIP, Sync reads identity, organization, artifact type, and
-          date from the formatted outer <code>.zip</code> or{" "}
-          <code>.pdf.zip</code> filename and validates the one embedded PDF for
-          readability. An encrypted PDF, including the one PDF inside an
-          unencrypted ZIP, is accepted only when the complete evidence filename
-          independently passes the strict Last Name, First Name, authoritative
-          organization, recognized artifact type, and DDMMMYYYY date gate. Sync
-          reports these files as accepted by filename while leaving their PDF
-          contents and signatures unverified. A new user from an encrypted SAAR
-          has a Missing Official Email until the operator enters it manually.
-          Malformed encrypted filenames, renamed non-PDFs, unreadable PDFs,
-          unsafe archive paths, encrypted or unsupported ZIP containers,
-          mixed-content archives, multi-document archives, files over 100 MB,
-          and suspiciously high ZIP expansion ratios are rejected. Once a valid
-          SAAR is stored as a ZIP, later Syncs
-          use its verified container and formatted filename without sending it
-          back through loose-PDF form classification or attempting to archive it
-          again. An active file with any extension other than PDF
-          or ZIP is automatically moved to that organization&apos;s Rework folder
-          and flagged as <b>Unaccepted File Format</b>. Scanned or flattened SAAR
-          copies are not accepted for automatic user discovery because the
-          required form fields cannot be verified. When the PDF parser opens a
-          file marked SAAR and conclusively finds no fillable AcroForm or XFA
-          fields, Sync compresses the copy when necessary and moves it into the
-          permanent <code>ORG SAAR Archive</code>. An unreadable or temporarily
-          locked PDF is reported and left in place rather than being assumed to
-          be flattened. Rejected evidence-like filenames appear in the Sync
-          Review with the reason and are never used to populate compliance
-          status. Sync does not claim content or digital-signature verification
-          for an encrypted PDF accepted by the strict filename exception.
-        </p>
-        <aside>
-          <b>Disabled User History:</b> The local JSON database supplies Disabled
-          account state, retained evidence associations, and disable-action dates.
-          Archive and permanent SAAR Archive folders do not participate in
-          account-state discovery. A newer active SAAR found in the selected scan
-          creates an unchecked reactivation approval item only when its date is later
-          than the disabled date recorded in the User Directory. When a disabled
-          SAAR filename is unavailable, the latest recorded disable action in
-          Administrative Change History supplies that comparison date. Supporting
-          evidence updates do not reactivate a user. Archived SAARs remain permanent
-          history and may remain associated with the disabled record until an operator
-          re-enables the account. A manual re-enable without a replacement SAAR moves
-          the newest dated disabled SAAR back to the active SAAR folder, removes the
-          <b>DISABLED</b> filename marker, and records the verified move in the user
-          history and tamper-evident audit log.
-        </aside>
-        <p>
-          Account status is mutually exclusive: one User Directory record cannot
-          be both Active and Disabled. Sync may move an Active record to Disabled
-          when the newest authoritative SAAR is marked DISABLED, but it never
-          automatically re-enables a Disabled record. A later active SAAR must be
-          newer than the recorded disabled SAAR and requires explicit operator approval
-           in Sync Review. Official Email is the primary deconfliction
-          value after SAAR extraction. The same Official Email on different
-          identities—or on both Active and Disabled records—blocks automatic
-          evidence matching or user creation and is shown for operator review.
-        </p>
-        <p>
-          A verified SAAR for an existing user also controls the account role and
-          Privileged User Type. For example, an approved{" "}
-          <code>PRIV_DEV_SAAR</code> update changes a General record to Privileged
-          with <code>_DEV</code> after the SAAR passes provenance verification. The
-          detected account change is displayed in Sync Review and written to both
-          Administrative Change History and the audit log.
-        </p>
-        <p>
-          Daily Sync and Legacy Import automatically rename a recognized nonstandard
-          evidence date to DDMMMYYYY in the same active folder and record the change
-          in the audit log. Daily Sync then uses the shared filename-normalization rules
-          to read only new, changed, or moved noncanonical PDFs. Legacy Import also
-          evaluates eligible unchanged historical PDFs. Both modes automatically apply
-          unique high-confidence canonical names and continue past per-file
-          timeouts or analysis failures so one document cannot stop the Sync.
-          Ambiguous results remain available in Sync review and the Rework workflow.
-          During an explicit Full Rescan, before Archive Preflight, Sync checks evidence associated
-          with active users. If a retained artifact is missing from its recorded
-          active location but the same associated file is found in that
-          organization&apos;s Archive, Sync restores it to the canonical document-type
-          folder and updates its recorded path. SHA-256 provenance is used when
-          available; ambiguous Archive matches remain untouched for Clean Up
-          review. At launch, the app checks immediate folders under the selected local workspace&apos;s Organizations folder for manually created organizations and prepares their local Rework and Complete folders. Routine Daily Sync and Legacy Import use the local workspace; network discovery requires Full Rescan. Daily Sync limits preflight to organization-root intake files and
-          Rework and reuses unchanged Rework validation. Legacy Import performs
-          the complete local preflight once per UTC day and revalidates
-          all in-scope Rework; later Legacy Import runs use the prior Sync index
-          to skip unchanged evidence and the already-swept Archive tree. Full
-          Rescan forces the complete preflight regardless of the daily marker.
-          Archive Preflight does not move active or Rework evidence
-          solely because it is old or overdue. That evidence remains available and
-          reports Overdue until an operator replaces it or performs an explicit
-          archive, duplicate-cleanup, disable, or delete action. A SAAR whose
-          filename contains the standalone word <b>DISABLED</b> moves into the
-          permanent <code>ORG SAAR Archive</code> during this preflight and is
-          retained as permanent history; disabled account state comes from local JSON. No SAAR
-          is ever placed in Superseded or selected for deletion. The preflight
-          also repairs prior storage mistakes: archived SAARs are recovered into
-          the permanent SAAR Archive, and non-SAAR evidence less than five years
-          old is moved out of Superseded into a dated Archive folder. Shared-drive
-          loose PDFs are never compressed or deleted by Sync. Loose PDFs are
-          compressed only in the protected local workspace, and the original is
-          deleted after the ZIP is reopened, validated, and matched by SHA-256.
-          Existing ZIP evidence is not recompressed. Other SAARs never expire,
-          and Rework files stay in Rework until their filenames are corrected or
-          an explicit administrative action is approved. A year-only, missing, or invalid date never drives an Archive
-          decision; that file remains in Rework or is preselected for movement to
-          Rework. Any file-level retention error is listed at
-          the end of Sync without stopping the remaining files. After filename
-          normalization, accepted active files are placed into a
-          organization-prefixed canonical document-type folder on the shared drive inside the
-          authoritative organization, including <code>ORG SAAR</code>,{" "}
-          <code>ORG User Agreement</code>, <code>ORG DoD Cyber Cert</code>,{" "}
-          <code>ORG 8140 Certification Memo</code>,{" "}
-          <code>ORG Privileged User Training</code>, and <code>ORG DTA Training</code>.
-          Archive, SAAR Archive, Rework, and Superseded trees remain separate
-          managed locations; no filenames inside SAAR Archive participate
-          in the narrow account-status check. Other correction, duplicate,
-          superseded, and
-          active loose-PDF actions remain
-          operator controlled. When the first Sync discovers
-          valid users, choosing <b>Apply Verified Updates</b> ingests those
-          records and immediately re-evaluates the evidence already scanned
-          against the new User Directory. Any newly eligible duplicate,
-          superseded, Rework, or loose-PDF actions open directly in Clean Up, so
-          a second Sync is not required. Clean Up opens a compact action menu
-          for <b>File Collisions</b>, <b>Rework Corrections</b>,{" "}
-          <b>Duplicate or Superseded</b>, and <b>ZIP Local Loose PDFs</b>. Only the selected action is displayed, 20
-          records at a time. Use <b>Previous</b> and <b>Next</b> to move between
-          pages, <b>Select All on Page</b> for only the visible 20 records, or{" "}
-          <b>Select All Files</b> for every eligible record in that action
-          category. Sync issues and warnings use a separate
-          button menu for Identity Conflicts, Duplicate Content, SAAR
-          Corrections, Unmatched Evidence, and Rejected Files. Only the selected
-          issue category appears, with no more than 20 entries on each page.
-          PDFs that require correction are moved into an
-          organization-named folder inside the authoritative organization
-          folder, such as <code>GDMS / GDMS Rework</code>. Duplicate and
-          superseded files explicitly approved by the operator are moved into
-          that organization&apos;s dated Archive folder, such as{" "}
-          <code>GDMS / GDMS Archive / YYYY-MM-DD</code>, for later manual review
-          or deletion. Archived SAARs instead move permanently to{" "}
-          <code>GDMS / GDMS SAAR Archive</code> and are retained indefinitely. A prior SAAR is eligible as a duplicate only when a newer
-          valid SAAR for the same user and organization is already recorded, or
-          the operator approves that newer SAAR in the same Sync review. Evidence
-          from another organization can never justify archiving the user&apos;s SAAR.
-          Every validated loose PDF entering the User Directory database is
-          compressed automatically inside the protected local workspace and cannot
-          be deselected. Other valid local loose PDFs are flagged for optional
-          compression. Local Rework remains uncompressed for correction. Full and
-          Legacy shared-drive scans preserve loose PDFs and do not offer network
-          compression. The new local ZIP is reopened and validated as containing
-          exactly one readable PDF with the same SHA-256 before the original is
-          deleted; a creation or validation
-          failure leaves no incomplete replacement and preserves the original PDF.
-          Organization
-          Ordinary Archive and Superseded folders and generated reports are
-          excluded from later active-evidence scans. Rework is intentionally
-          revalidated on every Sync. Permanent SAAR Archive folders are excluded
-          from account-status discovery; disabled-user history comes from local JSON. When Clean Up rebuilds its
-          remaining-action queue after a partial pass, it reapplies the same
-          active-folder and strict canonical-filename gates. Rework evidence and
-          malformed filenames therefore cannot reappear as ZIP or duplicate
-          archive actions.
-        </p>
-        <p>
-          Choose <b>Finish Review</b> when no additional action is selected. The
-          completed review closes automatically. Any deferred cleanup remains
-          available from the main <b>Clean Up</b> button for later review.
-          Readable loose PDFs that cannot be identified, or that are missing the
-          metadata needed for a canonical filename, are preselected for Rework so
-          they are not left unhandled in an active organization folder.
-        </p>
-        <p>
-          A filename, document-type organization, or loose-PDF compression
-          collision is a review item,
-          not a rejected-file error. Sync preserves both files, validates the
-          contained PDFs, and compares their SHA-256 hashes. When the hashes
-          match, Clean Up labels the pair <b>Exact Duplicate</b> and preselects
-          the redundant incoming copy for Archive while retaining the already
-          organized copy. When the hashes differ—or a hash cannot be read—the
-          pair requires an operator decision. It defaults to <b>Defer Decision</b>.
-          Use <b>Open Incoming PDF</b> and <b>Open Organized PDF</b> to open the
-          selected copy in the browser&apos;s dedicated PDF viewer, then select which copy is
-          authoritative when ready. The selected copy remains active; the other copy
-          moves to the organization Archive. Non-selected SAAR copies move to
-          the permanent organization SAAR Archive. The audit log records both
-          paths, available hashes, the selected copy, operator, and UTC time.
-          A verified collision copy already inside the organization&apos;s Rework
-          folder can be archived by this collision workflow without relaxing
-          protection for System files or unrelated managed folders.
-          No collision resolution overwrites or discards either file. If the
-          identity is not already in the User Directory, resolve the collision
-          first and run Sync again; this prevents a new record from being
-          populated from one PDF while the operator selects the other PDF.
-        </p>
-        <p>
-          If a loose PDF and its expected <code>.pdf.zip</code> destination both
-          exist, the app compares the PDF content inside each container. Identical
-          content completes compression idempotently by retaining the validated
-          ZIP and removing only the redundant loose container. Different content
-          remains preserved and is sent to File Collisions for operator review.
-        </p>
-        <p>
-          For an existing user, Sync proposes matching artifact and organization
-          updates. A valid SAAR for an identity not yet in the database creates
-          a proposed new-user record before supporting evidence is matched. The
-          filename is always the primary source for Last Name, First Name, and
-          Organization. If those filename values are missing or still contain
-          template placeholders, Sync reads the user name and organization
-          from either a standard DD Form 2875 XFA dataset or the derived
-          SAAR&apos;s AcroForm fields. Official Email is read first from the
-          <b> OFFICIAL/ORGANIZATION E-MAIL ADDRESS</b> field, including a valid
-          canonical value, default value, or rendered widget appearance when one
-          PDF representation is blank or stale. XFA and AcroForm values are
-          merged when a signed or converted form retains both. That exact field takes priority even
-          when other email fields appear earlier in the PDF field collection.
-          Otherwise, form fields are evaluated by page and top-to-bottom widget
-          position. If they remain blank or invalid, Sync searches selectable
-          PDF text immediately after that label and then uses the first valid
-          email address appearing from the top of the form. PDF-introduced spacing
-          around the at sign or domain periods is normalized before validation.
-          Standard UTF-8 and
-          UTF-16 XFA datasets are supported. If a completed XFA form uses an
-          unfamiliar field name, the first non-supervisor, non-sponsor email
-          value in dataset order is used as the final form-data fallback. A
-          successful field fallback immediately renames that SAAR to the
-          canonical Last_First_(ORG) structure, rescans it, and uses the
-          corrected SAAR as the user-creation seed. Filename role, privileged
-          type, SAAR marker, and valid date are still required. Image-only scans
-          remain prohibited. A SAAR that fails any admission check is never
-          presented as ordinary unmatched evidence; Sync Review lists the exact
-          admission failure under <b>New-User SAARs Requiring Correction</b> and
-          offers it only for movement to the organization&apos;s Rework folder.
-          Correct the loose PDF inside the organization&apos;s Rework folder and run
-          Sync again. Sync revalidates Rework, and a corrected file that passes
-          every strict filename and file-integrity rule is moved automatically to
-          its canonical document-type folder, rediscovered at that destination,
-          and included in the same database review. A failed correction stays in Rework with the reason shown in
-          Sync Review. A destination collision preserves both files for an
-          operator decision.
-        </p>
-        <p>
-          The Sync Review window displays separate editable Last Name, First
-          Name, and Organization fields, the read-only email extracted from the
-          form&apos;s Official Email field or labeled selectable text, and the
-          role inferred from the filename. If the SAAR otherwise passes validation
-          but Official Email is blank, invalid, or undetected, Sync still proposes
-          the user with the SAAR attached. Sync Review and the User Directory mark
-          <b> Official Email Missing — Manual Entry Required</b>. The operator may
-          enter the address in Sync Review or open the resulting User Record and
-          enter it later; that update is validated, checked for duplicates, and
-          audited. A <code>PRIV</code> SAAR creates a
-          Privileged role. Its editable Privileged Account Type field is
-          prepopulated with the <code>_TYPE</code> suffix, such as{" "}
-          <code>_admin</code> or <code>_DTA</code>; DTA remains a Privileged
-          User Type. Verify or correct the permitted fields and deselect any
-          user or artifact that should not be applied. Only approved matches and
-          proposed users are written when you choose{" "}
-          <b>Apply Verified Updates</b>. If an existing User Directory record has
-          no Official Email, Sync reads its matched SAAR using the same preferred
-          official-field and top-to-bottom text rules, displays the detected value
-          in Sync Review, and fills the blank email only after that SAAR is
-          approved and verified. An email already assigned to another record is
-          never copied automatically. Before provenance hashes are saved, the
-          app refreshes current file locations from filename, path, size, and
-          modified-time metadata only, so a preceding rename, compression,
-          Rework, Archive, or document-type move cannot leave an obsolete file
-          reference. Unrelated PDF and ZIP contents are not reopened during this
-          refresh. For a collision decision, the exact operator-selected
-          destination path is verified first, so another current file of the same
-          artifact type cannot make the completed selection appear ambiguous.
-          Every proposed artifact update also retains its exact scanned source
-          path through review; if Clean Up compresses that PDF, verification uses
-          the resulting ZIP path instead of searching by filename alone. A
-          verified <code>.pdf</code> to <code>.pdf.zip</code>
-          conversion is treated as the same evidence, and the record is updated
-          with the ZIP&apos;s actual filename and current path. If an exact container
-          name is unavailable, Sync uses user identity, authoritative organization,
-          and artifact type only when exactly one current file matches. It never
-          guesses between duplicates. A failed reference receives one more
-          metadata-only location refresh. If it still cannot be
-          verified, only that file or dependent new-user record remains pending.
-          Other independently verified artifact updates, new users, and Clean Up
-          actions are committed normally. The Sync Review stays available so the
-          operator can retry, deselect, or resolve failed items and continue the
-          remaining work without rescanning or restarting the app. A failed batch
-          does not commit its incremental-scan index, ensuring unresolved files
-          are reconsidered after a later restart. A new Sync can still be started
-          separately when needed.
-          In the manual <b>Add User</b> workflow, the operator may enter a valid
-          <b> Official Email</b> when the uploaded SAAR&apos;s email field and
-          labeled-text fallback are blank. Sync also permits manual entry only
-          after it explicitly flags a validated SAAR as missing Official Email.
-          It never invents or silently substitutes an address.
-        </p>
-        <p>
-          A correctly named supporting artifact dated in the same calendar year as
-          the Sync may create a proposed minimal user record even when no usable SAAR
-          exists. Older supporting evidence cannot seed a new record in Daily Sync.
-          Sync reads the ordered{" "}
-          <code>Last_First</code> identity, authoritative organization folder,
-          document type, and valid date from the filename. The proposed record
-          keeps Official Email blank, marks SAAR as Missing, and includes the
-          recognized supporting evidence. Evidence that indicates 8140,
-          Privileged User Training, or DTA requirements proposes a Privileged
-          role; other supporting evidence proposes General. The operator must
-          review and approve the record in Sync Review. Organization is part of
-          the match, so the same Last Name and First Name in different
-          organizations do not block one another. Files with ambiguous
-          identity, invalid dates, conflicting authoritative organization
-          folders, or unrecognized document types remain unmatched or are sent
-          to Rework and never create a record automatically.
-        </p>
-        <p>
-          Any non-SAAR evidence filename containing the standalone{" "}
-          <code>8140</code> or legacy <code>8570</code> marker is treated as an
-          8140 Certification Memo. Sync moves that file into the authoritative
-          organization&apos;s <code>8140 Certification Memo</code> folder without
-          changing its filename. This is a routing-only compatibility rule; it
-          does not invent or rewrite identity, organization, or date values. If
-          a legacy 8570 file reaches the end of its one-year current window, it
-          remains present and reports Overdue until replaced or explicitly archived.
-          The five-year bucket applies only after an administrative archive action;
-          it does not remove evidence from active compliance tracking.
-        </p>
-        <p>
-          In the portable Windows app, the launcher—not the browser tab—performs
-          the critical file operations. It atomically writes the database catalog
-          and organization record shards, daily CSV, compressed timestamped JSON
-          snapshots, SHA-256 files, evidence ZIPs, audit
-          entries, reports, and session lease. The browser validates changes and
-          sends them to this local-only storage service. This design keeps the
-          final disk write and shutdown backup available even if the browser
-          window closes unexpectedly. While the app page remains open, it sends
-          a lightweight presence heartbeat to keep the launcher available; Sync
-          also confirms activity before reading the shared database and keeps the
-          launcher active until processing finishes.
-        </p>
-        <p>
-          Tracker-owned support folders and operational JSON files are grouped
-          beneath the mapped system&apos;s top-level <code>System</code> folder:
-          the database catalog, its SHA-256 checksum, organization record shards,
-          Sync index,
-          document-renamer queue, session
-          metadata, Audit Logs, Error
-          Reports, backup, Reports, Storage Transactions, and Archive
-          Review. Existing top-level copies are migrated into this structure
-          when the portable launcher maps the folder. Error entries append to
-          one UTC-daily plain-text file under <code>System/Error Reports</code>
-          so operators can keep that day&apos;s report open in Notepad without a
-          new file being created for every error. Organization evidence,
-          Rework, Archive, Superseded, and permanent SAAR Archive folders remain
-          with their organization records.
-        </p>
-        <p>
-          Every portable Sync writes a batched per-run journal in the signed-in
-          Windows user&apos;s local R.A.P.T.O.R. performance cache. Each discovered file advances through
-          Pending, Validated or Rejected, Indexed, and Committed states. If the
-          launcher, computer, or network share is interrupted, the next Sync
-          resumes unchanged completed files from the latest compatible journal
-          on that computer instead of starting the validation work again. Journal
-          batches contain metadata only; evidence documents remain in the mapped
-          system folder. The manifest is not
-          considered committed until its verified write succeeds.
-        </p>
-        <p>
-          Rename, compression, Rework, Archive, and manifest replacement use
-          recoverable transactions recorded under{" "}
-          <code>System/Storage Transactions</code>. On the next mapping, the launcher
-          verifies source and destination hashes and either completes or rolls
-          back an interrupted operation before accepting new changes. Operators
-          should still review any exception reported after recovery; the app
-          does not discard source evidence before its replacement is verified.
-        </p>
-        <p>
-          Loose PDFs are processed only in the signed-in Windows user&apos;s protected
-          local workspace, validated and compressed there, then sent to the shared
-          folder as one verified ZIP transfer. The original PDF is deleted only after
-          the ZIP is reopened and its embedded PDF hash matches. Shared-drive loose PDFs are preserved and
-          never compressed by Sync. Temporary staging files are removed after the action.
-          In Full Access, choose <b>Open Local Workspace</b> on the dashboard to
-          open the selected system&apos;s organization intake roots, Rework, Complete, and protected
-          local System folders directly in Windows File Explorer.
-          Each mapped system has its own launcher operation queue, so a slow
-          action for one system does not block safe work against another system.
-        Local organizations use their root for intake plus Rework and Complete. Archive-bound files wait in <b>Complete/Pending Upload</b>. Session Commit first checks protected local metadata for actual changes. If nothing changed, it returns without rewriting the database or touching evidence. If only JSON records changed, it publishes the database and backups without scanning, compressing, hashing, or verifying evidence. After a successful manual Session Commit, closing the application, logging off, or reaching the idle limit does not start another publication when the current record-state hash still matches that commit. Any later record change, incomplete publication warning, or recoverable evidence work keeps the final publication safeguard active. Evidence processing runs only when pending evidence, an associated file in the local workflow folders, or interrupted recovery work exists. After an evidence commit copies and verifies files on the shared drive, their local copies move directly to the organization&apos;s <b>Complete</b> folder. If a duplicate ZIP is later placed at the organization root, Session Commit verifies its embedded PDF against the publication receipt and drains the verified duplicate instead of leaving it at the intake root. Files that fail or are explicitly deferred remain available for review and are not reported as completed. Document-type and Archive destinations are tracked in protected local JSON and created on the shared drive during publication. Remaining associated PDFs are validated and zipped locally before upload; their originals are removed only after ZIP verification succeeds.
-        When the exact shared destination already contains a ZIP with the same validated PDF, publication reuses that ZIP even if its packaging differs. Different archived or active PDFs are both retained using a stable content-hash conflict filename and flagged for collision review. A collision never stops unrelated Sync, Session Commit, or upload work when the database association is valid. Record and CSV references follow the resolved shared file, and retries reuse the same destination without scanning network folders.
-        </p>
-        <p>
-          Evidence published from a local workspace receives a checksum-protected
-          publication receipt under <code>System/Publication Receipts</code>. During
-          a shared-folder Sync, a file with no matching receipt, or metadata that no
-          longer matches its receipt, is listed as a <b>Shared-Drive Addition</b> in
-          Sync Review. The file is preserved and validated, but the operator is
-          warned to confirm who placed it on the share and whether it belongs in the
-          authoritative record. This warning also identifies legacy evidence that
-          predates publication receipts.
-        </p>
-        <p>
-          The storage-health strip shows <b>Last Saved</b>, <b>Last Backup</b>,
-          and <b>Last Sync</b> for the selected system. Green means the live
-          database checksum, catalog and shards, and backup are current; amber means a
-          save or verification is in progress; red means the mapped folder
-          needs attention. Choose <b>Verify Storage</b> to validate the live
-          database SHA-256 checksum, every referenced organization shard, newest
-          backup snapshot, complete audit hash chain, and the signed RSA-SHA256
-          audit-head anchor chain. Audit signing keys are protected to the Windows
-          operator while public verification material travels with each anchor.
-          A verification failure does not delete or overwrite
-          evidence.
-        </p>
-        <p>
-          Choose <b>Performance</b> to review local-only operation counts, average,
-          median, 95th-percentile, and maximum durations. The report also shows
-          pending backup state, organization index-shard count, advisory change-
-          notification health, and protected audit-checkpoint availability. It can
-          be downloaded as JSON and contains no user records or evidence contents.
-          In Full Access, opening Performance also runs a bounded on-site storage
-          qualification probe: verified 64 KiB write/read, atomic rename,
-          exclusive lock, and top-level metadata enumeration. The temporary probe
-          is removed immediately and its timings appear as a performance entry.
-          Choose <b>Download Sanitized Diagnostic Bundle</b> when technical support
-          needs a troubleshooting package. That bundle uses a fixed, privacy-
-          reviewed schema containing version, session, storage-health, performance,
-          audit-summary, and categorized error-count data only. It excludes operator,
-          user, and system identities; email addresses; filenames; paths; document
-          contents; and audit-entry text.
-        </p>
-        <p>
-          User Records retain field-level extraction provenance for identity,
-          organization, Official Email, Designation of Person, and account type.
-          Sources distinguish canonical filenames, authoritative organization
-          folders, AcroForm fields, DD2875 XFA data, bounded selectable-text
-          fallback, and operator edits. Provenance supplements—but never replaces—
-          the original evidence and tamper-evident change history.
-        </p>
-        <p>
-          At launch, choose <b>Read-Only Access</b> or <b>Full Access</b>.
-          Read-Only Access permits concurrent operators to search, filter, open
-          User Records, and view the audit log. It hides administrative and
-          evidence-location actions, and the Windows launcher rejects File Explorer
-          location requests and every attempted shared-folder mutation. Read-Only mapping does not initialize,
-          migrate, repair, or reorganize the selected shared folder. Session
-          start, system changes, reconnects, timeouts, and logoff are recorded
-          with the active Windows identity in the tamper-evident audit log.
-          Full Access verifies the live database checksum, newest backup, and
-          audit chain before editing is enabled. If that startup health check
-          fails, the app preserves the records and opens the system Read-Only
-          so the operator can inspect the issue without making changes.
-          A <b>Protected Read-Only Recovery</b> panel explains whether the cause
-          is shared-storage availability, another editor, database integrity,
-          audit integrity, application compatibility, or the protected local
-          workspace. Choose the guided retry after correcting the stated cause,
-          or continue lookup in Read-Only. For eligible database-integrity
-          failures only, <b>Restore Verified Backup</b> permits read-only backup
-          inspection and a non-destructive drill. An actual restore still needs
-          the exclusive editor lease and must pass database, backup, and audit
-          verification before Full Access opens. Audit or version failures cannot
-          be bypassed by restoring database records.
-          Startup verification skips interrupted or invalid newer backups and
-          uses the newest valid verified backup. The skipped backup and full
-          storage diagnostic are written to that day&apos;s text error report.
-          If a disconnected session cannot be reconnected, choose <b>End Session
-          Safely</b> to retain the protected local recovery workspace and release
-          the editor lock when possible.
-          Each Windows launcher creates a new authenticated browser session when
-          it starts. The temporary session token is removed from the address after
-          launch, and the launcher independently enforces the selected access mode.
-          Full Access file and database changes are accepted only from the browser
-          session that owns the selected system&apos;s exclusive editor lease.
-        </p>
-        <p>
-          An organization may also choose <b>Open Organization Snapshot</b> at
-          launch. Select a <code>.raptor-status.json</code> file exported by the
-          authoritative tracker. The app verifies its SHA-256 integrity and
-          opens it as an offline Read-Only snapshot without mapping the main
-          shared folder. An organization snapshot contains only one
-          organization, includes both active and disabled users, and excludes
-          evidence documents, shared-folder paths, audit logs, and every other
-          organization. The exporting operator can optionally protect the snapshot
-          with a passphrase of at least 12 characters. Encrypted snapshots use
-          authenticated AES-256-GCM encryption with a strong PBKDF2-derived key;
-          give the ISSO the passphrase through a separate approved channel because
-          the app never stores or places it in the email.
-        </p>
-        <p>
-          Only one Full Access portable Windows launcher can modify a mapped system folder
-          at a time. While the system is active, the launcher holds{" "}
-          <code>tracker-exclusive-session.lock</code> open with an exclusive
-          Windows file lock. A second computer is denied write access until the
-          first operator switches systems, disconnects, closes the app, or stops
-          renewing the lock for three minutes. The file records the operator,
-          computer, process, session, and update time for troubleshooting. A
-          leftover lock file after a crash is harmless because ownership depends
-          on the open Windows handle, not the file&apos;s presence. This
-          cross-computer protection requires a Windows or SMB shared folder that
-          honors native file locking; browser-only development mode remains
-          advisory.
-        </p>
-        <p>
-          Full Access editors work sequentially across computers. After the next
-          editor acquires the lock, R.A.P.T.O.R. verifies the newest shared master
-          before enabling changes. Non-conflicting protected local edits are
-          reconciled onto that master automatically. If two operators changed the
-          same system or user record, Full Access stops and reports the conflicting
-          record instead of overwriting either operator. All operator computers
-          must use the same current application release before that release first
-          commits to the shared database; the stored minimum-client policy blocks
-          an older build from modifying a newer database.
-        </p>
-        <p>
-          If an older dirty local workspace predates safe cross-computer
-          reconciliation, R.A.P.T.O.R. opens <b>Recover Legacy Workspace</b>
-          instead of overwriting the newer shared master. <b>Export Preserved
-          Workspace For Review</b> creates a SHA-256-verified local ZIP of the
-          stale database and recovery details. <b>Back Up And Discard Stale
-          Workspace</b> requires the typed confirmation shown in the panel,
-          creates another review package, moves the complete old workspace into
-          the protected local Recovery Archive, and rebuilds the working copy
-          from the newest verified shared master. No files are automatically
-          deleted, shared records and evidence remain unchanged, the exclusive
-          editor lock stays active during recovery, and the actions are recorded
-          in the shared tamper-evident audit log. Choose <b>Continue In Read-Only</b>
-          to leave the stale workspace preserved without resetting it.
-        </p>
-        <p>
-          Full Access edits use a local working directory protected for the signed-in
-          Windows account. Its database, state, and pending-publication journal are
-          encrypted with Windows user protection and integrity checked. When the
-          operator commits or logs off, R.A.P.T.O.R. copies and SHA-256 verifies
-          staged evidence first, then commits the shared database last. If the share
-          disconnects, the shared database is not partially advanced and the protected
-          local session remains available for a safe retry.
-        </p>
-        <h3>Recovery Center</h3>
-        <p>
-          Use <b>Recovery Center</b> on the dashboard to review the latest durable
-          operation stage, failed actions grouped by organization, and the verified
-          current and previous database catalog heads. You can retry through Sync,
-          defer an item without deleting it, download a recovery report, or restore
-          the previous catalog when Full Access is available. Restoration is always
-          an explicit operator action and does not move or delete evidence.
-        </p>
-        <p>
-          Every Full Access session receives a newer fencing generation. This blocks
-          a stale launcher from writing after another operator receives the exclusive
-          session. Changed evidence receives a deterministic operation key, and an
-          exact repeated request replays the recorded result rather than repeating
-          the file change.
-        </p>
-        <p>
-          After 15 minutes without activity, a Read-Only operator is disconnected
-          and the session end is audited. Full Access retains the existing
-          protected idle-disconnect behavior. The operator
-          must choose <b>Yes, Reconnect Me</b>. Reconnection succeeds only when
-          another operator does not hold the exclusive lock for Full Access; a
-          Read-Only reconnect never takes the editor lock. If ownership is
-          lost during Clean Up, the current review is preserved and the batch
-          stops after the first lease error instead of attempting every remaining
-          file. Reconnect retries briefly while a verified storage operation is
-          finishing, then the operator can resume the preserved review.
-        </p>
-        <p>
-          Each meaningful database state creates a full-fidelity, timestamped,
-          GZip-compressed JSON snapshot in the selected system&apos;s <code>System/backup</code>{" "}
-          folder, alongside the daily CSV report. Every snapshot has a
-          matching <code>.sha256</code> file and includes the system, users,
-          artifact references, and administrative change histories. Existing
-          uncompressed JSON snapshots remain available for backward-compatible
-          recovery. The live database catalog also has its own SHA-256 sidecar,
-          written as part
-          of the same recoverable transaction. Interrupted writes repair that
-          sidecar only after the verified manifest is recovered. Unchanged data
-          is not duplicated, at least one snapshot is retained for each active
-          day. The Restore list shows the newest 30 snapshots, while older
-          snapshots remain retained on disk and are not automatically deleted.
-          Older databases whose administrative change entries predate the
-          non-identity role and filename arrays are upgraded in memory before
-          strict validation, so those historical entries do not prevent Full
-          Access or Sync. Identity, evidence, checksum, and authorization fields
-          remain strictly validated.
-        </p>
-        <p>
-          Use <b>Restore Backup</b> to review available snapshots. The launcher
-          verifies both the SHA-256 file and the snapshot&apos;s internal
-          content hash before enabling restoration, verifies the selected file
-          again immediately before use, and backs up the current database before
-          replacing its records. Evidence files are never deleted by a database
-          restore.
-        </p>
-        <p>
-          The portable Windows app shuts down after 60 minutes without keyboard,
-          pointer, or touch activity, and it also shuts down when its browser
-          window is closed. Before either automatic shutdown, the launcher
-          completes any pending compressed backup work. The browser publishes
-          the selected system&apos;s database and daily CSV only when changes remain;
-          a clean manual Session Commit suppresses a duplicate shutdown publication.
-          Shutdown is still recorded in the audit log, and the shared-folder
-          session is released when it remains available. If a pending write or
-          final backup fails, shutdown is held so the failure can be corrected
-          without discarding changes.
-        </p>
-        <p>
-          Consequential changes—including system administration, user and
-          privilege changes, evidence storage, exports, report generation,
-          filename-date normalization, and synchronization—are written to one
-          UTF-8 JSON Lines text file per UTC day in that system&apos;s{" "}
-          <code>System/Audit Logs</code> folder. Every entry contains an ISO 8601 UTC
-          timestamp, the Windows operator, a continuous sequence, the previous
-          entry&apos;s SHA-256, and its own SHA-256. The chain continues across
-          daily files. Startup, audit viewing, restoration, Release Health, and
-          explicit storage verification check the entire chain. After a full
-          verification, later appends may use a Windows-user-protected local
-          checkpoint only while every shared audit filename, byte length, and
-          modification time still matches; any difference forces full verification.
-          The launcher refuses to extend the chain if an entry was changed,
-          removed, reordered, or inserted. Existing legacy{" "}
-          <code>audit-*.txt</code> files remain available but are not part of
-          the cryptographic chain. Viewing, searching, filtering, and theme
-          changes are excluded.
-        </p>
-        <p>
-          After reviewing the audit log, choose <b>Export Independent Audit
-          Receipt</b> to download a small JSON receipt containing the verified
-          audit-chain head, entry count, UTC generation time, operator, application
-          version, and rule-set version. Preserve that receipt outside the mapped
-          system folder using the organization&apos;s approved records process. A later
-          receipt or audit review can then demonstrate whether the chain head has
-          changed since the independent copy was retained.
-        </p>
-      </section>
-      <section id="reconciliation">
-        <h2>6. Reconciliation and Temporary Exceptions</h2>
-        <h3>Reconcile the Mapped Folder</h3>
-        <p>
-          Choose <b>Reconciliation</b> for the selected system to compare the
-          active evidence folders with its manifest. Reconciliation is limited
-          to evidence already reflected in the User Directory database. The
-          read-only results focus on the same recorded filename appearing in
-          multiple active locations, evidence whose current SHA-256 differs
-          from a recorded manual-upload baseline, duplicate identities or
-          email addresses, conflicting Active and Disabled records,
-          organization conflicts, and rejected database-recorded evidence.
-          Missing compliance requirements remain in the User Directory,
-          Compliance Snapshot, CSV export, and notification workflows rather
-          than appearing in Reconciliation. Unrecorded files and all files in
-          Archive or Rework folders are ignored and cannot create
-          Reconciliation conflicts. Reconciliation does not move files or
-          change records; use the listed path and issue details to correct the
-          source data, then run Sync again.
-        </p>
-        <p>
-          After Reconciliation finishes, choose <b>Generate PDF Report</b> to
-          create an operator correction reference. The report includes the
-          system, mapped folder, UTC generation time, Windows operator,
-          application and rule-set versions, issue totals, every affected path,
-          and a recommended action for each finding. A checksum-protected copy is
-          stored in <code>System/Reports</code>, the action is recorded in the
-          audit log, and a copy downloads for the operator.
-        </p>
-        <p>
-          Sync itself blocks automatic matching when more than one User
-          Directory record has the same Last Name and First Name, when a SAAR
-          organization conflicts with the existing record, or when multiple
-          new-user SAARs disagree on organization, role, or Privileged User
-          Type. The conflict queue lists every affected file or record for
-          operator resolution. Before duplicate or superseded cleanup, Sync also
-          hashes the embedded PDF bytes and warns when differently named PDF or
-          ZIP files contain identical content.
-        </p>
-        <h3>Record a Temporary Exception</h3>
-        <p>
-          Open a User Record and use <b>Temporary Exceptions</b> to select a
-          required artifact, enter the approving official and justification, and
-          choose an expiration date. The underlying Missing or Overdue status
-          remains visible. Active exceptions are shown in the directory and
-          Compliance Snapshot, included in CSV exports, and excluded from
-          notification drafts. Approval and revocation are recorded in the
-          tamper-evident audit chain. Expired exceptions stop applying
-          automatically and remain in the stored history.
-        </p>
-      </section>
-      <section id="exports">
-        <h2>7. Reports, Exports, and Notification Messages</h2>
-        <h3>Compliance Snapshot</h3>
-        <p>
-          Choose <b>Compliance Snapshot</b>, select one or more mapped systems
-          and organizations, and set the reporting date. Disabled users are
-          always excluded. The PDF contains its report ID, UTC generation time,
-          Windows operator, application and rule-set versions, scope,
-          active-user and requirement totals, active-exception count, overdue
-          aging, and breakdowns by organization, information system, role,
-          Privileged User Type, and artifact.
-        </p>
-        <p>
-          The PDF downloads to the computer and a matching copy is written to
-          each selected system&apos;s <code>System/Reports</code> folder with a{" "}
-          <code>.sha256</code> file. Report ID, scope, filename, and hash are
-          recorded in each system&apos;s audit chain. The report is
-          administrative evidence and does not independently establish control
-          effectiveness.
-        </p>
-        <h3>Export Filtered User Directory Results</h3>
-        <p>
-          Set the Information System, search text, Storage Organization,
-          Affiliated Organization, Role,
-          Privileged User Type, Official Email status, Artifact, and Compliance
-          Status filters in the{" "}
-          <b>User Directory</b>, then choose <b>Export CSV</b> beside{" "}
-          <b>Add User</b>. The CSV contains only the users and applicable
-          requirement rows that match the current directory filters, including
-          exact status, affiliated-organization values, and active-exception details.
-          Choose <b>Reset Filters</b>{" "}
-          to return to the full directory before exporting all results for the
-          selected system.
-        </p>
-        <h3>Email an Organization Snapshot to an ISSO</h3>
-        <ol>
-          <li>
-            In the authoritative Full Access session, choose <b>Organization
-            Snapshot</b> in the User Directory.
-          </li>
-          <li>
-            Select exactly one organization and enter that organization&apos;s
-            ISSO email address. The displayed totals include active and disabled
-            users. Select <b>Encrypt Snapshot With a Passphrase</b> for email or
-            other transport outside the protected shared folder, enter the same
-            12-character-or-longer passphrase twice, and provide that passphrase
-            separately to the recipient.
-          </li>
-          <li>
-            Choose <b>Download Snapshot</b> for a protected offline copy, or
-            choose <b>Open Outlook Email to ISSO</b>. The portable Windows
-            launcher places the ISSO in the To line and attaches the
-            integrity-protected <code>.raptor-status.json</code> file.
-          </li>
-          <li>
-            Review the draft and recipient before sending. The tracker never
-            sends the email automatically. Snapshot generation and draft
-            preparation are recorded in the authoritative audit log.
-          </li>
-          <li>
-            The ISSO opens the same portable executable, chooses <b>Open
-            Organization Snapshot</b>, and selects the attachment. No access to
-            the main shared system folder is required, and the imported data
-            cannot be used to alter the authoritative database.
-          </li>
-        </ol>
-        <h3>Prepare Missing, Due-Soon, or Overdue Notifications</h3>
-        <p>
-          For one person, open the <b>User Record</b> and select{" "}
-          <b>Prepare Outlook Draft</b>. The draft lists every missing,
-          due-within-30-days, and overdue requirement for that active user in one
-          courteous message, includes the applicable official training links,
-          and attaches both the User Agreement and 8140 Qualification Memo
-          templates when those documents are needed. The User Record displays how
-          many drafts have been prepared during the current outstanding-paperwork
-          cycle. The subject and message identify the new contact-attempt number
-          and state how many previous Outlook drafts were prepared without claiming
-          that Outlook delivered them. That count and its dates clear when the
-          record or evidence is updated.
-        </p>
-        <ol>
-          <li>
-            Click the <b>Missing</b>, <b>Due Within 30 Days</b>, or{" "}
-            <b>Overdue</b> summary card on the main page. The selected status is
-            applied automatically.
-          </li>
-          <li>Select the information system and organization to contact.</li>
-          <li>
-            Select exactly one artifact type. The recipient list immediately
-            changes to users whose selected artifact has that status. SAAR is
-            available for Missing notifications but is not listed for Due Within
-            30 Days or Overdue notifications because SAARs do not expire.
-          </li>
-          <li>
-            Review the actionable recipients and users excluded by active
-            exceptions. Disabled users and users in archived systems are also
-            excluded.
-          </li>
-          <li>
-            Open each numbered Outlook batch. Batches are separated by information
-            system, and the corresponding System Name appears in the subject line. Recipient count and
-            encoded-address length are bounded to avoid oversized{" "}
-            <code>mailto:</code> links, and every opened batch receives its own
-            audit entry in each affected system. Each affected User Record also
-            displays the draft preparation date, status, and artifact. That temporary
-            notification entry clears automatically when the user record or its
-            evidence is updated.
-          </li>
-          <li>
-            For Missing, Due Within 30 Days, or Overdue User Agreement notices, the portable Windows
-            launcher opens one draft per affected information system and attaches
-            that system&apos;s exact{" "}
-            <code>Template/Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf</code>{" "}
-            file. Classic Microsoft
-            Outlook must be available to create an attachment-bearing draft.
-          </li>
-          <li>
-            For Missing, Due Within 30 Days, or Overdue 8140 Certification Memo
-            notices, the launcher attaches the newest dated{" "}
-            <code>Template/8140_Qualification_Memo DDMMMYYYY.pdf</code> template.
-            The launcher validates it, copies it to a SHA-256-verified local
-            temporary path, and attaches that local copy so Outlook does not
-            have to read the attachment directly from a laggy shared drive. The message
-            explains that users satisfying the requirement with certifications
-            should enter the certification information on the memo and should not
-            attach the certification itself.
-          </li>
-          <li>
-            Missing, due-within-30-days, and overdue drafts prominently display the
-            selected artifact&apos;s required filename format. Drafts opened by the
-            portable Windows launcher use a yellow marker background on the filename
-            standard and rejection warning. The message instructs the recipient to
-            rename the file before returning it.
-            Consistent names support accurate user matching and due-date tracking.
-          </li>
-          <li>
-            Missing, due-within-30-days, and overdue DoD Cyber Cert drafts include
-            the official DoD Cyber Awareness Challenge training link.
-          </li>
-          <li>
-            Missing, due-within-30-days, and overdue Privileged User Training
-            drafts include the official CDSE Privileged User Cybersecurity
-            Responsibilities course link and explain that a free account is
-            required to complete the training.
-          </li>
-          <li>
-            Every automated email states that DoD Cyber Certifications, 8140
-            Certification Memos, DTA Training, Privileged User Training, and User
-            Agreements must be revalidated annually.
-          </li>
-          <li>
-            Every automated message uses the <b>Sir/Ma&apos;am</b> salutation,
-            explains why the recipient is being contacted, invites the recipient
-            to report an earlier submission, and states that the message will never
-            request a password or other login credentials by email. The tone is
-            professional and courteous while preserving the required filename and
-            access-maintenance instructions.
-          </li>
-          <li>
-            Review every Outlook draft, make any required organizational edits,
-            and send it manually.
-          </li>
-        </ol>
-        <aside>
-          The tracker never sends email automatically. Outlook must be
-          configured for the Windows operator. Review the recipients, message,
-          and attachment before manually sending every draft. Outlook draft creation
-          is queued separately so a slow Outlook startup or attachment operation does
-          not leave the tracker waiting indefinitely; Outlook displays an error if it
-          cannot complete the draft. The launcher prevents overlapping draft requests,
-          gives network-backed notification-history, manifest, and backup writes a
-          bounded ten-minute window, and uses retry-aware Template-folder attachment
-          validation for up to five minutes. It preserves the operator&apos;s configured
-          Outlook signature and makes the DoD Cyber training URL
-          clickable, and records whether the draft was displayed or failed. Failures
-          are also appended to the UTC-daily text error report.
-        </aside>
-      </section>
-      <section id="archive">
-        <h2>8. Review Archived Records</h2>
-        <p>
-          Archived systems and users remain available as locked, read-only
-          history. Unarchive the system to restore normal editing.
-        </p>
-        <p>
-          Choose <b>Release Health</b> to verify the current database, its live
-          SHA-256 checksum, newest backup, and complete audit chain and to
-          download an integrity record containing the application version,
-          rule-set version, Windows operator, mapped folder, live database
-          hash, verified backup, and audit head hash. The checksum is an
-          integrity control, not a digital signature.
-        </p>
-      </section>
-      <aside>
-        <b>Incremental Sync:</b> After successful validation, the tracker stores
-        checksum-protected organization-sharded indexes beneath each mapped
-        system&apos;s <code>System/Sync Index</code> folder. A targeted Sync reads and
-        updates only the selected organization&apos;s shard. Later Syncs skip reopening evidence when its
-        path, name, size, last-modified UTC value, and rule-set version are
-        unchanged. The shared index accelerates another computer using the same
-        mapped folder, while a checksum-matched local mirror avoids repeatedly
-        downloading the complete index on the same computer. New or changed files always receive full PDF or ZIP
-        validation. Filename tokens, dates, identities, and organizations are
-        cached during large runs instead of being reparsed for every rule.
-        On the Windows portable build, Archive Preflight and initial discovery
-        share one folder-enumeration pipeline. A changed PDF or ZIP is copied
-        from the mapped drive once into a short-lived, per-Windows-user local
-        validation cache; browser-side analysis then reuses that staged copy.
-        The launcher adjusts bounded validation concurrency to observed storage
-        speed, using less parallel work on a slow network share and more on a
-        local drive. Staged evidence is pruned before Sync and removed when the
-        launcher exits; the authoritative file always remains in the mapped
-        system folder.
-        Filename corrections use the evolving in-memory catalog and, when any
-        rename occurs, one final incremental verification pass replaces multiple
-        full rescans. Choose <b>Full Rescan</b> in the Sync scope window to ignore
-        the index and validate every active evidence file in the selected system
-        or organization scope; a missing, damaged, or outdated index also
-        causes safe full validation automatically. Verified rename, move,
-        compression, and collision actions reuse their exact returned paths before
-        attempting any broad location refresh. Immutable content-addressed organization
-        shards are reused when their records are unchanged, so ordinary updates transfer
-        only changed organizations. Database catalog, organization shards,
-        checksum, snapshot, and
-        daily CSV updates are submitted through one serialized launcher commit to
-        reduce shared-drive round trips. The verified live catalog commit is immediate;
-        evidence ZIPs publish directly to the organization&apos;s final document-type
-        folder. R.A.P.T.O.R. blocks publication to an organization root; a legacy
-        or unindexed ZIP without one unambiguous user-artifact association remains
-        in the local workspace for Sync review.
-        repeated snapshot and daily CSV work is coalesced for up to 30 seconds and
-        is force-flushed before logoff or shutdown. If record state did not change,
-        the launcher leaves the verified database, snapshot, and daily CSV untouched.
-        Startup and refresh compare the small catalog checksum and file metadata
-        before rereading the organization shards. A Windows-user-protected local
-        logical-database cache supports fast search and reporting after verification;
-        it never replaces the authoritative shared copy. At launch, R.A.P.T.O.R.
-        restores cached status without opening every saved network mapping, then
-        refreshes or verifies only the selected information system. Read-Only status
-        is available immediately from the protected cache while that selected-system
-        refresh runs. Full Access remains locked until the selected database, newest
-        backup, and audit chain pass verification; the verified database returned by
-        that check is reused instead of being downloaded a second time. Rapid interface
-        edits are grouped for five seconds before a background database commit. Explicit
-        record actions and Sync still save immediately. Logoff and shutdown publish only
-        when the current state differs from the last successful manual Session Commit or
-        recoverable publication work remains.
-        Over VPN, use an organization-scoped <b>Daily Sync</b> for routine work and
-        reserve <b>Full Rescan</b> for onsite maintenance when
-        practical. Bounded local performance logs
-        record phase duration, files discovered, changed and unchanged counts,
-        staged bytes, enumeration-cache reuse, and selected concurrency without
-        adding traffic to the shared folder. Processing Status reports elapsed scan
-        time alongside
-        unchanged evidence skipped, new or changed evidence validated, and
-        non-evidence files ignored. Windows file-system notifications act only as
-        traversal-priority hints after a successful authoritative baseline. Every
-        in-scope directory is still enumerated, so a missed, delayed, unavailable,
-        or overflowed network notification cannot hide evidence. PDF text extraction reuses a bounded worker pool
-        and recycles workers after a fixed age or number of documents to reduce
-        repeated startup cost without allowing stale workers to accumulate.
-        The local-only <b>Performance</b> report shows database-shard count,
-        storage format, protected read-cache availability, backup compression,
-        and bounded timing percentiles without exposing user records or evidence
-        content. Every release also runs a deterministic 10,000-record local-read
-        performance budget plus compressed browser-asset and executable-size
-        limits. The build gate fails if the bounded storage architecture is
-        removed or any fixed performance or package-size budget is exceeded.
-      </aside>
-      <aside>
-        <b>Mapped-Folder Compatibility:</b> The portable launcher uses broadly
-        compatible buffered file operations and tests create, write, read, and
-        delete access before retaining a new mapping. It keeps exclusive
-        locking, verified replacement with rollback, and SHA-256 verification
-        without requesting filesystem write-through options. Sync avoids
-        unnecessary metadata requests for irrelevant file types and treats
-        unreadable PDF or ZIP metadata and file-level normalization failures as
-        reviewable errors instead of aborting the whole scan. It tries standard
-        and legacy-compatible managed enumeration, then native Windows
-        enumeration, and finally the Windows Explorer namespace used by File
-        Explorer when a file provider rejects the lower-level search operations.
-        Explorer-classified ZIP folders remain evidence files. If every method
-        fails, the error identifies the exact folder and enumeration stage. This
-        update ignores the earlier development mapping-cache format once; after
-        one remap, the selected folders are remembered normally.
-      </aside>
-      <aside>
-        <b>Organization From Folder:</b> During Sync, the top-level organization
-        folder is authoritative; nested category and <code>Last_First</code>{" "}
-        folders do not replace it. If files are directly inside the mapped
-        folder, the selected folder&apos;s actual Windows name is used—not the
-        Information System name or its stored organization value. A file in a
-        mapped folder named <code>NGC</code> is therefore renamed to contain{" "}
-        <code>(NGC)</code>. For files stored under{" "}
-        <code>Organizations / Organization / Last_First</code>, the Organization
-        folder is used rather than the Last_First folder. Every active PDF and
-        one-PDF ZIP is evaluated for organization correction, including files
-        whose other filename sections are imperfect and files whose contents
-        were safely skipped by the incremental validation index. When ordered
-        Last-First identity text is present, an existing or missing
-        parenthesized organization is replaced with the authoritative folder
-        name before matching. Sync combines organization and date normalization
-        when possible, performs each verified rename without changing file
-        bytes, and verifies the completed batch in one final incremental pass.
-        If one file cannot be renamed or read, Sync records its bounded error in
-        the audit batch, continues through every remaining organization and
-        file, and lists the failure in Sync Review when processing finishes. If
-        the normalized filename already exists, neither file is overwritten or
-        deleted; Sync continues and lists the pair under <b>File Collisions</b>
-        in Clean Up. Matching SHA-256 hashes identify an Exact Duplicate.
-        Different or unavailable hashes require the operator to preview both
-        files and select the authoritative copy.
-      </aside>
-      <aside>
-        <b>New-User Ingestion:</b> A validated General or Privileged SAAR is
-        processed as the seed record before supporting evidence is matched. In
-        addition to the preferred separated names, Sync tolerates omitted
-        separators inside recognized markers such as <code>GENSAAR</code>,{" "}
-        <code>PRIVadminSAAR</code>, <code>DoDCyberCert</code>, and{" "}
-        <code>GENUserAgreement</code>. After the operator approves the proposed
-        user, supporting files with the same ordered Last-First identity are
-        attached in the same update.
-      </aside>
-      <aside>
-        <b>Training Certificate Handling:</b> System Sync relies on filename
-        metadata for DoD Cyber and Privileged User Training certificates. A
-        recognizable ordered Last-First identity, organization, artifact type, and
-        valid date can be normalized and matched without opening the PDF. Valid
-        alternate filename dates are converted to DDMMMYYYY. System Sync does not
-        inspect certificate PDF content to recover missing names or dates. Generic,
-        incomplete, ambiguous, or image-only certificate names remain unresolved
-        and available in Sync review or Rework for operator correction. The app never
-        invents a missing month or day.
-      </aside>
-      <aside>
-        <b>Five-Year Archive Retention:</b> Archived evidence keeps its original
-        evidence date. Active and Rework evidence is never moved to Archive solely
-        because of age. It stays present and reports Overdue indefinitely until an
-        operator replaces it or approves an explicit archive, duplicate-cleanup,
-        disable, or delete action. Once a non-SAAR file is explicitly archived,
-        evidence older than five years is stored in the organization&apos;s{" "}
-        <code>ORG Archive / Superseded</code> folder instead of the current dated
-        Archive folder. SAARs remain active or in Rework regardless of age
-        because they do not expire. A SAAR with a standalone DISABLED marker, or
-        a SAAR approved for archival after replacement, moves to the permanent
-        <code>ORG SAAR Archive</code>; it never enters Superseded and is never
-        automatically deleted. Its recorded filename and history remain available
-        in the local JSON database for disabled-account status. Full Rescan
-        repairs any SAAR previously left in a dated
-        or Superseded archive. It also moves evidence that is not yet five years
-        old out of Superseded and into the current dated Archive bucket. A filename
-        containing only a four-digit year is incomplete and cannot drive a
-        retention decision; it remains isolated in Rework until corrected. Retention
-        preserves the existing evidence filename. Shared Archive scans do not
-        compress or delete loose PDFs. Local processing creates a verified one-PDF
-        ZIP without changing the evidence content and removes the original only
-        after the ZIP is verified.
-      </aside>
-      <aside>
-        <b>Rework Correction Promotion:</b> Every Sync inspects each organization&apos;s
-        Rework folder after Archive Preflight and bypasses the unchanged-file cache.
-        A recognizable corrected filename may first be normalized to the canonical
-        format. The resulting readable PDF or one-PDF ZIP must then pass the complete
-        filename gate, including identity, parent-folder organization, artifact type,
-        role details when applicable, date, and extension. Passing evidence is moved
-        into the corresponding organization-prefixed document-type folder before user and artifact matching,
-        so its database update is available in that same Sync Review and its obsolete
-        Rework rejection is cleared. Failed files remain isolated in Rework and are
-        never ingested.
-      </aside>
-      <aside>
-        <b>Non-Destructive Restore Drill:</b> In <b>Restore Backup</b>, select a
-        verified snapshot and choose <b>Run Non-Destructive Restore Drill</b>.
-        The app verifies the external SHA-256, verifies the snapshot&apos;s
-        internal content hash, reconstructs and validates the complete database
-        in memory, confirms the selected information system, and records the
-        successful drill in the audit log. It does not write the reconstructed
-        records to the live manifest and does not move or delete evidence.
-      </aside>
-      <aside>
-        <b>Long Sync and Session Commit Operations:</b> While Sync or Session Commit is active, the tracker suspends
-          the browser-session idle disconnect and keeps the portable Windows
-          launcher active. A renewable long-operation hold covers the complete scan,
-          review application, update, and cleanup sequence, including the gaps between
-          individual storage requests. Every active launcher storage operation also counts as browser
-          presence. The Windows exclusive file handle remains authoritative during
-        protected work; periodic lease heartbeats update launcher-local liveness and
-        never start a competing shared-drive write. Actual file-changing requests
-        still verify the shared fencing record before they begin. Automatic manifest
-        or backup saves pause until Sync finishes. Only one lease-renewal request may
-        be outstanding, preventing long operations from building a queue of redundant
-        requests. The idle clocks restart from zero only after Sync or Session Commit completes, fails, or is
-        stopped by the operator, so a large directory scan cannot log off the
-          operator merely because it exceeds an idle limit. The hold automatically
-          expires only if its browser heartbeat disappears for five minutes, preventing
-          a crashed browser from leaving a permanent lock. If the local connection
-        is interrupted, resumable and read-only launcher requests receive up to four
-        bounded safe retries. File-changing actions are never automatically
-        repeated. Outside Sync, an inactivity timeout waits for any active
-        storage operation and identifies that operation to the operator. It reuses
-        an in-progress final publication, releases Full Access only after the
-        verified publication succeeds, and then terminates the portable launcher.
-        If the final save fails, the session remains recoverable instead of leaving
-        an inaccessible background process. During new-user ingestion, a complete filename is accepted
-        without opening the PDF, and the containing organization folder supplies
-        a missing filename organization without a PDF read. Legacy Import opens
-        SAARs that need recoverable identity or signed Part IV account-action date
-        fields. Daily Sync requires a valid SAAR filename and opens a selected new
-        or changed SAAR only for required form validation and Official Email
-        recovery. Those form-field
-        reads run in a bounded group of four with visible completed-file progress;
-        a read that does not finish within 30 seconds receives one fresh retry
-        with a 60-second limit while the other readers continue. A second timeout
-        is listed for correction without stopping the batch. Selectable-text Official Email recovery
-        is deferred until Sync selects the newest SAAR for a proposed user, so it
-        is not performed across every candidate form. System Sync performs no
-        training-certificate PDF extraction; incomplete certificate filenames are
-        left for Sync review or Rework instead of extending the Sync session.
-      </aside>
-      <aside>
-        <b>Batch Processing Resilience:</b> High-volume read-only work uses
-        bounded queues instead of one unlimited batch or one blocking serial
-        loop. Current-location refresh, stale-reference retry, Document Renamer
-        candidate discovery and Reconciliation discovery read only filename,
-        path, size, and
-        modified-time metadata. Only relevant targets are opened afterward;
-        <b> Full Rescan</b> is the only operator action that deliberately reopens
-        every evidence file. Initial validation gives each changed file a 30-second read limit;
-        duplicate-content checks, provenance hashing, and Reconciliation hashing
-        process no more than four files at once. Timed-out read-only operations receive no more than one fresh
-        retry; deterministic validation failures are not retried. Filename
-        normalization processes small bounded batches and records individual read
-        failures without discarding completed analysis. Reconciliation exposes
-        scanning and hashing progress and keeps
-        unreadable files as review issues. File mutations—rename, compression,
-        Rework, Archive, and manifest commits—remain sequential and transactional
-        so concurrency cannot produce partial or conflicting writes. Browser-mode
-        audit files are verified in chronological order with a 30-second read
-        limit per daily file; verification fails closed instead of hanging or
-        extending an unverified chain. Launcher storage requests use bounded
-        safety limits: two minutes for ordinary reads or writes, ten minutes for
-        network-backed database and backup writes, and 30 minutes for resumable
-        directory scans and Archive preflight. File-changing
-        Clean Up and Sync filename-normalization actions have a two-minute per-file
-        watchdog, continue with later files after a failure, and list the
-        affected item in the final review.
-      </aside>
-      <aside>
-        <b>Extension Safety:</b> Every automated rename preserves the source
-        container. A direct PDF remains a <code>.pdf</code>; a validated one-PDF
-        ZIP remains a <code>.zip</code> and uses the canonical PDF filename
-        immediately before the ZIP suffix. A mismatched proposed extension is
-        corrected before the storage request is sent.
-      </aside>
-      <aside>
-        <b>Efficient Audit Batches:</b> Consecutive file-level Sync and filename
-        normalization results are extended as one verified audit batch. The complete
-        existing hash chain is verified once, each new action still receives its
-        own sequence, UTC timestamp, previous hash, and entry hash, and the
-        launcher performs one append per UTC day instead of rereading the chain
-        for every file.
-      </aside>
-      <aside>
-        <b>Efficient Session Commit:</b> The initial pending-change check reads a
-        protected, constant-time local status record. When records and evidence
-        are unchanged, it does not rebuild the CSV, renew the network lease,
-        enumerate folders, hash evidence, or open the shared drive. A real change
-        is shown through separate local-check, preparation, shared-publication,
-        verification, and finalization phases. Publication streams evidence to the
-        shared drive instead of loading a complete file into memory. Transfer
-        progress is appended to a protected local journal, and the status bar reads a
-        separate protected live-progress record to show the current transfer stage,
-        latest filename, and completed/total file movement without waiting behind the
-        shared-drive write. If the browser response is interrupted, it reconnects to
-        the running publication and consumes its durable completion receipt instead of
-        reporting a false timeout. Publishing one file does not rewrite the complete
-        recovery plan. During Log Off, the browser may be closed after the closing
-        notice; the Windows tray launcher retains the exclusive lease, completes the
-        publication in the background, finalizes the backup, and exits only afterward.
-        Unchanged evidence
-        reuses hashes already verified during the current operation, and normal
-        commits use the protected local evidence map instead of walking every
-        local workspace folder. Published-evidence receipts are separated by
-        organization, so a commit updates only the affected organization
-        indexes. The Performance window records preparation, transfer, and
-        finalization time, transferred bytes, throughput, and hash-cache use.
-        The browser also reuses an unchanged system database and CSV payload
-        and coalesces background edits for five seconds before saving.
-      </aside>
-      <aside>
-        <b>Error Records:</b> Handled operational failures, launcher storage
-        exceptions, uncaught browser errors, and unhandled promise rejections
-        show diagnostic details and append an entry to the UTC-daily
-        Notepad-readable file in{" "}
-        <code>System/Error Reports</code>, and write an{" "}
-        <code>ERROR:</code> entry to the affected system&apos;s audit chain. Each
-        entry includes a report ID, UTC time, Windows operator, application
-        and rule-set versions, context, and the bounded error details. Error
-        entries from the same UTC day share one file; a new UTC day creates a
-        new file automatically. Error reporting has its own short safety limit,
-        so an unavailable audit chain
-        cannot prevent the operator from seeing the original failure.
-        File-level rename, PDF-read, and validation
-        errors do not stop the rest of a large Sync; they are audited and listed
-        for operator review after processing finishes. Errors before mapping
-        are queued and written after a system is mapped. If the shared report
-        folder is temporarily unavailable, the launcher preserves the entry in
-        the protected local workspace. Storage-verification and
-        audit-chain-verification failures are written to the text report but are
-        not appended to an unverified audit chain. A missing evidence path is
-        identified as a stale move, rename, or deletion rather than automatically
-        being described as a network-share outage.
-      </aside>
-      <footer>
-        This application supports NIST SP 800-53-aligned recordkeeping. Formal
-        compliance depends on organizational policies, deployment, access
-        controls, and assessment.
-      </footer>
-    </main>
-  );
+export default function Guide(){
+ return <main className="guide">
+  {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+  <a href="/">← Return to R.A.P.T.O.R.</a>
+  <header><div className="guide-brand"><img src="/raptor-icon.png" alt="R.A.P.T.O.R. raptor claw and verified document logo"/><div><p>Reference</p><h1>R.A.P.T.O.R. User Guide</h1><p>Role-Based Access Personnel Tracking &amp; Oversight Registry</p></div></div></header>
+  <nav>{['Getting Started','Systems','Users','Evidence','Sync & Backup','Reconciliation & Exceptions','Exports & Notifications','Archive'].map(item=><a key={item} href={`#${item.toLowerCase().split(' ')[0]}`}>{item}</a>)}</nav>
+  <aside><ul><li>Use this guide for routine operation, evidence handling, reporting, and recovery.</li><li>Each signed release also includes a one-page Executive Capability Summary.</li></ul></aside>
+
+  <section id="getting">
+   <h2>1. Getting Started</h2>
+   <ol>
+    <li>Launch R.A.P.T.O.R. and choose <b>Read-Only Access</b> or <b>Full Access</b>.</li>
+    <li>Select an information system or choose <b>Map System Folder</b>.</li>
+    <li>For Full Access, wait for storage verification and the exclusive editor lock.</li>
+    <li>Choose <b>Sync</b>, then select Daily Sync or Legacy Import and the required scope.</li>
+    <li>Review proposed record changes, conflicts, Rework items, and cleanup actions.</li>
+    <li>Apply verified updates, then choose <b>Commit Session</b> to publish local changes.</li>
+    <li>Choose <b>Log Off</b> when finished so pending work completes and the editor lock is released.</li>
+   </ol>
+   <h3>Access Modes</h3>
+   <ul>
+    <li><b>Read-Only:</b> Search, filter, review, report, and export without changing records or evidence.</li>
+    <li><b>Full Access:</b> Requires verified storage and the single-editor lease.</li>
+    <li>Read-Only Access is identified by a persistent banner and gold frame.</li>
+    <li>Multiple Read-Only operators may connect; only one Full Access operator may edit at a time.</li>
+   </ul>
+   <h3>Dashboard Navigation and Status</h3>
+   <ul>
+    <li>Routine actions remain in the header: Map, Sync, Clean Up, Commit Session, and Log Off.</li>
+    <li>Other actions are grouped under <b>User Administration</b>, <b>Reports &amp; Oversight</b>, and <b>System Tools</b>.</li>
+    <li>Only one menu stays open; choosing an option, opening another menu, pressing Escape, or moving focus away closes it.</li>
+    <li><b>Local Changes</b> shows whether work is clean, pending, committing, or needs recovery.</li>
+    <li><b>Recent Activity</b> shows the last five completed or failed actions for the session.</li>
+    <li>Processing panels show the stage, current item, count, percent, and elapsed time for that stage.</li>
+    <li>The elapsed timer resets whenever a new action or stage starts.</li>
+    <li>Notifications are nonblocking; expand one to read or copy the full detail.</li>
+   </ul>
+  </section>
+
+  <section id="systems">
+   <h2>2. Manage Information Systems</h2>
+   <ul>
+    <li>Use <b>Manage Systems</b> to add, edit, archive, unarchive, or delete a registration.</li>
+    <li>Deleting a registration does not delete its mapped folder, evidence, database, or backups.</li>
+    <li>Archiving locks the system and its users while preserving the records.</li>
+    <li>Mapping remembers the path for the signed-in Windows user and loads an existing system manifest.</li>
+    <li>Remap only when the shared path changes or becomes unavailable.</li>
+   </ul>
+   <h3>Organization Folders</h3>
+   <ul>
+    <li>Mapping prepares a top-level <code>Organizations</code> folder.</li>
+    <li>Use <b>Manage Organizations</b> to create each organization beneath it.</li>
+    <li>The Information System Organization description does not create an evidence folder.</li>
+    <li>Each document folder starts with the organization name, such as <code>LM SAAR</code> or <code>LM DoD Cyber Cert</code>.</li>
+    <li>Place new files in the organization root and corrected files in its prefixed Rework folder.</li>
+   </ul>
+  </section>
+
+  <section id="users">
+   <h2>3. Add and Update Users</h2>
+   <h3>Roles and Requirements</h3>
+   <ul>
+    <li>User roles are <b>General</b> and <b>Privileged</b>.</li>
+    <li>DTA is a Privileged User Type, not a separate role.</li>
+    <li>All users require a SAAR, DoD Cyber Cert, and User Agreement.</li>
+    <li>Privileged users require Privileged User Training.</li>
+    <li>Non-DTA privileged types require an 8140 Certification Memo.</li>
+    <li>DTA-only users require DTA Training and show 8140 Memo as N/A.</li>
+    <li>SAAR status is <b>Present</b> or <b>Missing</b>; SAARs never expire.</li>
+    <li>Annual evidence becomes Due Within 30 Days, then Overdue, and remains Overdue until replaced.</li>
+   </ul>
+   <h3>Add a User</h3>
+   <ol>
+    <li>Choose <b>Add User</b> in the User Directory.</li>
+    <li>Drag in a completed SAAR or choose <b>Browse Files</b>.</li>
+    <li>Review the detected name, Storage Organization, Official Email, role, and Privileged User Type.</li>
+    <li>Add available supporting evidence as a PDF or a ZIP containing exactly one PDF.</li>
+    <li>If supporting evidence is unavailable, document the missing items and continue; each item remains marked Missing.</li>
+    <li>The SAAR cannot be omitted during manual user creation.</li>
+    <li>Submit the record; accepted PDFs are compressed and stored in the correct organization folder.</li>
+   </ol>
+   <h3>SAAR Data Recovery</h3>
+   <ul>
+    <li>Filename identity and organization take priority.</li>
+    <li>Supported fillable DD2875 or derived-SAAR fields provide fallback identity and organization.</li>
+    <li>Official Email comes from the labeled form field or the first valid address after the Official Email label.</li>
+    <li>Manual Add User permits a valid email entry when the form email is missing.</li>
+    <li>Image-only scanned or unreadable SAARs cannot create users automatically.</li>
+    <li>Designation of Person maps Military to MIL, Civilian to CIV, and Contractor to CTR.</li>
+   </ul>
+   <h3>Privileged Accounts</h3>
+   <ul>
+    <li>Use <code>username_type</code>, such as <code>jsmith_dev</code> or <code>jsmith_dta</code>.</li>
+    <li>Separate multiple privileged accounts with commas.</li>
+    <li>Types are case-insensitive and stored consistently, so <code>_DEV</code> and <code>_dev</code> are the same.</li>
+    <li>A verified PRIV SAAR may elevate the role even when supporting evidence is missing.</li>
+    <li>Missing supporting evidence remains visible and notification-ready.</li>
+   </ul>
+   <h3>Edit, Disable, Re-Enable, or Delete</h3>
+   <ul>
+    <li>Open a User Record and choose <b>Edit User Information</b> to correct name, organization, middle initial, or Official Email.</li>
+    <li>Name or organization changes relabel and move active evidence without overwriting collisions.</li>
+    <li>Disable normally requires an updated SAAR; a documented justification may override the upload.</li>
+    <li>Disabling preserves supporting-document status and archives associated evidence.</li>
+    <li>A newer active SAAR may propose reactivation, but an operator must approve it.</li>
+    <li>Manual re-enable restores the newest disabled SAAR when no replacement SAAR is supplied.</li>
+    <li>Deleting a user requires a written justification and confirmation.</li>
+    <li>Missing files are logged but do not block an authorized disable or delete.</li>
+   </ul>
+   <h3>User Directory</h3>
+   <ul>
+    <li>Search by name, email, Storage Organization, Affiliated Organization, contractor, privileged account, or type.</li>
+    <li>Filter by system, organization, status, role, privileged type, email, SAAR, artifact, and compliance.</li>
+    <li>Select <b>SAAR Missing</b> to isolate records without a SAAR.</li>
+    <li>The Privileged User Type filter and column hide when General is selected.</li>
+    <li>Use <b>Reset Filters</b> to restore the defaults.</li>
+    <li>Choose 20, 40, 50, or 100 rows per page from the controls above or below the table.</li>
+   </ul>
+  </section>
+
+  <section id="evidence">
+   <h2>4. Filename Rules</h2>
+   <ul>
+    <li>Use <b>Last Name</b>, then <b>First Name</b>, then organization, document type, and date.</li>
+    <li>The required stored date format is <b>DDMMMYYYY</b>, such as <b>24AUG2026</b>.</li>
+    <li>Matching is case-insensitive.</li>
+    <li>Sync tolerates underscores, commas, ordinary spaces, and extra separators when the meaning is unambiguous.</li>
+    <li>Recognized alternative dates are normalized to DDMMMYYYY.</li>
+    <li>The immediate organization folder is authoritative and replaces an incorrect filename organization.</li>
+    <li>Files must pass the complete filename gate before entering a managed document folder.</li>
+   </ul>
+   <div className="formats">{formats.map(([label,format])=><div key={label}><span>{label}</span><code>{format}</code></div>)}</div>
+   <h3>Accepted Evidence</h3>
+   <ul>
+    <li>Accepted formats are PDF and ZIP containing exactly one PDF.</li>
+    <li>Direct PDFs are compressed after validation.</li>
+    <li>Valid one-PDF ZIPs are not zipped again.</li>
+    <li>Encrypted PDFs are accepted only when the complete filename independently passes every required field.</li>
+    <li>Mixed ZIPs, encrypted ZIPs, multiple-document ZIPs, unsafe paths, oversized files, and non-PDF content are rejected.</li>
+   </ul>
+   <h3>Automatic Normalization</h3>
+   <ul>
+    <li>Filename normalization runs during Sync; there is no separate Document Renamer button.</li>
+    <li>Canonical unchanged files stay on the metadata-only fast path.</li>
+    <li>New, changed, loose, or corrected Rework PDFs receive full applicable validation.</li>
+    <li>Cyber Awareness and Awareness Challenge normalize to <code>DoD_Cyber_Cert</code>.</li>
+    <li>General, Privileged, and combined agreements normalize to <code>User_Agreement</code>.</li>
+    <li>8140 and legacy 8570 indicators route to the 8140 Certification Memo folder.</li>
+    <li>Responsibilities or Course indicators route to Privileged User Training or DTA Training as applicable.</li>
+    <li>Ambiguous, unidentified, incomplete, or invalid active files go to Rework.</li>
+    <li>Archive trees are historical and excluded from automatic renaming.</li>
+   </ul>
+   <h3>Unarchive for Correction</h3>
+   <ul>
+    <li>Choose <b>Unarchive Evidence</b> under User Administration.</li>
+    <li>Select a folder or individual ZIP files.</li>
+    <li>Review 20 results at a time and select the page or all discovered files.</li>
+    <li>Extraction never overwrites an existing PDF.</li>
+    <li>The source ZIP remains until the extracted PDF passes SHA-256 verification.</li>
+   </ul>
+  </section>
+
+  <section id="sync">
+   <h2>5. Shared-Folder Sync, Audit Logs, and Backups</h2>
+   <h3>Choose the Correct Sync</h3>
+   <ul>
+    <li><b>Daily Sync:</b> Fast routine processing for organization-root intake files and Rework.</li>
+    <li><b>Legacy Import:</b> Historical recovery for unmanaged or inconsistently named repositories.</li>
+    <li><b>Targeted Sync:</b> Processes one immediate organization folder.</li>
+    <li><b>Full System Sync:</b> Processes every organization in the selected system.</li>
+    <li><b>Full Rescan:</b> Ignores cached validation and inspects all active in-scope evidence.</li>
+    <li>Document-type subfolders cannot be selected as independent Sync scopes.</li>
+   </ul>
+   <h3>Sync Behavior</h3>
+   <ul>
+    <li>New SAARs create users before supporting evidence is matched.</li>
+    <li>Same-year supporting evidence may create a user with SAAR marked Missing.</li>
+    <li>The newest valid file date controls each user requirement.</li>
+    <li>Duplicates, collisions, and conflicts are review items and do not stop unrelated work.</li>
+    <li>Stop Sync discards uncommitted scan results while retaining safe recovery checkpoints.</li>
+    <li>Failed individual files are logged while the remaining files continue.</li>
+    <li>Deferred cleanup remains available from <b>Clean Up</b> after Sync Review closes.</li>
+    <li>You may start another Sync without logging off or clearing earlier review results.</li>
+   </ul>
+   <h3>Local-First Session</h3>
+   <ul>
+    <li>R.A.P.T.O.R. uses a Windows-user-protected local workspace for responsive editing.</li>
+    <li>Changes remain local until <b>Commit Session</b> publishes them to the shared system.</li>
+    <li>Only changed files and changed organization data are published.</li>
+    <li>Successful files move to the local Complete area for manual review; nothing is deleted automatically.</li>
+    <li>A clean manual commit prevents a redundant shutdown commit.</li>
+    <li>Network retry, journaling, checksums, and resumable operations protect slow or interrupted shares.</li>
+   </ul>
+   <h3>Audit and Error Records</h3>
+   <ul>
+    <li>Consequential actions are written to <code>System/Audit Logs</code>.</li>
+    <li>Audit entries use ISO 8601 UTC time, Windows operator, sequence, previous hash, and entry hash.</li>
+    <li>Viewing, searching, filtering, and theme changes are not audited.</li>
+    <li>Operational failures append to one daily text report under <code>System/Error Reports</code>.</li>
+    <li>Use <b>View Audit Log</b> to verify the chain and review entries.</li>
+    <li>Use <b>Export Independent Audit Receipt</b> to preserve the verified chain head outside the system folder.</li>
+   </ul>
+   <h3>Backups and Recovery</h3>
+   <ul>
+    <li>The app maintains checksum-protected daily snapshots under <code>System/backup</code>.</li>
+    <li>Use <b>Restore Backup</b> to verify and restore a selected snapshot.</li>
+    <li>A restore backs up the current database first and never deletes evidence files.</li>
+    <li>The Recovery Center offers reconnect, remap, verify, refresh, restore, retry, or safe logoff.</li>
+    <li>Storage-integrity errors may restrict editing, but recovery actions remain available.</li>
+    <li>Idle shutdown begins only after active processing finishes.</li>
+   </ul>
+  </section>
+
+  <section id="reconciliation">
+   <h2>6. Reconciliation and Temporary Exceptions</h2>
+   <h3>Reconciliation</h3>
+   <ul>
+    <li>Reconciliation compares database-recorded active evidence with current active locations.</li>
+    <li>It reports collisions, duplicate identities or emails, changed hashes, organization conflicts, and contradictory account states.</li>
+    <li>It ignores unrecorded evidence and files in Archive or Rework.</li>
+    <li>Missing requirements remain in normal reporting and are not Reconciliation issues.</li>
+    <li>Reconciliation is read-only and never moves files or changes records.</li>
+    <li>Choose <b>Generate PDF Report</b> for a correction reference stored under <code>System/Reports</code>.</li>
+   </ul>
+   <h3>Temporary Exceptions</h3>
+   <ul>
+    <li>Open a User Record and choose the requirement, approving official, justification, and expiration date.</li>
+    <li>The underlying Missing or Overdue status remains visible.</li>
+    <li>Active exceptions appear in the directory, reports, and CSV exports.</li>
+    <li>Active exceptions are excluded from notification drafts.</li>
+    <li>Expired exceptions stop applying but remain in history.</li>
+   </ul>
+  </section>
+
+  <section id="exports">
+   <h2>7. Reports, Exports, and Notification Messages</h2>
+   <h3>Compliance Snapshot</h3>
+   <ul>
+    <li>Select mapped systems, organizations, and the reporting date.</li>
+    <li>Disabled users are excluded.</li>
+    <li>The PDF includes report identity, UTC time, operator, versions, scope, totals, aging, exceptions, and required breakdowns.</li>
+    <li>A checksum-protected copy is stored under <code>System/Reports</code>.</li>
+   </ul>
+   <h3>CSV Export</h3>
+   <ul>
+    <li>Set User Directory filters first.</li>
+    <li>Choose <b>Export CSV</b> beside Add User.</li>
+    <li>The export contains the complete filtered result, not only the visible page.</li>
+    <li>Use <b>Reset Filters</b> before exporting all users in the selected system.</li>
+   </ul>
+   <h3>Organization Snapshot</h3>
+   <ul>
+    <li>Select one organization and enter its ISSO email.</li>
+    <li>Include disabled users in the snapshot.</li>
+    <li>Use passphrase encryption for transport outside the protected shared folder.</li>
+    <li>Send the passphrase separately.</li>
+    <li>The recipient opens the snapshot in the standalone R.A.P.T.O.R. executable without main-share access.</li>
+   </ul>
+   <h3>Outlook Notifications</h3>
+   <ol>
+    <li>Open one User Record or select Missing, Due Within 30 Days, or Overdue from the dashboard.</li>
+    <li>Select one system, organization, and artifact type.</li>
+    <li>Review recipients and exclusions.</li>
+    <li>Open each Outlook batch and review it before sending.</li>
+   </ol>
+   <ul>
+    <li>Recipients are placed in BCC for bulk drafts.</li>
+    <li>The subject includes the information system name.</li>
+    <li>SAAR appears only in Missing notifications because it does not expire.</li>
+    <li>User Agreement notices attach the approved User Agreement template.</li>
+    <li>8140 notices attach the newest approved 8140 Qualification Memo template.</li>
+    <li>DoD Cyber and Privileged User Training notices include their official training links.</li>
+    <li>The required filename and rejection warning are highlighted in yellow.</li>
+    <li>Messages explain the annual revalidation requirement and show a filename example.</li>
+    <li>Messages use the Sir/Ma&apos;am salutation and never request credentials.</li>
+    <li>Draft attempts are recorded in the User Record and clear when the evidence is updated.</li>
+    <li>R.A.P.T.O.R. prepares drafts but never sends email automatically.</li>
+   </ul>
+  </section>
+
+  <section id="archive">
+   <h2>8. Review Archived Records</h2>
+   <ul>
+    <li>Archived systems and users remain locked, read-only history.</li>
+    <li>Unarchive a system to restore normal editing.</li>
+    <li>SAAR history is retained permanently in the organization SAAR Archive.</li>
+    <li>Other archived evidence follows the configured five-year retention workflow.</li>
+    <li>Use <b>Release Health</b> to verify the database checksum, newest backup, and complete audit chain.</li>
+    <li>Release Health can download an integrity record for independent retention.</li>
+   </ul>
+  </section>
+  <footer>R.A.P.T.O.R. is an administrative evidence-management tool. Operators remain responsible for source-document accuracy, approvals, access decisions, and records policy.</footer>
+ </main>;
 }
