@@ -201,6 +201,7 @@ export default function Guide(){
     <li>Changes remain local until <b>Commit Session</b> publishes them to the shared system.</li>
     <li>Only changed files and changed organization data are published.</li>
     <li>Successful files move to the local Complete area for manual review; nothing is deleted automatically.</li>
+    <li>Files in Complete are final local copies and are never resubmitted; only Pending Upload, the organization root, or Rework can supply new evidence.</li>
     <li>A clean manual commit prevents a redundant shutdown commit.</li>
     <li>Network retry, journaling, checksums, and resumable operations protect slow or interrupted shares.</li>
    </ul>

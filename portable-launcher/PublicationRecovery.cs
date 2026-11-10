@@ -59,17 +59,10 @@ internal sealed partial class PortableStorage
         foreach (KeyValuePair<string, Dictionary<string, object>> pair in records.Where(value => Convert.ToBoolean(value.Value["pending"], CultureInfo.InvariantCulture)).ToArray())
         {
             Dictionary<string, object> item = pair.Value;string localRelative = Convert.ToString(item["localPath"], CultureInfo.InvariantCulture).Replace('\\', '/'), expectedLocal = SafeRelativePath(workspaceRoot, localRelative);
-            if (File.Exists(expectedLocal)) continue;
+            if (File.Exists(expectedLocal) && !IsFinalCompleteLocalEvidencePath(workspaceRoot, expectedLocal)) continue;
 
-            string recoveredLocal = FindVerifiedMovedLocalEvidence(workspaceRoot, item, hashCache);
-            if (!String.IsNullOrWhiteSpace(recoveredLocal))
-            {
-                string destination = Convert.ToString(item["destination"], CultureInfo.InvariantCulture).Replace('\\', '/');
-                if (recoveredLocal.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && destination.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) destination += ".zip";
-                RegisterLocalEvidenceInMap(records, workspaceRoot, recoveredLocal, destination, pair.Key, hashCache.Container(recoveredLocal));changed = true;continue;
-            }
-
-            string recoveredShared = FindVerifiedSharedEvidence(sharedRoot, item, hashCache);
+            string recoveredComplete = FindVerifiedMovedLocalEvidence(workspaceRoot, item, hashCache, true);
+            string recoveredShared = FindVerifiedSharedEvidence(sharedRoot, item, hashCache, recoveredComplete);
             if (!String.IsNullOrWhiteSpace(recoveredShared))
             {
                 string relative = Relative(sharedRoot, recoveredShared).Replace(Path.DirectorySeparatorChar, '/'), sharedHash = hashCache.Container(recoveredShared), pdfHash = hashCache.Pdf(recoveredShared);
@@ -78,22 +71,30 @@ internal sealed partial class PortableStorage
                 records.Remove(pair.Key);records[relative] = receipt;changed = true;continue;
             }
 
+            string recoveredLocal = FindVerifiedMovedLocalEvidence(workspaceRoot, item, hashCache, false);
+            if (!String.IsNullOrWhiteSpace(recoveredLocal))
+            {
+                string destination = Convert.ToString(item["destination"], CultureInfo.InvariantCulture).Replace('\\', '/');
+                if (recoveredLocal.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && destination.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) destination += ".zip";
+                RegisterLocalEvidenceInMap(records, workspaceRoot, recoveredLocal, destination, pair.Key, hashCache.Container(recoveredLocal));changed = true;continue;
+            }
+
             int removedReferences = RemoveMissingDatabaseEvidence(database, item, isolatedEvidenceFilenames);records.Remove(pair.Key);changed = true;
             string filename = Path.GetFileName(pair.Key), expectedShared = Convert.ToString(item["destination"], CultureInfo.InvariantCulture).Replace('\\', '/');
             warnings.Add(removedReferences > 0
-                ? filename + ": the pending local evidence was absent at " + localRelative + " and no verified shared copy existed at " + expectedShared + ". " + removedReferences.ToString(CultureInfo.InvariantCulture) + " user-record reference(s) were isolated as Missing; unrelated publication work continued."
+                ? filename + (String.IsNullOrWhiteSpace(recoveredComplete) ? ": the pending local evidence was absent at " + localRelative : ": a final local Complete copy was retained but was not resubmitted") + " and no verified shared copy existed at " + expectedShared + ". " + removedReferences.ToString(CultureInfo.InvariantCulture) + " user-record reference(s) were isolated as Missing; unrelated publication work continued."
                 : filename + ": a stale unreferenced publication entry was removed because no file existed at " + localRelative + " or the expected shared location " + expectedShared + ".");
         }
         if (changed) WriteLocalEvidenceMap(systemId, records);
     }
 
-    private string FindVerifiedMovedLocalEvidence(string workspaceRoot, Dictionary<string, object> item, PublicationHashCache hashCache)
+    private string FindVerifiedMovedLocalEvidence(string workspaceRoot, Dictionary<string, object> item, PublicationHashCache hashCache, bool finalCompleteOnly)
     {
         string expected = Convert.ToString(item["sha256"], CultureInfo.InvariantCulture);var relativeCandidates = EvidenceEntryRelativePaths(item);var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (string relative in relativeCandidates)
         {
             names.Add(Path.GetFileName(relative));if (relative.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) names.Add(Path.GetFileName(relative) + ".zip");
-            try { string exact = SafeRelativePath(workspaceRoot, relative);if (File.Exists(exact) && EvidenceHashMatches(exact, expected, hashCache)) return exact;if (relative.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && File.Exists(exact + ".zip") && EvidenceHashMatches(exact + ".zip", expected, hashCache)) return exact + ".zip"; }
+            try { string exact = SafeRelativePath(workspaceRoot, relative);if (File.Exists(exact) && IsFinalCompleteLocalEvidencePath(workspaceRoot, exact) == finalCompleteOnly && EvidenceHashMatches(exact, expected, hashCache)) return exact;if (relative.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && File.Exists(exact + ".zip") && IsFinalCompleteLocalEvidencePath(workspaceRoot, exact + ".zip") == finalCompleteOnly && EvidenceHashMatches(exact + ".zip", expected, hashCache)) return exact + ".zip"; }
             catch (ArgumentException) { }
         }
         string organization = EvidenceEntryOrganization(item), organizationRoot = String.IsNullOrWhiteSpace(organization) ? null : Path.Combine(workspaceRoot, "Organizations", organization);
@@ -108,20 +109,25 @@ internal sealed partial class PortableStorage
                 if (++visitedEntries > 100000) break;
                 if (entry.IsDirectory) { if (!entry.IsReparsePoint) queue.Enqueue(entry.Path);continue; }
                 if (!names.Contains(Path.GetFileName(entry.Path))) continue;
-                try { EnsureReparseSafePath(workspaceRoot, entry.Path);if (EvidenceHashMatches(entry.Path, expected, hashCache)) matches.Add(entry.Path); } catch { }
+                try { EnsureReparseSafePath(workspaceRoot, entry.Path);if (IsFinalCompleteLocalEvidencePath(workspaceRoot, entry.Path) == finalCompleteOnly && EvidenceHashMatches(entry.Path, expected, hashCache)) matches.Add(entry.Path); } catch { }
             }
         }
         return matches.OrderBy(LocalEvidenceRecoveryPriority).ThenBy(value => value, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
     }
 
-    private string FindVerifiedSharedEvidence(string sharedRoot, Dictionary<string, object> item, PublicationHashCache hashCache)
+    private string FindVerifiedSharedEvidence(string sharedRoot, Dictionary<string, object> item, PublicationHashCache hashCache, string completedLocal)
     {
         string expected = Convert.ToString(item["sha256"], CultureInfo.InvariantCulture);var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (string relativeValue in EvidenceEntryRelativePaths(item))
         {
             string relative = relativeValue.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? relativeValue + ".zip" : relativeValue;
             if (!relative.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || !seen.Add(relative)) continue;
-            try { string candidate = SafeRelativePath(sharedRoot, relative);if (File.Exists(candidate) && EvidenceHashMatches(candidate, expected, hashCache)) return candidate; }
+            try
+            {
+                string candidate = SafeRelativePath(sharedRoot, relative);if (!File.Exists(candidate)) continue;
+                if (EvidenceHashMatches(candidate, expected, hashCache)) return candidate;
+                if (!String.IsNullOrWhiteSpace(completedLocal) && String.Equals(hashCache.Pdf(candidate), hashCache.Pdf(completedLocal), StringComparison.OrdinalIgnoreCase)) return candidate;
+            }
             catch (ArgumentException) { }
         }
         return null;
@@ -149,6 +155,20 @@ internal sealed partial class PortableStorage
     private static int LocalEvidenceRecoveryPriority(string path)
     {
         string normalized = path.Replace('\\', '/');if (normalized.Split('/').Any(IsCompleteStorageDirectory) && normalized.IndexOf("/" + PendingUploadDirectoryName + "/", StringComparison.OrdinalIgnoreCase) < 0) return 0;if (normalized.IndexOf("/" + PendingUploadDirectoryName + "/", StringComparison.OrdinalIgnoreCase) >= 0) return 1;if (normalized.IndexOf(" Incoming/", StringComparison.OrdinalIgnoreCase) >= 0) return 2;if (normalized.IndexOf(" Rework/", StringComparison.OrdinalIgnoreCase) >= 0) return 3;return 4;
+    }
+
+    private static bool IsFinalCompleteLocalEvidencePath(string workspaceRoot, string path)
+    {
+        string relative;
+        try
+        {
+            string root = Path.GetFullPath(workspaceRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar, full = Path.GetFullPath(path);
+            if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return false;
+            relative = full.Substring(root.Length);
+        }
+        catch { return false; }
+        string[] parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+        return parts.Any(IsCompleteStorageDirectory) && !parts.Any(part => String.Equals(part, PendingUploadDirectoryName, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool EvidenceHashMatches(string path, string expected, PublicationHashCache hashCache)

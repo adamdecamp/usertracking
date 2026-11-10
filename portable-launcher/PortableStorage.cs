@@ -866,6 +866,7 @@ internal sealed partial class PortableStorage : IDisposable
             foreach (Dictionary<string, object> item in localEvidence.Values.Where(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture)))
             {
                 string relative = Convert.ToString(item["destination"], CultureInfo.InvariantCulture), originalRelative = relative, source = SafeRelativePath(workspaceRoot, Convert.ToString(item["localPath"], CultureInfo.InvariantCulture)), hash = Convert.ToString(item["sha256"], CultureInfo.InvariantCulture);
+                if (IsFinalCompleteLocalEvidencePath(workspaceRoot, source)) { preparationWarnings.Add(Path.GetFileName(source) + ": the local Complete copy was excluded from publication. Move it to the organization root or Rework only when an intentional new submission is required.");continue; }
                 if (!source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) { if (associatedPaths.Contains(relative)) throw new InvalidDataException("A locally associated evidence PDF must be compressed before publication: " + Path.GetFileName(source));deferredLocalPdfs++;continue; }
                 if (!String.Equals(hashCache.Container(source), hash, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A locally prepared evidence file changed before publication. The local session was preserved.");
                 relative = CanonicalPublicationRelative(requestedDatabase, relative, Path.GetFileName(source));
@@ -3676,8 +3677,8 @@ internal sealed partial class PortableStorage : IDisposable
                     // Prefer a newly staged Incoming copy over an older Published Evidence
                     // receipt. This lets an idempotent Session Commit verify and drain a
                     // duplicate that was added after the original evidence was published.
-                    if (String.IsNullOrWhiteSpace(source) && records.TryGetValue(zipCanonical, out mapped)) source = SafeRelativePath(root, Convert.ToString(mapped["localPath"], CultureInfo.InvariantCulture));
-                    else if (String.IsNullOrWhiteSpace(source) && records.TryGetValue(lookup, out mapped)) source = SafeRelativePath(root, Convert.ToString(mapped["localPath"], CultureInfo.InvariantCulture));
+                    if (String.IsNullOrWhiteSpace(source) && records.TryGetValue(zipCanonical, out mapped)) { string candidate = SafeRelativePath(root, Convert.ToString(mapped["localPath"], CultureInfo.InvariantCulture));if (Convert.ToBoolean(mapped["pending"], CultureInfo.InvariantCulture) || !IsFinalCompleteLocalEvidencePath(root, candidate)) source = candidate; }
+                    else if (String.IsNullOrWhiteSpace(source) && records.TryGetValue(lookup, out mapped)) { string candidate = SafeRelativePath(root, Convert.ToString(mapped["localPath"], CultureInfo.InvariantCulture));if (Convert.ToBoolean(mapped["pending"], CultureInfo.InvariantCulture) || !IsFinalCompleteLocalEvidencePath(root, candidate)) source = candidate; }
                     else if (String.IsNullOrWhiteSpace(source)) source = SafeRelativePath(root, lookup);
                     if (String.IsNullOrWhiteSpace(source) || !File.Exists(source)) continue;
                     string sourceExpectedHash = source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && recordedZip ? hashCache.Container(source) : source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? hashCache.Pdf(source) : hashCache.Container(source);bool expectedMatches = !IsSha256(expected) || String.Equals(expected, sourceExpectedHash, StringComparison.OrdinalIgnoreCase);

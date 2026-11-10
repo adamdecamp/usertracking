@@ -18,6 +18,20 @@ test('portable database and CSV backup use one serialized launcher commit',()=>{
  assert.match(storage,/private void FlushDueBackups[\s\S]*?CreateSnapshot[\s\S]*?SaveCsv/);
 });
 
+test('local Complete evidence is never treated as a publication source',()=>{
+ const storage=fs.readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
+ const recovery=fs.readFileSync(new URL('../portable-launcher/PublicationRecovery.cs',import.meta.url),'utf8');
+ assert.match(storage,/IsFinalCompleteLocalEvidencePath\(workspaceRoot, source\)/);
+ assert.match(storage,/local Complete copy was excluded from publication/);
+ assert.match(storage,/Convert\.ToBoolean\(mapped\["pending"\][\s\S]*?\|\| !IsFinalCompleteLocalEvidencePath\(root, candidate\)/);
+ assert.match(recovery,/FindVerifiedMovedLocalEvidence\(workspaceRoot, item, hashCache, true\)/);
+ assert.match(recovery,/FindVerifiedMovedLocalEvidence\(workspaceRoot, item, hashCache, false\)/);
+ assert.match(recovery,/IsFinalCompleteLocalEvidencePath\(workspaceRoot, exact\) == finalCompleteOnly/);
+ assert.match(recovery,/hashCache\.Pdf\(candidate\), hashCache\.Pdf\(completedLocal\)/);
+ assert.match(recovery,/File\.Exists\(expectedLocal\) && !IsFinalCompleteLocalEvidencePath\(workspaceRoot, expectedLocal\)/);
+ assert.ok(recovery.indexOf('FindVerifiedSharedEvidence(sharedRoot, item, hashCache, recoveredComplete)')<recovery.indexOf('FindVerifiedMovedLocalEvidence(workspaceRoot, item, hashCache, false)'),'Recovery must reconcile a verified shared copy before looking for any movable local source.');
+});
+
 test('Sync keeps resumable journals and a verified index mirror in the local performance cache',()=>{
  assert.match(storage,/SyncJournalBatchEntryLimit = 64/);
  assert.match(storage,/AppendSyncJournalLines[\s\S]*?FlushCompatible/);
