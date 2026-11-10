@@ -4,7 +4,7 @@ import {decodeJsonResponse,RuntimeDecodeError} from '../app/infrastructure/runti
 import {
  decodeCachedMappingResponse,decodeEvidenceFilenameResponse,decodeEvidenceStatusResponse,decodeLauncherControlResponse,
  decodeLegacyWorkspaceRecoveryResult,decodeLegacyWorkspaceRecoveryStatus,decodeLegacyWorkspaceReviewPackage,
- decodeLeaseAcquireResponse,decodeLeaseRenewResponse,decodeNetworkQualificationResponse,decodeOperationReceipt,decodeOrganizationList,
+ decodeLeaseAcquireResponse,decodeLeaseRenewResponse,decodeNetworkQualificationResponse,decodeOperationReceipt,decodeOperatorDirectoryResponse,decodeOrganizationList,
  decodeOrganizationResponse,decodePathMutationResponse,decodePublishResponse,decodeSelectedFolderResponse,
  decodeStorageOperationReceipt,decodeStorageVerificationResponse,decodeStoredEvidenceResponse,decodeWorkspacePublicationProgress,decodeWorkspaceStatusResponse,
 } from '../app/infrastructure/portable-contracts.ts';
@@ -12,7 +12,8 @@ import {
 const hash='a'.repeat(64);
 
 test('portable response contracts accept bounded valid payloads',()=>{
- assert.deepEqual(decodeLeaseAcquireResponse({acquired:true}),{acquired:true});
+ assert.deepEqual(decodeLeaseAcquireResponse({acquired:true}),{acquired:true,holder:undefined});
+ assert.deepEqual(decodeLeaseAcquireResponse({acquired:false,holder:{actor:'Adam DeCamp (NOS\\gy730f)',computer:'WORKSTATION-1',startedAtUtc:'2026-11-10T10:00:00.000Z'}}).holder?.computer,'WORKSTATION-1');
  assert.deepEqual(decodeLeaseRenewResponse({renewed:false}),{renewed:false});
  assert.equal(decodeWorkspaceStatusResponse({noChanges:true,stateHash:hash,databaseChangePending:false,pendingEvidenceCount:0,interruptedRecovery:false,evidenceWorkPending:false,saved:'2026-10-16T00:00:00Z',backup:'2026-10-16T00:00:00Z'}).noChanges,true);
  assert.deepEqual(decodeEvidenceFilenameResponse({filename:'A.pdf'}),{filename:'A.pdf'});
@@ -21,6 +22,7 @@ test('portable response contracts accept bounded valid payloads',()=>{
  assert.deepEqual(decodeOrganizationList(['Alpha','Bravo']),['Alpha','Bravo']);
  assert.deepEqual(decodeOrganizationResponse({organization:'Alpha'}),{organization:'Alpha'});
  assert.deepEqual(decodeOperationReceipt({operationId:'op-1'}),{operationId:'op-1'});
+ assert.equal(decodeOperatorDirectoryResponse({operators:[{fullName:'Adam DeCamp',windowsUser:'NOS\\gy730f',firstSeenUtc:'2026-11-10T10:00:00.000Z',lastSeenUtc:'2026-11-10T11:00:00.000Z',auditEntries:3}],generatedAtUtc:'2026-11-10T12:00:00.000Z',auditEntries:3}).operators[0].windowsUser,'NOS\\gy730f');
  assert.equal(decodeStorageOperationReceipt({completed:true,action:'state-commit',completedAtUtc:'2026-10-22T12:00:00.000Z',responseAvailable:true,response:'{"saved":true}'}).completed,true);
  assert.deepEqual(decodeWorkspacePublicationProgress({active:true,phase:'evidence-copy',processed:7,total:12,filename:'Example.pdf.zip',updatedAtUtc:'2026-10-22T12:00:00.000Z'}),{active:true,phase:'evidence-copy',processed:7,total:12,filename:'Example.pdf.zip',updatedAtUtc:'2026-10-22T12:00:00.000Z'});
  assert.deepEqual(decodeStorageOperationReceipt({completed:false,running:true,failed:false,action:'workspace-publish',startedAtUtc:'2026-10-22T12:00:00.000Z',message:'Publishing evidence.'}),{completed:false,running:true,failed:false,action:'workspace-publish',startedAtUtc:'2026-10-22T12:00:00.000Z',message:'Publishing evidence.'});
@@ -46,6 +48,9 @@ test('portable response contracts accept bounded valid payloads',()=>{
 
 test('portable response contracts reject type confusion, control characters, bad hashes, and oversized arrays',()=>{
  assert.throws(()=>decodeLeaseAcquireResponse({acquired:'true'}),RuntimeDecodeError);
+ assert.throws(()=>decodeLeaseAcquireResponse({acquired:true,holder:{actor:'Operator',computer:'PC',startedAtUtc:'2026-11-10T10:00:00.000Z'}}),/holder for an acquired lease/);
+ assert.throws(()=>decodeLeaseAcquireResponse({acquired:false,holder:{actor:'Operator',computer:'PC',startedAtUtc:'invalid'}}),/timestamp/);
+ assert.throws(()=>decodeOperatorDirectoryResponse({operators:[{fullName:'Operator',windowsUser:'DOMAIN\\alias',firstSeenUtc:'invalid',lastSeenUtc:'2026-11-10T10:00:00.000Z',auditEntries:1}],generatedAtUtc:'2026-11-10T10:00:00.000Z',auditEntries:1}),/timestamp/);
  assert.throws(()=>decodeWorkspaceStatusResponse({noChanges:true,stateHash:hash,databaseChangePending:false,pendingEvidenceCount:1,interruptedRecovery:false,evidenceWorkPending:false,saved:'now',backup:'now'}),/contradictory/);
  assert.throws(()=>decodeLauncherControlResponse({activeStorageRequests:-1,longOperationActive:true}),RuntimeDecodeError);
  assert.throws(()=>decodeLauncherControlResponse({activeStorageRequests:1,longOperationActive:'yes'}),RuntimeDecodeError);
@@ -86,7 +91,7 @@ test('all portable decoders fail deterministically and never hang on randomized 
   decodeLeaseAcquireResponse,decodeLeaseRenewResponse,decodeEvidenceFilenameResponse,decodeStoredEvidenceResponse,
   decodeEvidenceStatusResponse,decodeSelectedFolderResponse,decodeCachedMappingResponse,decodeLauncherControlResponse,
   decodeStorageVerificationResponse,decodePathMutationResponse('path','Path mutation'),decodeOrganizationList,
-  decodeOrganizationResponse,decodeOperationReceipt,decodeStorageOperationReceipt,decodePublishResponse,decodeWorkspaceStatusResponse,
+  decodeOrganizationResponse,decodeOperationReceipt,decodeOperatorDirectoryResponse,decodeStorageOperationReceipt,decodePublishResponse,decodeWorkspaceStatusResponse,
   decodeLegacyWorkspaceRecoveryStatus,decodeLegacyWorkspaceReviewPackage,decodeLegacyWorkspaceRecoveryResult,
  ];
  const seed=0x52415054,next=random(seed);

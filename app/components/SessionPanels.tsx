@@ -1,6 +1,12 @@
 'use client';
 /* eslint-disable @next/next/no-img-element -- The static brand asset must work in the portable Vite build. */
-import {useEffect,useRef} from 'react';
+import {useEffect,useRef,useState} from 'react';
+
+export function OperatorIdentityGate({windowsUser,initialName,onSave}:{windowsUser:string;initialName?:string;onSave:(fullName:string)=>Promise<void>}){
+ const input=useRef<HTMLInputElement>(null),[saving,setSaving]=useState(false),[error,setError]=useState('');
+ useEffect(()=>{input.current?.focus()},[]);
+ return <div className="access-mode-gate" role="dialog" aria-modal="true" aria-labelledby="operator-identity-title"><form className="access-mode-card operator-identity-card" onSubmit={event=>{event.preventDefault();if(saving)return;const form=new FormData(event.currentTarget),fullName=String(form.get('fullName')??'');setSaving(true);setError('');void onSave(fullName).catch(reason=>setError(reason instanceof Error?reason.message:'The operator profile could not be saved.')).finally(()=>setSaving(false))}}><img className="access-mode-logo" src="/raptor-icon.png" alt=""/><p className="eyebrow">Verified Operator Identity</p><h2 id="operator-identity-title">Enter Your Full Name</h2><p>R.A.P.T.O.R. verified your Windows account as <strong>{windowsUser}</strong>. Enter your full name so audit records identify both you and the Windows alias.</p><label className="operator-identity-field"><span>Full Name</span><input ref={input} name="fullName" defaultValue={initialName} autoComplete="name" maxLength={100} disabled={saving} required/></label>{error&&<p className="restore-warning" role="alert">{error}</p>}<button className="primary full" type="submit" disabled={saving}>{saving?'Saving Identity…':'Continue'}</button><small>Your full name is stored only in your protected local Windows profile. The verified Windows alias remains part of every recorded identity.</small></form></div>;
+}
 
 export function AccessModeGate({onReadOnly,onFull,onOpenSnapshot}:{onReadOnly:()=>void;onFull:()=>void;onOpenSnapshot:(file:File)=>void|Promise<void>}){
  const firstAction=useRef<HTMLButtonElement>(null);

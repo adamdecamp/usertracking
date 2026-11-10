@@ -33,6 +33,7 @@ tests/portable-request-utils.test.ts
 tests/portable-storage-request.test.ts
 tests/launcher-lifecycle.test.ts
 tests/access-mode.test.ts
+tests/operator-identity.test.ts
 tests/organization-status-package.test.ts
 tests/organization-status-ui.test.ts
 tests/diagnostic-bundle.test.ts

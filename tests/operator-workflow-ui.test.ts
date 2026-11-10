@@ -15,14 +15,16 @@ const directory=readFileSync('app/components/DirectoryHeader.tsx','utf8');
 
 test('routine actions are separated from administration, reporting, and system tools',()=>{
  assert.match(chrome,/daily-actions/);
- assert.match(chrome,/<summary>User Administration<\/summary>/);
- assert.match(chrome,/<summary>Reports &amp; Oversight<\/summary>/);
- assert.match(chrome,/<summary>System Tools<\/summary>/);
+ assert.match(chrome,/<summary[^>]*>User Administration<\/summary>/);
+ assert.match(chrome,/<summary[^>]*>Reports &amp; Oversight<\/summary>/);
+ assert.match(chrome,/<summary[^>]*>System Tools<\/summary>/);
  assert.match(styles,/\.action-menu/);
  assert.match(operatorHeader,/open=\{openMenu==='users'\}/);
  assert.match(operatorHeader,/open=\{openMenu==='reports'\}/);
  assert.match(operatorHeader,/open=\{openMenu==='tools'\}/);
  assert.match(operatorHeader,/setOpenMenu\(null\);action\(\)/);
+ assert.match(operatorHeader,/event\.preventDefault\(\);setOpenMenu\(current=>current===menu\?null:menu\)/);
+ assert.doesNotMatch(operatorHeader,/onToggle=/);
  assert.match(operatorHeader,/document\.addEventListener\('pointerdown',outside\)/);
  assert.match(operatorHeader,/document\.addEventListener\('focusin',outside\)/);
  assert.match(operatorHeader,/event\.key==='Escape'/);

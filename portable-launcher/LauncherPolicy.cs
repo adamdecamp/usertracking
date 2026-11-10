@@ -23,6 +23,7 @@ internal static class LauncherPolicy
             && !String.Equals(action, "file-location", StringComparison.Ordinal)
             && !String.Equals(action, "performance", StringComparison.Ordinal)
             && !String.Equals(action, "diagnostics", StringComparison.Ordinal)
+            && !String.Equals(action, "operators", StringComparison.Ordinal)
             && !String.Equals(action, "sync-job", StringComparison.Ordinal)
             && !String.Equals(action, "operation-status", StringComparison.Ordinal)
             && !String.Equals(action, "recovery", StringComparison.Ordinal)
@@ -90,6 +91,7 @@ internal static class LauncherPolicy
             || String.Equals(action, "recovery", StringComparison.Ordinal)
             || String.Equals(action, "catalog-recovery", StringComparison.Ordinal)
             || String.Equals(action, "diagnostics", StringComparison.Ordinal)
+            || String.Equals(action, "operators", StringComparison.Ordinal)
             || String.Equals(action, "organizations", StringComparison.Ordinal)
             || String.Equals(action, "evidence-status", StringComparison.Ordinal)
             || String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal)
@@ -101,6 +103,7 @@ internal static class LauncherPolicy
     internal static long RequestBodyLimit(string path, string method)
     {
         if (!String.Equals(method, "POST", StringComparison.Ordinal) && !String.Equals(method, "DELETE", StringComparison.Ordinal)) return 0;
+        if (String.Equals(path, "/api/operator-profile", StringComparison.Ordinal)) return 4L * KiB;
         if (String.IsNullOrWhiteSpace(path) || !path.StartsWith("/api/storage/", StringComparison.Ordinal)) return 0;
         string tail = path.Substring("/api/storage/".Length);int separator = tail.IndexOf('/');string action = separator >= 0 ? tail.Substring(separator + 1) : "";
         int query = action.IndexOf('?');if (query >= 0) action = action.Substring(0, query);

@@ -31,6 +31,25 @@ test('requires an explicit access choice and opens a read-only session',async({p
  await expect(page.getByRole('button',{name:'+ Add User'})).toHaveCount(0);
 });
 
+test('opens every dashboard menu without blanking the application',async({page})=>{
+ const pageErrors:string[]=[];
+ page.on('pageerror',error=>pageErrors.push(error.message));
+ await page.goto('/');
+ await page.getByRole('dialog',{name:'Choose Your Access'}).getByRole('button',{name:'Read-Only Access'}).click();
+
+ await page.getByText('User Administration',{exact:true}).click();
+ await expect(page.getByRole('button',{name:'Archived Systems'})).toBeVisible();
+
+ await page.getByText('Reports & Oversight',{exact:true}).click();
+ await expect(page.getByRole('button',{name:'View Audit Log'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Archived Systems'})).toBeHidden();
+
+ await page.getByText('System Tools',{exact:true}).click();
+ await expect(page.getByRole('button',{name:'Performance'})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'R.A.P.T.O.R.'})).toBeVisible();
+ expect(pageErrors).toEqual([]);
+});
+
 test('keeps the user guide reachable and branded',async({page})=>{
  await page.goto('/');
  const guide=page.getByRole('link',{name:'Open the User Guide'});

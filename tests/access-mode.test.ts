@@ -11,11 +11,17 @@ const dashboard=`${page}\n${operatorHeader}`;
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
+const operatorStorage=readFileSync(new URL('../portable-launcher/PortableOperatorDirectory.cs',import.meta.url),'utf8');
 const workspaceReconciliation=readFileSync(new URL('../portable-launcher/PortableWorkspaceReconciliation.cs',import.meta.url),'utf8');
 const portableEntry=readFileSync(new URL('../portable/src/main.tsx',import.meta.url),'utf8');
 const launcherSessionClient=readFileSync(new URL('../app/infrastructure/launcher-session-client.ts',import.meta.url),'utf8');
 
 test('startup requires an explicit Read-Only or Full Access choice',()=>{
+ assert.match(sessionPanels,/Enter Your Full Name/);
+ assert.match(sessionPanels,/verified your Windows account/);
+ assert.match(page,/operatorFullName/);
+ assert.match(page,/\/api\/operator-profile/);
+ assert.match(launcher,/operator identity can be registered only before choosing an access mode/);
  assert.match(sessionPanels,/Choose Your Access/);
  assert.match(page,/chooseAccessMode\('read-only'\)/);
  assert.match(page,/chooseAccessMode\('full'\)/);
@@ -23,10 +29,20 @@ test('startup requires an explicit Read-Only or Full Access choice',()=>{
  assert.match(sessionPanels,/Required startup health check · One exclusive editor/);
 });
 
+test('lease contention identifies the verified operator without exposing a session token',()=>{
+ assert.match(page,/leaseHolderMessage/);
+ assert.match(page,/Full Access is currently held by/);
+ assert.match(operatorStorage,/public string LeaseHolder\(string systemId\)/);
+ assert.match(operatorStorage,/"actor", holder/);
+ assert.doesNotMatch(operatorStorage.slice(operatorStorage.indexOf('public string LeaseHolder')),/sessionId/);
+ assert.match(operatorHeader,/Operator Directory/);
+ assert.match(launcher,/storage\.ReadOperators\(systemId\)/);
+});
+
 test('Read-Only sessions never acquire or renew the editor lease',()=>{
  assert.match(page,/if\(accessMode==='read-only'\)\{[\s\S]*?setSessionState\('active'\)/);
  assert.match(page,/if\(!root\|\|accessMode!=='full'\|\|leaseRenewPending\.current\|\|protectedWork\)return/);
- assert.match(page,/if\(accessMode==='full'\)\{if\(!\(await acquireLease\(root,sessionId\)\)\)/);
+ assert.match(page,/if\(accessMode==='full'\)\{const lease=await acquireLease\(root,sessionId\);if\(!lease\.acquired\)/);
 });
 
 test('the dashboard can switch between Read-Only and Full Access without restarting',()=>{

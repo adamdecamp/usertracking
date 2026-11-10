@@ -87,7 +87,9 @@ $compilerArgs = New-Object System.Collections.Generic.List[string]
 @('/nologo', '/target:winexe', "/out:$executable", "/win32manifest:$manifest", "/win32icon:$icon", '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll', '/reference:System.IO.Compression.dll', '/reference:System.IO.Compression.FileSystem.dll', '/reference:System.Security.dll', "/resource:$webRoot\index.html,Tracker.Index", "/resource:$assetManifest,Tracker.AssetManifest", "/resource:$faviconCompressed,Tracker.Favicon", "/resource:$brandLogoCompressed,Tracker.BrandLogo") | ForEach-Object { $compilerArgs.Add($_) }
 $assetResourceArgs | ForEach-Object { $compilerArgs.Add($_) }
 $compilerArgs.Add((Join-Path $portableRoot "Program.cs"))
+$compilerArgs.Add((Join-Path $portableRoot "OperatorProfile.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableStorage.cs"))
+$compilerArgs.Add((Join-Path $portableRoot "PortableOperatorDirectory.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortablePublicationReceiptRecovery.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableEvidenceRelabelRecovery.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableLastLogon.cs"))

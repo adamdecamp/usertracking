@@ -22,6 +22,7 @@ internal sealed class TrackerContext : ApplicationContext
     private const long MiB = 1024L * 1024L;
     private sealed class WebAsset { public byte[] Bytes; public string ContentType; }
     private readonly string user;
+    private readonly OperatorProfile operatorProfile;
     private readonly string sessionToken;
     private readonly object sessionGate = new object();
     private string sessionAccessMode = "unselected";
@@ -99,8 +100,9 @@ internal sealed class TrackerContext : ApplicationContext
         indexHtml = LoadResource("Tracker.Index");
         assets = LoadAssets();
         user = WindowsIdentity.GetCurrent().Name;
+        operatorProfile = new OperatorProfile(user, true);
         sessionToken = CreateSessionToken();
-        storage = new PortableStorage(user);
+        storage = new PortableStorage(operatorProfile.Actor);
         dispatcher = new Control();
         IntPtr dispatcherHandle = dispatcher.Handle;
         listener = new TcpListener(IPAddress.Loopback, DefaultPort);
@@ -127,6 +129,7 @@ internal sealed class TrackerContext : ApplicationContext
         indexHtml = Encoding.UTF8.GetBytes("<!doctype html><title>R.A.P.T.O.R. E2E</title>");
         assets = new Dictionary<string, WebAsset>(StringComparer.Ordinal);
         user = "RAPTOR\\E2E";
+        operatorProfile = new OperatorProfile(user, false);
         sessionToken = CreateSessionToken();
         storage = new PortableStorage(user, Path.Combine(e2eRoot, "e2e-mappings.json"));
         dispatcher = null;
@@ -211,7 +214,8 @@ internal sealed class TrackerContext : ApplicationContext
             long requestLimit = RequestBodyLimit(path, parts[0]);
             if (contentLength > requestLimit) { await Respond(stream, 413, "text/plain", Encoding.UTF8.GetBytes("Request body exceeds the limit for this endpoint."), false, "no-store"); return; }
             byte[] requestBody = contentLength > 0 ? await ReadBody(stream, contentLength, requestLimit) : new byte[0];
-            if (path == "/api/session-user") { string json = "{\"user\":\"" + Json(user) + "\"}"; await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json), parts[0] == "HEAD", "no-store"); return; }
+            if (path == "/api/session-user") { await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(operatorProfile.SessionUserJson()), parts[0] == "HEAD", "no-store"); return; }
+            if (path == "/api/operator-profile" && parts[0] == "POST") { if (!String.Equals(SessionAccessMode(), "unselected", StringComparison.Ordinal)) { await Respond(stream, 409, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("The operator identity can be registered only before choosing an access mode."), false, "no-store");return; }string json = operatorProfile.Save(requestBody);storage.UpdateActor(operatorProfile.Actor);await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json), false, "no-store");return; }
             if (path == "/api/session-open" && parts[0] == "POST") { string mode = QueryValue(target, "mode");if (!OpenSession(mode)) { await Respond(stream, 409, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("This launcher session already has a different access mode. Restart R.A.P.T.O.R. to choose another mode."), false, "no-store");return; }await Respond(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"mode\":\"" + Json(SessionAccessMode()) + "\"}"), false, "no-store");return; }
             if (path == "/api/session-downgrade" && parts[0] == "POST")
             {
@@ -337,11 +341,12 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "audit-batch" && parts[0] == "POST") { storage.AppendAuditBatchJson(systemId, Encoding.UTF8.GetString(requestBody)); response = "{\"ok\":true}"; }
                     else if (action == "audit-verify" && parts[0] == "GET") response = storage.VerifyAuditLogs(systemId);
                     else if (action == "audit-view" && parts[0] == "GET") response = storage.ReadAuditLogs(systemId);
+                    else if (action == "operators" && parts[0] == "GET") response = storage.ReadOperators(systemId);
                     else if (action == "last-logon" && parts[0] == "GET") response = storage.ReadLastLogon(systemId);
                     else if (action == "performance" && parts[0] == "GET") response = storage.ReadPerformanceDiagnostics(systemId);
                     else if (action == "network-qualification" && parts[0] == "POST") response = storage.RunNetworkQualification(systemId);
                     else if (action == "diagnostics" && parts[0] == "GET") response = storage.ReadSanitizedDiagnostics(systemId);
-                    else if (action == "lease-acquire" && parts[0] == "POST") response = "{\"acquired\":" + (storage.AcquireLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
+                    else if (action == "lease-acquire" && parts[0] == "POST") { bool acquired = storage.AcquireLease(systemId, QueryValue(target, "session"));response = "{\"acquired\":" + (acquired ? "true" : "false") + ",\"holder\":" + (acquired ? "null" : storage.LeaseHolder(systemId)) + "}"; }
                     else if (action == "lease-renew" && parts[0] == "POST") response = "{\"renewed\":" + (storage.RenewLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
                     else if (action == "lease-release" && parts[0] == "POST") { storage.ReleaseLease(systemId, QueryValue(target, "session")); response = "{\"released\":true}"; }
                     else { await Respond(stream, 404, "text/plain", Encoding.UTF8.GetBytes("Not Found"), false, "no-store"); return; }
@@ -357,7 +362,7 @@ internal sealed class TrackerContext : ApplicationContext
                     string message = StorageError(ex, storageAction) + (String.IsNullOrWhiteSpace(operationId) ? "" : " Operation ID: " + CleanError(operationId).Substring(0, Math.Min(CleanError(operationId).Length, 100)) + ".");
                     if (!String.Equals(storageAction, "error-report", StringComparison.Ordinal)) try
                     {
-                        string now = DateTime.UtcNow.ToString("o"), report = "R.A.P.T.O.R. Error Entry\r\nApplication: Role-Based Access Personnel Tracking & Oversight Registry\r\nGeneration Time UTC: " + now + "\r\nWindows Operator: " + user + "\r\nInformation System ID: " + systemId + "\r\nContext: Windows launcher storage operation " + CleanError(storageAction) + ".\r\nDetails: " + ErrorReportDetail(ex) + "\r\nOperation ID: " + CleanError(operationId ?? "Unavailable");
+                        string now = DateTime.UtcNow.ToString("o"), report = "R.A.P.T.O.R. Error Entry\r\nApplication: Role-Based Access Personnel Tracking & Oversight Registry\r\nGeneration Time UTC: " + now + "\r\nWindows Operator: " + OperatorActor() + "\r\nInformation System ID: " + systemId + "\r\nContext: Windows launcher storage operation " + CleanError(storageAction) + ".\r\nDetails: " + ErrorReportDetail(ex) + "\r\nOperation ID: " + CleanError(operationId ?? "Unavailable");
                         storage.StoreErrorReport(systemId, "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".txt", report);
                     }
                     catch { }
@@ -743,7 +748,7 @@ internal sealed class TrackerContext : ApplicationContext
             if (failure == null && auditFailure == null) continue;
             try
             {
-                string now = DateTime.UtcNow.ToString("o"), detail = failure ?? ("The Outlook draft was displayed, but its completion audit could not be recorded. " + auditFailure), report = "R.A.P.T.O.R. Error Entry\r\nApplication: Role-Based Access Personnel Tracking & Oversight Registry\r\nGeneration Time UTC: " + now + "\r\nWindows Operator: " + user + "\r\nInformation System ID: " + id + "\r\nContext: Outlook draft outcome.\r\nDetails: " + detail + "\r\nOperation ID: " + operationId;
+                string now = DateTime.UtcNow.ToString("o"), detail = failure ?? ("The Outlook draft was displayed, but its completion audit could not be recorded. " + auditFailure), report = "R.A.P.T.O.R. Error Entry\r\nApplication: Role-Based Access Personnel Tracking & Oversight Registry\r\nGeneration Time UTC: " + now + "\r\nWindows Operator: " + OperatorActor() + "\r\nInformation System ID: " + id + "\r\nContext: Outlook draft outcome.\r\nDetails: " + detail + "\r\nOperation ID: " + operationId;
                 storage.StoreErrorReport(id, "error-report-" + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".txt", report);
             }
             catch { }
@@ -988,6 +993,8 @@ internal sealed class TrackerContext : ApplicationContext
         string headers = "HTTP/1.1 " + status + " " + reason + "\r\nContent-Type: " + type + "\r\nContent-Length: " + body.Length + "\r\n" + encodingHeader + "Cache-Control: " + cache + "\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nX-DNS-Prefetch-Control: off\r\nReferrer-Policy: no-referrer\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Resource-Policy: same-origin\r\nPermissions-Policy: camera=(), microphone=(), geolocation=(), browsing-topics=()\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\r\nConnection: close\r\n\r\n";
         byte[] headerBytes = Encoding.ASCII.GetBytes(headers); await stream.WriteAsync(headerBytes, 0, headerBytes.Length); if (!head) await stream.WriteAsync(body, 0, body.Length);
     }
+
+    private string OperatorActor() { return operatorProfile.Actor; }
 
     private static string Json(string value) { return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", ""); }
     private static byte[] LoadResource(string name) { using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)) { if (stream == null) throw new InvalidDataException("Embedded application resource is missing: " + name); using (var memory = new MemoryStream()) { stream.CopyTo(memory); return memory.ToArray(); } } }

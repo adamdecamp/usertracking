@@ -107,7 +107,7 @@ internal sealed partial class PortableStorage : IDisposable
     [ThreadStatic] private static int threadEnumerationSnapshotMisses;
     [ThreadStatic] private static string threadPriorityOrganization;
     private JavaScriptSerializer json { get { if (threadJson == null) threadJson = new JavaScriptSerializer { MaxJsonLength = 100 * 1024 * 1024, RecursionLimit = 256 };return threadJson; } }
-    private readonly string actor;
+    private volatile string actor;
     private readonly string mappingCachePath;
     private string lastSystemId;
     internal static bool ForceNativeEnumerationForTests { get; set; }
@@ -164,6 +164,7 @@ internal sealed partial class PortableStorage : IDisposable
         public string LastTimestamp;
         public DateTimeOffset? LastInstant;
         public readonly List<Dictionary<string, object>> Recent = new List<Dictionary<string, object>>();
+        public readonly Dictionary<string, Dictionary<string, object>> Operators = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
         public bool Incremental;
         public string AnchorHash = AuditGenesisHash;
         public long AnchoredEntries;
@@ -3067,6 +3068,7 @@ internal sealed partial class PortableStorage : IDisposable
                     state.LastTimestamp = timestamp;
                     state.LastInstant = instant;
                     TrackLogonActivity(state, entryActor, timestamp, entryAction);
+                    TrackOperator(state, entryActor, timestamp);
                     state.Recent.Add(new Dictionary<string, object> { { "version", version }, { "sequence", sequence }, { "timestampUtc", timestamp }, { "actor", entryActor }, { "action", entryAction }, { "previousHash", previousHash }, { "entryHash", entryHash } });
                     if (state.Recent.Count > 500) state.Recent.RemoveAt(0);
                     fileEntries++;

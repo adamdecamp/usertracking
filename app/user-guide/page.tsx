@@ -22,7 +22,8 @@ export default function Guide(){
   <section id="getting">
    <h2>1. Getting Started</h2>
    <ol>
-    <li>Launch R.A.P.T.O.R. and choose <b>Read-Only Access</b> or <b>Full Access</b>.</li>
+    <li>Launch R.A.P.T.O.R. If your verified Windows ID has no saved name, enter your full name when prompted.</li>
+    <li>Choose <b>Read-Only Access</b> or <b>Full Access</b>.</li>
     <li>Select an information system or choose <b>Map System Folder</b>.</li>
     <li>For Full Access, wait for storage verification and the exclusive editor lock.</li>
     <li>Choose <b>Sync</b>, then select Daily Sync or Legacy Import and the required scope.</li>
@@ -36,6 +37,8 @@ export default function Guide(){
     <li><b>Full Access:</b> Requires verified storage and the single-editor lease.</li>
     <li>Read-Only Access is identified by a persistent banner and gold frame.</li>
     <li>Multiple Read-Only operators may connect; only one Full Access operator may edit at a time.</li>
+    <li>If Full Access is already locked, R.A.P.T.O.R. identifies the current editor by full name, Windows ID, workstation, and session start time.</li>
+    <li>Open <b>User Administration → Operator Directory</b> to view names and Windows IDs recorded in the selected system&apos;s verified audit history.</li>
    </ul>
    <h3>Dashboard Navigation and Status</h3>
    <ul>
@@ -208,7 +211,7 @@ export default function Guide(){
    <h3>Audit and Error Records</h3>
    <ul>
     <li>Consequential actions are written to <code>System/Audit Logs</code>.</li>
-    <li>Audit entries use ISO 8601 UTC time, Windows operator, sequence, previous hash, and entry hash.</li>
+    <li>Audit entries use ISO 8601 UTC time, the operator&apos;s full name and verified Windows ID, sequence, previous hash, and entry hash.</li>
     <li>Viewing, searching, filtering, and theme changes are not audited.</li>
     <li>Operational failures append to one daily text report under <code>System/Error Reports</code>.</li>
     <li>Use <b>View Audit Log</b> to verify the chain and review entries.</li>

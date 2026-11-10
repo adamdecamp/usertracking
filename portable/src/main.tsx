@@ -5,7 +5,7 @@ import Guide from '../../app/user-guide/page';
 import '../../app/globals.css';
 import '../../app/user-guide/user-guide.css';
 
-type PortableWindow=Window&{__windowsUser?:string;__portableHost?:boolean;__trackerSessionToken?:string};
+type PortableWindow=Window&{__windowsUser?:string;__operatorFullName?:string;__portableHost?:boolean;__trackerSessionToken?:string};
 
 function sessionToken(){return(window as PortableWindow).__trackerSessionToken??''}
 function sessionHeaders(){return{'X-RAPTOR-Session-Token':sessionToken()}}
@@ -37,7 +37,7 @@ function installPortableLifecycle(){
 async function start(){
   const portableWindow=window as PortableWindow;portableWindow.__portableHost=true;
   const token=loadLauncherSessionToken();
-  try{if(token){const response=await fetch('/api/session-user',{credentials:'same-origin',headers:sessionHeaders()});if(response.ok){const data=await response.json() as {user?:string};if(data.user)portableWindow.__windowsUser=data.user;installPortableLifecycle()}}}catch{}
+  try{if(token){const response=await fetch('/api/session-user',{credentials:'same-origin',headers:sessionHeaders()});if(response.ok){const data=await response.json() as {user?:string;fullName?:string};if(data.user)portableWindow.__windowsUser=data.user;if(data.fullName)portableWindow.__operatorFullName=data.fullName;installPortableLifecycle()}}}catch{}
   const Page=location.pathname.startsWith('/user-guide')?Guide:Home;
   createRoot(document.getElementById('root')!).render(<React.StrictMode><Page/></React.StrictMode>);
 }
