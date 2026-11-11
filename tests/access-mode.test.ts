@@ -21,6 +21,8 @@ test('startup requires an explicit Read-Only or Full Access choice',()=>{
  assert.match(sessionPanels,/verified your Windows account/);
  assert.match(page,/operatorFullName/);
  assert.match(page,/\/api\/operator-profile/);
+ assert.match(page,/headers:launcherHeaders\(\{'Content-Type':'application\/json'\}\)/);
+ assert.doesNotMatch(page,/headers:\{\.\.\.launcherHeaders\(\)/);
  assert.match(launcher,/operator identity can be registered only before choosing an access mode/);
  assert.match(sessionPanels,/Choose Your Access/);
  assert.match(page,/chooseAccessMode\('read-only'\)/);
