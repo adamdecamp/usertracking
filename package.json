@@ -44,7 +44,7 @@
     "typescript": "5.9.3",
     "vinext": "1.0.1",
     "vite": "8.3.3",
-    "wrangler": "4.148.0"
+    "wrangler": "4.151.1"
   },
   "type": "module"
 }
