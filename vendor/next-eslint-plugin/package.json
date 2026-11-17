@@ -14,7 +14,7 @@
     "dist"
   ],
   "dependencies": {
-    "@eslint-community/eslint-utils": "4.9.1",
+    "@eslint-community/eslint-utils": "4.10.1",
     "fast-glob": "3.3.1"
   }
 }
