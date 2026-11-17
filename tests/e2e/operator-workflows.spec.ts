@@ -25,7 +25,9 @@ test('requires an explicit access choice and opens a read-only session',async({p
  await expect(gate.getByRole('button',{name:'Read-Only Access'})).toBeVisible();
  await expect(gate.getByRole('button',{name:'Full Access'})).toBeVisible();
  await gate.getByRole('button',{name:'Read-Only Access'}).click();
- await expect(gate).toBeHidden();
+ // A cold Windows or CI launch can spend several seconds starting the local
+ // launcher handshake before the access gate closes.
+ await expect(gate).toBeHidden({timeout:15_000});
  await expect(page.getByRole('heading',{name:'R.A.P.T.O.R.'})).toBeVisible();
  await expect(page.getByText('Read-Only Access',{exact:true}).first()).toBeVisible();
  await expect(page.getByRole('button',{name:'+ Add User'})).toHaveCount(0);

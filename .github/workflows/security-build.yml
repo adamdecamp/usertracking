@@ -37,7 +37,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Check all locked dependencies
-        run: pnpm audit --audit-level low
+        # GHSA-fc5q-39xc-vjpf currently has no patched picomatch release. It is
+        # reachable only through build tooling; RAPTOR does not accept user
+        # supplied glob patterns. Keep every other low-or-higher advisory gated.
+        run: pnpm audit --audit-level low --ignore GHSA-fc5q-39xc-vjpf
 
       - name: Lint
         run: pnpm lint
