@@ -60,3 +60,19 @@ test('packages the R.A.P.T.O.R. brand and application icons consistently',()=>{
   assert.ok(statSync(url).size>1000,asset);
  }
 });
+
+test('future version tags publish a verified formal GitHub Release',()=>{
+ assert.match(release,/push:\s+tags: \['v\*'\]/);
+ assert.match(release,/pnpm audit --audit-level low --ignore GHSA-fc5q-39xc-vjpf/);
+ assert.match(release,/gh release create "\$\{\{ github\.ref_name \}\}"/);
+ for(const asset of [
+  'release\\RAPTOR.exe',
+  'release\\RAPTOR-Executive-Capability-Summary.pdf',
+  'release\\SHA256SUMS.txt',
+  'artifacts\\raptor-user-tracker.spdx.json',
+ ]){
+  assert.ok(release.includes(`"${asset}"`),asset);
+ }
+ assert.match(release,/--verify-tag/);
+ assert.match(release,/--generate-notes/);
+});

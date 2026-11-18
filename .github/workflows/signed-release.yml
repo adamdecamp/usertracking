@@ -36,7 +36,10 @@ jobs:
 
       - name: Security and quality checks
         run: |
-          pnpm audit --audit-level low
+          # GHSA-fc5q-39xc-vjpf currently has no patched picomatch release. It
+          # is reachable only through build tooling; RAPTOR does not accept
+          # user-supplied glob patterns. Keep every other advisory gated.
+          pnpm audit --audit-level low --ignore GHSA-fc5q-39xc-vjpf
           pnpm lint
           pnpm test
           pnpm build
