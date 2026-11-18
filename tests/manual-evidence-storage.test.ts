@@ -8,6 +8,7 @@ const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.met
 const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
 const storageRequest=readFileSync(new URL('../app/infrastructure/portable-storage-request.ts',import.meta.url),'utf8');
+const identityReview=readFileSync(new URL('../app/components/SyncIdentityReview.tsx',import.meta.url),'utf8');
 const store=page.slice(page.indexOf('type StoredEvidenceResult'),page.indexOf('function withStorageMutationTimeout'));
 
 test('manual evidence storage uses bounded stages instead of one composite two-minute timer',()=>{
@@ -77,9 +78,9 @@ test('encrypted evidence requires the complete filename gate in manual storage a
  assert.match(page,/if\(!emailAdmission\.allowed\)/);
  assert.match(page,/emailRequired:!emailAdmission\.missingOfficialEmail/);
  assert.match(page,/missingOfficialEmail:emailAdmission\.missingOfficialEmail/);
- assert.match(page,/readOnly=\{!item\.missingOfficialEmail\}/);
- assert.match(page,/Official Email Missing · Manual Entry Required/);
- assert.match(page,/missingEmailUsers=discoveredUsers\.filter\(item=>!failedNewUserIds\.has\(item\.record\.id\)/);
+ assert.match(identityReview,/readOnly=\{!item\.missingOfficialEmail\}/);
+ assert.match(identityReview,/Official Email Missing/);
+ assert.match(page,/missingEmailUsers=newDiscoveries\.filter\(item=>!failedNewUserIds\.has\(item\.record\.id\)/);
  assert.match(directoryHeader,/aria-label="Official Email Filter"/);
  assert.match(page,/emailFilter==='Official Email missing'/);
 });

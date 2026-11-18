@@ -9,8 +9,9 @@ test('Verified Sync isolates per-file provenance failures and commits successful
  assert.doesNotMatch(apply,/selected evidence file\(s\) could not be verified[\s\S]*?throw new Error/);
  assert.match(apply,/const provenanceFailures=provenanceResult\.failures\.map/);
  assert.match(apply,/eligibleStructuralUsers=structuralUsers\.filter/);
- assert.match(apply,/remainingCandidates=pendingSync\.candidates\.filter/);
- assert.match(apply,/remainingNewUsers=discoveredUsers\.filter/);
+ assert.match(apply,/remainingCandidates=retryableSyncCandidates\(pendingSync\.candidates,matchedResult\.candidates,approved,failedArtifactKeys\)/);
+ assert.match(apply,/remainingNewUsers=\[\.\.\.newDiscoveries\.filter/);
+ assert.match(apply,/\.\.\.matchedDiscoveryRemaining/);
  assert.match(apply,/current Sync review and Clean Up actions were preserved/);
 });
 
@@ -39,7 +40,7 @@ test('post-apply cleanup discovery reapplies active-folder and strict-filename g
 });
 
 test('Verified Sync automatically compresses only loose PDFs entering the database',()=>{
- assert.match(apply,/automaticZipIds=automaticDatabaseCompressionCandidateIds\(pendingSync\.zipCandidates,pendingSync\.candidates,approved,discoveredUsers\.map\(item=>item\.record\)\)/);
+ assert.match(apply,/automaticZipIds=automaticDatabaseCompressionCandidateIds\(pendingSync\.zipCandidates,pendingSync\.candidates,approved,newDiscoveries\.map\(item=>item\.record\)\)/);
  assert.match(apply,/selectedZipIds=new Set\(\[\.\.\.zipIds,\.\.\.automaticZipIds\]\)/);
  assert.match(apply,/Compressing Verified PDF Evidence/);
  assert.match(apply,/compressionResults\.get\(scanPathKey\(match\.path\)\)/);

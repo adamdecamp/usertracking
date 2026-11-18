@@ -7,7 +7,7 @@ export type {ComplianceException} from './domain/tracker-models.ts';
 export type ReconciliationUser={id:string;last:string;first:string;email:string;organization:string;disabled?:boolean;artifacts:{kind:string;filename:string;sha256?:string;path?:string}[]};
 export type ReconciliationEvidence={filename:string;path:string;sha256?:string;folderOrganization?:string};
 export type ReconciliationRejection={filename:string;reason:string;path?:string};
-export type ReconciliationIssue={id:string;category:'File Collision'|'Content Changed'|'Duplicate Identity'|'Duplicate Email'|'Account State Conflict'|'Organization Conflict'|'Rejected Evidence';severity:'High'|'Medium';summary:string;detail:string;path?:string;userId?:string};
+export type ReconciliationIssue={id:string;category:'File Collision'|'Content Changed'|'Duplicate Identity'|'Duplicate Email'|'Possible Duplicate User'|'Account State Conflict'|'Organization Conflict'|'Rejected Evidence';severity:'High'|'Medium';summary:string;detail:string;path?:string;userId?:string};
 export type SyncProvenanceArtifact={kind:string;filename:string;sha256?:string;path?:string;storedAt?:string;storedBy?:string;source?:string};
 export type SyncProvenanceUser={id:string;last:string;first:string;organization?:string;artifacts:SyncProvenanceArtifact[]};
 export type UserEvidenceArchiveScope={last:string;first:string;organization:string};

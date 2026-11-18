@@ -191,6 +191,9 @@ export default function Guide(){
    <ul>
     <li>New SAARs create users before supporting evidence is matched.</li>
     <li>Same-year supporting evidence may create a user with SAAR marked Missing.</li>
+    <li>When a discovered identity resembles an existing user, Sync shows possible matches based on reversed names, common nicknames, close spelling, initials, organization, or Official Email.</li>
+    <li>The operator must select the correct existing profile or explicitly confirm a new user. R.A.P.T.O.R. never merges a possible match automatically.</li>
+    <li>Each confirmed evidence match displays the destination user profile before changes are applied.</li>
     <li>The newest valid file date controls each user requirement.</li>
     <li>Duplicates, collisions, and conflicts are review items and do not stop unrelated work.</li>
     <li>Stop Sync discards uncommitted scan results while retaining safe recovery checkpoints.</li>
@@ -233,7 +236,8 @@ export default function Guide(){
    <h3>Reconciliation</h3>
    <ul>
     <li>Reconciliation compares database-recorded active evidence with current active locations.</li>
-    <li>It reports collisions, duplicate identities or emails, changed hashes, organization conflicts, and contradictory account states.</li>
+    <li>It reports collisions, duplicate identities or emails, possible duplicate users, changed hashes, organization conflicts, and contradictory account states.</li>
+    <li>Possible duplicate users include reversed names, common nicknames, matching initials, and close spelling. The operator must review and correct the records; Reconciliation never merges them.</li>
     <li>It ignores unrecorded evidence and files in Archive or Rework.</li>
     <li>Missing requirements remain in normal reporting and are not Reconciliation issues.</li>
     <li>Reconciliation is read-only and never moves files or changes records.</li>

@@ -18,6 +18,7 @@ const correctiveAction=(category:ReconciliationIssue['category'])=>({
  'Content Changed':'Confirm the current file is authorized, then replace or re-ingest it so the recorded SHA-256 matches.',
  'Duplicate Identity':'Review the records and retain one authoritative identity before the next Sync.',
  'Duplicate Email':'Confirm the correct account owner and update the duplicate Official Email entry.',
+ 'Possible Duplicate User':'Compare the profiles and evidence, then retain one authoritative user or document why both records are distinct.',
  'Account State Conflict':'Confirm whether the account is Active or Disabled and retain one authoritative state.',
  'Organization Conflict':'Correct the user organization or move and rename the evidence under the authoritative organization folder.',
  'Rejected Evidence':'Correct the reported filename, format, date, or readability problem before reprocessing.',
