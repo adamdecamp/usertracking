@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {annualRevalidationNotice,availableNotificationKinds,dodCyberTrainingUrl,individualNotificationBody,notificationBody,notificationKindForState,notificationTemplateFor,notificationUsesUserAgreementTemplate,privilegedUserTrainingUrl,qualificationMemoTemplatePattern,userAgreementTemplateFilename} from '../app/notification-utils.ts';
+import {annualRevalidationNotice,availableNotificationKinds,digitalSignatureNotice,dodCyberTrainingUrl,individualNotificationBody,notificationBody,notificationKindForState,notificationTemplateFor,notificationUsesUserAgreementTemplate,privilegedUserTrainingUrl,qualificationMemoNotice,qualificationMemoTemplatePattern,userAgreementTemplateFilename} from '../app/notification-utils.ts';
 
 test('creates the approved missing-artifact message',()=>{
  const message=notificationBody('Missing','DoD Cyber Cert');
@@ -79,6 +79,16 @@ test('states the annual revalidation policy in every automated email',()=>{
  }
 });
 
+test('warns every recipient that all required form fields must be completed before digital signature',()=>{
+ const requirements=['SAAR','DoD Cyber Cert','User Agreement','8140 Cert Memo','Privileged User Training Cert','DTA Training'];
+ assert.match(digitalSignatureNotice,/digital signature cannot be applied/i);
+ assert.match(digitalSignatureNotice,/all fields on the form/i);
+ for(const state of['Missing','Due Within 30 Days','Overdue'] as const)for(const requirement of requirements){
+  if(state!=='Missing'&&requirement==='SAAR')continue;
+  assert.equal(notificationBody(state,requirement).split(digitalSignatureNotice).length,2,`${state}: ${requirement}`);
+ }
+});
+
 test('replaces an invalid artifact selection when the notification status changes',()=>{
  const kinds=['SAAR','DoD Cyber Cert','User Agreement'];
  assert.deepEqual(availableNotificationKinds('Missing',kinds),kinds);
@@ -97,13 +107,19 @@ test('attaches only the exact User Agreement template for every actionable notic
 });
 
 test('attaches the dated 8140 qualification memo and explains certification handling',()=>{
- assert.equal(qualificationMemoTemplatePattern,'8140_Qualification_Memo DDMMMYYYY.pdf');
+ assert.equal(qualificationMemoTemplatePattern,'Last_First_(Org)_8140_Qualification_Memo_DDMMMYYYY.pdf');
  for(const state of['Missing','Due Within 30 Days','Overdue'] as const){
   assert.equal(notificationTemplateFor(state,'8140 Cert Memo'),'8140-qualification-memo');
   const message=notificationBody(state,'8140 Cert Memo');
-  assert.match(message,/do not attach the certification/i);
-  assert.match(message,/enter the certification information on the memo/i);
+  assert.match(message,/return only the attached 8140 Qualification Memo/i);
+  assert.match(message,/no longer require copies of your certifications/i);
+  assert.match(message,/do not attach certification documents/i);
+  assert.match(message,/enter the supporting certification information on the memo/i);
+  assert.match(message,/cannot self-certify/i);
+  assert.match(message,/appropriate authorized official/i);
  }
+ assert.match(qualificationMemoNotice,/return only the attached 8140 Qualification Memo/i);
+ assert.match(qualificationMemoNotice,/DoD 8570 has been superseded by DoD 8140/i);
  assert.equal(notificationTemplateFor('Missing','User Agreement'),'user-agreement');
  assert.equal(notificationTemplateFor('Missing','DoD Cyber Cert'),null);
 });
@@ -123,7 +139,9 @@ test('creates one polite individual draft for multiple actionable requirements',
  assert.equal(message.split(dodCyberTrainingUrl).length,2);
  assert.equal(message.split(privilegedUserTrainingUrl).length,2);
  assert.match(message,/complete and return the attached User Agreement/i);
- assert.match(message,/complete and return the attached 8140 Qualification Memo/i);
+ assert.match(message,/return only the attached 8140 Qualification Memo/i);
+ assert.match(message,/cannot self-certify/i);
+ assert.equal(message.split(digitalSignatureNotice).length,2);
  assert.match(message,/IMPORTANT — REQUIRED FILE NAMES/);
  assert.match(message,/Last_First_\(ORG\)_User_Agreement_DDMMMYYYY\.pdf/);
  assert.match(message,/Last_First_\(ORG\)_8140_Cert_Memo_DDMMMYYYY\.pdf/);

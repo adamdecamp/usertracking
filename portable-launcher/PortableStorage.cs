@@ -45,7 +45,7 @@ internal sealed partial class PortableStorage : IDisposable
     private const string TemplateDirectoryName = "Template";
     private const string ErrorReportsDirectoryName = "Error Reports";
     internal const string UserAgreementTemplateFilename = "Last_First_(ORG)_User_Agreement_DDMMMYYYY.pdf";
-    internal const string QualificationMemoTemplatePattern = "8140_Qualification_Memo DDMMMYYYY.pdf";
+    internal const string QualificationMemoTemplatePattern = "Last_First_(Org)_8140_Qualification_Memo_DDMMMYYYY.pdf";
     private const string ManifestFilename = "information-system-user-tracker.json";
     private const string ManifestChecksumFilename = ManifestFilename + ".sha256";
     private const string ManifestStorageFormat = "organization-sharded-v1";
@@ -535,13 +535,13 @@ internal sealed partial class PortableStorage : IDisposable
         foreach (string path in EnumerateScanFiles(Root(systemId), directory).Where(path => path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)))
         {
             string filename = Path.GetFileName(path);
-            Match match = Regex.Match(filename, @"^8140[_ ]Qualification[_ ]Memo[ _-]+(\d{2}[A-Za-z]{3}\d{4})\.pdf$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            Match match = Regex.Match(filename, @"^Last[_ ]First[_ ]\(Org\)[_ ]8140[_ ]Qualification[_ ]Memo[ _-]+(\d{2}[A-Za-z]{3}\d{4})\.pdf$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
             DateTime date;
             if (match.Success && DateTime.TryParseExact(match.Groups[1].Value, "ddMMMyyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out date)) matches.Add(new KeyValuePair<DateTime, string>(date, path));
-            else if (Regex.IsMatch(filename, @"^8140[_ ]Qualification[_ ]Memo[ _-]+DDMMMYYYY\.pdf$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) placeholder = path;
+            else if (Regex.IsMatch(filename, @"^Last[_ ]First[_ ]\(Org\)[_ ]8140[_ ]Qualification[_ ]Memo[ _-]+DDMMMYYYY\.pdf$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) placeholder = path;
         }
         string selected = matches.Count > 0 ? matches.OrderByDescending(item => item.Key).ThenByDescending(item => item.Value, StringComparer.OrdinalIgnoreCase).First().Value : placeholder;
-        if (String.IsNullOrWhiteSpace(selected)) throw new FileNotFoundException("Place the 8140 Qualification Memo template in Template using " + QualificationMemoTemplatePattern + " (for example, 8140_Qualification_Memo 06OCT2026.pdf). Spaces, underscores, or a hyphen before the date are accepted. Other Template-folder files are ignored.");
+        if (String.IsNullOrWhiteSpace(selected)) throw new FileNotFoundException("Place the 8140 Qualification Memo template in Template using " + QualificationMemoTemplatePattern + " (for example, Last_First_(Org)_8140_Qualification_Memo_06OCT2026.pdf). Spaces or underscores between words, and a space, underscore, or hyphen before the date, are accepted. Other Template-folder files are ignored.");
         string validationError;
         if (!TryValidateEvidenceFile(selected, out validationError)) throw new InvalidDataException("The 8140 Qualification Memo template is not a readable PDF. Replace Template\\" + Path.GetFileName(selected) + " before preparing the notification. " + validationError);
         return selected;

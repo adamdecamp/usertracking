@@ -289,7 +289,9 @@ export default function Guide(){
     <li>The subject includes the information system name.</li>
     <li>SAAR appears only in Missing notifications because it does not expire.</li>
     <li>User Agreement notices attach the approved User Agreement template.</li>
-    <li>8140 notices attach the newest approved 8140 Qualification Memo template.</li>
+     <li>8140 notices attach the newest approved template matching Last_First_(Org)_8140_Qualification_Memo_DDMMMYYYY.pdf.</li>
+    <li>8140 notices state that DoD 8570 has been superseded by DoD 8140, request only the completed memo, explain that certification copies are no longer required, and warn that users may not self-certify.</li>
+    <li>Every automated message warns that required form fields must be completed before a digital signature can be applied.</li>
     <li>DoD Cyber and Privileged User Training notices include their official training links.</li>
     <li>The required filename and rejection warning are highlighted in yellow.</li>
     <li>Messages explain the annual revalidation requirement and show a filename example.</li>
