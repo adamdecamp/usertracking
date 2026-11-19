@@ -12,6 +12,7 @@ test('formats bounded single-line error details for display and audit',()=>{
 test('states whether the error was recorded in an audit log',()=>{
  assert.match(detailedErrorMessage('Sync failed.', 'Disk unavailable.','recorded'),/Audit: Recorded/);
  assert.match(detailedErrorMessage('Sync failed.', 'Disk unavailable.','unavailable'),/No mapped system audit log/);
+ assert.match(detailedErrorMessage('Sync paused.', 'Lease changed.','skipped'),/second audit entry was not required/i);
  assert.match(detailedErrorMessage('Sync failed.', 'Disk unavailable.','failed','Audit directory denied.'),/Audit failure details: Audit directory denied/);
 });
 

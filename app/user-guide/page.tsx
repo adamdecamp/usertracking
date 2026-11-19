@@ -116,6 +116,8 @@ export default function Guide(){
    <ul>
     <li>Open a User Record and choose <b>Edit User Information</b> to correct name, organization, middle initial, or Official Email.</li>
     <li>Name or organization changes relabel and move active evidence without overwriting collisions.</li>
+    <li>Name or organization corrections also relabel associated Archive and Rework evidence while keeping each file in the same storage category.</li>
+    <li>If an individual file cannot move, its existing filename and verified location remain associated with the corrected user for later Reconciliation.</li>
     <li>Disable normally requires an updated SAAR; a documented justification may override the upload.</li>
     <li>Disabling preserves supporting-document status and archives associated evidence.</li>
     <li>A newer active SAAR may propose reactivation, but an operator must approve it.</li>
@@ -198,6 +200,7 @@ export default function Guide(){
     <li>Duplicates, collisions, and conflicts are review items and do not stop unrelated work.</li>
     <li>Stop Sync discards uncommitted scan results while retaining safe recovery checkpoints.</li>
     <li>Failed individual files are logged while the remaining files continue.</li>
+    <li>If the exclusive editor session changes, Sync preserves the existing database, pauses without creating a second audit failure, and provides a reconnect path.</li>
     <li>Deferred cleanup remains available from <b>Clean Up</b> after Sync Review closes.</li>
     <li>You may start another Sync without logging off or clearing earlier review results.</li>
    </ul>

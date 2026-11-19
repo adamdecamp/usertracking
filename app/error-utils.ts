@@ -22,7 +22,7 @@ export function isMissingEvidenceError(error:unknown){
 
 export function errorAuditAction(context:string,detail:string){return`ERROR: ${clean(context,160)}; details ${clean(detail,300)}`}
 
-export function detailedErrorMessage(context:string,detail:string,audit:'recorded'|'unavailable'|'failed',auditDetail=''){
- const auditText=audit==='recorded'?'Recorded in the mapped system audit log.':audit==='failed'?`The audit entry could not be written or verified; stop making changes and verify storage.${auditDetail?` Audit failure details: ${clean(auditDetail,300)}`:''}`:'No mapped system audit log was available.';
+export function detailedErrorMessage(context:string,detail:string,audit:'recorded'|'unavailable'|'failed'|'skipped',auditDetail=''){
+ const auditText=audit==='recorded'?'Recorded in the mapped system audit log.':audit==='failed'?`The audit entry could not be written or verified; stop making changes and verify storage.${auditDetail?` Audit failure details: ${clean(auditDetail,300)}`:''}`:audit==='skipped'?'A second audit entry was not required for this recovery notice.':'No mapped system audit log was available.';
  return`${context}\n\nDetails: ${detail}\n\nAudit: ${auditText}`;
 }

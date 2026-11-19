@@ -13,6 +13,8 @@ test('selected user records expose a controlled user-information editor',()=>{
 });
 
 test('identity edits relabel available evidence without blocking the user correction on one stale file',()=>{
+ const edit=page.slice(page.indexOf('async function editUserInformation'),page.indexOf('async function deleteUserRecord'));
+ assert.ok(edit.indexOf('await requireActiveLease(root)')<edit.indexOf('relabelUserArtifacts(root,previous,proposed)'),'The edit must renew or safely reacquire its exclusive session before changing files or the user record.');
  assert.match(page,/relabelUserArtifacts\(root,previous,proposed\)/);
  assert.match(page,/rollbackRelabeledArtifacts\(root,previous,updated,moves\)/);
  assert.match(page,/relabel-user-evidence\?path=/);

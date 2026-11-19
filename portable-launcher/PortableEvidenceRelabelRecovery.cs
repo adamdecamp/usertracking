@@ -6,6 +6,34 @@ using System.Linq;
 
 internal sealed partial class PortableStorage
 {
+    private string RelabelEvidenceDestinationDirectory(string systemId, string root, string logicalRelative, string organization, string artifactFolder, bool local, out string publicDirectory)
+    {
+        string normalized = (logicalRelative ?? "").Replace('\\', '/');string[] parts = normalized.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);int rework = -1, saarArchive = -1, archive = -1;
+        for (int index = 0; index < parts.Length - 1; index++)
+        {
+            if (IsReworkStorageDirectory(parts[index])) rework = index;
+            else if (IsPermanentSaarArchiveDirectory(parts[index])) saarArchive = index;
+            else if (String.Equals(parts[index], "Archive", StringComparison.OrdinalIgnoreCase) || parts[index].EndsWith(" Archive", StringComparison.OrdinalIgnoreCase)) archive = index;
+        }
+        var destinationParts = new List<string> { "Organizations", organization };int category = -1;
+        if (rework >= 0) { destinationParts.Add(SafePart(organization, 80) + " Rework");category = rework; }
+        else if (saarArchive >= 0) { destinationParts.Add(SafePart(organization, 80) + " SAAR Archive");category = saarArchive; }
+        else if (archive >= 0) { destinationParts.Add(SafePart(organization, 80) + " Archive");category = archive; }
+        else
+        {
+            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active, Archive, or Rework user evidence can be relabeled from the User Record.");
+            destinationParts.Add(OrganizationArtifactStorageFolder(artifactFolder, organization));
+        }
+        if (category >= 0) for (int index = category + 1; index < parts.Length - 1; index++)
+        {
+            if (IsManagedStorageDirectory(parts[index]) || IsIncomingStorageDirectory(parts[index]) || IsCompleteStorageDirectory(parts[index])) throw new InvalidDataException("The retained evidence path contains an unsupported nested storage folder.");
+            destinationParts.Add(SafePart(parts[index], 100));
+        }
+        publicDirectory = String.Join("/", destinationParts.ToArray());
+        if (local) return LocalIntakeDirectory(systemId, organization);
+        string directory = SafeRelativePath(root, publicDirectory);Directory.CreateDirectory(directory);return directory;
+    }
+
     private string ResolveRelabelEvidencePath(string systemId, string relative, string expectedSha256, out string evidenceRoot)
     {
         string source;

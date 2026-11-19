@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {runBestEffort} from '../app/application/user-information-edit.ts';
+import {relabelArtifactsForUserIdentity,runBestEffort} from '../app/application/user-information-edit.ts';
+
+test('identity edits attempt every associated file and preserve an association when one move fails',async()=>{
+ const prior={id:'user-1',systemId:'system-1',organization:'GOV',affiliatedOrganizations:[],last:'Ramey',first:'Edward',middle:'',email:'edward@example.mil',disabled:false,roles:['General'],privilegedUsernames:[],privilegedTypes:[],artifacts:[{kind:'DoD Cyber Cert',filename:'Ramey_Edward_(GOV)_DoD_Cyber_Cert_18SEP2025.pdf.zip',path:'Organizations/GOV/GOV Archive/2025-09-18/Ramey_Edward_(GOV)_DoD_Cyber_Cert_18SEP2025.pdf.zip'},{kind:'User Agreement',filename:'Ramey_Edward_(GOV)_User_Agreement_08JAN2026.pdf.zip',path:'Organizations/GOV/GOV Rework/Ramey_Edward_(GOV)_User_Agreement_08JAN2026.pdf.zip'}]},next={...prior,organization:'EDITORG',last:'Edwards'},attempted:string[]=[];
+ const result=await relabelArtifactsForUserIdentity(prior,next,async artifact=>({path:artifact.path!}),async(artifact,filename)=>{attempted.push(artifact.path!);if(artifact.kind==='User Agreement')throw new Error('Network file is locked.');return`Organizations/EDITORG/${filename}`});
+ assert.deepEqual(attempted,prior.artifacts.map(artifact=>artifact.path));
+ assert.equal(result.moves.length,1);
+ assert.equal(result.issues.length,1);
+ assert.equal(result.issues[0].artifact,prior.artifacts[1]);
+});
 
 test('best-effort evidence relabeling completes other files after an individual failure',async()=>{
  const visited:string[]=[];

@@ -151,11 +151,13 @@ test('a live heartbeat cancels only a pending browser-closed shutdown',()=>{
 });
 
 test('lease loss stops active work and preserves the current Sync review',()=>{
- assert.match(page,/if\(!ok\)\{if\(protectedOperationActive\(systemId\)\)return;syncAbort\.current\?\.abort\(\)/);
+ assert.match(page,/async function renewOrReacquireLease/);
+ assert.match(page,/renewOrReacquireLease\(root,sessionId\)\.then\(result=>\{if\(!result\.acquired\)\{if\(protectedOperationActive\(systemId\)\)return;syncAbort\.current\?\.abort\(\)/);
  const apply=page.slice(page.indexOf('async function applyVerifiedSync'),page.indexOf('function resetFilters'));
  assert.match(apply,/if\(error instanceof SessionLeaseLostError\)throw error/g);
  assert.match(apply,/pendingSyncBySystem\.current\.set\(failedSystemId,pendingSync\)/);
  assert.match(apply,/Verified Sync Paused/);
+ assert.match(page,/Sync paused after the editor session changed; the database was not replaced\.[\s\S]*?\{audit:false/);
 });
 
 test('a recoverable verified Sync error preserves review and cleanup actions',()=>{
