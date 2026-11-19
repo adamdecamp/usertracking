@@ -8,6 +8,7 @@ const workflowTypes=readFileSync(new URL('../app/tracker-workflow-types.ts',impo
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 const storageRequest=readFileSync(new URL('../app/infrastructure/portable-storage-request.ts',import.meta.url),'utf8');
+const launcherSession=readFileSync(new URL('../app/infrastructure/launcher-session-client.ts',import.meta.url),'utf8');
 
 test('the portable page sends presence immediately and throughout an open session',()=>{
  assert.match(page,/startPortablePresenceHeartbeat\(\(\)=>launcherPost\('\/api\/presence',true\)\)/);
@@ -97,7 +98,8 @@ test('launcher finalization never blocks its UI thread or interrupts active stor
 });
 
 test('Sync confirms launcher activity before its first serialized storage request',()=>{
- assert.match(page,/setSyncRunning\(true\);await setLauncherLongOperation\(true,true\);const launcherKeepAlive/);
+ assert.match(page,/setSyncRunning\(true\);let finishLauncherOperation/);
+ assert.match(page,/try\{\s*finishLauncherOperation=await startLauncherProtectedOperation\(\)/);
 });
 
 test('long scans and verified updates hold the launcher and browser session active end to end',()=>{
@@ -107,8 +109,9 @@ test('long scans and verified updates hold the launcher and browser session acti
  assert.match(launcher,/lastLongOperationHeartbeatUtc >= TimeSpan\.FromMinutes\(5\)/);
  const apply=page.slice(page.indexOf('async function applyVerifiedSync'),page.indexOf('function resetFilters'));
  assert.match(apply,/syncInProgress\.current=true/);
- assert.match(apply,/setLauncherLongOperation\(true,true\)/);
- assert.match(apply,/finally\{window\.clearInterval\(launcherKeepAlive\);syncInProgress\.current=false/);
+ assert.match(apply,/startLauncherProtectedOperation\(\)/);
+ assert.match(apply,/finally\{finishLauncherOperation\?\.\(\);syncInProgress\.current=false/);
+ assert.match(launcherSession,/setInterval\(\(\)=>void setLauncherLongOperation\(true,true\),30\*1000\)/);
  assert.match(storageRequest,/stage==='scan'\|\|stage==='rework-retention'\|\|stage==='sync-pipeline'\|\|stage==='workspace-publish'\?4\*60\*60\*1000/);
 });
 
@@ -118,14 +121,17 @@ test('Session Commit cannot be disconnected by its independent lease heartbeat',
  const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
  const renew=storage.slice(storage.indexOf('public bool RenewLease'),storage.indexOf('public bool OwnsLease'));
  assert.match(commit,/syncInProgress\.current=true/,'Session Commit must suspend browser inactivity handling before it begins.');
- assert.match(commit,/setLauncherLongOperation\(true,true\)/,'Session Commit must keep the Windows launcher alive while it publishes.');
- assert.match(commit,/finally\{[\s\S]*?syncInProgress\.current=false[\s\S]*?setLauncherLongOperation\(false,true\)/,'Session Commit must release its long-operation hold only after completion or failure.');
+ assert.match(commit,/startLauncherProtectedOperation\(\)/,'Session Commit must keep the Windows launcher alive while it publishes.');
+ assert.match(commit,/finally\{finishLauncherOperation\?\.\(\);syncInProgress\.current=false/,'Session Commit must release its long-operation hold only after completion or failure.');
+ assert.match(launcherSession,/return\(\)=>\{window\.clearInterval\(keepalive\);void setLauncherLongOperation\(false,true\)\}/,'The shared protected-operation guard must always expose a matching release.');
  assert.match(leaseEffect,/protectedOperationActive=\(systemId:string\)=>syncInProgress\.current\|\|publicationBySystem\.current\.has\(systemId\)/);
  assert.match(leaseEffect,/leaseRenewPending\.current\|\|protectedWork\)return/,'The periodic lease request must not compete with an active commit or Sync.');
  assert.match(leaseEffect,/if\(protectedOperationActive\(systemId\)\)return;syncAbort/,'A late lease response must not falsely block protected work that is still active.');
  assert.match(renew,/held\.LastRenewedUtc = DateTime\.UtcNow/,'Lease heartbeat renewal must update launcher-local liveness.');
  assert.doesNotMatch(renew,/RefreshLease|WriteLeaseMetadata|LeaseFenceMatches/,'Periodic lease heartbeat renewal must not perform a blocking shared-drive write.');
  assert.match(launcher,/if \(serializedStorage && StorageActionRequiresLease\(action, parts\[0\]\)[\s\S]*?storage\.RenewLease\(systemId, leaseSession\)/,'Authorized storage operations must refresh local lease liveness before becoming idle.');
+ const owns=storage.slice(storage.indexOf('public bool OwnsLease'),storage.indexOf('public void ReleaseLease'));
+ assert.match(owns,/if \(owns\) lock \(mapGate\) held\.LastRenewedUtc = DateTime\.UtcNow/,'A successful fenced authorization must refresh local lease activity.');
 });
 
 test('evidence that fails canonical folder routing cannot enter database matching',()=>{

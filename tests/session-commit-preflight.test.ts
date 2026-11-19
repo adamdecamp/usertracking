@@ -5,6 +5,7 @@ import {decodeWorkspaceStatusResponse} from '../app/infrastructure/portable-cont
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
+const launcherSession=readFileSync(new URL('../app/infrastructure/launcher-session-client.ts',import.meta.url),'utf8');
 
 test('workspace status decoder accepts the bounded local preflight contract',()=>{
  const hash='a'.repeat(64),result=decodeWorkspaceStatusResponse({
@@ -65,9 +66,10 @@ test('Session Commit reports distinct local, publication, verification, and fina
 test('Session Commit owns a renewable long-operation hold until its final result',()=>{
  const commit=page.slice(page.indexOf('async function commitSession'),page.indexOf('async function logOff'));
  assert.ok(commit.indexOf('syncInProgress.current=true')<commit.indexOf("startProcessing('Commit Session'"),'The browser idle guard must be active before Commit starts.');
- assert.ok(commit.indexOf('setLauncherLongOperation(true,true)')<commit.indexOf('publishSystemWorkspace'),'The launcher hold must be active before publication starts.');
- assert.match(commit,/setInterval\(\(\)=>void setLauncherLongOperation\(true,true\),30\*1000\)/,'A slow publication must renew its launcher hold.');
- assert.match(commit,/finally\{[\s\S]*?clearInterval\(launcherKeepAlive\)[\s\S]*?syncInProgress\.current=false[\s\S]*?lastActivity\.current=Date\.now\(\)[\s\S]*?setLauncherLongOperation\(false,true\)/,'The idle timer must restart only after Commit finishes.');
+ assert.ok(commit.indexOf('startLauncherProtectedOperation()')<commit.indexOf('publishSystemWorkspace'),'The launcher hold must be active before publication starts.');
+ assert.match(launcherSession,/setInterval\(\(\)=>void setLauncherLongOperation\(true,true\),30\*1000\)/,'A slow publication must renew its launcher hold.');
+ assert.match(commit,/finally\{finishLauncherOperation\?\.\(\);syncInProgress\.current=false;lastActivity\.current=Date\.now\(\)\}/,'The idle timer must restart only after Commit finishes.');
+ assert.match(launcherSession,/window\.clearInterval\(keepalive\);void setLauncherLongOperation\(false,true\)/,'Finishing Commit must release its launcher hold.');
 });
 
 test('Session Commit queue wait matches its long-running transport window',()=>{

@@ -3150,7 +3150,9 @@ internal sealed partial class PortableStorage : IDisposable
         {
             HeldLease held;
             lock (mapGate) heldLeases.TryGetValue(systemId, out held);
-            return held != null && String.Equals(held.SessionId, sessionId, StringComparison.Ordinal) && LeaseFenceMatches(systemId, held);
+            bool owns = held != null && String.Equals(held.SessionId, sessionId, StringComparison.Ordinal) && LeaseFenceMatches(systemId, held);
+            if (owns) lock (mapGate) held.LastRenewedUtc = DateTime.UtcNow;
+            return owns;
         }
     }
 

@@ -22,4 +22,6 @@ test('identity edits relabel available evidence without blocking the user correc
  assert.match(page,/Resolve that file collision before changing this user/);
  assert.match(page,/User Updated — Evidence Needs Review/);
  assert.match(page,/evidence reconciliation warnings/);
+ assert.match(edit,/startLauncherProtectedOperation\(\)/,'A multi-file user edit must keep the launcher and editor lease active until the complete edit finishes.');
+ assert.match(edit,/finally\{finishLauncherOperation\?\.\(\);syncInProgress\.current=false;lastActivity\.current=Date\.now\(\)\}/,'A user edit must always release its keep-alive after success or failure.');
 });
