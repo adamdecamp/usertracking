@@ -1,13 +1,13 @@
-import type {ComplianceStatus} from './compliance-report';
-import {evidenceDaysOverdue,evidenceDaysUntilDue,evidenceStatusAt} from './compliance-rules';
-import {acceptsEvidenceExtension} from './evidence-validation';
-import {canonicalArtifactKind,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,parseDate} from './filename-utils';
-import type {UserRecord} from './domain/tracker-models';
-import {requiredKindsForUser} from './user-requirements';
-import {activeComplianceException} from './workflow-utils';
+import type {ComplianceStatus} from './compliance-report.ts';
+import {evidenceDaysOverdue,evidenceDaysUntilDue,evidenceStatusAt} from './compliance-rules.ts';
+import {acceptsEvidenceExtension} from './evidence-validation.ts';
+import {canonicalArtifactKind,disabledSaarFilename,filenameMatchesKind,parseDate} from './filename-utils.ts';
+import type {UserRecord} from './domain/tracker-models.ts';
+import {requiredKindsForUser} from './user-requirements.ts';
+import {activeComplianceException} from './workflow-utils.ts';
 
 export function newestMatch<T>(items:T[],kind:string,nameOf:(item:T)=>string){let match:T|undefined,newest=-Infinity;for(const item of items){const name=nameOf(item);if(!filenameMatchesKind(name,kind))continue;const time=parseDate(name)?.getTime();if(time!==undefined&&time>newest){match=item;newest=time}}return match}
-export function newestArtifactFor(user:UserRecord,kind:string){return newestMatch(user.artifacts.filter(artifact=>canonicalArtifactKind(artifact.kind)===kind&&acceptsEvidenceExtension(artifact.filename)&&(kind!=='SAAR'||user.disabled||!disabledSaarFilename(artifact.filename))&&(user.disabled||kind==='SAAR'||filenameIdentityMatches(artifact.filename,user))),kind,artifact=>artifact.filename)}
+export function newestArtifactFor(user:UserRecord,kind:string){return newestMatch(user.artifacts.filter(artifact=>canonicalArtifactKind(artifact.kind)===kind&&acceptsEvidenceExtension(artifact.filename)&&(kind!=='SAAR'||user.disabled||!disabledSaarFilename(artifact.filename))),kind,artifact=>artifact.filename)}
 export function statusFor(user:UserRecord,kind:string,asOf=new Date()):ComplianceStatus{const artifact=newestArtifactFor(user,kind),date=artifact&&parseDate(artifact.filename);return date?evidenceStatusAt(kind,date,asOf):'Missing'}
 export function daysOverdueFor(user:UserRecord,kind:string,asOf:Date){const artifact=newestArtifactFor(user,kind),date=artifact&&parseDate(artifact.filename);return date?evidenceDaysOverdue(kind,date,asOf):0}
 export function daysUntilDueFor(user:UserRecord,kind:string,asOf:Date){const artifact=newestArtifactFor(user,kind),date=artifact&&parseDate(artifact.filename);return date?evidenceDaysUntilDue(kind,date,asOf):undefined}
