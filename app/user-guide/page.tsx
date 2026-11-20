@@ -202,7 +202,7 @@ export default function Guide(){
     <li>Failed individual files are logged while the remaining files continue.</li>
     <li>If the exclusive editor session changes, Sync preserves the existing database, pauses without creating a second audit failure, and provides a reconnect path.</li>
     <li>Deferred cleanup remains available from <b>Clean Up</b> after Sync Review closes.</li>
-    <li>You may start another Sync without logging off or clearing earlier review results.</li>
+    <li>You may start another Sync without logging off. The new Sync starts a fresh review and does not carry the previous result list forward. Updates already applied to the local database remain available for Session Commit.</li>
    </ul>
    <h3>Local-First Session</h3>
    <ul>

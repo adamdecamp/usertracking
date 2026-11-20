@@ -639,12 +639,10 @@ function duplicateArchiveCandidates(usersToCheck:UserRecord[],evidence:ScannedEv
    const controller=new AbortController();syncAbort.current=controller;syncInProgress.current=true;lastActivity.current=Date.now();setSyncRunning(true);let finishLauncherOperation:(()=>void)|undefined;
   setSyncText('Scanning…');
    const scopeLabel=organization?`${organization} Organization`: 'Entire System',legacyImport=isLegacyImport(syncMode),modeLabel=syncModeLabel(syncMode);
-   // Checkpoints are protected inside this computer's mapped workspace, whose
-   // storage key can differ from the logical information-system ID.
    const syncJob=createSyncJob(isPortableRoot(h)?h.systemId:systemId,modeLabel,scopeLabel);activeSyncJobs.set(systemId,syncJob);
    startProcessing(forceFull?`${scopeLabel} ${modeLabel} Full Rescan`:`${scopeLabel} ${modeLabel}`,'Loading the Local JSON Database',undefined,'files');
   try{
-   finishLauncherOperation=await startLauncherProtectedOperation();
+   finishLauncherOperation=await startLauncherProtectedOperation();const prior=pendingSyncBySystem.current.get(systemId);if(prior)await commitSyncRuns(h,prior.syncRunIds);pendingSyncBySystem.current.delete(systemId);setPendingSync(null);
    await persistSyncJob(h,syncJob);
    const shared=await readManifest(h,controller.signal,true);throwIfSyncCancelled(controller.signal);const currentSystem=baseSystems.find(s=>s.id===systemId),sourceSystem=shared?.systems[0]??currentSystem;
    if(!sourceSystem)throw new Error('The selected information system could not be loaded.');

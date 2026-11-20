@@ -30,12 +30,19 @@ test('offers only entire-system or immediate-organization Sync scope',()=>{
  assert.doesNotMatch(page,/onClick=\{\(\)=>void sync\(true\)\}/);
 });
 
-test('allows another scoped Sync while earlier review results are pending',()=>{
+test('starts another scoped Sync with a fresh review result set',()=>{
  const openScope=page.slice(page.indexOf('async function openSyncScope'),page.indexOf('function stopSync'));
+ const startSync=page.slice(page.indexOf('async function syncMapped'),page.indexOf('async function sync(forceFull'));
  assert.doesNotMatch(openScope,/if\(pendingSync\).*sync-review/);
  assert.match(openScope,/setModal\(null\);setSyncScopeOpen\(true\)/);
- assert.match(syncUi,/Previous Results Remain Available/);
+ assert.match(syncUi,/Fresh Result Set/);
+ assert.doesNotMatch(syncUi,/Previous Results Remain Available/);
  assert.match(syncUi,/hasPendingResults\?`Start Another \$\{syncModeLabel\(syncMode\)\}`:`Start \$\{syncModeLabel\(syncMode\)\}`/);
+ assert.match(startSync,/prior=pendingSyncBySystem\.current\.get\(systemId\)/);
+ assert.match(startSync,/await commitSyncRuns\(h,prior\.syncRunIds\)/);
+ assert.match(startSync,/pendingSyncBySystem\.current\.delete\(systemId\)/);
+ assert.match(startSync,/setPendingSync\(null\)/);
+ assert.ok(startSync.indexOf('setPendingSync(null)')<startSync.indexOf('await persistSyncJob'));
  assert.match(page,/tracker:start-another-sync/);
  assert.match(page,/>Start Another Sync<\/button>/);
  assert.doesNotMatch(page,/setSyncText\('Review Matches'\)/);
