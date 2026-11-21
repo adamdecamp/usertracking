@@ -36,6 +36,7 @@ export function officialEmailUpdate(currentEmail:string,nextEmail:string,otherEm
   return{allowed:true,email:''} as const;
  }
  if(next.length>254||!emailPattern.test(next))return{allowed:false,reason:'Enter a valid Official Email address.'} as const;
+ if(current.toLowerCase()===next.toLowerCase())return{allowed:true,email:next} as const;
  if(otherEmails.some(value=>value.trim().toLowerCase()===next.toLowerCase()))return{allowed:false,reason:'That Official Email is already assigned to another user record.'} as const;
  return{allowed:true,email:next} as const;
 }

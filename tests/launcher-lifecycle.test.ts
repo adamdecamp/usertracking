@@ -33,6 +33,7 @@ test('slow network storage queues safely instead of failing after five seconds',
  assert.match(launcher,/StorageQueueWaitMilliseconds\(action, parts\[0\]\)/);
  assert.match(policy,/String\.Equals\(action, "workspace-publish"[\s\S]*?4 \* 60 \* 60 \* 1000/,'Session Commit must be allowed to wait behind a legitimate long-running storage operation instead of failing after two minutes.');
  assert.match(policy,/\? 30000 : 120000/,'Ordinary storage reads and writes must retain their bounded queue waits.');
+ assert.match(policy,/String\.Equals\(action, "audit-batch"[\s\S]*?10 \* 60 \* 1000/,'Tamper-evident audit batches must tolerate a slow or already-running audit append without failing after the ordinary two-minute queue wait.');
  assert.doesNotMatch(launcher,/storageOperations\.WaitAsync\(5000\)/);
  assert.match(launcher,/client\.ReceiveTimeout = 120000; client\.SendTimeout = 120000/);
  assert.match(launcher,/ActiveStorageOperation\(systemId\)/);

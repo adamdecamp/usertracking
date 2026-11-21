@@ -119,6 +119,7 @@ export default function Guide(){
     <li>Available evidence is then relabeled as best-effort follow-up work without overwriting collisions.</li>
     <li>Name or organization corrections also relabel associated Archive and Rework evidence while keeping each file in the same storage category.</li>
     <li>If an individual file is stale, unavailable, or slow, its existing association remains with the corrected user and the file is listed for later Reconciliation. The user correction is not reversed.</li>
+    <li>A pre-existing duplicate identity or Official Email is flagged for Reconciliation but does not block an operator from correcting the User Record.</li>
     <li>Disable normally requires an updated SAAR; a documented justification may override the upload.</li>
     <li>Disabling preserves supporting-document status and archives associated evidence.</li>
     <li>A newer active SAAR may propose reactivation, but an operator must approve it.</li>

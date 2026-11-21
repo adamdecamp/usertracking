@@ -49,6 +49,14 @@ function editDistanceAtMostOne(left:string,right:string){
 
 function organizationMatches(left:string,right:string){return left.trim().toLocaleUpperCase('en-US')===right.trim().toLocaleUpperCase('en-US')}
 
+export function userInformationEditConflicts(previous:Pick<UserRecord,'id'|'systemId'>,next:Pick<UserRecord,'last'|'first'|'organization'|'email'>,users:UserRecord[]){
+ const candidates=users.filter(user=>user.systemId===previous.systemId&&user.id!==previous.id),last=comparablePersonName(next.last),first=comparablePersonName(next.first),email=next.email.trim().toLocaleUpperCase('en-US');
+ const identity=candidates.find(user=>comparablePersonName(user.last)===last&&comparablePersonName(user.first)===first&&organizationMatches(user.organization,next.organization));
+ const emailOwner=email?candidates.find(user=>user.email.trim().toLocaleUpperCase('en-US')===email):undefined;
+ const messages=[identity?`Another User Record already has this name and storage organization (${identity.last}, ${identity.first} · ${identity.organization}).`:undefined,emailOwner?`Another User Record already uses this Official Email (${emailOwner.last}, ${emailOwner.first} · ${emailOwner.organization}).`:undefined].filter((value):value is string=>!!value);
+ return{identity,emailOwner,messages};
+}
+
 export function possibleExistingUserMatches(incoming:Pick<UserRecord,'last'|'first'|'email'|'organization'>,existing:UserRecord[],limit=8):PossibleUserMatch[]{
  const incomingLast=comparablePersonName(incoming.last),incomingFirst=comparablePersonName(incoming.first),incomingEmail=incoming.email.trim().toLocaleUpperCase('en-US');
  if(!incomingLast||!incomingFirst)return[];
@@ -85,5 +93,10 @@ export function possibleDuplicateUsers(users:UserRecord[]):PossibleDuplicateUser
 }
 
 export function possibleDuplicateUserIssues(users:UserRecord[]):ReconciliationIssue[]{
- return possibleDuplicateUsers(users).map(finding=>({id:`possible-user:${[finding.left.id,finding.right.id].sort().join(':')}`,category:'Possible Duplicate User',severity:'Medium',summary:`${finding.left.last}, ${finding.left.first} may be the same person as ${finding.right.last}, ${finding.right.first}`,detail:`${finding.reason}. Profile 1: ${finding.left.organization} · ${finding.left.email||'Official Email Missing'} · ${finding.left.disabled?'Disabled':'Active'}. Profile 2: ${finding.right.organization} · ${finding.right.email||'Official Email Missing'} · ${finding.right.disabled?'Disabled':'Active'}. Operator confirmation is required; Reconciliation made no changes.`}));
+ const identityGroups=new Map<string,UserRecord[]>(),emailGroups=new Map<string,UserRecord[]>();
+ for(const user of users){const identity=`${user.systemId}\0${comparablePersonName(user.last)}\0${comparablePersonName(user.first)}\0${user.organization.trim().toLocaleUpperCase('en-US')}`,email=user.email.trim().toLocaleUpperCase('en-US');identityGroups.set(identity,[...(identityGroups.get(identity)??[]),user]);if(email)emailGroups.set(`${user.systemId}\0${email}`,[...(emailGroups.get(`${user.systemId}\0${email}`)??[]),user])}
+ const exactIdentity=Array.from(identityGroups.values()).filter(group=>group.length>1).map((group):ReconciliationIssue=>({id:`duplicate-identity:${group.map(user=>user.id).sort().join(':')}`,category:'Duplicate Identity',severity:'High',summary:`${group[0].last}, ${group[0].first} has ${group.length} records in ${group[0].organization}`,detail:`Exact Last Name, First Name, and storage organization match. Records: ${group.map(user=>`${user.email||'Official Email Missing'} · ${user.disabled?'Disabled':'Active'}`).join(' | ')}. Operator review is required; Reconciliation made no changes.`}));
+ const exactEmail=Array.from(emailGroups.entries()).filter(([,group])=>group.length>1).map(([key,group]):ReconciliationIssue=>({id:`duplicate-email:${group.map(user=>user.id).sort().join(':')}`,category:'Duplicate Email',severity:'High',summary:`${key.slice(key.indexOf('\0')+1)} is assigned to ${group.length} records`,detail:`Records: ${group.map(user=>`${user.last}, ${user.first} · ${user.organization} · ${user.disabled?'Disabled':'Active'}`).join(' | ')}. Operator review is required; Reconciliation made no changes.`}));
+ const possible=possibleDuplicateUsers(users).map((finding):ReconciliationIssue=>({id:`possible-user:${[finding.left.id,finding.right.id].sort().join(':')}`,category:'Possible Duplicate User',severity:'Medium',summary:`${finding.left.last}, ${finding.left.first} may be the same person as ${finding.right.last}, ${finding.right.first}`,detail:`${finding.reason}. Profile 1: ${finding.left.organization} · ${finding.left.email||'Official Email Missing'} · ${finding.left.disabled?'Disabled':'Active'}. Profile 2: ${finding.right.organization} · ${finding.right.email||'Official Email Missing'} · ${finding.right.disabled?'Disabled':'Active'}. Operator confirmation is required; Reconciliation made no changes.`}));
+ return[...exactIdentity,...exactEmail,...possible];
 }

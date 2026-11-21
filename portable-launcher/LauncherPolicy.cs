@@ -67,6 +67,7 @@ internal static class LauncherPolicy
         // on slow shared drives. Keep ordinary mutations bounded, but let the durable,
         // journaled publication wait for the operation ahead of it to finish.
         if (String.Equals(action, "workspace-publish", StringComparison.Ordinal)) return 4 * 60 * 60 * 1000;
+        if (String.Equals(action, "audit-batch", StringComparison.Ordinal)) return 10 * 60 * 1000;
         return String.Equals(method, "GET", StringComparison.Ordinal) || String.Equals(method, "HEAD", StringComparison.Ordinal) ? 30000 : 120000;
     }
 

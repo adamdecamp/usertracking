@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const application=readFileSync(new URL('../app/application/sync-user-match-application.ts',import.meta.url),'utf8');
+const editApplication=readFileSync(new URL('../app/application/user-information-edit.ts',import.meta.url),'utf8');
 const relabelRecovery=readFileSync(new URL('../portable-launcher/PortableEvidenceRelabelRecovery.cs',import.meta.url),'utf8');
 
 test('selected user records expose a controlled user-information editor',()=>{
@@ -12,6 +13,8 @@ test('selected user records expose a controlled user-information editor',()=>{
  assert.match(page,/Official Email<input type="email"/);
  assert.match(page,/action:'Edit User Information'/);
  assert.match(application,/action:'Reconcile Edited User Evidence'/);
+ assert.doesNotMatch(page,/Another record has this name and storage organization\. Resolve the duplicate before saving/);
+ assert.match(page,/userInformationEditConflicts/);
 });
 
 test('identity edits relabel available evidence without blocking the user correction on one stale file',()=>{
@@ -23,7 +26,7 @@ test('identity edits relabel available evidence without blocking the user correc
  assert.match(page,/relabel-user-evidence\?path=/);
  assert.match(page,/sha256=\$\{encodeURIComponent\(expectedSha256\)\}/);
  assert.match(page,/Resolve that file collision before changing this user/);
- assert.match(page,/User Updated — Evidence Needs Review/);
+ assert.match(editApplication,/User Updated — Evidence Needs Review/);
  assert.match(page,/retained associations for Reconciliation/);
  assert.match(edit,/startLauncherProtectedOperation\(\)/,'A multi-file user edit must keep the launcher and editor lease active until the complete edit finishes.');
  assert.match(edit,/finally\{finishLauncherOperation\?\.\(\);syncInProgress\.current=false;lastActivity\.current=Date\.now\(\)\}/,'A user edit must always release its keep-alive after success or failure.');

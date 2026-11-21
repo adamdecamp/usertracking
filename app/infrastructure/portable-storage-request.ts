@@ -22,14 +22,14 @@ function reconciliationDelay(delayMs:number,signal?:AbortSignal|null){
 
 export async function portableStorageRequest(options:StorageRequestOptions){
  const{systemId,action,init,networkWriteTimeoutMs,launcherHeaders,onStart,onFinish,reconciliationPollDelayMs=1000}=options,method=(init?.method??'GET').toUpperCase(),stage=action.split('?')[0],retrySafe=method==='GET'&&/^(?:manifest|scan|locations|backups|verify|audit-verify|audit-view|last-logon|performance|diagnostics|recovery|catalog-recovery|workspace-progress|file|organizations|evidence-status|evidence-pdf-status|evidence-exists)(?:[?]|$)/.test(action),operationId=crypto.randomUUID(),headers=launcherHeaders(init?.headers);headers.set('X-Tracker-Operation-Id',operationId);
- const timeoutMs=stage==='scan'||stage==='rework-retention'||stage==='sync-pipeline'||stage==='workspace-publish'?4*60*60*1000:stage==='select'||stage==='select-readonly'||stage.startsWith('unarchive-select')||stage==='restore'?15*60*1000:stage==='manifest'||stage==='csv'||stage==='state-commit'?networkWriteTimeoutMs:stage==='evidence'||stage==='evidence-pdf'||stage==='file'?5*60*1000:stage==='evidence-status'||stage==='evidence-pdf-status'?90_000:5*60*1000,requestInit={credentials:'same-origin' as const,cache:'no-store' as const,...init,headers};
+ const timeoutMs=stage==='scan'||stage==='rework-retention'||stage==='sync-pipeline'||stage==='workspace-publish'?4*60*60*1000:stage==='select'||stage==='select-readonly'||stage.startsWith('unarchive-select')||stage==='restore'?15*60*1000:stage==='manifest'||stage==='csv'||stage==='state-commit'||stage==='audit-batch'?networkWriteTimeoutMs:stage==='evidence'||stage==='evidence-pdf'||stage==='file'?5*60*1000:stage==='evidence-status'||stage==='evidence-pdf-status'?90_000:5*60*1000,requestInit={credentials:'same-origin' as const,cache:'no-store' as const,...init,headers};
  onStart(operationId,stage.replaceAll('-',' '));
  try{
   let response:Response;
   try{response=await portableFetch(fetch,`/api/storage/${encodeURIComponent(systemId)}/${action}`,action,requestInit,retrySafe,750,timeoutMs)}catch(error){
    const mayHaveCompleted=(method==='POST'||method==='DELETE')&&!['select','select-readonly'].includes(stage)&&!init?.signal?.aborted;
    if(!mayHaveCompleted)throw error;
-   const durablePublication=stage==='workspace-publish',detectionDeadline=Date.now()+10_000;let observedRunning=false,recoveryDeadline=durablePublication?Date.now()+timeoutMs:Date.now();
+   const durablePublication=stage==='workspace-publish'||stage==='audit-batch',detectionDeadline=Date.now()+10_000;let observedRunning=false,recoveryDeadline=durablePublication?Date.now()+timeoutMs:Date.now();
    do{
     let backgroundFailure:Error|undefined;
     try{

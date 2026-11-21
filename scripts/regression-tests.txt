@@ -51,6 +51,7 @@ tests/user-requirements.test.ts
 tests/user-status-association.test.ts
 tests/user-save-timeout.test.ts
 tests/user-edit-ui.test.ts
+tests/user-match-service.test.ts
 tests/workflow-utils.test.ts
 tests/data-migrations.test.ts
 tests/extraction-provenance.test.ts
@@ -60,5 +61,6 @@ tests/system-commit-service.test.ts
 tests/runtime-contract-fuzz.test.ts
 tests/architecture-boundaries.test.ts
 tests/security-workflow.test.ts
+tests/keyed-serial-queue.test.ts
 tests/legacy-workspace-recovery.test.ts
 tests/read-only-recovery.test.ts
