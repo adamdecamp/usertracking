@@ -115,9 +115,10 @@ export default function Guide(){
    <h3>Edit, Disable, Re-Enable, or Delete</h3>
    <ul>
     <li>Open a User Record and choose <b>Edit User Information</b> to correct name, organization, middle initial, or Official Email.</li>
-    <li>Name or organization changes relabel and move active evidence without overwriting collisions.</li>
+    <li>Name or organization corrections save the User Record first, before any evidence file is relabeled or moved.</li>
+    <li>Available evidence is then relabeled as best-effort follow-up work without overwriting collisions.</li>
     <li>Name or organization corrections also relabel associated Archive and Rework evidence while keeping each file in the same storage category.</li>
-    <li>If an individual file cannot move, its existing filename and verified location remain associated with the corrected user for later Reconciliation.</li>
+    <li>If an individual file is stale, unavailable, or slow, its existing association remains with the corrected user and the file is listed for later Reconciliation. The user correction is not reversed.</li>
     <li>Disable normally requires an updated SAAR; a documented justification may override the upload.</li>
     <li>Disabling preserves supporting-document status and archives associated evidence.</li>
     <li>A newer active SAAR may propose reactivation, but an operator must approve it.</li>

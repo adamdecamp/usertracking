@@ -2456,7 +2456,7 @@ internal sealed partial class PortableStorage : IDisposable
             string destination = Path.Combine(directory, safeName), destinationRelative = publicDirectory + "/" + safeName;
             if (String.Equals(source, destination, StringComparison.OrdinalIgnoreCase)) return json.Serialize(new Dictionary<string, object> { { "path", sourceRelative }, { "filename", Path.GetFileName(source) }, { "alreadyCompleted", true } });
             if (File.Exists(destination)) return json.Serialize(new Dictionary<string, object> { { "path", sourceRelative }, { "filename", Path.GetFileName(source) }, { "collision", true }, { "existing", destinationRelative } });
-            string sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "relabel-user-evidence", source, destination, sourceHash, "");
+            string recordedHash = CleanLine(expectedSha256, 64).ToLowerInvariant(), sourceHash = IsSha256(recordedHash) ? recordedHash : Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "relabel-user-evidence", source, destination, sourceHash, "");
             File.Move(source, destination);FailAfter("relabel-user-evidence-move");
             try { if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The relabeled evidence failed its SHA-256 integrity check."); }
             catch { if (!File.Exists(source) && File.Exists(destination)) File.Move(destination, source);throw; }

@@ -54,10 +54,13 @@ internal sealed partial class PortableStorage
                 if (File.Exists(physical) && !ContainsManagedStorageDirectory(Relative(sharedRoot, physical))) candidates.Add(Tuple.Create(sharedRoot, physical));
             }
         }
-        if (candidates.Count == 0) candidates = RelabelEvidenceCandidates(sharedRoot, organization, requestedName, expected);
+        // User-record edits must not recursively scan the full shared organization
+        // tree once a recorded path is stale. That work belongs to explicit
+        // Reconciliation. A record correction remains authoritative while the
+        // prior evidence association is preserved for later review.
         candidates = candidates.GroupBy(item => Path.GetFullPath(item.Item2), StringComparer.OrdinalIgnoreCase).Select(group => group.First()).ToList();
         if (candidates.Count > 1) throw new InvalidDataException("More than one current evidence file matches the stale user-record reference. Resolve the duplicate in Clean Up before editing this user.");
-        if (candidates.Count == 0) throw new FileNotFoundException("The selected evidence file no longer exists and no unique current file matched its recorded filename or SHA-256 hash.");
+        if (candidates.Count == 0) throw new FileNotFoundException("The selected evidence file no longer exists at its recorded path and no indexed local or published location matched it. The user record can still be corrected; run Reconciliation to resolve the retained evidence association.");
         evidenceRoot = candidates[0].Item1;return candidates[0].Item2;
     }
 

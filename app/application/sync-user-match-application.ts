@@ -1,4 +1,4 @@
-import type {Artifact,UserRecord} from '../domain/tracker-models';
+import type {Artifact,ChangeRecord,UserRecord} from '../domain/tracker-models';
 import type {SyncCandidate,SyncNewUser} from '../tracker-workflow-types';
 import {canonicalArtifactKind} from '../filename-utils';
 import {normalizeAffiliatedOrganizations} from '../affiliated-organization-utils';
@@ -6,6 +6,13 @@ import {statusFor} from '../user-status-utils';
 
 export type RelabeledArtifactMove={before:Artifact;after:Artifact};
 export type RelabeledArtifactIssue={artifact:Artifact;reason:string};
+
+export function editedUserEvidenceReconciliation(savedRecord:UserRecord,priorArtifacts:Artifact[],moves:RelabeledArtifactMove[],issues:RelabeledArtifactIssue[],actor:string,timestamp=new Date().toISOString()){
+ const issueDetails=`${issues.slice(0,10).map(issue=>`${issue.artifact.filename}: ${issue.reason}`).join(' | ')}${issues.length>10?` | ${issues.length-10} additional file${issues.length-10===1?'':'s'} listed in Reconciliation`:''}`;
+ const artifacts=priorArtifacts.map(artifact=>moves.find(move=>move.before===artifact)?.after??artifact);
+ const evidenceRecord:ChangeRecord={timestamp,actor,action:'Reconcile Edited User Evidence',description:[moves.length?`Relabeled ${moves.length} associated evidence file${moves.length===1?'':'s'}.`:'No associated evidence files were relabeled.',issues.length?`${issues.length} file${issues.length===1?' remains':'s remain'} associated at the prior filename or location for Reconciliation.`:''].filter(Boolean).join(' '),rolesBefore:[...savedRecord.roles],rolesAfter:[...savedRecord.roles],files:moves.map(move=>move.after.filename)};
+ return{issueDetails,reconciledRecord:{...savedRecord,artifacts,changes:[...(savedRecord.changes??[]),evidenceRecord]}};
+}
 
 export function retryableSyncCandidates(pending:SyncCandidate[],matched:SyncCandidate[],approved:Set<string>,failedArtifactKeys:Set<string>){
  const failed=(candidate:SyncCandidate)=>failedArtifactKeys.has(`${candidate.userId}:${canonicalArtifactKind(candidate.kind)}`);

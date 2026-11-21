@@ -49,6 +49,7 @@ tests/security-headers.test.ts
 tests/user-update-utils.test.ts
 tests/user-requirements.test.ts
 tests/user-status-association.test.ts
+tests/user-save-timeout.test.ts
 tests/user-edit-ui.test.ts
 tests/workflow-utils.test.ts
 tests/data-migrations.test.ts
