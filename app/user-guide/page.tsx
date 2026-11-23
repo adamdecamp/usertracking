@@ -208,6 +208,14 @@ export default function Guide(){
     <li><b>Full Rescan:</b> Ignores cached validation and inspects all active in-scope evidence.</li>
     <li>Document-type subfolders cannot be selected as independent Sync scopes.</li>
    </ul>
+   <h3>Send Notices from a Group Mailbox</h3>
+   <p>Open <b>Notifications</b> and choose <b>Change</b> next to <b>Send From</b>, then enter the Exchange group mailbox address. The setting is kept on this computer and applies to every Outlook draft R.A.P.T.O.R. prepares: artifact notifications, individual follow-ups, and ISSO snapshots.</p>
+   <ul>
+    <li>If the group mailbox is an account in your Outlook, the draft uses that account. Otherwise it is sent on behalf of the mailbox, which needs <b>Send As</b> or <b>Send on Behalf</b> permission from your Exchange administrator.</li>
+    <li>Drafts still open for your review; R.A.P.T.O.R. never sends mail itself. Replies go to the group mailbox, where <b>Check Outlook</b> can collect them.</li>
+    <li>While a group mailbox is set, a computer without classic Outlook opens no draft, so a notice cannot go out from a personal address by mistake.</li>
+    <li>Choose <b>Use My Account</b> to return to your default Outlook account. Every change is recorded in the audit log, and each draft&apos;s audit entry names the mailbox it was prepared from.</li>
+   </ul>
    <h3>Evidence from Outlook</h3>
    <p>In Full Access, the Sync window can collect evidence that users email back. Ask users to reply with the requested file named in the standard format, such as <b>Brown_Jacob_(LM)_DTA_Training_26AUG2026.pdf</b>. An Outlook rule that moves those replies into a dedicated folder keeps the check fast.</p>
    <ol>

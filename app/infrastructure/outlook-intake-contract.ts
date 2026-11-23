@@ -25,6 +25,8 @@ export const decodeOutlookIntakeResult:RuntimeDecoder<OutlookIntakeResult>=value
  return{cancelled:false,folder:stringValue(record.folder,context,'$.folder',200),scanned:numberValue(record.scanned,context,'$.scanned'),previouslyProcessed:numberValue(record.previouslyProcessed,context,'$.previouslyProcessed'),withoutPdf:numberValue(record.withoutPdf,context,'$.withoutPdf'),saved:decodeFiles(record.saved,'$.saved',false),skipped:decodeFiles(record.skipped,'$.skipped',true)};
 };
 
+export const decodeOutlookSendFrom:RuntimeDecoder<{address:string}>=value=>({address:stringValue(objectValue(value,'Outlook Send From').address,'Outlook Send From','$.address',254)});
+
 export const decodeOutlookFolderResult:RuntimeDecoder<OutlookFolderResult>=value=>{
  const record=objectValue(value,'Outlook folder selection');
  return booleanValue(record.cancelled,'Outlook folder selection','$.cancelled')?{cancelled:true}:{cancelled:false,folder:stringValue(record.folder,'Outlook folder selection','$.folder',200)};

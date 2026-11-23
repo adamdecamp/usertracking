@@ -337,7 +337,7 @@ internal sealed partial class TrackerContext : ApplicationContext
                     else if (action == "evidence-status" && parts[0] == "GET") response = storage.VerifyStoredEvidence(systemId, QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"), QueryValue(target, "sha256"));
                     else if (action == "evidence-pdf-status" && parts[0] == "GET") response = storage.VerifyStoredEvidencePdf(systemId, QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"), QueryValue(target, "sha256"));
                     else if (action == "outlook-draft" && parts[0] == "POST") response = OpenOutlookDraft(systemId, requestBody);
-                    else if (action == "outlook-folder" && parts[0] == "POST") response = ChooseOutlookIntakeFolder(systemId); else if (action == "outlook-intake" && parts[0] == "POST") response = RunOutlookIntake(systemId, requestBody);
+                    else if (action == "outlook-folder" && parts[0] == "POST") response = ChooseOutlookIntakeFolder(systemId); else if (action == "outlook-intake" && parts[0] == "POST") response = RunOutlookIntake(systemId, requestBody); else if (action == "outlook-sender" && (parts[0] == "GET" || parts[0] == "POST")) response = storage.OutlookSendFromSetting(systemId, parts[0], requestBody);
                     else if (action == "report" && parts[0] == "POST") response = storage.StoreReport(systemId, QueryValue(target, "filename"), requestBody);
                     else if (action == "error-report" && parts[0] == "POST") response = storage.StoreErrorReport(systemId, QueryValue(target, "filename"), Encoding.UTF8.GetString(requestBody));
                     else if (action == "audit" && parts[0] == "POST") { storage.AppendAudit(systemId, Encoding.UTF8.GetString(requestBody)); response = "{\"ok\":true}"; }
@@ -642,7 +642,7 @@ internal sealed partial class TrackerContext : ApplicationContext
             var payload = package != null && package.ContainsKey("payload") ? package["payload"] as Dictionary<string, object> : null;
             if (payload == null || !payload.ContainsKey("format") || !String.Equals(Convert.ToString(payload["format"]), "RAPTOR Organization Status", StringComparison.Ordinal)) throw new InvalidDataException("The organization status attachment is not a valid R.A.P.T.O.R. snapshot.");
         }
-        if (Interlocked.CompareExchange(ref outlookDraftActive, 1, 0) != 0) throw new InvalidOperationException("Another Outlook draft is still being prepared. Wait for it to open before trying again.");
+        string sendFrom = storage.ReadOutlookSendFrom();if (Interlocked.CompareExchange(ref outlookDraftActive, 1, 0) != 0) throw new InvalidOperationException("Another Outlook draft is still being prepared. Wait for it to open before trying again.");
         string htmlBody = OutlookHtmlBody(body), operationId = Guid.NewGuid().ToString("N").ToUpperInvariant();
         var outlookThread = new Thread(new ThreadStart(delegate
         {
@@ -668,9 +668,9 @@ internal sealed partial class TrackerContext : ApplicationContext
                     temporaryAttachmentPaths.Add(temporaryAttachmentPath);attachmentPaths.Add(temporaryAttachmentPath);
                 }
                 Type outlookType = Type.GetTypeFromProgID("Outlook.Application");
-                if (outlookType == null) { string fallback = OutlookDraftFallback.Open(to, recipients, subject, htmlBody, body, attachmentPaths);RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + fallback + "; operator review required before sending", null, operationId);return; }
+                if (outlookType == null) { RefuseOutlookFallbackForSendFrom(sendFrom);string fallback = OutlookDraftFallback.Open(to, recipients, subject, htmlBody, body, attachmentPaths);RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + fallback + "; operator review required before sending", null, operationId);return; }
                 outlook = Activator.CreateInstance(outlookType);
-                message = outlookType.InvokeMember("CreateItem", BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance, null, outlook, new object[] { 0 });
+                message = outlookType.InvokeMember("CreateItem", BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance, null, outlook, new object[] { 0 });string sentFrom = ApplyOutlookSendFrom(outlook, message, sendFrom);
                 Type messageType = message.GetType();
                 if (!String.IsNullOrWhiteSpace(to)) messageType.InvokeMember("To", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { to });
                 else messageType.InvokeMember("BCC", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { String.Join(";", recipients) });
@@ -683,7 +683,7 @@ internal sealed partial class TrackerContext : ApplicationContext
                 messageType.InvokeMember("Display", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { false });
                 string signatureHtml = Convert.ToString(messageType.InvokeMember("HTMLBody", BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, null));
                 messageType.InvokeMember("HTMLBody", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { OutlookHtmlWithSignature(htmlBody, signatureHtml) });
-                RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + (String.IsNullOrWhiteSpace(to) ? recipients.Length + " BCC recipients" : "one To recipient") + "; managed templates " + (attachTemplate ? String.Join(", ", templateTypes) + " attached" : "not applicable") + "; organization snapshot " + (attachOrganizationSnapshot ? "attached" : "not applicable") + "; operator review required before sending", null, operationId);
+                RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + (String.IsNullOrWhiteSpace(to) ? recipients.Length + " BCC recipients" : "one To recipient") + "; managed templates " + (attachTemplate ? String.Join(", ", templateTypes) + " attached" : "not applicable") + "; organization snapshot " + (attachOrganizationSnapshot ? "attached" : "not applicable") + "; from " + sentFrom + "; operator review required before sending", null, operationId);
             }
             catch (Exception error)
             {

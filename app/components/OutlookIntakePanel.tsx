@@ -6,7 +6,7 @@ import {decodeOutlookFolderResult,decodeOutlookIntakeResult,type OutlookIntakeRe
 import {outlookIntakeLookbackDays,outlookIntakeRequest,outlookIntakeSummary,sentOnBehalf} from '../application/outlook-intake';
 import type {UserRecord} from '../domain/tracker-models';
 
-export type OutlookIntakeRequest=(action:'outlook-folder'|'outlook-intake',body?:string)=>Promise<Response>;
+export type OutlookIntakeRequest=(action:'outlook-folder'|'outlook-intake'|'outlook-sender',init?:RequestInit)=>Promise<Response>;
 
 /** Copies approved-sender PDF replies from one Outlook folder into organization intake for the operator's next Daily Sync. */
 export function OutlookIntakePanel({systemId,users,request}:{systemId:string;users:readonly UserRecord[];request?:OutlookIntakeRequest}){
@@ -15,8 +15,8 @@ export function OutlookIntakePanel({systemId,users,request}:{systemId:string;use
  const run=async(kind:'folder'|'check')=>{
   setBusy(kind);setError('');setStatus(kind==='folder'?'Choose the folder in the Outlook window. It may open behind this window.':'Reading Outlook…');
   try{
-   if(kind==='folder'){const chosen=await decodeJsonResponse(await request('outlook-folder'),'Outlook folder selection',decodeOutlookFolderResult);setStatus(chosen.cancelled?'No folder was chosen.':`Outlook folder set to ${chosen.folder}. Choose Check Outlook to look for evidence.`);return}
-   const checked=await decodeJsonResponse(await request('outlook-intake',outlookIntakeRequest(users,systemId)),'Outlook intake',decodeOutlookIntakeResult);setResult(checked);setStatus(outlookIntakeSummary(checked));
+   if(kind==='folder'){const chosen=await decodeJsonResponse(await request('outlook-folder',{method:'POST'}),'Outlook folder selection',decodeOutlookFolderResult);setStatus(chosen.cancelled?'No folder was chosen.':`Outlook folder set to ${chosen.folder}. Choose Check Outlook to look for evidence.`);return}
+   const checked=await decodeJsonResponse(await request('outlook-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:outlookIntakeRequest(users,systemId)}),'Outlook intake',decodeOutlookIntakeResult);setResult(checked);setStatus(outlookIntakeSummary(checked));
   }catch(caught){setStatus('');setError(caught instanceof Error?caught.message:'Outlook could not be checked.')}
   finally{setBusy('')}
  };

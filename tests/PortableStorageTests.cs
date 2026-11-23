@@ -472,6 +472,15 @@ internal static class PortableStorageTests
             catch (InvalidDataException) { rejected = true; }
             Assert(rejected, "Outlook intake must refuse to run without at least one approved sender.");
             Assert(storage.ReadAuditLogs("intake").Contains("OUTLOOK INTAKE: folder RAPTOR Intake; 7 messages read; 1 PDF attachments copied"), "Every Outlook intake run must be recorded in the audit chain.");
+            Assert(PortableStorage.ValidOutlookSendFrom(" Compliance@Example.mil ") == "compliance@example.mil" && PortableStorage.ValidOutlookSendFrom("") == null, "The Send From mailbox must be stored as one plain lower-case address.");
+            foreach (string invalid in new[] { "Compliance <compliance@example.mil>", "compliance", "a@b.mil;c@d.mil" }) { bool refused = false;try { PortableStorage.ValidOutlookSendFrom(invalid); } catch (InvalidDataException) { refused = true; }Assert(refused, "The Send From mailbox must reject " + invalid + "."); }
+            Assert(LauncherPolicy.StorageActionRequiresLease("outlook-sender", "POST") && LauncherPolicy.RequestBodyLimit("/api/storage/system/outlook-sender", "POST") == 4 * 1024, "Changing the Send From mailbox must require Full Access and a small request.");
+            Assert(storage.OutlookSendFromSetting("intake", "GET", null) == "{\"address\":\"\"}" && storage.ReadOutlookSendFrom() == null, "A computer without a Send From mailbox must use the operator's default Outlook account.");
+            Assert(storage.OutlookSendFromSetting("intake", "POST", Encoding.UTF8.GetBytes("{\"address\":\"Compliance@Example.mil\"}")) == "{\"address\":\"compliance@example.mil\"}" && storage.ReadOutlookSendFrom() == "compliance@example.mil", "The Send From mailbox must be saved on this computer.");
+            Assert(storage.ReadAuditLogs("intake").Contains("OUTLOOK SEND FROM CHANGED ON THIS COMPUTER: from default Outlook account to compliance@example.mil"), "Changing the Send From mailbox must be audited.");
+            bool badSender = false;try { storage.OutlookSendFromSetting("intake", "POST", Encoding.UTF8.GetBytes("{\"address\":\"not an address\"}")); } catch (InvalidDataException) { badSender = true; }
+            Assert(badSender && storage.ReadOutlookSendFrom() == "compliance@example.mil", "An invalid Send From entry must leave the saved mailbox unchanged.");
+            Assert(storage.OutlookSendFromSetting("intake", "POST", Encoding.UTF8.GetBytes("{\"address\":\"\"}")) == "{\"address\":\"\"}" && storage.ReadOutlookSendFrom() == null, "Clearing the Send From mailbox must return drafts to the default Outlook account.");
         }
     }
 
