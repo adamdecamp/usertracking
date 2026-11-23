@@ -6,6 +6,17 @@ export const encryptedOrganizationStatusPackageFormat='RAPTOR Encrypted Organiza
 export const encryptedOrganizationStatusPackageVersion=1;
 export const organizationStatusKdfIterations=600_000;
 
+/**
+ * What opening a snapshot actually proves. A plain snapshot carries an unkeyed
+ * SHA-256, which catches damage but not deliberate edits (anyone can recompute
+ * it). AES-GCM with a shared passphrase also detects tampering.
+ */
+export function organizationStatusTrustNote(encrypted:boolean){
+ return encrypted
+  ?'Encrypted snapshot; its passphrase also confirms it was not altered. Evidence files are not included.'
+  :'Snapshot checked for file damage. It does not prove who created it; use an encrypted snapshot when that matters. Evidence files are not included.';
+}
+
 export type OrganizationStatusArtifact={kind:string;filename:string};
 export type OrganizationStatusException={artifact:string;reason:string;expiresOn:string};
 export type OrganizationStatusUser={id:string;last:string;first:string;middle:string;email:string;disabled:boolean;roles:string[];privilegedTypes:string[];artifacts:OrganizationStatusArtifact[];exceptions:OrganizationStatusException[]};

@@ -97,7 +97,7 @@ test('DTA Training is an annual DTA requirement throughout the directory workflo
  assert.match(statusUtils,/requiredKinds=\(user:UserRecord\)=>requiredKindsForUser\(user\)/);
  assert.match(page,/visible\.some\(u=>requirementAppliesToUser\(u,kind\)\)/);
  assert.match(page,/status not-applicable">N\/A/);
- assert.match(statusUtils,/return date\?evidenceStatusAt\(kind,date,asOf\):'Missing'/);
+ assert.match(statusUtils,/return date\?evidenceStatusAt\(kind,date,asOf,zoneFor\(user\)\):'Missing'/);
  assert.match(page,/\['8140 Cert Memo','Privileged User Training Cert','DTA Training'\]/);
 });
 
@@ -128,7 +128,7 @@ test('dashboard reports user-level compliance and age never removes overdue evid
  assert.match(page,/Compliant Users/);
  assert.match(page,/Non-Compliant Users/);
  assert.doesNotMatch(page,/Current Records/);
- assert.match(page,/required\.every\(k=>statusFor\(u,k,asOf\)==='Current'\)/);
+ assert.match(readFileSync(new URL('../app/application/dashboard-stats.ts',import.meta.url),'utf8'),/required\.every\(k=>statusFor\(user,k,asOf\)==='Current'\)/);
  assert.match(page,/archiveCandidates=distinctByPath\(duplicateCandidates\),reworkCandidates=distinctByPath\(correctionSources\)/);
  assert.doesNotMatch(page,/Recognizable filename date is more than 90 days overdue/);
 });

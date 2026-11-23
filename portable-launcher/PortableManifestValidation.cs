@@ -2,9 +2,19 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Text.RegularExpressions;
 
 internal sealed partial class PortableStorage
 {
+    // Manifest v7 adds an optional per-system IANA time zone that decides Due and Overdue dates.
+    // .NET Framework only knows Windows zone IDs, so check the name's shape here; the client verifies it with Intl.
+    private static void ValidateSystemTimeZone(Dictionary<string, object> system)
+    {
+        if (!system.ContainsKey("timeZone")) return;
+        string value = system["timeZone"] as string;
+        if (value == null || value.Length > 64 || !Regex.IsMatch(value, @"^(?:UTC|[A-Za-z][A-Za-z0-9_+\-]*(?:/[A-Za-z0-9_+\-]+){1,2})$", RegexOptions.CultureInvariant)) throw new InvalidDataException("A system record has an invalid timeZone field.");
+    }
+
     private static void ValidateExtractionProvenance(Dictionary<string, object> provenance)
     {
         var keys = new HashSet<string>(new[] { "identity", "organization", "officialEmail", "designation", "accountType" }, StringComparer.Ordinal);var sources = new HashSet<string>(new[] { "Filename", "Organization Folder", "SAAR AcroForm", "DD2875 XFA", "Selectable PDF Text", "Operator" }, StringComparer.Ordinal);if (provenance.Count > keys.Count) throw new InvalidDataException("A user extraction-provenance record exceeds its field limit.");

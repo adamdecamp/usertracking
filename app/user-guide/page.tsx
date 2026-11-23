@@ -61,6 +61,7 @@ export default function Guide(){
     <li>Archiving locks the system and its users while preserving the records.</li>
     <li>Mapping remembers the path for the signed-in Windows user and loads an existing system manifest.</li>
     <li>Remap only when the shared path changes or becomes unavailable.</li>
+    <li>Each system has a <b>Time Zone</b>. Full Access asks for it the first time a system without one is opened; change it later with <b>Manage Systems → Edit</b>. Until it is set, each computer uses its own time zone.</li>
    </ul>
    <h3>Organization Folders</h3>
    <ul>
@@ -84,6 +85,8 @@ export default function Guide(){
     <li>DTA-only users require DTA Training and show 8140 Memo as N/A.</li>
     <li>SAAR status is <b>Present</b> or <b>Missing</b>; SAARs never expire.</li>
     <li>Annual evidence becomes Due Within 30 Days, then Overdue, and remains Overdue until replaced.</li>
+    <li>Evidence is due one year after its filename date and shows <b>Due Today</b> on that date. It becomes Overdue at midnight in the system&apos;s time zone, so every operator sees the same day counts.</li>
+    <li>A temporary exception applies through the end of its expiration date in the system&apos;s time zone.</li>
    </ul>
    <h3>Add a User</h3>
    <ol>
@@ -293,6 +296,7 @@ export default function Guide(){
     <li>Select one organization and enter its ISSO email.</li>
     <li>Include disabled users in the snapshot.</li>
     <li>Use passphrase encryption for transport outside the protected shared folder.</li>
+    <li>An unencrypted snapshot is checked for file damage only; anyone could edit it and recompute its checksum. Encrypt it when the recipient must trust that it was not altered.</li>
     <li>Send the passphrase separately.</li>
     <li>The recipient opens the snapshot in the standalone R.A.P.T.O.R. executable without main-share access.</li>
    </ul>

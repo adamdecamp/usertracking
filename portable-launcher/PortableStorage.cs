@@ -622,7 +622,7 @@ internal sealed partial class PortableStorage : IDisposable
         string storageFormat = stored.ContainsKey("storageFormat") ? Convert.ToString(stored["storageFormat"], CultureInfo.InvariantCulture) : "";
         if (!String.Equals(storageFormat, ManifestStorageFormat, StringComparison.Ordinal)) return MigrateDatabaseObject(stored);
         if (!stored.ContainsKey("version") || !stored.ContainsKey("systems") || !stored.ContainsKey("userShards") || !stored.ContainsKey("stateHash") || !stored.ContainsKey("userCount")) throw new InvalidDataException("The sharded database catalog is invalid.");
-        int catalogVersion = Convert.ToInt32(stored["version"], CultureInfo.InvariantCulture);if (catalogVersion != 2 && catalogVersion != 3 && catalogVersion != 4) throw new InvalidDataException("The sharded database catalog uses an unsupported version.");
+        int catalogVersion = Convert.ToInt32(stored["version"], CultureInfo.InvariantCulture);if (catalogVersion < 2 || catalogVersion > 5) throw new InvalidDataException("The sharded database catalog uses an unsupported version.");
         int expectedTotal = Convert.ToInt32(stored["userCount"], CultureInfo.InvariantCulture);if (expectedTotal < 0 || expectedTotal > 100000) throw new InvalidDataException("The sharded database catalog user count is invalid.");
         object[] shardReferences = ObjectArray(stored["userShards"]);if (shardReferences.Length > 1000) throw new InvalidDataException("The sharded database catalog exceeds its organization limit.");
         string systemDirectory = Path.Combine(root, SystemDirectoryName), shardRoot = Path.Combine(systemDirectory, ManifestShardDirectoryName), shardRootPrefix = Path.GetFullPath(shardRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
@@ -652,9 +652,9 @@ internal sealed partial class PortableStorage : IDisposable
         }
         if (positionedUsers.Count != expectedTotal) throw new InvalidDataException("The sharded database catalog user count does not match its organization shards.");
         object[] users = positionedUsers.OrderBy(value => value.Item1).Select(value => value.Item2).ToArray();
-        var storedLogical = new Dictionary<string, object> { { "version", catalogVersion == 4 ? 6 : catalogVersion == 3 ? 5 : 4 }, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
+        var storedLogical = new Dictionary<string, object> { { "version", catalogVersion + 2 } /* catalog v5 holds manifest v7, v4 holds v6, and so on */, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
         if (catalogVersion >= 3) { storedLogical["minimumApplicationVersion"] = stored["minimumApplicationVersion"];storedLogical["lastWriterVersion"] = stored["lastWriterVersion"]; }
-        if (catalogVersion == 4) storedLogical["recognitionAliases"] = stored.ContainsKey("recognitionAliases") ? stored["recognitionAliases"] : new object[0];
+        if (catalogVersion >= 4) storedLogical["recognitionAliases"] = stored.ContainsKey("recognitionAliases") ? stored["recognitionAliases"] : new object[0];
         // Verify the exact persisted representation before applying backward-compatible
         // defaults. Otherwise a legitimate migration (for example adding an empty
         // historical change.files array) would incorrectly look like tampering.
@@ -678,7 +678,7 @@ internal sealed partial class PortableStorage : IDisposable
             else { AtomicWrite(path, bytes);if (!String.Equals(TryFileHash(path), hash, StringComparison.OrdinalIgnoreCase)) throw new IOException("A database organization shard failed post-write SHA-256 verification."); }
             references.Add(new Dictionary<string, object> { { "organization", group.Key }, { "file", ManifestShardDirectoryName + "/" + filename }, { "sha256", hash }, { "records", records.Length } });
         }
-        var catalog = new Dictionary<string, object> { { "version", 4 }, { "minimumApplicationVersion", database["minimumApplicationVersion"] }, { "lastWriterVersion", CurrentApplicationVersion }, { "updated", updated }, { "storageFormat", ManifestStorageFormat }, { "stateHash", StateHash(database) }, { "systems", database["systems"] }, { "recognitionAliases", database["recognitionAliases"] }, { "userCount", users.Length }, { "userShards", references.ToArray() } };
+        var catalog = new Dictionary<string, object> { { "version", 5 }, { "minimumApplicationVersion", database["minimumApplicationVersion"] }, { "lastWriterVersion", CurrentApplicationVersion }, { "updated", updated }, { "storageFormat", ManifestStorageFormat }, { "stateHash", StateHash(database) }, { "systems", database["systems"] }, { "recognitionAliases", database["recognitionAliases"] }, { "userCount", users.Length }, { "userShards", references.ToArray() } };
         byte[] catalogBytes = Encoding.UTF8.GetBytes(json.Serialize(catalog));if (catalogBytes.LongLength > ManifestLimit) throw new InvalidDataException("The sharded database catalog exceeds the 50 MB safety limit.");
         return catalogBytes;
     }
@@ -3333,7 +3333,8 @@ internal sealed partial class PortableStorage : IDisposable
         if (version == 3) { value["version"] = 4;version = 4; }
         if (version == 4) { value["version"] = 5;value["minimumApplicationVersion"] = CurrentApplicationVersion;value["lastWriterVersion"] = CurrentApplicationVersion;version = 5; }
         if (version == 5) { value["version"] = 6;value["recognitionAliases"] = new object[0];version = 6; }
-        if (version != 6 || !value.ContainsKey("systems") || !value.ContainsKey("users") || !value.ContainsKey("recognitionAliases")) throw new InvalidDataException("The database manifest format is invalid or uses a newer unsupported schema.");
+        if (version == 6) { value["version"] = 7;version = 7; } // v7: optional systems[].timeZone; older clients drop it, so they must refuse v7.
+        if (version != 7 || !value.ContainsKey("systems") || !value.ContainsKey("users") || !value.ContainsKey("recognitionAliases")) throw new InvalidDataException("The database manifest format is invalid or uses a newer unsupported schema.");
         string minimumVersion = RequiredBoundedString(value, "minimumApplicationVersion", 40, false, "database"), lastWriterVersion = RequiredBoundedString(value, "lastWriterVersion", 40, false, "database");
         if (CompareApplicationVersions(minimumVersion, CurrentApplicationVersion) > 0) throw new InvalidDataException("This shared system requires R.A.P.T.O.R. " + CleanLine(minimumVersion, 40) + " or newer. Install the current approved release before opening this system.");
         if (!ValidApplicationVersion(lastWriterVersion)) throw new InvalidDataException("The database manifest contains an invalid writer version.");
@@ -3343,7 +3344,7 @@ internal sealed partial class PortableStorage : IDisposable
         foreach (object raw in systems)
         {
             Dictionary<string, object> system = ObjectDictionary(raw);string id = RequiredBoundedString(system, "id", 100, false, "system"), name = RequiredBoundedString(system, "name", 200, false, "system");
-            RequiredBoundedString(system, "type", 200, true, "system");RequiredBoundedString(system, "organization", 200, true, "system");RequiredBoolean(system, "archived", "system");
+            RequiredBoundedString(system, "type", 200, true, "system");RequiredBoundedString(system, "organization", 200, true, "system");RequiredBoolean(system, "archived", "system");ValidateSystemTimeZone(system);
             if (!systemIds.Add(id)) throw new InvalidDataException("The database contains a duplicate system ID: " + CleanLine(id, 100) + ".");
             if (String.IsNullOrWhiteSpace(name)) throw new InvalidDataException("A system name cannot be blank.");
         }

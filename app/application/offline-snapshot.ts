@@ -1,6 +1,9 @@
 import type {OrganizationStatusPayload} from '../organization-status-package';
 import type {SystemRecord,UserRecord} from '../domain/tracker-models';
 
+/** Systems opened from an organization snapshot file rather than a mapped folder. */
+export const isOfflineSnapshotSystem=(systemId?:string)=>!!systemId&&systemId.startsWith('offline-');
+
 export function offlineSnapshotRecords(payload:OrganizationStatusPayload){
  const systemId=`offline-${payload.system.id}-${payload.organization}`;
  const system:SystemRecord={id:systemId,name:`${payload.system.name} — ${payload.organization} Snapshot`,type:payload.system.type,organization:payload.organization,archived:false};

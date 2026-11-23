@@ -133,6 +133,13 @@ internal static class PortableStorageTests
         return Json.Serialize(new Dictionary<string, object> { { "version", 2 }, { "updated", DateTime.UtcNow.ToString("o") }, { "systems", new object[] { system } }, { "users", new object[] { user } } });
     }
 
+    private static string DatabaseWithTimeZone(string email, string timeZone)
+    {
+        Dictionary<string, object> database = (Dictionary<string, object>)Json.DeserializeObject(Database(email));
+        ((Dictionary<string, object>)((object[])database["systems"])[0])["timeZone"] = timeZone;
+        return Json.Serialize(database);
+    }
+
     private static string DatabaseWithLegacyChangeArrays(string email)
     {
         Dictionary<string, object> database = (Dictionary<string, object>)Json.DeserializeObject(Database(email));
@@ -671,6 +678,11 @@ internal static class PortableStorageTests
         storage.SaveManifest("mapping-key", DatabaseWithLegacyChangeArrays("first@example.mil"));
         string repairedLegacyHistory = storage.ReadManifest("mapping-key");
         Assert(repairedLegacyHistory.Contains("\"files\":[]") && repairedLegacyHistory.Contains("\"rolesBefore\":[]") && repairedLegacyHistory.Contains("\"rolesAfter\":[]"), "Storage verification must repair historical change entries that predate the non-identity array fields instead of blocking Sync.");
+        storage.SaveManifest("mapping-key", DatabaseWithTimeZone("first@example.mil", "America/Denver"));
+        string zonedManifest = storage.ReadManifest("mapping-key"), zonedCatalog = File.ReadAllText(Path.Combine(root, "System", "information-system-user-tracker.json"), Encoding.UTF8);
+        Assert(zonedManifest.Contains("\"timeZone\":\"America/Denver\"") && zonedManifest.Contains("\"version\":7") && zonedCatalog.Contains("\"version\":5"), "A system time zone must survive the sharded catalog round trip as manifest v7 in catalog v5.");
+        bool rejectedTimeZone = false;try { storage.SaveManifest("mapping-key", DatabaseWithTimeZone("first@example.mil", "Denver time; DROP")); } catch (InvalidDataException) { rejectedTimeZone = true; }
+        Assert(rejectedTimeZone && storage.ReadManifest("mapping-key").Contains("\"timeZone\":\"America/Denver\""), "A malformed system time zone must be rejected without replacing the verified database.");
         storage.SaveManifest("mapping-key", Database("first@example.mil"));
         string protectedLocalMappings = storage.CachedMappings(false, true);
         Assert(protectedLocalMappings.Contains("\"source\":\"local-cache\"") && protectedLocalMappings.Contains("first@example.mil") && Directory.EnumerateFiles(performanceCacheRoot, "verified-manifest.cache", SearchOption.AllDirectories).Any(), "A verified manifest save should refresh the Windows-user-protected local read cache without requiring shared-folder initialization.");
