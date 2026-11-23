@@ -56,7 +56,11 @@ test('operator notices are nonblocking and blocking browser alerts are absent',(
 test('directory choices persist without retaining the search text',()=>{
  assert.match(page,/directoryPreferencesKey/);
  assert.match(page,/visibleColumnKinds/);
- assert.match(directory,/<summary>Columns<\/summary>/);
+ // Columns are one-click toggle chips, and every filter stays visible (no pop-overs to hunt through).
+ assert.match(directory,/className="column-chips" role="group"/);
+ assert.match(directory,/aria-pressed=\{props\.visibleColumnKinds\.includes\(kind\)\}/);
+ assert.doesNotMatch(directory,/<details/);
+ assert.match(directory,/disabled=\{!anyActive\} onClick=\{props\.onReset\}/);
  const persisted=page.match(/localStorage\.setItem\(directoryPreferencesKey,JSON\.stringify\(\{([^}]*)\}\)\)/)?.[1]??'';
  assert.doesNotMatch(persisted,/\bquery\b/,'Free-text searches can contain PII and must remain session-only.');
  assert.match(styles,/\.directory \.table-wrap th:nth-child\(1\)/);
