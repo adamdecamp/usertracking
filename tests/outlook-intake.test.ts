@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {decodeOutlookFolderResult,decodeOutlookIntakeResult,type OutlookIntakeResult} from '../app/infrastructure/outlook-intake-contract.ts';
+import {decodeOutlookFolderResult,decodeOutlookIntakeResult,decodeOutlookSendFrom,type OutlookIntakeResult} from '../app/infrastructure/outlook-intake-contract.ts';
 import {outlookIntakeRequest,outlookIntakeSenders,outlookIntakeSummary,sentOnBehalf} from '../app/application/outlook-intake.ts';
 
 const users=[
@@ -51,4 +51,24 @@ test('the Outlook check lives in the operator-started Sync window and only in th
  assert.match(parts,/\{outlook\}<button className="primary full"/);
  const launcher=readFileSync(new URL('../portable-launcher/OutlookIntake.cs',import.meta.url),'utf8');
  for(const forbidden of ['"Delete"','"Move"','"Send"','"UnRead"','"Save"'])assert.equal(launcher.includes(`OutlookCall(item, ${forbidden}`),false,`Outlook intake must never call ${forbidden} on a message`);
+});
+
+test('the Send From mailbox is decoded strictly and shown in the notification window',()=>{
+ assert.deepEqual(decodeOutlookSendFrom({address:'compliance@example.mil'}),{address:'compliance@example.mil'});
+ assert.deepEqual(decodeOutlookSendFrom({address:''}),{address:''});
+ assert.throws(()=>decodeOutlookSendFrom({}),/Outlook Send From/);
+ const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+ assert.match(page,/<h2>\{state\} Artifact Notifications<\/h2><OutlookSendFromSetting request=\{outlookRequest\(/);
+});
+
+test('every Outlook draft applies the Send From mailbox and never falls back to a personal address',()=>{
+ const program=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8'),sendFrom=readFileSync(new URL('../portable-launcher/OutlookSendFrom.cs',import.meta.url),'utf8');
+ const read=program.indexOf('string sendFrom = storage.ReadOutlookSendFrom();'),lock=program.indexOf('Interlocked.CompareExchange(ref outlookDraftActive, 1, 0)');
+ assert.ok(read>0&&read<lock,'the mailbox is read before the single-draft lock is taken, so a bad setting cannot leave the lock held');
+ assert.match(program,/if \(outlookType == null\) \{ RefuseOutlookFallbackForSendFrom\(sendFrom\);/);
+ assert.match(program,/new object\[\] \{ 0 \}\);string sentFrom = ApplyOutlookSendFrom\(outlook, message, sendFrom\);/);
+ assert.match(program,/"; from " \+ sentFrom \+ "; operator review required before sending"/);
+ assert.match(sendFrom,/"SendUsingAccount"/);
+ assert.match(sendFrom,/"SentOnBehalfOfName"/);
+ assert.equal(sendFrom.includes('"Send"'),false,'drafts are only displayed; the operator still sends them');
 });
