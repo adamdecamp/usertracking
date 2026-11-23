@@ -20,6 +20,9 @@ internal static class LauncherPolicy
             && !String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal)
             && !String.Equals(action, "evidence-exists", StringComparison.Ordinal)
             && !String.Equals(action, "outlook-draft", StringComparison.Ordinal)
+            // Choosing the intake folder waits on an Outlook dialog and writes only a
+            // per-computer setting, so it must not hold the system storage queue.
+            && !String.Equals(action, "outlook-folder", StringComparison.Ordinal)
             && !String.Equals(action, "file-location", StringComparison.Ordinal)
             && !String.Equals(action, "performance", StringComparison.Ordinal)
             && !String.Equals(action, "diagnostics", StringComparison.Ordinal)
@@ -114,6 +117,7 @@ internal static class LauncherPolicy
         if (action == "sync-job") return 64L * KiB;
         if (action == "manifest" || action == "csv" || action == "report") return 50L * MiB;
         if (action == "outlook-draft") return 40L * MiB;
+        if (action == "outlook-intake") return 2L * MiB;
         if (action == "renamer-queue") return 20L * MiB;
         if (action == "restore-active") return 10L * MiB;
         if (action == "audit-batch") return 5L * MiB;

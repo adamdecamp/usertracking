@@ -15,7 +15,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
-internal sealed class TrackerContext : ApplicationContext
+internal sealed partial class TrackerContext : ApplicationContext
 {
     private const int DefaultPort = 38473;
     private const long KiB = 1024L;
@@ -337,6 +337,7 @@ internal sealed class TrackerContext : ApplicationContext
                     else if (action == "evidence-status" && parts[0] == "GET") response = storage.VerifyStoredEvidence(systemId, QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"), QueryValue(target, "sha256"));
                     else if (action == "evidence-pdf-status" && parts[0] == "GET") response = storage.VerifyStoredEvidencePdf(systemId, QueryValue(target, "organization"), QueryValue(target, "kind"), QueryValue(target, "filename"), QueryValue(target, "sha256"));
                     else if (action == "outlook-draft" && parts[0] == "POST") response = OpenOutlookDraft(systemId, requestBody);
+                    else if (action == "outlook-folder" && parts[0] == "POST") response = ChooseOutlookIntakeFolder(systemId); else if (action == "outlook-intake" && parts[0] == "POST") response = RunOutlookIntake(systemId, requestBody);
                     else if (action == "report" && parts[0] == "POST") response = storage.StoreReport(systemId, QueryValue(target, "filename"), requestBody);
                     else if (action == "error-report" && parts[0] == "POST") response = storage.StoreErrorReport(systemId, QueryValue(target, "filename"), Encoding.UTF8.GetString(requestBody));
                     else if (action == "audit" && parts[0] == "POST") { storage.AppendAudit(systemId, Encoding.UTF8.GetString(requestBody)); response = "{\"ok\":true}"; }

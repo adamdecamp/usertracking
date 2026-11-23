@@ -416,6 +416,65 @@ internal static class PortableStorageTests
         }
     }
 
+    private static OutlookIntakeMessage FakeOutlookMessage(string id, string sender, string filename, byte[] bytes)
+    {
+        var message = new OutlookIntakeMessage { MessageId = id, Sender = sender, ReceivedUtc = new DateTime(2026, 11, 20, 15, 0, 0, DateTimeKind.Utc) };
+        if (filename != null) message.Attachments.Add(new OutlookIntakeAttachment { Filename = filename, SaveAs = path => File.WriteAllBytes(path, bytes) });
+        return message;
+    }
+
+    private static void RunOutlookIntake(string parent)
+    {
+        Assert(PortableStorage.OutlookIntakeOrganizationCode("Shaw_Vivian_(GOV)_DTA_Training_26AUG2026.pdf") == "GOV" && PortableStorage.OutlookIntakeOrganizationCode("scan001.pdf") == null && PortableStorage.OutlookIntakeOrganizationCode("Shaw_(GOV)_DTA.pdf") == null && PortableStorage.OutlookIntakeOrganizationCode("Shaw_Vivian_(GOV)_DTA.docx") == null, "Outlook intake must read the organization only from a Last_First_(ORG) PDF filename.");
+        Assert(PortableStorage.OutlookIntakeAddress(" <Vivian.Shaw@Example.mil> ") == "vivian.shaw@example.mil" && PortableStorage.OutlookIntakeAddress("Vivian Shaw") == "" && PortableStorage.OutlookIntakeAddress("/O=EXCHANGE/OU=GROUP/CN=RECIPIENTS") == "", "Outlook intake must compare only real SMTP sender addresses.");
+        Assert(LauncherPolicy.StorageActionRequiresLease("outlook-intake", "POST") && LauncherPolicy.StorageActionRequiresSerialization("outlook-intake") && LauncherPolicy.StorageActionRequiresLease("outlook-folder", "POST") && !LauncherPolicy.StorageActionRequiresSerialization("outlook-folder") && LauncherPolicy.RequestBodyLimit("/api/storage/system/outlook-intake", "POST") == 2L * 1024 * 1024, "Outlook intake must require Full Access, and choosing its folder must not hold the storage queue open behind an Outlook dialog.");
+        string shared = Path.Combine(parent, "outlook-intake-share"), cache = Path.Combine(parent, "outlook-intake", "mappings.json");
+        Directory.CreateDirectory(shared);
+        using (var storage = new PortableStorage("DOMAIN\\intake", cache))
+        {
+            Assert(storage.MapForFullSession("intake", shared, "intake-session"), "The Outlook intake test requires its own isolated editor lease.");
+            var database = (Dictionary<string, object>)Json.DeserializeObject(Database("vivian.shaw@example.mil"));
+            storage.PublishWorkspace("intake", Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", database }, { "csv", "initial" } })));
+            string workspace = storage.LocalWorkspacePath("intake");Directory.CreateDirectory(Path.Combine(workspace, "Organizations", "GOV"));
+            Assert(storage.ReadOutlookIntakeFolder("intake") == null, "A new computer must ask the operator to choose the Outlook folder.");
+            storage.SaveOutlookIntakeFolder("intake", "store-1", "entry-1", "RAPTOR Intake");string[] folder = storage.ReadOutlookIntakeFolder("intake");
+            Assert(folder != null && folder[0] == "store-1" && folder[1] == "entry-1" && folder[2] == "RAPTOR Intake", "The chosen Outlook folder must be remembered on this computer.");
+            byte[] pdf = Encoding.ASCII.GetBytes("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n"), notPdf = Encoding.ASCII.GetBytes("PK\u0003\u0004 not a pdf");
+            const string good = "Shaw_Vivian_(GOV)_DTA_Training_26AUG2026.pdf";
+            var messages = new List<OutlookIntakeMessage>
+            {
+                FakeOutlookMessage("<good@example.mil>", "<Vivian.Shaw@Example.mil>", good, pdf),
+                FakeOutlookMessage("<stranger@example.com>", "someone@example.com", "Shaw_Vivian_(GOV)_User_Agreement_26AUG2026.pdf", pdf),
+                FakeOutlookMessage("<badname@example.mil>", "vivian.shaw@example.mil", "scan001.pdf", pdf),
+                FakeOutlookMessage("<noorg@example.mil>", "vivian.shaw@example.mil", "Shaw_Vivian_(XYZ)_DTA_Training_26AUG2026.pdf", pdf),
+                FakeOutlookMessage("<fake@example.mil>", "vivian.shaw@example.mil", "Shaw_Vivian_(GOV)_DoD_Cyber_Cert_26AUG2026.pdf", notPdf),
+                FakeOutlookMessage("<docx@example.mil>", "vivian.shaw@example.mil", "Shaw_Vivian_(GOV)_Form.docx", pdf),
+                FakeOutlookMessage("<hidden@example.mil>", "", "Shaw_Vivian_(GOV)_SAAR_26AUG2026.pdf", pdf),
+            };
+            var first = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessOutlookIntake("intake", "RAPTOR Intake", messages, new[] { "Vivian.Shaw@example.mil", "", "not-an-address" }));
+            object[] saved = (object[])first["saved"], skipped = (object[])first["skipped"];
+            Func<object[], string, string> reasonFor = (entries, filename) => entries.Cast<Dictionary<string, object>>().Where(entry => Convert.ToString(entry["filename"]) == filename).Select(entry => entry.ContainsKey("reason") ? Convert.ToString(entry["reason"]) : "").FirstOrDefault() ?? "";
+            Assert(saved.Length == 1 && Convert.ToString(((Dictionary<string, object>)saved[0])["filename"]) == good && Convert.ToString(((Dictionary<string, object>)saved[0])["organization"]) == "GOV" && Convert.ToString(((Dictionary<string, object>)saved[0])["sender"]) == "vivian.shaw@example.mil", "An approved sender's correctly named PDF must be copied to its organization intake.");
+            Assert(File.Exists(Path.Combine(workspace, "Organizations", "GOV", good)) && File.ReadAllBytes(Path.Combine(workspace, "Organizations", "GOV", good)).SequenceEqual(pdf), "The intake copy must land at the organization root, where Daily Sync reviews new evidence.");
+            Assert(reasonFor(skipped, "Shaw_Vivian_(GOV)_User_Agreement_26AUG2026.pdf").Contains("not the Official Email") && reasonFor(skipped, "scan001.pdf").Contains("does not follow") && reasonFor(skipped, "Shaw_Vivian_(XYZ)_DTA_Training_26AUG2026.pdf").Contains("No organization folder") && reasonFor(skipped, "Shaw_Vivian_(GOV)_DoD_Cyber_Cert_26AUG2026.pdf").Contains("not a PDF") && reasonFor(skipped, "Shaw_Vivian_(GOV)_SAAR_26AUG2026.pdf").Contains("did not reveal"), "Every skipped attachment must carry the reason it was not copied.");
+            Assert(Convert.ToInt32(first["scanned"]) == 7 && Convert.ToInt32(first["withoutPdf"]) == 1 && skipped.Length == 5, "The intake summary must count every message it read.");
+            Assert(!Directory.EnumerateFiles(Path.Combine(workspace, "Organizations"), "*", SearchOption.AllDirectories).Any(path => path.IndexOf("Cyber_Cert", StringComparison.OrdinalIgnoreCase) >= 0 || path.IndexOf("XYZ", StringComparison.OrdinalIgnoreCase) >= 0 || path.IndexOf("User_Agreement", StringComparison.OrdinalIgnoreCase) >= 0), "Rejected attachments must never reach the evidence workspace.");
+            messages.Add(FakeOutlookMessage("<resend@example.mil>", "vivian.shaw@example.mil", good, pdf));
+            messages.Add(FakeOutlookMessage("<changed@example.mil>", "vivian.shaw@example.mil", good, Encoding.ASCII.GetBytes("%PDF-1.7\nchanged\n%%EOF\n")));
+            var second = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessOutlookIntake("intake", "RAPTOR Intake", messages, new[] { "vivian.shaw@example.mil" }));
+            object[] secondSkipped = (object[])second["skipped"];
+            Assert(((object[])second["saved"]).Length == 0 && Convert.ToInt32(second["previouslyProcessed"]) == 4, "Messages fully handled on an earlier check must not be processed again.");
+            Assert(secondSkipped.Cast<Dictionary<string, object>>().Count(entry => Convert.ToString(entry["reason"]).Contains("not the Official Email")) == 1 && secondSkipped.Cast<Dictionary<string, object>>().Any(entry => Convert.ToString(entry["reason"]).Contains("No organization folder")), "Messages skipped for a sender or organization that may be added later must be offered again.");
+            Assert(secondSkipped.Cast<Dictionary<string, object>>().Any(entry => Convert.ToString(entry["reason"]).Contains("same file is already waiting")) && secondSkipped.Cast<Dictionary<string, object>>().Any(entry => Convert.ToString(entry["reason"]).Contains("different file with this name")), "A resent or conflicting attachment must never overwrite evidence already waiting for Sync.");
+            Assert(File.ReadAllBytes(Path.Combine(workspace, "Organizations", "GOV", good)).SequenceEqual(pdf), "The first intake copy must remain unchanged.");
+            bool rejected = false;
+            try { storage.ProcessOutlookIntake("intake", "RAPTOR Intake", messages, new[] { "", "nobody" }); }
+            catch (InvalidDataException) { rejected = true; }
+            Assert(rejected, "Outlook intake must refuse to run without at least one approved sender.");
+            Assert(storage.ReadAuditLogs("intake").Contains("OUTLOOK INTAKE: folder RAPTOR Intake; 7 messages read; 1 PDF attachments copied"), "Every Outlook intake run must be recorded in the audit chain.");
+        }
+    }
+
     private static void RunLocalWorkflowLayout(string parent)
     {
         string shared = Path.Combine(parent, "workflow-layout-share"), cache = Path.Combine(parent, "workflow-layout", "mappings.json"), retainedPath = "", cachedPath = "";byte[] cachedBytes = null;
@@ -575,6 +634,7 @@ internal static class PortableStorageTests
         RunLocalDatabaseScanBoundary(Path.GetDirectoryName(root));
         RunLegacyWorkspaceRecovery(Path.GetDirectoryName(root));
         RunLocalWorkflowLayout(Path.GetDirectoryName(root));
+        RunOutlookIntake(Path.GetDirectoryName(root));
         RunPublicationRecovery(Path.GetDirectoryName(root));
         RunPublicationCollisions(Path.GetDirectoryName(root));
         string compatibilityRoot = Path.Combine(root, "write-compatibility"), compatibilityCache = Path.Combine(root, "write-compatibility-mappings.json");
