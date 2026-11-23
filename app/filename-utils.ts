@@ -43,7 +43,8 @@ function computeDateMatch(filename:string):DateMatch|undefined{
  // Numeric month/day values are locale-dependent when both values are 1-12.
  // They must be resolved by an operator rather than silently interpreted as US order.
  if([...value.matchAll(/(?:^|[^A-Z0-9])(0?[1-9]|1[0-2])[-_. ](0?[1-9]|1[0-2])[-_. ]((?:19|20)\d{2})(?=$|[^A-Z0-9])/g)].some(match=>match[1]!==match[2]))return;
- const blockedIdentifierRanges=[...value.matchAll(/(?:^|[^A-Z0-9])(?:EMPLOYEE[-_. ]*)?(?:ID|EDIPI|DOD[-_. ]*ID)\s*[:#_-]*\s*(\d{5,10})(?=$|[^A-Z0-9])/g)].map(match=>{const token=match[1],start=(match.index??0)+match[0].lastIndexOf(token);return{start,end:start+token.length}});
+ // One separator class (not \s*[:#_-]*\s*) keeps this linear on long runs of spaces.
+ const blockedIdentifierRanges=[...value.matchAll(/(?:^|[^A-Z0-9])(?:EMPLOYEE[-_. ]*)?(?:ID|EDIPI|DOD[-_. ]*ID)[\s:#_-]*(\d{5,10})(?=$|[^A-Z0-9])/g)].map(match=>{const token=match[1],start=(match.index??0)+match[0].lastIndexOf(token);return{start,end:start+token.length}});
  const blocked=(start:number,end:number)=>blockedIdentifierRanges.some(range=>start<range.end&&end>range.start);
  const bounded=(start:number,end:number)=>!/[A-Z0-9]/.test(value[start-1]??'')&&!/[A-Z0-9]/.test(value[end]??'');
  const push=(date:Date,start:number,end:number,defaultFormat=false)=>candidates.push({date,start,end,normalized:`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`,defaultFormat});
@@ -225,9 +226,12 @@ export function operatorMarkedIncomplete(filename:string){
 
 export function looksLikeEvidenceFilename(filename:string){return !!parseDate(filename)&&!!artifactKindFromFilename(filename)}
 
+/** Drop trailing _ , . - and whitespace in linear time (an end-anchored regex is quadratic on long inner runs). */
+function trimTrailingSeparators(value:string){let end=value.length;while(end>0&&/[_,\s.-]/.test(value[end-1]))end--;return value.slice(0,end)}
+
 export function identityFromFilename(filename:string){
  const cached=identityCache.get(filename);if(cached!==undefined)return cached??undefined;
- const base=filename.split(/[\\/]/).pop()??filename,prefix=base.split('(')[0].replace(/[_,\s.-]+$/,'').trim(),comma=prefix.match(/^(.+?),\s*([^,\s_]+)/);let last='',first='';
+ const base=filename.split(/[\\/]/).pop()??filename,prefix=trimTrailingSeparators(base.split('(')[0]).trim(),comma=prefix.match(/^(.+?),\s*([^,\s_]+)/);let last='',first='';
  if(comma){last=clean(comma[1]);first=clean(comma[2])}
  else{
   const parts=prefix.split(/_+|\s+/).map(value=>clean(value)).filter(Boolean),suffixes=new Set(['JR','SR','II','III','IV','V']);if(suffixes.has(parts.at(-1)?.toUpperCase()??''))parts.pop();if(parts.length>=3&&parts.at(-1)?.length===1)parts.pop();
