@@ -31,7 +31,7 @@ pnpm exec playwright test
 
 - `pnpm lint` runs with `--max-warnings 0`, so any warning fails the build.
 - `pnpm build` runs `scripts/Test-BuildGate.ps1` first, as its prebuild step.
-- `pnpm audit` ignores only GHSA-fc5q-39xc-vjpf, which has no patched picomatch release and is reachable only through build tooling. Don't add more ignores without the owner's approval. Fix or upgrade instead.
+- `pnpm audit` ignores only GHSA-fc5q-39xc-vjpf, which has no patched picomatch release and is reachable only through build tooling. Don't add more ignores without the owner's approval. Fix or upgrade instead. pnpm 11 saves `--ignore` into `pnpm-workspace.yaml` as `auditConfig.ignoreGhsas`, so run `git restore pnpm-workspace.yaml` after a local audit and never commit that change.
 
 ## Release-clean rules (enforced by `scripts/Test-ReleaseClean.ps1`)
 
