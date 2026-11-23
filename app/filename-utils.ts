@@ -101,6 +101,12 @@ function computeDateMatch(filename:string):DateMatch|undefined{
 }
 function dateMatch(filename:string):DateMatch|undefined{const cached=dateCache.get(filename);if(cached!==undefined)return cached??undefined;return remember(dateCache,filename,computeDateMatch(filename)??null)??undefined}
 export function parseDate(filename:string){return dateMatch(filename)?.date}
+/**
+ * True when an evidence date is later than any place on Earth could call today.
+ * UTC+14 runs one day ahead of UTC, so dates through tomorrow (UTC) are allowed.
+ * A typo such as 2099 must never count as current evidence.
+ */
+export function evidenceDateIsInFuture(date:Date,now=new Date()){return Math.floor(date.getTime()/86_400_000)>Math.floor(now.getTime()/86_400_000)+1}
 export function normalizeFilenameDate(filename:string){const match=dateMatch(filename);if(!match)return;const normalized=`${filename.slice(0,match.start)}${match.normalized}${filename.slice(match.end)}`;return{date:match.date,normalized,changed:normalized.toUpperCase()!==filename.toUpperCase()}}
 
 export function organizationFrom(filename:string){const cached=organizationCache.get(filename);if(cached!==undefined)return cached??undefined;const match=filename.match(/\(([^()]{1,100})\)/),organization=match?clean(match[1],100):'';return remember(organizationCache,filename,organization||null)??undefined}
@@ -156,7 +162,7 @@ const canonicalFilePart=(value:string,maxLength=80)=>clean(value,maxLength).repl
 export function organizationArtifactStorageFolder(kind:string,organization:string){const folder=artifactStorageFolder(kind),prefix=canonicalFilePart(organization);return folder&&prefix?`${prefix} ${folder}`:undefined}
 export function canonicalManualEvidenceFilename(input:{filename:string;embeddedPdfFilename?:string;kind:string;last:string;first:string;organization:string;role?:'GEN'|'PRIV';privilegedType?:string;disabledSaar?:boolean}){
  const date=parseDate(input.filename)??parseDate(input.embeddedPdfFilename??''),kind=canonicalArtifactKind(input.kind),last=canonicalFilePart(input.last),first=canonicalFilePart(input.first),organization=canonicalFilePart(input.organization);
- if(!date||!artifactKinds.includes(kind)||!last||!first||!organization)return;
+ if(!date||evidenceDateIsInFuture(date)||!artifactKinds.includes(kind)||!last||!first||!organization)return;
  let artifact=kind.replaceAll(' ','_');
  if(kind==='DTA Training')artifact='DTA_Training';
  if(kind==='SAAR'){
@@ -171,7 +177,7 @@ export function canonicalManualEvidenceFilename(input:{filename:string;embeddedP
 export function canonicalEvidenceFilename(filename:string,organizationOverride?:string){
  if(legacy8570MemoFilename(filename))return;
  const identity=identityFromFilename(filename),organization=organizationOverride||organizationFrom(filename),date=parseDate(filename),kind=artifactKindFromFilename(filename);
- if(!identity||!organization||!date||!kind)return;
+ if(!identity||!organization||!date||evidenceDateIsInFuture(date)||!kind)return;
  const last=canonicalFilePart(identity.last),first=canonicalFilePart(identity.first),org=canonicalFilePart(organization),dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`;if(!last||!first||!org)return;
  let artifact=kind.replaceAll(' ','_');
  if(kind==='DTA Training')artifact='DTA_Training';
@@ -199,7 +205,7 @@ export function evidenceFilenamePassesStorageGate(filename:string,organizationOv
  if(!/\.pdf(?:\.zip)?$/i.test(filename))return false;
  if(legacy8570MemoFilename(filename)){
   const identity=identityFromFilename(filename),organization=organizationFrom(filename),date=parseDate(filename);
-  if(!identity||!organization||!date)return false;
+  if(!identity||!organization||!date||evidenceDateIsInFuture(date))return false;
   return !organizationOverride||clean(organization).toUpperCase()===clean(organizationOverride).toUpperCase();
  }
  if(filenameMatchesKind(filename,'SAAR')&&!validateNewUserSaarFilename(filename,{organization:organizationOverride,allowDisabled:true}).valid)return false;

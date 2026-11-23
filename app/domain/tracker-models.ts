@@ -22,6 +22,8 @@ export type SystemRecord={
  type:string;
  organization:string;
  archived:boolean;
+ /** IANA time zone (for example America/Denver) that decides when evidence becomes Due or Overdue. */
+ timeZone?:string;
 };
 
 export type ArtifactSource='Manual Add'|'Manual Update'|'Sync';

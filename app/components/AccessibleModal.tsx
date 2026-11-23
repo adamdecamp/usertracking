@@ -14,5 +14,5 @@ export function AccessibleModal({label,onClose,children,closeDisabled=false,back
   document.addEventListener('keydown',keydown);const previousOverflow=document.body.style.overflow;document.body.style.overflow='hidden';
   return()=>{document.removeEventListener('keydown',keydown);const index=modalStack.lastIndexOf(id);if(index>=0)modalStack.splice(index,1);if(!modalStack.length)document.body.style.overflow=previousOverflow;queueMicrotask(()=>returnFocus.current?.focus())};
  },[closeDisabled,id]);
- return <div className={`backdrop ${backdropClassName}`.trim()} onMouseDown={event=>{if(event.target===event.currentTarget&&!closeDisabled)onClose()}}><div ref={dialogRef} className={`modal ${contentClassName}`.trim()} role="dialog" aria-modal="true" aria-label={label} tabIndex={-1}>{showClose&&<button className="close" aria-label={`Close ${label}`} disabled={closeDisabled} onClick={onClose}>×</button>}{children}</div></div>
+ return <div className={`backdrop ${backdropClassName}`.trim()} onMouseDown={event=>{if(event.target===event.currentTarget&&!closeDisabled)onClose()}}><div ref={dialogRef} className={`modal ${contentClassName}`.trim()} role="dialog" aria-modal="true" aria-label={label} tabIndex={-1}>{showClose&&<button type="button" className="close" aria-label={`Close ${label}`} disabled={closeDisabled} onClick={onClose}>×</button>}{children}</div></div>
 }

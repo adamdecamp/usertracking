@@ -6,6 +6,10 @@ tests/audit-utils.test.ts
 tests/audit-anchor.test.ts
 tests/compliance-report.test.ts
 tests/compliance-rules.test.ts
+tests/compliance-time-zone.test.ts
+tests/system-edit.test.ts
+tests/future-evidence-date.test.ts
+tests/dashboard-stats.test.ts
 tests/executive-summary.test.ts
 tests/cleanup-utils.test.ts
 tests/concurrency-utils.test.ts

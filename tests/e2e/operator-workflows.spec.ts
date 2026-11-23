@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {createOrganizationStatusPackage,organizationStatusPackageFormat,organizationStatusPackageVersion,type OrganizationStatusPayload} from '../../app/organization-status-package.ts';
+import {createOrganizationStatusPackage,organizationStatusPackageFormat,organizationStatusPackageVersion,organizationStatusTrustNote,type OrganizationStatusPayload} from '../../app/organization-status-package.ts';
 
 const snapshotPayload:OrganizationStatusPayload={
  format:organizationStatusPackageFormat,
@@ -88,7 +88,7 @@ test('opens an integrity-checked organization snapshot as a populated read-only 
  await expect(page.getByRole('heading',{name:'E2E Information System — GOV Snapshot'})).toBeVisible();
  await expect(page.getByText('Shaw, Vivian A')).toBeVisible();
  await expect(page.getByText('vivian.shaw@example.test')).toBeVisible();
- await expect(page.getByText('Integrity-verified organization snapshot. Evidence files are not included.')).toBeVisible();
+ await expect(page.getByText(organizationStatusTrustNote(false))).toBeVisible();
  await expect(page.getByRole('button',{name:'+ Add User'})).toHaveCount(0);
 
  await page.getByRole('textbox',{name:'Search User Directory'}).fill('no-match');

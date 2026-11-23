@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {organizationStatusTrustNote} from '../app/organization-status-package.ts';
 
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
@@ -19,9 +20,16 @@ test('the portable launcher prepares a validated ISSO To-line draft with a bound
  assert.match(launcher,/InvokeMember\("To"/);
 });
 
-test('the startup gate can import an integrity-checked organization snapshot in read-only mode',()=>{
+test('the startup gate can import a damage-checked organization snapshot in read-only mode',()=>{
  assert.match(page,/Open Organization Snapshot/);
  assert.match(page,/parseOrganizationStatusPackage/);
  assert.match(page,/setAccessMode\('read-only'\)/);
- assert.match(page,/Integrity-verified organization snapshot/);
+ assert.match(page,/organizationStatusTrustNote\(requiresPassphrase\)/);
+});
+
+test('snapshot wording does not claim an unkeyed checksum proves authenticity',()=>{
+ assert.doesNotMatch(page,/Integrity-verified organization snapshot/);
+ assert.match(organizationStatusTrustNote(false),/file damage/);
+ assert.match(organizationStatusTrustNote(false),/does not prove who created it/);
+ assert.match(organizationStatusTrustNote(true),/not altered/);
 });

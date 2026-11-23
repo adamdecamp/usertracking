@@ -2,7 +2,12 @@ import {normalizePrivilegedTypes} from './privileged-type-utils.ts';
 import {normalizeAffiliatedOrganizations} from './affiliated-organization-utils.ts';
 import {applicationVersion} from './version.ts';
 
-export const currentManifestVersion=6;
+/**
+ * v7 adds an optional per-system `timeZone`. Clients older than v7 rebuild
+ * system records field by field and would silently drop it, so they must
+ * refuse v7 databases rather than open them.
+ */
+export const currentManifestVersion=7;
 export const currentBackupVersion=1;
 export const currentAuditVersion=1;
 export const currentSyncIndexVersion=1;
@@ -61,6 +66,17 @@ export function migrateManifestPayload(value:unknown):JsonRecord|undefined{
 export function rollbackManifestV6ToV5(value:unknown):JsonRecord|undefined{
  if(!record(value)||value.version!==6)return;
  const input=clone(value);delete input.recognitionAliases;input.version=5;return input;
+}
+
+/**
+ * Explicit rollback for the additive v7 system time zone. Drops only
+ * `systems[].timeZone`; due dates then fall back to each computer's zone.
+ */
+export function rollbackManifestV7ToV6(value:unknown):JsonRecord|undefined{
+ if(!record(value)||value.version!==7)return;
+ const input=clone(value);
+ if(Array.isArray(input.systems))input.systems=input.systems.map(system=>{if(!record(system))return system;const rest={...system};delete rest.timeZone;return rest});
+ input.version=6;return input;
 }
 
 export function migrateBackupPayload(value:unknown):JsonRecord|undefined{

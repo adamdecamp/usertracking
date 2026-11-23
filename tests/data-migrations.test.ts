@@ -1,7 +1,7 @@
 import assert from'node:assert/strict';
 import{readFileSync}from'node:fs';
 import{test}from'node:test';
-import{compareApplicationVersions,currentManifestVersion,migrateAuditEntryPayload,migrateBackupPayload,migrateManifestPayload,migrateSyncIndexPayload,rollbackManifestV6ToV5}from'../app/data-migrations.ts';
+import{compareApplicationVersions,currentManifestVersion,migrateAuditEntryPayload,migrateBackupPayload,migrateManifestPayload,migrateSyncIndexPayload,rollbackManifestV6ToV5,rollbackManifestV7ToV6}from'../app/data-migrations.ts';
 import{applicationVersion}from'../app/version.ts';
 
 const fixture=(name:string)=>JSON.parse(readFileSync(new URL(`./fixtures/migrations/${name}`,import.meta.url),'utf8')) as unknown;
@@ -30,7 +30,24 @@ test('migrates v5 to an empty alias store and preserves a v6 alias store',()=>{
  const v5=migrateManifestPayload({version:5,minimumApplicationVersion:applicationVersion,lastWriterVersion:applicationVersion,systems:[],users:[]})!;
  assert.deepEqual(v5.recognitionAliases,[]);
  const v6=migrateManifestPayload(fixture('manifest-v6.json'))!;
- assert.equal(v6.version,6);assert.equal((v6.recognitionAliases as unknown[]).length,1);
+ assert.equal(v6.version,currentManifestVersion);assert.equal((v6.recognitionAliases as unknown[]).length,1);
+});
+
+test('migrates v6 to v7 without inventing a system time zone and preserves one that is set',()=>{
+ assert.equal(currentManifestVersion,7);
+ const fixtureV6=fixture('manifest-v6.json') as Record<string,unknown>,v7=migrateManifestPayload(fixtureV6)!;
+ assert.deepEqual(v7.systems,fixtureV6.systems);
+ for(const system of v7.systems as Record<string,unknown>[])assert.equal('timeZone'in system,false);
+ const zoned=migrateManifestPayload(current({systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,timeZone:'America/Denver'}],users:[]}))!;
+ assert.equal((zoned.systems as Record<string,unknown>[])[0].timeZone,'America/Denver');
+});
+
+test('rolls v7 back to v6 by removing only the system time zone',()=>{
+ const v7=current({systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,timeZone:'America/Denver'}],users:[{id:'u1'}],recognitionAliases:[]}),rolled=rollbackManifestV7ToV6(v7)!;
+ assert.equal(rolled.version,6);
+ assert.deepEqual(rolled.systems,[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false}]);
+ assert.deepEqual(rolled.users,[{id:'u1'}]);
+ assert.equal(rollbackManifestV7ToV6({...v7,version:6}),undefined);
 });
 
 test('rolls v6 back to v5 by removing only additive alias metadata',()=>{

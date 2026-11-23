@@ -16,7 +16,11 @@ test('shared evidence picker supports drag and drop plus File Explorer',()=>{
  assert.match(picker,/event\.dataTransfer\.files\?\.\[0\]/);
  assert.match(picker,/input\.current\?\.click\(\)/);
  assert.match(picker,/accept=\{evidenceAccept\}/);
- assert.match(picker,/required\?['"]Required['"]:['"]Optional['"]/);
+ // Only a required upload is badged; "Optional" next to a Missing requirement read as "not needed".
+ assert.match(picker,/\(file\|\|required\)&&<b>\{file\?'Ready':'Required'\}<\/b>/);
+ assert.doesNotMatch(picker,/'Optional'/);
+ // Read-only and archived records show no upload box at all.
+ assert.match(picker,/if\(disabled\)return null;/);
 });
 
 test('existing-user evidence replacement uses the shared drag-and-drop picker',()=>{

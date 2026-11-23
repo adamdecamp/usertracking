@@ -2,6 +2,7 @@ import {artifactKindFromFilename,canonicalArtifactKind,disabledSaarFilename,file
 import {resolveSyncProvenanceEvidence} from './provenance-utils.ts';
 import {normalizePrivilegedTypes} from './privileged-type-utils.ts';
 import type {ComplianceException} from './domain/tracker-models.ts';
+import {dayNumberOfCalendarDate,fallbackTimeZone,localDayNumber} from './compliance-time-zone.ts';
 
 export type {ComplianceException} from './domain/tracker-models.ts';
 export type ReconciliationUser={id:string;last:string;first:string;email:string;organization:string;disabled?:boolean;artifacts:{kind:string;filename:string;sha256?:string;path?:string}[]};
@@ -96,9 +97,10 @@ export function recoverDisabledArchivedArtifacts<T extends DisabledEvidenceUser>
  return{users:next,recovered};
 }
 
-export function activeComplianceException(exceptions:ComplianceException[]|undefined,artifact:string,asOf=new Date()){
- const endOfDay=(value:string)=>Date.parse(`${value}T23:59:59.999Z`);
- return exceptions?.filter(item=>item.artifact===artifact&&!item.revokedAt&&Number.isFinite(endOfDay(item.expiresOn))&&endOfDay(item.expiresOn)>=asOf.getTime()).sort((a,b)=>b.expiresOn.localeCompare(a.expiresOn))[0];
+/** An exception stays active through the end of its expiration date in the system's time zone. */
+export function activeComplianceException(exceptions:ComplianceException[]|undefined,artifact:string,asOf=new Date(),timeZone=fallbackTimeZone()){
+ const today=localDayNumber(asOf,timeZone);
+ return exceptions?.filter(item=>{const expires=dayNumberOfCalendarDate(item.expiresOn);return item.artifact===artifact&&!item.revokedAt&&expires!==undefined&&expires>=today}).sort((a,b)=>b.expiresOn.localeCompare(a.expiresOn))[0];
 }
 
 export function archiveRetentionDisposition(filename:string,asOf=new Date()):'Archive'|'Superseded'{

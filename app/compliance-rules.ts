@@ -1,4 +1,5 @@
 import {canonicalArtifactKind} from './filename-utils.ts';
+import {dayNumberOfUtcDate,fallbackTimeZone,localDayNumber} from './compliance-time-zone.ts';
 
 export const annualRevalidationKinds=[
  'DoD Cyber Cert',
@@ -14,6 +15,7 @@ export function isAnnualRevalidationRequirement(kind:string){
  return annualRevalidationKindSet.has(canonicalArtifactKind(kind));
 }
 
+/** The calendar due date (stored as UTC midnight) one year after the evidence date. */
 export function requirementDueDate(kind:string,evidenceDate:Date){
  if(!isAnnualRevalidationRequirement(kind))return;
  const due=new Date(evidenceDate);
@@ -21,19 +23,28 @@ export function requirementDueDate(kind:string,evidenceDate:Date){
  return due;
 }
 
-export function evidenceStatusAt(kind:string,evidenceDate:Date,asOf:Date):'Current'|'Overdue'{
+/**
+ * Days from today to the due date in the system's time zone: 0 on the due
+ * date, negative once overdue. Undefined for evidence that never expires.
+ */
+function daysToDue(kind:string,evidenceDate:Date,asOf:Date,timeZone:string){
  const due=requirementDueDate(kind,evidenceDate);
- return due&&due<asOf?'Overdue':'Current';
+ return due?dayNumberOfUtcDate(due)-localDayNumber(asOf,timeZone):undefined;
 }
 
-export function evidenceDaysOverdue(kind:string,evidenceDate:Date,asOf:Date){
- const due=requirementDueDate(kind,evidenceDate);
- return due&&due<asOf?Math.max(1,Math.ceil((asOf.getTime()-due.getTime())/86400000)):0;
+/** Evidence stays Current through its due date and is Overdue from the next local day. */
+export function evidenceStatusAt(kind:string,evidenceDate:Date,asOf:Date,timeZone=fallbackTimeZone()):'Current'|'Overdue'{
+ const days=daysToDue(kind,evidenceDate,asOf,timeZone);
+ return days!==undefined&&days<0?'Overdue':'Current';
 }
 
-export function evidenceDaysUntilDue(kind:string,evidenceDate:Date,asOf:Date){
- const due=requirementDueDate(kind,evidenceDate);
- if(!due||due<asOf)return;
- const days=Math.ceil((due.getTime()-asOf.getTime())/86400000);
- return days<=30?days:undefined;
+export function evidenceDaysOverdue(kind:string,evidenceDate:Date,asOf:Date,timeZone=fallbackTimeZone()){
+ const days=daysToDue(kind,evidenceDate,asOf,timeZone);
+ return days!==undefined&&days<0?-days:0;
+}
+
+/** Days until due when within 30 days (0 means due today); otherwise undefined. */
+export function evidenceDaysUntilDue(kind:string,evidenceDate:Date,asOf:Date,timeZone=fallbackTimeZone()){
+ const days=daysToDue(kind,evidenceDate,asOf,timeZone);
+ return days!==undefined&&days>=0&&days<=30?days:undefined;
 }
