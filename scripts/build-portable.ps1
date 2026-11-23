@@ -89,6 +89,7 @@ $assetResourceArgs | ForEach-Object { $compilerArgs.Add($_) }
 $compilerArgs.Add((Join-Path $portableRoot "Program.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "OperatorProfile.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "OutlookDraftFallback.cs"))
+$compilerArgs.Add((Join-Path $portableRoot "OutlookIntake.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableStorage.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortableOperatorDirectory.cs"))
 $compilerArgs.Add((Join-Path $portableRoot "PortablePublicationReceiptRecovery.cs"))

@@ -208,6 +208,20 @@ export default function Guide(){
     <li><b>Full Rescan:</b> Ignores cached validation and inspects all active in-scope evidence.</li>
     <li>Document-type subfolders cannot be selected as independent Sync scopes.</li>
    </ul>
+   <h3>Evidence from Outlook</h3>
+   <p>In Full Access, the Sync window can collect evidence that users email back. Ask users to reply with the requested file named in the standard format, such as <b>Brown_Jacob_(LM)_DTA_Training_26AUG2026.pdf</b>. An Outlook rule that moves those replies into a dedicated folder keeps the check fast.</p>
+   <ol>
+    <li>Choose <b>Sync</b>, then <b>Choose Outlook Folder</b> once on each computer and select the folder in the Outlook window.</li>
+    <li>Choose <b>Check Outlook</b>. PDF attachments from the last 30 days are copied into their organization intake folder when the sender&apos;s address is the Official Email of a user in this system, the filename names an existing organization, and the file is a real PDF.</li>
+    <li>Start <b>Daily Sync</b> and review the results as usual. No user record changes until you approve it.</li>
+   </ol>
+   <ul>
+    <li>Outlook is only read. Nothing is moved, deleted, flagged, or sent, and each message is checked only once per computer.</li>
+    <li>Skipped attachments are listed with the reason. Attachments from unknown senders or for a missing organization are offered again on the next check, so they can be collected after the user or organization is added.</li>
+    <li>A file sent by one user but named for another, such as a supervisor sending for a team member, is marked so you can confirm the identity in Sync review.</li>
+    <li>Requires the classic desktop Outlook app. The new Outlook app cannot be read by other programs, and some organizations block programmatic access; the Sync window shows the reason if Outlook refuses.</li>
+    <li>Every check is recorded in the audit log with message and file counts. Email bodies are never stored.</li>
+   </ul>
    <h3>Sync Behavior</h3>
    <ul>
     <li>New SAARs create users before supporting evidence is matched.</li>
