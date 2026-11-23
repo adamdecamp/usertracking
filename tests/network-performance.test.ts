@@ -102,7 +102,7 @@ test('rapid UI edits are coalesced before background shared-drive saves',()=>{
  assert.match(page,/backgroundSaveDebounceMs=5000/);
  assert.match(page,/window\.setTimeout\(\(\)=>void save\(\),backgroundSaveDebounceMs\)/);
  assert.match(page,/systemPayloadCache=useRef\(new SystemCommitPayloadCache\(\)\)/);
- assert.match(systemCommitService,/this\.entry\.systems===systems&&this\.entry\.users===users&&this\.entry\.systemId===systemId/);
+ assert.match(systemCommitService,/this\.entry\.systems===systems&&this\.entry\.users===users&&this\.entry\.aliases===aliases&&this\.entry\.systemId===systemId/);
  assert.match(systemCommitService,/buildCsv\(state\.scopedUsers,state\.scopedSystems\)/);
 });
 

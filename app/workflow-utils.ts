@@ -1,4 +1,4 @@
-import {canonicalArtifactKind,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom,parseDate} from './filename-utils.ts';
+import {artifactKindFromFilename,canonicalArtifactKind,disabledSaarFilename,filenameIdentityMatches,filenameMatchesKind,identityKey,organizationFrom,parseDate} from './filename-utils.ts';
 import {resolveSyncProvenanceEvidence} from './provenance-utils.ts';
 import {normalizePrivilegedTypes} from './privileged-type-utils.ts';
 import type {ComplianceException} from './domain/tracker-models.ts';
@@ -151,14 +151,13 @@ export function evidenceBelongsToUserArchiveScope(item:{filename:string;folderOr
 
 function normalizedEvidencePath(value?:string){return value?.replaceAll('\\','/').toUpperCase()}
 export function activeUserProtectsEvidenceFromDeletion(item:DeletionEvidenceItem,deletingUser:DeletionEvidenceUser,users:DeletionEvidenceUser[]){
- const itemPath=normalizedEvidencePath(item.path),itemKind=canonicalArtifactKind(item.kind??artifactKindFromFilename(item.filename));
+ const itemPath=normalizedEvidencePath(item.path),itemKind=canonicalArtifactKind(item.kind??artifactKindFromFilename(item.filename)??'Associated Evidence');
  return users.some(user=>user.id!==deletingUser.id&&!user.disabled&&user.artifacts.some(artifact=>{
   const artifactPath=normalizedEvidencePath(artifact.path);
   if(itemPath&&artifactPath)return itemPath===artifactPath;
   return !artifactPath&&canonicalArtifactKind(artifact.kind)===itemKind&&artifact.filename.toUpperCase()===item.filename.toUpperCase();
  }));
 }
-function artifactKindFromFilename(filename:string){return['SAAR','DoD Cyber Cert','User Agreement','8140 Cert Memo','Privileged User Training Cert','DTA Training'].find(kind=>filenameMatchesKind(filename,kind))??'Associated Evidence'}
 export function hasActiveDuplicateEvidenceScope(deletingUser:DeletionEvidenceUser,users:DeletionEvidenceUser[]){
  return users.some(user=>user.id!==deletingUser.id&&!user.disabled&&identityKey(user.last,user.first)===identityKey(deletingUser.last,deletingUser.first)&&user.organization.trim().toUpperCase()===deletingUser.organization.trim().toUpperCase());
 }

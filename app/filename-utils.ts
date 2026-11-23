@@ -9,11 +9,25 @@ export function artifactStorageFolder(kind:string){
  return canonical==='SAAR'?'SAAR':canonical==='DoD Cyber Cert'?'DoD Cyber Cert':canonical===agreementArtifactKind?'User Agreement':canonical==='8140 Cert Memo'?'8140 Certification Memo':canonical==='Privileged User Training Cert'?'Privileged User Training':canonical==='DTA Training'?'DTA Training':undefined
 }
 const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-const monthNamePattern='JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUN(?:E)?|JUL(?:Y)?|AUG(?:UST)?|SEP(?:T(?:EMBER)?)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?';
+const monthSpellings=[
+ ['JAN','JANUARY','JANURARY'],
+ ['FEB','FEBRUARY','FEBUARY','FEBURARY','FEBRURARY'],
+ ['MAR','MARCH','MARH'],
+ ['APR','APRIL','APRL'],
+ ['MAY'],
+ ['JUN','JUNE'],
+ ['JUL','JULY','JLY'],
+ ['AUG','AUGUST','AGU','AGUST'],
+ ['SEP','SEPT','SEPTEMBER','SEPEMBER','SEPTMBER','SEPTEMER','SEPTEBER','SEPTMEBER','SEPTEMEBER'],
+ ['OCT','OCTOBER','OCTBER','OCTOBR'],
+ ['NOV','NOVEMBER','NOVMBER','NOVEMER','NOVEMEBER'],
+ ['DEC','DECEMBER','DECMBER','DECEMER','DECEMEBER'],
+] as const;
+const monthAliases=new Map<string,number>(monthSpellings.flatMap((spellings,index)=>spellings.map(spelling=>[spelling,index+1] as const))),monthNamePattern=[...monthAliases.keys()].sort((left,right)=>right.length-left.length).join('|');
 const clean=(value:string,max=500)=>value.replace(/[\r\n\u0000-\u001f\u007f]/g,' ').trim().slice(0,max);
 const documentTitleIdentityWords=new Set(['ACCESS','AGREEMENT','AWARENESS','CERTIFICATE','CHALLENGE','COMPLETION','COURSE','CYBER','DOD','GENERAL','INFORMATION','NAME','PRIVILEGED','REQUEST','SECURITY','SYSTEM','TRAINING','USER']);
 type DateMatch={date:Date;start:number;end:number;normalized:string;defaultFormat:boolean};
-const filenameCacheLimit=20000,dateCache=new Map<string,DateMatch|null>(),tokenListCache=new Map<string,string[]>(),tokenSetCache=new Map<string,Set<string>>(),compactCache=new Map<string,string>(),organizationCache=new Map<string,string|null>(),identityCache=new Map<string,{last:string;first:string}|null>();
+const filenameCacheLimit=20000,dateCache=new Map<string,DateMatch|null>(),tokenListCache=new Map<string,string[]>(),tokenSetCache=new Map<string,Set<string>>(),compactCache=new Map<string,string>(),organizationCache=new Map<string,string|null>(),identityCache=new Map<string,{last:string;first:string}|null>(),artifactKindCache=new Map<string,string|null>();
 function remember<K,V>(cache:Map<K,V>,key:K,value:V){if(cache.size>=filenameCacheLimit)cache.clear();cache.set(key,value);return value}
 
 export const fileTokenList=(value:string)=>tokenListCache.get(value)??remember(tokenListCache,value,value.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean));
@@ -21,25 +35,44 @@ export const fileTokens=(value:string)=>tokenSetCache.get(value)??remember(token
 const compactFilename=(value:string)=>compactCache.get(value)??remember(compactCache,value,value.toUpperCase().replace(/[^A-Z0-9]+/g,''));
 
 const calendarDate=(year:number,month:number,day:number)=>{const date=new Date(Date.UTC(year,month-1,day));return year>=1900&&year<=2099&&date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day?date:undefined};
-const monthNumber=(value:string)=>/^\d+$/.test(value)?+value:months.indexOf(value.toUpperCase().slice(0,3))+1;
+const ordinalDate=(year:number,dayOfYear:number)=>{if(year<1900||year>2099||dayOfYear<1||dayOfYear>366)return;const date=new Date(Date.UTC(year,0,dayOfYear));return date.getUTCFullYear()===year?date:undefined};
+const monthNumber=(value:string)=>/^\d+$/.test(value)?+value:monthAliases.get(value.toUpperCase())??0;
 const fourDigitYear=(value:string)=>value.length===2?(+value>=70?1900+ +value:2000+ +value):+value;
 function computeDateMatch(filename:string):DateMatch|undefined{
  const value=filename.toUpperCase(),candidates:DateMatch[]=[];
+ // Numeric month/day values are locale-dependent when both values are 1-12.
+ // They must be resolved by an operator rather than silently interpreted as US order.
+ if([...value.matchAll(/(?:^|[^A-Z0-9])(0?[1-9]|1[0-2])[-_. ](0?[1-9]|1[0-2])[-_. ]((?:19|20)\d{2})(?=$|[^A-Z0-9])/g)].some(match=>match[1]!==match[2]))return;
+ const blockedIdentifierRanges=[...value.matchAll(/(?:^|[^A-Z0-9])(?:EMPLOYEE[-_. ]*)?(?:ID|EDIPI|DOD[-_. ]*ID)\s*[:#_-]*\s*(\d{5,10})(?=$|[^A-Z0-9])/g)].map(match=>{const token=match[1],start=(match.index??0)+match[0].lastIndexOf(token);return{start,end:start+token.length}});
+ const blocked=(start:number,end:number)=>blockedIdentifierRanges.some(range=>start<range.end&&end>range.start);
+ const bounded=(start:number,end:number)=>!/[A-Z0-9]/.test(value[start-1]??'')&&!/[A-Z0-9]/.test(value[end]??'');
+ const push=(date:Date,start:number,end:number,defaultFormat=false)=>candidates.push({date,start,end,normalized:`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`,defaultFormat});
  const add=(pattern:RegExp,parts:(match:RegExpExecArray)=>[string,string,string],defaultFormat=false)=>{
   for(const match of value.matchAll(pattern)){
    const start=match.index??0,end=start+match[0].length,before=value[start-1]??'',after=value[end]??'';
-   if(/[A-Z0-9]/.test(before)||/[A-Z0-9]/.test(after))continue;
+   if(/[A-Z0-9]/.test(before)||/[A-Z0-9]/.test(after)||blocked(start,end))continue;
    const[yearValue,monthValue,dayValue]=parts(match),year=fourDigitYear(yearValue),month=monthNumber(monthValue),day=+dayValue,date=calendarDate(year,month,day);
-   if(date)candidates.push({date,start,end,normalized:`${String(day).padStart(2,'0')}${months[month-1]}${year}`,defaultFormat})
+   if(date)push(date,start,end,defaultFormat)
+  }
+ };
+ const addOrdinal=(pattern:RegExp,parts:(match:RegExpExecArray)=>[string,string])=>{
+  for(const match of value.matchAll(pattern)){
+   const start=match.index??0,end=start+match[0].length;if(!bounded(start,end)||blocked(start,end))continue;
+   const[yearValue,ordinalValue]=parts(match),date=ordinalDate(fourDigitYear(yearValue),+ordinalValue);if(date)push(date,start,end)
   }
  };
  add(/(0[1-9]|[12]\d|3[01])(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)((?:19|20)\d{2})/g,m=>[m[3],m[2],m[1]],true);
  add(new RegExp(`(0[1-9]|[12]\\d|3[01])(${monthNamePattern})((?:19|20)\\d{2})`,'g'),m=>[m[3],m[2],m[1]]);
+ add(new RegExp(`([1-9])(${monthNamePattern})((?:19|20)\\d{2})`,'g'),m=>[m[3],m[2],m[1]]);
  add(new RegExp(`(3[01]|[12]\\d|0?[1-9])[-_., ]+(${monthNamePattern})[-_., ]+((?:19|20)\\d{2})`,'g'),m=>[m[3],m[2],m[1]]);
  add(new RegExp(`(${monthNamePattern})[-_., ]*(3[01]|[12]\\d|0?[1-9])[-_., ]*((?:19|20)\\d{2})`,'g'),m=>[m[3],m[1],m[2]]);
  add(new RegExp(`((?:19|20)\\d{2})[-_., ]*(${monthNamePattern})[-_., ]*(3[01]|[12]\\d|0?[1-9])`,'g'),m=>[m[1],m[2],m[3]]);
  add(new RegExp(`(3[01]|[12]\\d|0?[1-9])[-_., ]+(${monthNamePattern})[-_., ]+(\\d{2})`,'g'),m=>[m[3],m[2],m[1]]);
+ add(new RegExp(`(0[1-9]|[12]\\d|3[01])(${monthNamePattern})(\\d{2})`,'g'),m=>[m[3],m[2],m[1]]);
+ add(new RegExp(`([1-9])(${monthNamePattern})(\\d{2})`,'g'),m=>[m[3],m[2],m[1]]);
  add(new RegExp(`(${monthNamePattern})[-_., ]*(3[01]|[12]\\d|0?[1-9])[-_., ]*(\\d{2})`,'g'),m=>[m[3],m[1],m[2]]);
+ add(new RegExp(`(3[2-9]|[4-9]\\d)[-_., ]*(${monthNamePattern})[-_., ]*(0[1-9]|[12]\\d|3[01])`,'g'),m=>[m[1],m[2],m[3]]);
+ add(/((?:19|20)\d{2})[-_., ]*(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12]\d|3[01])Z/g,m=>[m[1],m[2],m[3]]);
  add(/((?:19|20)\d{2})[-_., ]*(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12]\d|3[01])/g,m=>[m[1],m[2],m[3]]);
  add(/((?:19|20)\d{2})[-_., ]+(1[0-2]|0?[1-9])[-_., ]+(3[01]|[12]\d|0?[1-9])/g,m=>[m[1],m[2],m[3]]);
  add(/(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12]\d|3[01])[-_., ]*((?:19|20)\d{2})/g,m=>[m[3],m[1],m[2]]);
@@ -48,9 +81,21 @@ function computeDateMatch(filename:string):DateMatch|undefined{
  add(/(1[3-9]|2\d|3[01])[-_., ]+(1[0-2]|0?[1-9])[-_., ]+((?:19|20)\d{2})/g,m=>[m[3],m[2],m[1]]);
  add(/(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12]\d|3[01])[-_., ]*(\d{2})/g,m=>[m[3],m[1],m[2]]);
  add(/(1[0-2]|0?[1-9])[-_., ]+(3[01]|[12]\d|0?[1-9])[-_., ]+(\d{2})/g,m=>[m[3],m[1],m[2]]);
- add(/(1[3-9]|2\d|3[01])[-_., ]+(1[0-2]|0?[1-9])[-_., ]+(\d{2})/g,m=>[m[3],m[2],m[1]]);
- add(/(1[3-9]|[2-6]\d)[-_., ]*(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12]\d|3[01])/g,m=>[m[1],m[2],m[3]]);
+ add(/(1[3-9]|2\d|3[01])[-_., ]*(0[1-9]|1[0-2])[-_., ]*(\d{2})/g,m=>[m[3],m[2],m[1]]);
+ add(/(3[2-9]|[4-9]\d)[-_., ]*(0[1-9]|1[0-2])[-_., ]*(0[1-9]|[12]\d|3[01])/g,m=>[m[1],m[2],m[3]]);
  add(/((?:19|20)\d{2})[-_., ]+(1[3-9]|2\d|3[01])[-_., ]+(1[0-2]|0?[1-9])/g,m=>[m[1],m[3],m[2]]);
+ addOrdinal(/(\d{2})[-_., ]+(\d{3})/g,m=>[m[1],m[2]]);
+ addOrdinal(/(\d{3})[-_., ]+(\d{2})/g,m=>[m[2],m[1]]);
+ addOrdinal(/((?:19|20)\d{2})[-_., ]+(\d{3})/g,m=>[m[1],m[2]]);
+ addOrdinal(/(\d{3})[-_., ]+((?:19|20)\d{2})/g,m=>[m[2],m[1]]);
+ for(const match of value.matchAll(/\d{7}|\d{5}/g)){
+  const start=match.index??0,end=start+match[0].length;if(!bounded(start,end)||blocked(start,end))continue;
+  const token=match[0],possibilities=token.length===5
+   ?[ordinalDate(fourDigitYear(token.slice(0,2)),+token.slice(2)),ordinalDate(fourDigitYear(token.slice(3)),+token.slice(0,3))]
+   :[ordinalDate(+token.slice(0,4),+token.slice(4)),ordinalDate(+token.slice(3),+token.slice(0,3))];
+  const valid=possibilities.filter((date):date is Date=>!!date),unique=[...new Map(valid.map(date=>[date.getTime(),date])).values()];
+  if(unique.length===1)push(unique[0],start,end)
+ }
  const maximal=candidates.filter(candidate=>!candidates.some(other=>other!==candidate&&other.start<=candidate.start&&other.end>=candidate.end&&other.end-other.start>candidate.end-candidate.start));
  return maximal.sort((left,right)=>right.start-left.start||Number(right.defaultFormat)-Number(left.defaultFormat))[0]
 }
@@ -60,22 +105,51 @@ export function normalizeFilenameDate(filename:string){const match=dateMatch(fil
 
 export function organizationFrom(filename:string){const cached=organizationCache.get(filename);if(cached!==undefined)return cached??undefined;const match=filename.match(/\(([^()]{1,100})\)/),organization=match?clean(match[1],100):'';return remember(organizationCache,filename,organization||null)??undefined}
 
+function filenameDescriptor(filename:string){
+ const base=(filename.split(/[\\/]/).pop()??filename).replace(/(?:\.pdf)?\.zip$|\.pdf$/i,''),organization=base.match(/\([^()]{1,100}\)/);
+ const descriptor=organization?base.slice((organization.index??0)+organization[0].length):base,dated=dateMatch(descriptor);
+ return dated?`${descriptor.slice(0,dated.start)}${descriptor.slice(dated.end)}`:descriptor;
+}
+const compactHasPair=(value:string,left:string,right:string)=>value.includes(`${left}${right}`)||value.includes(`${right}${left}`);
+function saarDocumentMarker(filename:string){
+ const descriptor=filenameDescriptor(filename),tokens=fileTokens(descriptor),compact=compactFilename(descriptor);
+ return tokens.has('SAAR')||compact.includes('GENSAAR')||(tokens.has('2875')&&(tokens.has('DD')||tokens.has('FORM')))||compactHasPair(compact,'DD','2875')||compactHasPair(compact,'FORM','2875')||(tokens.has('ACCESS')&&tokens.has('REQUEST'))||compactHasPair(compact,'ACCESS','REQUEST');
+}
 function saarMarkers(filename:string){
- const upper=(filename.split(/[\\/]/).pop()??filename).toUpperCase(),general=/(?:^|[^A-Z0-9])GEN[^A-Z0-9]*SAAR(?:[^A-Z0-9]|$)/.test(upper),privileged=upper.match(/(?:^|[^A-Z0-9])PRIV[^A-Z0-9]*([A-Z0-9]+?)[^A-Z0-9]*SAAR(?:[^A-Z0-9]|$)/);
+ const upper=filenameDescriptor(filename).toUpperCase(),document='(?:SAAR|(?:DD[^A-Z0-9]*)?FORM[^A-Z0-9]*2875|DD[^A-Z0-9]*2875|(?:SYSTEM[^A-Z0-9]*(?:AUTHORIZATION[^A-Z0-9]*)?)?ACCESS[^A-Z0-9]*REQUEST)',general=new RegExp(`(?:^|[^A-Z0-9])GEN(?:ERAL)?[^A-Z0-9]*${document}(?:[^A-Z0-9]|$)`).test(upper),privileged=upper.match(new RegExp(`(?:^|[^A-Z0-9])PRIV(?:ILEGED)?[^A-Z0-9]*([A-Z0-9]+?)[^A-Z0-9]*${document}(?:[^A-Z0-9]|$)`));
  return{general,privilegedType:privileged?.[1]};
 }
-function hasSaarMarker(filename:string){const tokens=fileTokens(filename),markers=saarMarkers(filename);return tokens.has('SAAR')||markers.general||!!markers.privilegedType}
-export function legacy8570MemoFilename(filename:string){return !hasSaarMarker(filename)&&fileTokens(filename).has('8570')}
-export function filenameMatchesKind(filename:string,kind:string){
- const canonical=canonicalArtifactKind(kind),tokens=fileTokens(filename),compact=compactFilename(filename),saar=hasSaarMarker(filename);
- if(canonical==='SAAR')return saar;
- if(saar)return false;
- if(canonical==='DoD Cyber Cert')return tokens.has('AWARENESS')||(tokens.has('DOD')&&tokens.has('CYBER'))||(compact.includes('DOD')&&compact.includes('CYBER'))||(compact.includes('CYBER')&&compact.includes('AWARENESS'))||compact.includes('AWARENESSCHALLENGE');
- if(canonical===agreementArtifactKind)return tokens.has('AGREEMENT')||tokens.has('AGREEMENTS')||compact.includes('AGREEMENT');
- if(canonical==='8140 Cert Memo')return tokens.has('8140')||compact.includes('8140')||legacy8570MemoFilename(filename);
- if(canonical==='Privileged User Training Cert')return (tokens.has('PRIV')&&tokens.has('TRAINING'))||(compact.includes('PRIV')&&compact.includes('TRAINING'))||(!tokens.has('DTA')&&!compact.includes('DELEGATEDTRUSTEDAGENT')&&(tokens.has('RESPONSIBILITIES')||tokens.has('COURSE')));
- return ((tokens.has('DTA')||compact.includes('DELEGATEDTRUSTEDAGENT'))&&(tokens.has('TRAINING')||tokens.has('COURSE')||tokens.has('RESPONSIBILITIES')))||(compact.includes('DTA')&&(compact.includes('TRAINING')||compact.includes('COURSE')||compact.includes('RESPONSIBILITIES')));
+function hasSaarMarker(filename:string){const markers=saarMarkers(filename);return saarDocumentMarker(filename)||markers.general||!!markers.privilegedType}
+export function legacy8570MemoFilename(filename:string){return !hasSaarMarker(filename)&&fileTokens(filenameDescriptor(filename)).has('8570')}
+
+/**
+ * Returns one unambiguous artifact type for a filename. Rules are deliberately
+ * ordered from the most specific document markers to the broad legacy aliases.
+ * Only the basename is inspected. When the required parenthesized organization
+ * marker is present, its identity and organization prefix is excluded too.
+ */
+export function artifactKindFromFilename(filename:string){
+ const cached=artifactKindCache.get(filename);if(cached!==undefined)return cached??undefined;
+ const descriptor=filenameDescriptor(filename),tokens=fileTokens(descriptor),compact=compactFilename(descriptor),has=(value:string)=>tokens.has(value);
+ const trainingWords=['TRAINING','COURSE','RESPONSIBILITIES'],certificateWords=['CERT','CERTIFICATE','CERTIFICATION'],evidenceWords=[...trainingWords,...certificateWords],hasTrainingAlias=trainingWords.some(has),hasCertificateAlias=certificateWords.some(has),trainingPattern='(?:TRAINING|COURSE|RESPONSIBILITIES|CERT|CERTIFICATE|CERTIFICATION)';
+ const has8140DocumentAlias=certificateWords.some(certificate=>['MEMO','LETTER'].some(document=>has(certificate)&&has(document)||compactHasPair(compact,certificate,document)));
+ const hasStrongCyberAlias=has('AWARENESS')||((has('DOD')||has('DOW'))&&has('CYBER'))||compactHasPair(compact,'DOD','CYBER')||compactHasPair(compact,'DOW','CYBER')||compactHasPair(compact,'CYBER','AWARENESS')||compactHasPair(compact,'AWARENESS','CHALLENGE');
+ const hasCyberCertificateAlias=(has('CYBER')&&(has('CERT')||has('CERTIFICATE')))||compactHasPair(compact,'CYBER','CERT')||compactHasPair(compact,'CYBER','CERTIFICATE');
+ const hasDtaTrainingAlias=(has('DTA')||compact.includes('DATATRANSFERAGENT'))&&(hasTrainingAlias||hasCertificateAlias)||new RegExp(`^(?:(?:DTA|DATATRANSFERAGENT)(?:USER)?${trainingPattern}(?:CERT|CERTIFICATE|CERTIFICATION)?|${trainingPattern}(?:DTA|DATATRANSFERAGENT))$`).test(compact)||evidenceWords.some(value=>compact===`DTA${value}`||compact===`${value}DTA`);
+ const hasPrivilegedTrainingAlias=(has('PRIV')||has('PRIVILEGED'))&&(hasTrainingAlias||hasCertificateAlias)||new RegExp(`^(?:PRIV(?:ILEGED)?(?:USER|ACCESS)?(?:CYBERSECURITY)?${trainingPattern}(?:CERT|CERTIFICATE|CERTIFICATION)?|${trainingPattern}PRIV(?:ILEGED)?)$`).test(compact)||evidenceWords.some(value=>compact===`PRIV${value}`||compact===`${value}PRIV`||compact===`PRIVILEGED${value}`||compact===`${value}PRIVILEGED`);
+ let result:string|undefined;
+ if(hasSaarMarker(filename))result='SAAR';
+ else if(has('AGREEMENT')||has('AGREEMENTS')||compact.includes('AGREEMENT')||compactHasPair(compact,'ACCEPTABLE','USE'))result='User Agreement';
+ else if(has('8140')||compact.includes('8140')||has('8570'))result='8140 Cert Memo';
+ else if(hasDtaTrainingAlias)result='DTA Training';
+ else if(hasPrivilegedTrainingAlias)result='Privileged User Training Cert';
+ else if(hasStrongCyberAlias)result='DoD Cyber Cert';
+ else if(has8140DocumentAlias)result='8140 Cert Memo';
+ else if(hasCyberCertificateAlias)result='DoD Cyber Cert';
+ else if(has('RESPONSIBILITIES')||has('COURSE'))result='Privileged User Training Cert';
+ return remember(artifactKindCache,filename,result??null)??undefined;
 }
+export function filenameMatchesKind(filename:string,kind:string){return artifactKindFromFilename(filename)===canonicalArtifactKind(kind)}
 export function disabledSaarFilename(filename:string){return filenameMatchesKind(filename,'SAAR')&&fileTokens(filename).has('DISABLED')}
 
 const canonicalFilePart=(value:string,maxLength=80)=>clean(value,maxLength).replace(/[<>:"/\\|?*()]/g,' ').replace(/[^A-Za-z0-9'+.-]+/g,'_').replace(/^_+|_+$/g,'');
@@ -96,7 +170,7 @@ export function canonicalManualEvidenceFilename(input:{filename:string;embeddedP
 }
 export function canonicalEvidenceFilename(filename:string,organizationOverride?:string){
  if(legacy8570MemoFilename(filename))return;
- const identity=identityFromFilename(filename),organization=organizationOverride||organizationFrom(filename),date=parseDate(filename),kind=artifactKinds.find(candidate=>filenameMatchesKind(filename,candidate));
+ const identity=identityFromFilename(filename),organization=organizationOverride||organizationFrom(filename),date=parseDate(filename),kind=artifactKindFromFilename(filename);
  if(!identity||!organization||!date||!kind)return;
  const last=canonicalFilePart(identity.last),first=canonicalFilePart(identity.first),org=canonicalFilePart(organization),dateToken=`${String(date.getUTCDate()).padStart(2,'0')}${months[date.getUTCMonth()]}${date.getUTCFullYear()}`;if(!last||!first||!org)return;
  let artifact=kind.replaceAll(' ','_');
@@ -143,14 +217,17 @@ export function operatorMarkedIncomplete(filename:string){
  return/(?:^|[^A-Z0-9])INCOMPLETE(?:[^A-Z0-9]|$)/i.test(base);
 }
 
-export function looksLikeEvidenceFilename(filename:string){return !!parseDate(filename)&&artifactKinds.some(kind=>filenameMatchesKind(filename,kind))}
+export function looksLikeEvidenceFilename(filename:string){return !!parseDate(filename)&&!!artifactKindFromFilename(filename)}
 
 export function identityFromFilename(filename:string){
  const cached=identityCache.get(filename);if(cached!==undefined)return cached??undefined;
- const base=filename.split(/[\\/]/).pop()??filename;
- const match=base.match(/^\s*([^_,()\s]+)\s*(?:_+\s*|,\s*|\s+)([^_,()\s]+)(?=\s*(?:_|,|\(|\s))/);
- if(!match)return remember(identityCache,filename,null)??undefined;
- const last=clean(match[1]),first=clean(match[2]);
+ const base=filename.split(/[\\/]/).pop()??filename,prefix=base.split('(')[0].replace(/[_,\s.-]+$/,'').trim(),comma=prefix.match(/^(.+?),\s*([^,\s_]+)/);let last='',first='';
+ if(comma){last=clean(comma[1]);first=clean(comma[2])}
+ else{
+  const parts=prefix.split(/_+|\s+/).map(value=>clean(value)).filter(Boolean),suffixes=new Set(['JR','SR','II','III','IV','V']);if(suffixes.has(parts.at(-1)?.toUpperCase()??''))parts.pop();if(parts.length>=3&&parts.at(-1)?.length===1)parts.pop();
+  const surnamePrefix=/^(?:VAN|VON|DE|DEL|DA|DI|LA|LE|ST|SAINT)$/i.test(parts[0]??'');
+  if(parts.length===2){last=parts[0];first=parts[1]}else if(parts.length>=3&&surnamePrefix){const organizationIndex=parts.findIndex(value=>value.startsWith('(')),nameParts=organizationIndex>0?parts.slice(0,organizationIndex):parts;last=nameParts.slice(0,-1).join(' ');first=nameParts.at(-1)!}else if(parts.length>=2){last=parts[0];first=parts[1]}
+ }
  return remember(identityCache,filename,last&&first&&plausiblePersonIdentity(last,first)?{last,first}:null)??undefined;
 }
 export function plausiblePersonIdentity(last:string,first:string){

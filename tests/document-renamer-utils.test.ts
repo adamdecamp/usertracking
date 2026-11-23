@@ -11,10 +11,10 @@ test('reads a signed general user agreement and builds the ingest filename',()=>
  assert.equal(buildTrackerFilename(analysis),'Brown_Jacob_(LM)_User_Agreement_26AUG2026.pdf');
 });
 
-test('always gives a usable Last_First filename identity priority over PDF text and SAAR fields',()=>{
+test('retains both filename and PDF identities and requires review when they conflict',()=>{
  const analysis=analyzeDocumentText('DD FORM 2875 Name of User: Wrong, Person Signature Date: 08/26/2026','Shaw_Vivian_(GOV)_GEN_SAAR_26AUG2026.pdf',[],'GOV');
  assert.equal(analysis.last,'Shaw');assert.equal(analysis.first,'Vivian');
- assert.match(analysis.evidence.join(' '),/Read identity from filename: Shaw, Vivian/);
+ assert.equal(analysis.confidence,'Review');assert.match(analysis.evidence.join(' '),/Filename identity: Shaw, Vivian/);assert.match(analysis.evidence.join(' '),/conflicts with PDF identity Wrong, Person/);
  const merged=applySaarFormFallback(analysis,{last:'Wrong',first:'Person'},'OTHER');
  assert.equal(merged.last,'Shaw');assert.equal(merged.first,'Vivian');assert.equal(merged.organization,'GOV');
 });

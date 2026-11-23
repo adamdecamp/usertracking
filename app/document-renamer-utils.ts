@@ -1,8 +1,10 @@
-import {artifactKinds,evidenceFilenamePassesStorageGate,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,parseDate,plausiblePersonIdentity} from './filename-utils.ts';
+import {artifactKindFromFilename,evidenceFilenamePassesStorageGate,identityFromFilename,legacy8570MemoFilename,plausiblePersonIdentity} from './filename-utils.ts';
 import {normalizePrivilegedType} from './privileged-type-utils.ts';
+import {artifactKindCandidates,recognizeEvidence,type RecognitionCandidate} from './application/evidence-recognition-service.ts';
+import type {RecognitionAlias} from './domain/tracker-models.ts';
 
-export type RenamerUser={first:string;last:string;organization:string;roles:string[];privilegedTypes:string[]};
-export type RenamerAnalysis={kind:string;first:string;last:string;organization:string;date:string;role:'GEN'|'PRIV'|'';privilegedType:string;confidence:'High'|'Review'|'Manual';evidence:string[]};
+export type RenamerUser={id?:string;first:string;last:string;organization:string;email?:string;disabled?:boolean;roles:string[];privilegedTypes:string[]};
+export type RenamerAnalysis={kind:string;first:string;last:string;organization:string;date:string;role:'GEN'|'PRIV'|'';privilegedType:string;confidence:'High'|'Review'|'Manual';evidence:string[];score?:number;margin?:number;vetoes?:string[];candidates?:RecognitionCandidate[];normalizedPattern?:string;decisionSource?:'automatic'|'alias'|'review'};
 
 const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const clean=(value:string,max=200)=>value.replace(/[\r\n\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
@@ -59,21 +61,21 @@ export function normalizeFilenameOrganization(filename:string,organization:strin
 }
 
 const kindRules:[string,RegExp[]][]=[
- ['DTA Training',[/\bDTA\b.{0,80}\b(?:TRAINING|COURSE|RESPONSIBILITIES)\b/i,/\bDELEGATED TRUSTED AGENT\b.{0,80}\b(?:TRAINING|COURSE|RESPONSIBILITIES)\b/i]],
- ['Privileged User Training Cert',[/\bPRIV(?:ILEGED)?(?:\s+USER)?\b.{0,100}\bTRAINING\b/i,/\bPRIVILEGED ACCESS\b.{0,100}\bTRAINING\b/i,/\bPRIVILEGED USER CYBERSECURITY RESPONSIBILITIES\b/i]],
- ['8140 Cert Memo',[/\b8140(?:\.0+)?\b.{0,180}\b(?:MEMO|MEMORANDUM|CERTIFICATION|QUALIFICATION)\b/i,/\b(?:MEMO|MEMORANDUM)\b.{0,180}\b8140(?:\.0+)?\b/i]],
  ['SAAR',[/\bDD\s*FORM\s*2875\b/i,/\bSYSTEM(?:\s+AUTHORIZATION)?\s+ACCESS\s+REQUEST\b/i,/\bSAAR\b/i]],
  ['User Agreement',[/\bAGREEMENTS?\b/i,/\bACCEPTABLE\s+USE(?:\s+POLICY)?\b/i]],
- ['DoD Cyber Cert',[/\b(?:DOD\s+)?CYBER\s+AWARENESS(?:\s+CHALLENGE)?(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bAWARENESS\s+CHALLENGE(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bINFORMATION\s+ASSURANCE\b.{0,80}\bAWARENESS\b/i]],
+ ['DTA Training',[/\bDTA\b.{0,80}\b(?:TRAINING|COURSE|RESPONSIBILITIES)\b/i,/\bDATA TRANSFER AGENT\b.{0,80}\b(?:TRAINING|COURSE|RESPONSIBILITIES)\b/i]],
+ ['Privileged User Training Cert',[/\bPRIV(?:ILEGED)?(?:\s+USER)?\b.{0,100}\bTRAINING\b/i,/\bPRIVILEGED ACCESS\b.{0,100}\bTRAINING\b/i,/\bPRIVILEGED USER CYBERSECURITY RESPONSIBILITIES\b/i]],
+ ['8140 Cert Memo',[/\b8140(?:\.0+)?\b.{0,180}\b(?:MEMO|MEMORANDUM|CERTIFICATION|QUALIFICATION)\b/i,/\b(?:MEMO|MEMORANDUM)\b.{0,180}\b8140(?:\.0+)?\b/i]],
+ ['DoD Cyber Cert',[/\b(?:(?:DOD|DOW)\s+)?CYBER\s+AWARENESS(?:\s+CHALLENGE)?(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bAWARENESS\s+CHALLENGE(?:\s+(?:CERTIFICATE|CERTIFICATION))?\b/i,/\bINFORMATION\s+ASSURANCE\b.{0,80}\bAWARENESS\b/i]],
 ];
 
-function detectKind(text:string,filename:string){const filenameKind=artifactKinds.find(kind=>filenameMatchesKind(filename,kind));if(filenameKind)return filenameKind;const filenameText=filename.replace(/[^A-Za-z0-9.]+/g,' '),source=`${filenameText}\n${text}`.slice(0,120000);for(const[kind,rules]of kindRules)if(rules.some(rule=>rule.test(source)))return kind;return''}
+function detectKind(text:string,filename:string){const filenameKind=artifactKindFromFilename(filename);if(filenameKind)return filenameKind;const filenameText=filename.replace(/[^A-Za-z0-9.]+/g,' '),source=`${filenameText}\n${text}`.slice(0,120000);for(const[kind,rules]of kindRules)if(rules.some(rule=>rule.test(source)))return kind;return''}
+function detectKinds(text:string,filename:string){const source=`${filename}\n${text}`.slice(0,120000),kinds=new Set(artifactKindCandidates(filename));for(const[kind,rules]of kindRules)if(rules.some(rule=>rule.test(source)))kinds.add(kind);return[...kinds]}
 
-function identifyUser(text:string,filename:string,users:RenamerUser[]){
+function identifyUsers(text:string,filename:string,users:RenamerUser[]){
  const haystack=` ${normalized(`${text}\n${filename}`)} `,scored=users.filter(user=>plausiblePersonIdentity(user.last,user.first)).map(user=>{const first=normalized(user.first),last=normalized(user.last);let score=0;if(first&&last){if(haystack.includes(` ${first} ${last} `))score+=5;if(haystack.includes(` ${last} ${first} `))score+=4;if(haystack.includes(` ${last} ${first.charAt(0)} `))score+=2;if(normalized(filename).startsWith(`${last} ${first}`))score+=5}return{user,score}}).filter(item=>item.score>0).sort((a,b)=>b.score-a.score);
- return scored.length&&(scored.length===1||scored[0].score>scored[1].score)?scored[0].user:undefined;
+ return scored;
 }
-
 function labeledName(text:string){
  const word="[A-Z][A-Z'’.-]{1,49}",middle="[A-Z]",labels='(?:FULL\\s+NAME|NAME\\s+OF\\s+(?:USER|INDIVIDUAL)|LEARNER\\s+NAME|RECIPIENT\\s+NAME|PARTICIPANT\\s+NAME|EMPLOYEE\\s+NAME|STUDENT\\s+NAME|CANDIDATE\\s+NAME|USER\\s+NAME|(?<!COURSE\\s)(?<!MODULE\\s)(?<!TRAINING\\s)(?<!DOCUMENT\\s)NAME)',candidates:{first:string;last:string}[]=[];
  const add=(match:RegExpMatchArray|null,order:'last-first'|'first-last')=>{if(!match)return;const candidate=order==='last-first'?{last:clean(match[1]),first:clean(match[2])}:{first:clean(match[1]),last:clean(match[2])};if(plausiblePersonIdentity(candidate.last,candidate.first))candidates.push(candidate)};
@@ -107,12 +109,13 @@ function signedDate(text:string,kind:string){
  const usable=candidates.filter(candidate=>candidate.score>=(certificateKind?20:2)).sort((a,b)=>b.score-a.score),best=usable[0],runnerUp=usable.find(candidate=>candidate.date!==best?.date);if(!best||runnerUp?.score===best.score)return;return best;
 }
 
-export function analyzeDocumentText(text:string,filename:string,users:RenamerUser[],defaultOrganization=''):RenamerAnalysis{
- const kind=detectKind(text,filename),filenameIdentity=identityFromFilename(filename),filenameMatch=filenameIdentity?users.find(user=>normalized(user.last)===normalized(filenameIdentity.last)&&normalized(user.first)===normalized(filenameIdentity.first)):undefined,matched=filenameMatch??(!filenameIdentity?identifyUser(text,filename,users):undefined),fallback=!filenameIdentity&&!matched?labeledName(text):undefined,signed=signedDate(text,kind),documentDate=signed&&signed.score>=2?signed:undefined,filenameDate=parseDate(filename),resolvedDate=documentDate?.date??(filenameDate?filenameDate.toISOString().slice(0,10):''),upper=normalized(`${text}\n${filename}`),role:RenamerAnalysis['role']=/\bPRIV(?:ILEGED)?\b/.test(upper)&&kind==='SAAR'?'PRIV':/\bGEN(?:ERAL)?\b/.test(upper)&&kind==='SAAR'?'GEN':'',privilegedType=role==='PRIV'?(matched?.privilegedTypes.length===1?normalizePrivilegedType(matched.privilegedTypes[0]):''):'',evidence:string[]=[];
- if(kind)evidence.push(`Recognized ${kind}`);if(filenameIdentity)evidence.push(`Read identity from filename: ${filenameIdentity.last}, ${filenameIdentity.first}`);if(filenameMatch)evidence.push(`Matched tracker user ${filenameMatch.last}, ${filenameMatch.first}`);else if(matched)evidence.push(`Matched tracker user ${matched.last}, ${matched.first}`);else if(fallback)evidence.push('Read a labeled name from the document');if(documentDate)evidence.push(`Selected date from: ${documentDate.context}`);else if(filenameDate)evidence.push('Read the complete date from the filename');
- const result={kind,first:filenameIdentity?.first??matched?.first??fallback?.first??'',last:filenameIdentity?.last??matched?.last??fallback?.last??'',organization:matched?.organization??defaultOrganization,date:resolvedDate,role,privilegedType,evidence};
- const complete=!!result.kind&&!!result.first&&!!result.last&&!!result.organization&&!!result.date&&(result.kind!=='SAAR'||!!result.role)&&(result.role!=='PRIV'||!!result.privilegedType),strong=complete&&!!(filenameIdentity||matched||fallback)&&(!!filenameDate||!!documentDate&&documentDate.score>=8);
- return{...result,confidence:strong?'High':complete?'Review':'Manual'};
+export function analyzeDocumentText(text:string,filename:string,users:RenamerUser[],defaultOrganization='',aliases:RecognitionAlias[]=[]):RenamerAnalysis{
+ const legacyKind=detectKind(text,filename),pdfIdentity=labeledName(text),contentMatches=identifyUsers(text,filename,users),legacyMatched=contentMatches.length&&(contentMatches.length===1||contentMatches[0].score>contentMatches[1].score)?contentMatches[0].user:undefined,signed=signedDate(text,legacyKind),documentDate=signed&&signed.score>=2?signed:undefined,upper=normalized(`${text}\n${filename}`),role:RenamerAnalysis['role']=/\bPRIV(?:ILEGED)?\b/.test(upper)&&legacyKind==='SAAR'?'PRIV':/\bGEN(?:ERAL)?\b/.test(upper)&&legacyKind==='SAAR'?'GEN':'',privilegedType=role==='PRIV'?(legacyMatched?.privilegedTypes.length===1?normalizePrivilegedType(legacyMatched.privilegedTypes[0]):''):'',matchable=users.map((user,index)=>({id:user.id??`renamer-${index}`,last:user.last,first:user.first,organization:user.organization,email:user.email??'',disabled:user.disabled??false}));
+ const decision=recognizeEvidence({filename,authoritativeOrganization:defaultOrganization,users:matchable,pdfIdentity,pdfDate:documentDate?.date,pdfArtifactKinds:detectKinds(text,filename),role,privilegedType,aliases,contentCandidateUserIds:contentMatches.map(match=>matchable[users.indexOf(match.user)]?.id).filter((value):value is string=>!!value),canonicalFilename:proposal=>buildTrackerFilename({kind:proposal.artifactKind??'',first:proposal.identity?.first??'',last:proposal.identity?.last??'',organization:proposal.organization??'',date:proposal.date??'',role:proposal.role??'',privilegedType:proposal.privilegedType??''})});
+ const proposal=decision.proposal,evidence=[`Original filename: ${filename}`,...decision.reasons,...decision.vetoes.map(value=>`Review required: ${value}`)];if(documentDate)evidence.push(`Document date source: ${documentDate.context}`);
+ const result={kind:proposal?.artifactKind??legacyKind,first:proposal?.identity?.first??pdfIdentity?.first??'',last:proposal?.identity?.last??pdfIdentity?.last??'',organization:proposal?.organization??defaultOrganization,date:proposal?.date??documentDate?.date??'',role,privilegedType,evidence};
+ const complete=!!result.kind&&!!result.first&&!!result.last&&!!result.organization&&!!result.date&&(result.kind!=='SAAR'||!!result.role)&&(result.role!=='PRIV'||!!result.privilegedType),reviewable=!!result.first&&!!result.last&&!!result.organization&&!!result.date&&decision.vetoes.length>0;
+ return{...result,confidence:decision.automatic?'High':complete||reviewable?'Review':'Manual',score:decision.score,margin:decision.margin,vetoes:decision.vetoes,candidates:decision.candidates,normalizedPattern:decision.normalizedPattern,decisionSource:decision.decisionSource};
 }
 
 export function applySaarFormFallback(analysis:RenamerAnalysis,identity?:{first:string;last:string},organization?:string):RenamerAnalysis{

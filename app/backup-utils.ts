@@ -4,7 +4,7 @@ import {currentManifestVersion} from './data-migrations.ts';
 export const backupSnapshotLimit=30;
 const maximumBackupBytes=50*1024*1024;
 
-export type BackupDatabase={version:number;updated:string;systems:unknown[];users:unknown[];minimumApplicationVersion?:string;lastWriterVersion?:string};
+export type BackupDatabase={version:number;updated:string;systems:unknown[];users:unknown[];recognitionAliases?:unknown[];minimumApplicationVersion?:string;lastWriterVersion?:string};
 export type BackupEnvelope={backupVersion:1;created:string;contentHash:string;database:BackupDatabase};
 
 const encoder=new TextEncoder();
@@ -26,7 +26,7 @@ export function checksumFilename(filename:string){return `${filename}.sha256`}
 export function staleSnapshotNames(names:string[],limit=backupSnapshotLimit){return [...names].sort().reverse().slice(limit)}
 
 export async function buildBackupSnapshot(database:BackupDatabase,created=new Date().toISOString()){
- const contentHash=await sha256Hex(JSON.stringify({systems:database.systems,users:database.users}));
+ const contentHash=await sha256Hex(JSON.stringify({systems:database.systems,users:database.users,...(database.version>=6?{recognitionAliases:database.recognitionAliases??[]}: {})}));
  const envelope:BackupEnvelope={backupVersion:1,created,contentHash,database:{...database,updated:created}};
  const text=JSON.stringify(envelope,null,2),integrityHash=await sha256Hex(text),filename=backupFilename(created);
  return{envelope,text,integrityHash,filename,checksumText:`${integrityHash}  ${filename}\n`};
@@ -50,8 +50,8 @@ export async function verifyBackupSnapshot(text:string,expectedIntegrityHash:str
 
 async function validateBackupEnvelope(text:string){
  const value=JSON.parse(text) as Partial<BackupEnvelope>;
- if(value.backupVersion!==1||typeof value.created!=='string'||typeof value.contentHash!=='string'||!value.database||![2,3,4,currentManifestVersion].includes(value.database.version)||!Array.isArray(value.database.systems)||!Array.isArray(value.database.users))throw new Error('The backup format is invalid.');
- const contentHash=await sha256Hex(JSON.stringify({systems:value.database.systems,users:value.database.users}));
+ if(value.backupVersion!==1||typeof value.created!=='string'||typeof value.contentHash!=='string'||!value.database||![2,3,4,5,currentManifestVersion].includes(value.database.version)||!Array.isArray(value.database.systems)||!Array.isArray(value.database.users)||(value.database.version>=6&&!Array.isArray(value.database.recognitionAliases)))throw new Error('The backup format is invalid.');
+ const contentHash=await sha256Hex(JSON.stringify({systems:value.database.systems,users:value.database.users,...(value.database.version>=6?{recognitionAliases:value.database.recognitionAliases??[]}: {})}));
  if(contentHash!==value.contentHash)throw new Error('The backup content hash does not match its records.');
  return value as BackupEnvelope;
 }

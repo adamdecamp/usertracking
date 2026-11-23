@@ -1,7 +1,7 @@
 import assert from'node:assert/strict';
 import{readFileSync}from'node:fs';
 import{test}from'node:test';
-import{compareApplicationVersions,currentManifestVersion,migrateAuditEntryPayload,migrateBackupPayload,migrateManifestPayload,migrateSyncIndexPayload}from'../app/data-migrations.ts';
+import{compareApplicationVersions,currentManifestVersion,migrateAuditEntryPayload,migrateBackupPayload,migrateManifestPayload,migrateSyncIndexPayload,rollbackManifestV6ToV5}from'../app/data-migrations.ts';
 import{applicationVersion}from'../app/version.ts';
 
 const fixture=(name:string)=>JSON.parse(readFileSync(new URL(`./fixtures/migrations/${name}`,import.meta.url),'utf8')) as unknown;
@@ -24,6 +24,18 @@ test('accepts each currently released persisted format and rejects future versio
  assert.equal(migrateBackupPayload({backupVersion:999,database:{}}),undefined);
  assert.equal(migrateAuditEntryPayload({version:999}),undefined);
  assert.equal(migrateSyncIndexPayload({version:999}),undefined);
+});
+
+test('migrates v5 to an empty alias store and preserves a v6 alias store',()=>{
+ const v5=migrateManifestPayload({version:5,minimumApplicationVersion:applicationVersion,lastWriterVersion:applicationVersion,systems:[],users:[]})!;
+ assert.deepEqual(v5.recognitionAliases,[]);
+ const v6=migrateManifestPayload(fixture('manifest-v6.json'))!;
+ assert.equal(v6.version,6);assert.equal((v6.recognitionAliases as unknown[]).length,1);
+});
+
+test('rolls v6 back to v5 by removing only additive alias metadata',()=>{
+ const fixtureV6=fixture('manifest-v6.json') as Record<string,unknown>,rolled=rollbackManifestV6ToV5(fixtureV6)!;
+ assert.equal(rolled.version,5);assert.equal('recognitionAliases'in rolled,false);assert.deepEqual(rolled.systems,fixtureV6.systems);assert.deepEqual(rolled.users,fixtureV6.users);
 });
 
 test('normalizes multi-value affiliated organizations in current manifests',()=>{

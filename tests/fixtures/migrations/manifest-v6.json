@@ -1,0 +1,14 @@
+{
+  "version": 6,
+  "minimumApplicationVersion": "1.3.29",
+  "lastWriterVersion": "1.3.29",
+  "systems": [
+    {"id":"system-one","name":"System One","type":"Operational","organization":"GOV","archived":false}
+  ],
+  "users": [
+    {"id":"user-one","systemId":"system-one","organization":"GOV","affiliatedOrganizations":[],"last":"Example","first":"User","middle":"","email":"user@example.test","disabled":false,"roles":["General"],"privilegedUsernames":[],"privilegedTypes":[],"artifacts":[],"changes":[],"exceptions":[],"extractionProvenance":{}}
+  ],
+  "recognitionAliases": [
+    {"id":"alias-one","systemId":"system-one","normalizedPattern":"EXAMPLE|USER|GOV|SAAR|{DATE}","organization":"GOV","userId":"user-one","artifactKind":"SAAR","operator":"DOMAIN\\operator","createdAtUtc":"2026-11-22T12:00:00.000Z","originalFilename":"Example_User_(GOV)_SAAR_22NOV2026.pdf","affectedFilenames":["Example_User_(GOV)_SAAR_22NOV2026.pdf"]}
+  ]
+}

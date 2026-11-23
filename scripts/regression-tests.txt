@@ -17,7 +17,11 @@ tests/sync-apply-isolation.test.ts
 tests/session-utils.test.ts
 tests/last-logon-utils.test.ts
 tests/session-commit-preflight.test.ts
+tests/artifact-kind-classifier.test.ts
 tests/filename-utils.test.ts
+tests/filename-recognition-phase1-audit.test.ts
+tests/evidence-recognition-service.test.ts
+tests/renamer-queue-service.test.ts
 tests/document-renamer-utils.test.ts
 tests/document-renamer-filename-fuzz.test.ts
 tests/document-renamer-preview.test.ts

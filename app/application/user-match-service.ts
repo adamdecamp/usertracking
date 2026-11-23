@@ -8,6 +8,8 @@ export type PossibleUserMatch={
  score:number;
 };
 
+export type MatchableUser=Pick<UserRecord,'id'|'last'|'first'|'organization'|'email'|'disabled'>;
+
 export type PossibleDuplicateUser={left:UserRecord;right:UserRecord;reason:string;score:number};
 
 const nicknameGroups=[
@@ -57,7 +59,7 @@ export function userInformationEditConflicts(previous:Pick<UserRecord,'id'|'syst
  return{identity,emailOwner,messages};
 }
 
-export function possibleExistingUserMatches(incoming:Pick<UserRecord,'last'|'first'|'email'|'organization'>,existing:UserRecord[],limit=8):PossibleUserMatch[]{
+export function possibleExistingUserMatches(incoming:Pick<UserRecord,'last'|'first'|'email'|'organization'>,existing:MatchableUser[],limit=8):PossibleUserMatch[]{
  const incomingLast=comparablePersonName(incoming.last),incomingFirst=comparablePersonName(incoming.first),incomingEmail=incoming.email.trim().toLocaleUpperCase('en-US');
  if(!incomingLast||!incomingFirst)return[];
  const matches:PossibleUserMatch[]=[];

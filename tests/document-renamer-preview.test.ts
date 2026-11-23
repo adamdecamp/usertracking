@@ -177,11 +177,11 @@ test('Sync applies the shared Document Renamer analysis to changed noncanonical 
  assert.match(sync,/documentNeedsFilenameNormalization/);
  assert.match(sync,/!insideArchiveTree\(item\.path\)/);
  assert.doesNotMatch(sync,/!item\.unchanged\|\|insideOrganizationRework\(item\.path\)/);
- assert.match(sync,/analyzeRenamerPdf\(candidate,sourceUsers,h\.name,controller\.signal\)/);
+ assert.match(sync,/analyzeRenamerPdf\(candidate,sourceUsers,h\.name,recognitionAliases,controller\.signal\)/);
  assert.match(sync,/item\.confidence==='High'/);
  assert.match(sync,/normalizationFailures\.push/);
  assert.match(sync,/renamedDuringSync\+\+/);
- assert.match(manual,/analyzeRenamerPdf\(candidate,users,root\.name\)/);
+ assert.match(manual,/analyzeRenamerPdf\(candidate,users,root\.name,aliases\)/);
 });
 
 test('the manual Document Renamer button is removed while both Sync modes retain automatic normalization',()=>{

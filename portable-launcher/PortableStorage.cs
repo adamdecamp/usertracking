@@ -622,7 +622,7 @@ internal sealed partial class PortableStorage : IDisposable
         string storageFormat = stored.ContainsKey("storageFormat") ? Convert.ToString(stored["storageFormat"], CultureInfo.InvariantCulture) : "";
         if (!String.Equals(storageFormat, ManifestStorageFormat, StringComparison.Ordinal)) return MigrateDatabaseObject(stored);
         if (!stored.ContainsKey("version") || !stored.ContainsKey("systems") || !stored.ContainsKey("userShards") || !stored.ContainsKey("stateHash") || !stored.ContainsKey("userCount")) throw new InvalidDataException("The sharded database catalog is invalid.");
-        int catalogVersion = Convert.ToInt32(stored["version"], CultureInfo.InvariantCulture);if (catalogVersion != 2 && catalogVersion != 3) throw new InvalidDataException("The sharded database catalog uses an unsupported version.");
+        int catalogVersion = Convert.ToInt32(stored["version"], CultureInfo.InvariantCulture);if (catalogVersion != 2 && catalogVersion != 3 && catalogVersion != 4) throw new InvalidDataException("The sharded database catalog uses an unsupported version.");
         int expectedTotal = Convert.ToInt32(stored["userCount"], CultureInfo.InvariantCulture);if (expectedTotal < 0 || expectedTotal > 100000) throw new InvalidDataException("The sharded database catalog user count is invalid.");
         object[] shardReferences = ObjectArray(stored["userShards"]);if (shardReferences.Length > 1000) throw new InvalidDataException("The sharded database catalog exceeds its organization limit.");
         string systemDirectory = Path.Combine(root, SystemDirectoryName), shardRoot = Path.Combine(systemDirectory, ManifestShardDirectoryName), shardRootPrefix = Path.GetFullPath(shardRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
@@ -652,8 +652,9 @@ internal sealed partial class PortableStorage : IDisposable
         }
         if (positionedUsers.Count != expectedTotal) throw new InvalidDataException("The sharded database catalog user count does not match its organization shards.");
         object[] users = positionedUsers.OrderBy(value => value.Item1).Select(value => value.Item2).ToArray();
-        var storedLogical = new Dictionary<string, object> { { "version", catalogVersion == 3 ? 5 : 4 }, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
-        if (catalogVersion == 3) { storedLogical["minimumApplicationVersion"] = stored["minimumApplicationVersion"];storedLogical["lastWriterVersion"] = stored["lastWriterVersion"]; }
+        var storedLogical = new Dictionary<string, object> { { "version", catalogVersion == 4 ? 6 : catalogVersion == 3 ? 5 : 4 }, { "updated", stored.ContainsKey("updated") ? stored["updated"] : "" }, { "systems", stored["systems"] }, { "users", users.ToArray() } };
+        if (catalogVersion >= 3) { storedLogical["minimumApplicationVersion"] = stored["minimumApplicationVersion"];storedLogical["lastWriterVersion"] = stored["lastWriterVersion"]; }
+        if (catalogVersion == 4) storedLogical["recognitionAliases"] = stored.ContainsKey("recognitionAliases") ? stored["recognitionAliases"] : new object[0];
         // Verify the exact persisted representation before applying backward-compatible
         // defaults. Otherwise a legitimate migration (for example adding an empty
         // historical change.files array) would incorrectly look like tampering.
@@ -677,7 +678,7 @@ internal sealed partial class PortableStorage : IDisposable
             else { AtomicWrite(path, bytes);if (!String.Equals(TryFileHash(path), hash, StringComparison.OrdinalIgnoreCase)) throw new IOException("A database organization shard failed post-write SHA-256 verification."); }
             references.Add(new Dictionary<string, object> { { "organization", group.Key }, { "file", ManifestShardDirectoryName + "/" + filename }, { "sha256", hash }, { "records", records.Length } });
         }
-        var catalog = new Dictionary<string, object> { { "version", 3 }, { "minimumApplicationVersion", database["minimumApplicationVersion"] }, { "lastWriterVersion", CurrentApplicationVersion }, { "updated", updated }, { "storageFormat", ManifestStorageFormat }, { "stateHash", StateHash(database) }, { "systems", database["systems"] }, { "userCount", users.Length }, { "userShards", references.ToArray() } };
+        var catalog = new Dictionary<string, object> { { "version", 4 }, { "minimumApplicationVersion", database["minimumApplicationVersion"] }, { "lastWriterVersion", CurrentApplicationVersion }, { "updated", updated }, { "storageFormat", ManifestStorageFormat }, { "stateHash", StateHash(database) }, { "systems", database["systems"] }, { "recognitionAliases", database["recognitionAliases"] }, { "userCount", users.Length }, { "userShards", references.ToArray() } };
         byte[] catalogBytes = Encoding.UTF8.GetBytes(json.Serialize(catalog));if (catalogBytes.LongLength > ManifestLimit) throw new InvalidDataException("The sharded database catalog exceeds the 50 MB safety limit.");
         return catalogBytes;
     }
@@ -947,6 +948,8 @@ internal sealed partial class PortableStorage : IDisposable
                     Dictionary<string, object> originalEntry, resolvedEntry;bool hadOriginal = localEvidence.TryGetValue(item.OriginalRelative, out originalEntry), hadResolved = localEvidence.TryGetValue(item.Relative, out resolvedEntry);
                     try { localEvidence.Remove(item.OriginalRelative);localEvidence[item.Relative] = new Dictionary<string, object> { { "destination", item.Relative }, { "localPath", Relative(workspaceRoot, completed).Replace(Path.DirectorySeparatorChar, '/') }, { "sha256", item.SourceSha256 }, { "publishedSha256", item.Sha256 }, { "pdfSha256", item.PdfSha256 }, { "publicationSourceDestination", item.OriginalRelative }, { "pending", false } };WriteLocalEvidenceMap(systemId, localEvidence); }
                     catch { localEvidence.Remove(item.Relative);if (hadResolved) localEvidence[item.Relative] = resolvedEntry;if (hadOriginal) localEvidence[item.OriginalRelative] = originalEntry;if (moved && File.Exists(completed) && !File.Exists(item.Source)) File.Move(completed, item.Source);throw; }completedFiles++;
+                    try { completedFiles += MoveEquivalentCommittedIntakeCopies(workspaceRoot, organization, Path.GetFileName(item.Source), item.PdfSha256, completeDirectory); }
+                    catch (Exception duplicateError) { completionErrors.Add(Path.GetFileName(item.Source) + ": the committed file moved to Complete, but an equivalent intake copy could not be moved: " + CleanLine(duplicateError.Message, 220)); }
                     string pendingDirectory = Path.Combine(completeRoot, PendingUploadDirectoryName);try { if (Directory.Exists(pendingDirectory) && !Directory.EnumerateFileSystemEntries(pendingDirectory).Any()) Directory.Delete(pendingDirectory); } catch { }
                 }
                 catch (Exception error) { completionErrors.Add(Path.GetFileName(item.Source) + ": " + CleanLine(error.Message, 240)); }
@@ -3329,7 +3332,8 @@ internal sealed partial class PortableStorage : IDisposable
         if (version == 2) { value["version"] = 3;version = 3; }
         if (version == 3) { value["version"] = 4;version = 4; }
         if (version == 4) { value["version"] = 5;value["minimumApplicationVersion"] = CurrentApplicationVersion;value["lastWriterVersion"] = CurrentApplicationVersion;version = 5; }
-        if (version != 5 || !value.ContainsKey("systems") || !value.ContainsKey("users")) throw new InvalidDataException("The database manifest format is invalid or uses a newer unsupported schema.");
+        if (version == 5) { value["version"] = 6;value["recognitionAliases"] = new object[0];version = 6; }
+        if (version != 6 || !value.ContainsKey("systems") || !value.ContainsKey("users") || !value.ContainsKey("recognitionAliases")) throw new InvalidDataException("The database manifest format is invalid or uses a newer unsupported schema.");
         string minimumVersion = RequiredBoundedString(value, "minimumApplicationVersion", 40, false, "database"), lastWriterVersion = RequiredBoundedString(value, "lastWriterVersion", 40, false, "database");
         if (CompareApplicationVersions(minimumVersion, CurrentApplicationVersion) > 0) throw new InvalidDataException("This shared system requires R.A.P.T.O.R. " + CleanLine(minimumVersion, 40) + " or newer. Install the current approved release before opening this system.");
         if (!ValidApplicationVersion(lastWriterVersion)) throw new InvalidDataException("The database manifest contains an invalid writer version.");
@@ -3369,6 +3373,8 @@ internal sealed partial class PortableStorage : IDisposable
             object[] exceptions = RequiredArray(user, "exceptions", 1000, "user");foreach (object exceptionRaw in exceptions) ValidateExceptionRecord(ObjectDictionary(exceptionRaw));
             ValidateExtractionProvenance(ObjectDictionary(user["extractionProvenance"]));
         }
+        object[] aliases = RequiredArray(value, "recognitionAliases", 100000, "database");var aliasIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (object raw in aliases) { Dictionary<string, object> alias = ObjectDictionary(raw);string id = RequiredBoundedString(alias, "id", 100, false, "recognition alias"), systemId = RequiredBoundedString(alias, "systemId", 100, false, "recognition alias"), userId = OptionalBoundedString(alias, "userId", 100, "recognition alias");if (!aliasIds.Add(id) || !systemIds.Contains(systemId) || (userId != null && !userIds.Contains(userId))) throw new InvalidDataException("A recognition alias has an invalid or duplicate relationship.");RequiredBoundedString(alias, "normalizedPattern", 1000, false, "recognition alias");RequiredBoundedString(alias, "organization", 200, false, "recognition alias");OptionalBoundedString(alias, "artifactKind", 100, "recognition alias");RequiredBoundedString(alias, "operator", 500, false, "recognition alias");RequiredBoundedString(alias, "createdAtUtc", 50, false, "recognition alias");RequiredBoundedString(alias, "originalFilename", 500, false, "recognition alias");foreach (object filename in RequiredArray(alias, "affectedFilenames", 100, "recognition alias")) if (!(filename is string) || String.IsNullOrWhiteSpace((string)filename) || ((string)filename).Length > 500 || ((string)filename).IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("A recognition alias contains an invalid affected filename.");OptionalBoundedString(alias, "revokedAtUtc", 50, "recognition alias");OptionalBoundedString(alias, "revokedBy", 500, "recognition alias"); }
         return value;
     }
     private static string RequiredBoundedString(Dictionary<string, object> record, string key, int maximum, bool allowEmpty, string label)
@@ -3396,7 +3402,7 @@ internal sealed partial class PortableStorage : IDisposable
 
     private static void ValidateArtifactRecord(Dictionary<string, object> artifact)
     {
-        RequiredBoundedString(artifact, "kind", 100, false, "artifact");string filename = RequiredBoundedString(artifact, "filename", 500, false, "artifact");string hash = OptionalBoundedString(artifact, "sha256", 64, "artifact"), path = OptionalBoundedString(artifact, "path", 32767, "artifact"), source = OptionalBoundedString(artifact, "source", 30, "artifact");OptionalBoundedString(artifact, "storedAt", 50, "artifact");OptionalBoundedString(artifact, "storedBy", 500, "artifact");
+        RequiredBoundedString(artifact, "kind", 100, false, "artifact");string filename = RequiredBoundedString(artifact, "filename", 500, false, "artifact");string hash = OptionalBoundedString(artifact, "sha256", 64, "artifact"), path = OptionalBoundedString(artifact, "path", 32767, "artifact"), source = OptionalBoundedString(artifact, "source", 30, "artifact");OptionalBoundedString(artifact, "storedAt", 50, "artifact");OptionalBoundedString(artifact, "storedBy", 500, "artifact");OptionalBoundedString(artifact, "recognitionAliasId", 100, "artifact");if (artifact.ContainsKey("recognitionReviewRequired")) RequiredBoolean(artifact, "recognitionReviewRequired", "artifact");
         if (!String.Equals(filename, Path.GetFileName(filename), StringComparison.Ordinal) || filename == "." || filename == "..") throw new InvalidDataException("An artifact contains an invalid stored filename.");
         if (hash != null && !IsSha256(hash)) throw new InvalidDataException("An artifact contains an invalid SHA-256 value.");
         if (path != null && (path.IndexOfAny(new[] { '\r', '\n', '\0', ':' }) >= 0 || Path.IsPathRooted(path) || path.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries).Any(part => part == "." || part == ".."))) throw new InvalidDataException("An artifact contains an invalid stored path.");

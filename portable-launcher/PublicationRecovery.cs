@@ -6,6 +6,22 @@ using System.Linq;
 
 internal sealed partial class PortableStorage
 {
+    private int MoveEquivalentCommittedIntakeCopies(string workspaceRoot, string organization, string filename, string expectedPdfSha256, string completeDirectory)
+    {
+        if (!IsSha256(expectedPdfSha256)) return 0;
+        string organizationRoot = Path.Combine(workspaceRoot, "Organizations", organization), pendingUpload = Path.Combine(completeDirectory, PendingUploadDirectoryName);int moved = 0;
+        foreach (string candidate in new[] { Path.Combine(organizationRoot, filename), Path.Combine(pendingUpload, filename) })
+        {
+            if (!File.Exists(candidate)) continue;
+            string validationError;
+            if (!TryValidateEvidenceFile(candidate, out validationError) || !String.Equals(EvidencePdfSha256(candidate), expectedPdfSha256, StringComparison.OrdinalIgnoreCase)) continue;
+            string destination = UniqueDestination(completeDirectory, filename);File.Move(candidate, destination);
+            if (File.Exists(candidate) || !File.Exists(destination) || !String.Equals(EvidencePdfSha256(destination), expectedPdfSha256, StringComparison.OrdinalIgnoreCase)) throw new IOException("An equivalent committed intake copy did not complete its verified move to Complete.");
+            moved++;
+        }
+        return moved;
+    }
+
     private long TransferPublicationEvidence(PublicationEvidence item, PublicationHashCache hashCache)
     {
         long transferred = 0L;

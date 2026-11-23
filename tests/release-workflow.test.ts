@@ -76,3 +76,9 @@ test('future version tags publish a verified formal GitHub Release',()=>{
  assert.match(release,/--verify-tag/);
  assert.match(release,/--generate-notes/);
 });
+
+test('release launcher is x64 and excludes the internal E2E constructor',()=>{
+ assert.match(buildScript,/\/platform:x64/);
+ assert.match(launcher,/#if RAPTOR_E2E[\s\S]*?internal TrackerContext\(string e2eRoot\)[\s\S]*?#endif/);
+ assert.doesNotMatch(buildScript,/RAPTOR_E2E/);
+});

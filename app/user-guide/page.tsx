@@ -145,7 +145,14 @@ export default function Guide(){
     <li>The required stored date format is <b>DDMMMYYYY</b>, such as <b>24AUG2026</b>.</li>
     <li>Matching is case-insensitive.</li>
     <li>Sync tolerates underscores, commas, ordinary spaces, and extra separators when the meaning is unambiguous.</li>
-    <li>Recognized alternative dates are normalized to DDMMMYYYY.</li>
+    <li>Document type is read from the filename itself; folder names, user names, and organization names do not determine the type.</li>
+    <li>Recognized complete calendar, month-name, and Julian day dates are normalized to DDMMMYYYY. Time-only and incomplete dates are not accepted as evidence dates.</li>
+    <li>Calendar formats include <b>YYMMDD, MMDDYY, DDMMYY, YYYYMMDD, MMDDYYYY, DDMMYYYY, YYYY-MM-DD, and YYYYMMDDZ</b>.</li>
+    <li>Month-name formats include <b>YYMMMDD, DDMMMYY, MMMDDYY, YYYYMMMDD, DDMMMYYYY, and MMMDDYYYY</b>.</li>
+    <li>Julian day formats include <b>YYDDD, DDDYY, YYYYDDD, and DDDYYYY</b> when the orientation is unambiguous.</li>
+    <li>Safe filename separators include underscores, hyphens, periods, commas, and spaces. A slash is not accepted because Windows treats it as a path separator.</li>
+    <li>Common month variations and mistakes—such as SEPT, FEBUARY, AGUST, SEPTMBER, OCTBER, NOVEMEBER, and DECEMEBER—are recognized only when they form a valid date.</li>
+    <li>Ambiguous short numeric and Julian dates are interpreted only when the result is deterministic; otherwise the file remains in Rework for operator correction.</li>
     <li>The immediate organization folder is authoritative and replaces an incorrect filename organization.</li>
     <li>Files must pass the complete filename gate before entering a managed document folder.</li>
    </ul>
@@ -163,11 +170,18 @@ export default function Guide(){
     <li>Filename normalization runs during Sync; there is no separate Document Renamer button.</li>
     <li>Canonical unchanged files stay on the metadata-only fast path.</li>
     <li>New, changed, loose, or corrected Rework PDFs receive full applicable validation.</li>
-    <li>Cyber Awareness and Awareness Challenge normalize to <code>DoD_Cyber_Cert</code>.</li>
-    <li>General, Privileged, and combined agreements normalize to <code>User_Agreement</code>.</li>
-    <li>8140 and legacy 8570 indicators route to the 8140 Certification Memo folder.</li>
-    <li>Responsibilities or Course indicators route to Privileged User Training or DTA Training as applicable.</li>
+    <li>SAAR, DD Form 2875, Form 2875, Access Request, System Access Request, and System Authorization Access Request indicators map to <code>SAAR</code>.</li>
+    <li>DoD Cyber, DoW Cyber, Cyber Cert, Cyber Certificate, Cyber Awareness, and Awareness Challenge normalize to <code>DoD_Cyber_Cert</code>.</li>
+    <li>User Agreement, General Agreement, Privileged Agreement, combined agreements, and Acceptable Use normalize to <code>User_Agreement</code>.</li>
+    <li>8140 Cert, 8140 Certification, 8140 Memo, 8140 Letter, Cert Memo, Certification Memo, Cert Letter, Certification Letter, and legacy 8570 indicators route to the 8140 Certification Memo folder.</li>
+    <li>Priv or Privileged paired with Training, Course, Responsibilities, Cert, Certificate, or Certification routes to Privileged User Training.</li>
+    <li>DTA or Data Transfer Agent paired with Training, Course, Responsibilities, Cert, Certificate, or Certification routes to DTA Training.</li>
     <li>Ambiguous, unidentified, incomplete, or invalid active files go to Rework.</li>
+    <li>Ambiguous dates, multiple possible document types, identity conflicts, duplicate content under another identity, and same-name users across organizations always require operator review.</li>
+    <li>The review panel shows the parsed filename values, exact proposed stored filename, decision reasons, and up to three user candidates before any correction is applied.</li>
+    <li>Use <b>Apply to Similar Files</b> only after confirming that the displayed pattern represents the same user, organization, and document type.</li>
+    <li>Approved recognition aliases are audited and can be listed, edited, or revoked. Revocation flags affected evidence for review and never silently routes it elsewhere.</li>
+    <li>No automatic proposal or approved alias bypasses the complete filename storage gate.</li>
     <li>Archive trees are historical and excluded from automatic renaming.</li>
    </ul>
    <h3>Unarchive for Correction</h3>

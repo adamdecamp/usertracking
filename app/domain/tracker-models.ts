@@ -37,6 +37,26 @@ export type Artifact={
  storedAt?:string;
  storedBy?:string;
  source?:ArtifactSource;
+ /** Operator-approved recognition alias used for this match, if any. */
+ recognitionAliasId?:string;
+ /** Revoked aliases never silently reroute evidence; affected records require review. */
+ recognitionReviewRequired?:boolean;
+};
+
+export type RecognitionAlias={
+ id:string;
+ systemId:string;
+ normalizedPattern:string;
+ organization:string;
+ userId?:string;
+ artifactKind?:string;
+ operator:string;
+ createdAtUtc:string;
+ originalFilename:string;
+   /** Canonical evidence names produced by this approval; revocation flags them for review. */
+   affectedFilenames:string[];
+ revokedAtUtc?:string;
+ revokedBy?:string;
 };
 
 export type ChangeRecord={
@@ -70,4 +90,4 @@ export type UserRecord={
  exceptions?:ComplianceException[];
 };
 
-export type TrackerDatabase={systems:SystemRecord[];users:UserRecord[]};
+export type TrackerDatabase={systems:SystemRecord[];users:UserRecord[];recognitionAliases:RecognitionAlias[]};

@@ -124,6 +124,7 @@ internal sealed class TrackerContext : ApplicationContext
     // The build gate uses the real loopback listener and storage router without
     // opening a browser or installing a tray icon. This keeps the HTTP boundary,
     // origin/session enforcement, and failure recovery in the executable test path.
+#if RAPTOR_E2E
     internal TrackerContext(string e2eRoot)
     {
         indexHtml = Encoding.UTF8.GetBytes("<!doctype html><title>R.A.P.T.O.R. E2E</title>");
@@ -150,6 +151,7 @@ internal sealed class TrackerContext : ApplicationContext
         try { storage.ReleaseAllLeases();storage.Dispose(); } catch { }
         try { stop.Cancel();listener.Stop(); } catch { }
     }
+#endif
 
     private void OpenTracker()
     {
@@ -665,7 +667,7 @@ internal sealed class TrackerContext : ApplicationContext
                     temporaryAttachmentPaths.Add(temporaryAttachmentPath);attachmentPaths.Add(temporaryAttachmentPath);
                 }
                 Type outlookType = Type.GetTypeFromProgID("Outlook.Application");
-                if (outlookType == null) throw new InvalidOperationException("Classic Microsoft Outlook is not installed or available to this Windows account.");
+                if (outlookType == null) { string fallback = OutlookDraftFallback.Open(to, recipients, subject, htmlBody, body, attachmentPaths);RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + fallback + "; operator review required before sending", null, operationId);return; }
                 outlook = Activator.CreateInstance(outlookType);
                 message = outlookType.InvokeMember("CreateItem", BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance, null, outlook, new object[] { 0 });
                 Type messageType = message.GetType();

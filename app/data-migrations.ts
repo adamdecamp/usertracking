@@ -2,7 +2,7 @@ import {normalizePrivilegedTypes} from './privileged-type-utils.ts';
 import {normalizeAffiliatedOrganizations} from './affiliated-organization-utils.ts';
 import {applicationVersion} from './version.ts';
 
-export const currentManifestVersion=5;
+export const currentManifestVersion=6;
 export const currentBackupVersion=1;
 export const currentAuditVersion=1;
 export const currentSyncIndexVersion=1;
@@ -27,6 +27,7 @@ export function migrateManifestPayload(value:unknown):JsonRecord|undefined{
   if(!Array.isArray(input.systems)||!Array.isArray(input.users))return;
   input.version=2;
  }
+ if(version<=5&&input.recognitionAliases===undefined)input.recognitionAliases=[];
  if(version<=4){input.minimumApplicationVersion=applicationVersion;input.lastWriterVersion=applicationVersion}
  if(typeof input.minimumApplicationVersion!=='string'||typeof input.lastWriterVersion!=='string')return;
  const minimumComparison=compareApplicationVersions(input.minimumApplicationVersion,applicationVersion);
@@ -51,6 +52,15 @@ export function migrateManifestPayload(value:unknown):JsonRecord|undefined{
  });
  input.version=currentManifestVersion;
  return input;
+}
+
+/**
+ * Explicit rollback for the additive v6 alias store. This intentionally drops
+ * only v6 alias metadata and preserves every released v5 user/evidence field.
+ */
+export function rollbackManifestV6ToV5(value:unknown):JsonRecord|undefined{
+ if(!record(value)||value.version!==6)return;
+ const input=clone(value);delete input.recognitionAliases;input.version=5;return input;
 }
 
 export function migrateBackupPayload(value:unknown):JsonRecord|undefined{

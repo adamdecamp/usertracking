@@ -3,7 +3,7 @@ import {artifactKinds,canonicalArtifactKind} from '../filename-utils';
 import {validManifestArtifactPath} from '../manifest-validation';
 import {normalizePrivilegedTypes} from '../privileged-type-utils';
 import {normalizeAffiliatedOrganizations} from '../affiliated-organization-utils';
-import type {Artifact,ChangeRecord,ComplianceException,ExtractionSource,FieldProvenance,SystemRecord,TrackerDatabase,UserExtractionProvenance,UserRecord} from '../domain/tracker-models';
+import type {Artifact,ChangeRecord,ComplianceException,ExtractionSource,FieldProvenance,RecognitionAlias,SystemRecord,TrackerDatabase,UserExtractionProvenance,UserRecord} from '../domain/tracker-models';
 
 function stringArray(value:unknown):value is string[]{return Array.isArray(value)&&value.every(item=>typeof item==='string')}
 const boundedString=(value:unknown,max:number):value is string=>typeof value==='string'&&value.length<=max;
@@ -13,8 +13,8 @@ function decodeProvenance(value:unknown):UserExtractionProvenance|undefined{if(v
 /** Decode and canonicalize an untrusted persisted tracker manifest. */
 export function decodeTrackerManifest(value:unknown):TrackerDatabase|undefined{
  const migrated=migrateManifestPayload(value);if(!migrated)return;
- const raw=migrated as{systems?:unknown;users?:unknown};
- if(!Array.isArray(raw.systems)||!Array.isArray(raw.users)||raw.systems.length>1000||raw.users.length>100000)return;
+ const raw=migrated as{systems?:unknown;users?:unknown;recognitionAliases?:unknown};
+ if(!Array.isArray(raw.systems)||!Array.isArray(raw.users)||!Array.isArray(raw.recognitionAliases)||raw.systems.length>1000||raw.users.length>100000||raw.recognitionAliases.length>100000)return;
  const systems:SystemRecord[]=[];
  for(const item of raw.systems){
   if(!item||typeof item!=='object')return;
@@ -34,7 +34,8 @@ export function decodeTrackerManifest(value:unknown):TrackerDatabase|undefined{
    const a=artifact as Partial<Artifact>;
    if(!boundedString(a.kind,100)||!boundedString(a.filename,500))return;
    if((a.sha256!==undefined&&(typeof a.sha256!=='string'||!/^[a-f0-9]{64}$/i.test(a.sha256)))||(a.path!==undefined&&!validManifestArtifactPath(a.path))||(a.storedAt!==undefined&&!boundedString(a.storedAt,50))||(a.storedBy!==undefined&&!boundedString(a.storedBy,500))||(a.source!==undefined&&!['Manual Add','Manual Update','Sync'].includes(a.source)))return;
-   artifacts.push({kind:canonicalArtifactKind(a.kind),filename:a.filename,sha256:a.sha256,path:a.path,storedAt:a.storedAt,storedBy:a.storedBy,source:a.source});
+   if((a.recognitionAliasId!==undefined&&!boundedString(a.recognitionAliasId,100))||(a.recognitionReviewRequired!==undefined&&typeof a.recognitionReviewRequired!=='boolean'))return;
+   artifacts.push({kind:canonicalArtifactKind(a.kind),filename:a.filename,sha256:a.sha256,path:a.path,storedAt:a.storedAt,storedBy:a.storedBy,source:a.source,recognitionAliasId:a.recognitionAliasId,recognitionReviewRequired:a.recognitionReviewRequired});
   }
   const legacyDta=u.roles.includes('DTA'),roles=Array.from(new Set(u.roles.map(role=>role==='DTA'?'Privileged':role))),privilegedUsernames=roles.includes('Privileged')?(u.privilegedUsernames??[]):[],derivedTypes=normalizePrivilegedTypes(privilegedUsernames.map(value=>{const separator=value.lastIndexOf('_');return separator>0&&separator<value.length-1?value.slice(separator+1):''})),privilegedTypes=roles.includes('Privileged')?normalizePrivilegedTypes([...u.privilegedTypes,...derivedTypes,...(legacyDta?['DTA']:[])]):[];
   const changes=Array.isArray(u.changes)&&u.changes.length<=10000?u.changes.filter((change):change is ChangeRecord=>!!change&&typeof change==='object'&&boundedString((change as ChangeRecord).timestamp,50)&&boundedString((change as ChangeRecord).actor,500)&&boundedString((change as ChangeRecord).action,500)&&boundedString((change as ChangeRecord).description,500)&&stringArray((change as ChangeRecord).rolesBefore)&&(change as ChangeRecord).rolesBefore.length<=20&&stringArray((change as ChangeRecord).rolesAfter)&&(change as ChangeRecord).rolesAfter.length<=20&&stringArray((change as ChangeRecord).files)&&(change as ChangeRecord).files.length<=100):[];
@@ -42,10 +43,17 @@ export function decodeTrackerManifest(value:unknown):TrackerDatabase|undefined{
   const extractionProvenance=decodeProvenance(u.extractionProvenance);if(!extractionProvenance)return;
   users.push({id:u.id,systemId:u.systemId,organization:u.organization,affiliatedOrganizations:normalizeAffiliatedOrganizations(u.affiliatedOrganizations),last:u.last,first:u.first,middle:u.middle,email:u.email,disabled:u.disabled,roles,privilegedUsernames,privilegedTypes,artifacts,extractionProvenance,changes,exceptions});
  }
- return{systems,users};
+ const recognitionAliases:RecognitionAlias[]=[];
+ for(const item of raw.recognitionAliases){
+  if(!item||typeof item!=='object')return;const alias=item as Partial<RecognitionAlias>;
+  if(!boundedString(alias.id,100)||!boundedString(alias.systemId,100)||!ids.has(alias.systemId)||!boundedString(alias.normalizedPattern,1000)||!boundedString(alias.organization,200)||!boundedString(alias.operator,500)||!boundedString(alias.createdAtUtc,50)||Number.isNaN(Date.parse(alias.createdAtUtc))||!boundedString(alias.originalFilename,500)||!Array.isArray(alias.affectedFilenames)||alias.affectedFilenames.length>100||!alias.affectedFilenames.every(value=>boundedString(value,500))||(alias.userId!==undefined&&!boundedString(alias.userId,100))||(alias.artifactKind!==undefined&&!boundedString(alias.artifactKind,100))||(alias.revokedAtUtc!==undefined&&(!boundedString(alias.revokedAtUtc,50)||Number.isNaN(Date.parse(alias.revokedAtUtc))))||(alias.revokedBy!==undefined&&!boundedString(alias.revokedBy,500)))return;
+  if(alias.userId&&!users.some(user=>user.id===alias.userId&&user.systemId===alias.systemId))return;
+  recognitionAliases.push({id:alias.id,systemId:alias.systemId,normalizedPattern:alias.normalizedPattern,organization:alias.organization,userId:alias.userId,artifactKind:alias.artifactKind?canonicalArtifactKind(alias.artifactKind):undefined,operator:alias.operator,createdAtUtc:alias.createdAtUtc,originalFilename:alias.originalFilename,affectedFilenames:[...alias.affectedFilenames],revokedAtUtc:alias.revokedAtUtc,revokedBy:alias.revokedBy});
+ }
+ return{systems,users,recognitionAliases};
 }
 
 export function stripDemoData(data:TrackerDatabase):TrackerDatabase{
  const demoSystemIds=new Set(data.systems.filter(system=>['atlas','sentinel','legacy'].includes(system.id)||['Atlas Operations Network','Sentinel Records Environment','Legacy Personnel Portal'].includes(system.name)).map(system=>system.id)),systems=data.systems.filter(system=>!demoSystemIds.has(system.id)),validSystems=new Set(systems.map(system=>system.id)),users=data.users.filter(user=>validSystems.has(user.systemId)&&!['u1','u2','u3','u4'].includes(user.id));
- return{systems,users};
+ return{systems,users,recognitionAliases:data.recognitionAliases.filter(alias=>validSystems.has(alias.systemId))};
 }

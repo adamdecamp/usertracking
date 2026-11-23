@@ -63,8 +63,8 @@ test('does not use a standalone DoD marker to relabel another DoD artifact as cy
  assert.equal(canonicalEvidenceFilename(filename,'LM'),'Brown_Jacob_(LM)_8140_Cert_Memo_26AUG2026.pdf');
 });
 
-test('gives the specific Delegated Trusted Agent rule precedence over a generic course rule',()=>{
- const filename='Brown_Jacob_(LM)_Delegated_Trusted_Agent_Course_26AUG2026.pdf';
+test('gives the specific Data Transfer Agent rule precedence over a generic course rule',()=>{
+ const filename='Brown_Jacob_(LM)_Data_Transfer_Agent_Course_26AUG2026.pdf';
  assert.equal(filenameMatchesKind(filename,'Privileged User Training Cert'),false);
  assert.equal(filenameMatchesKind(filename,'DTA Training'),true);
  assert.equal(canonicalEvidenceFilename(filename,'LM'),'Brown_Jacob_(LM)_DTA_Training_26AUG2026.pdf');
@@ -387,6 +387,42 @@ test('recognizes common date formats and normalizes them to DDMMMYYYY',()=>{
   assert.equal(result?.changed,true,filename);
  }
  assert.equal(normalizeFilenameDate('Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf')?.changed,false);
+});
+
+test('normalizes common month spelling mistakes and single-digit days without guessing the calendar date',()=>{
+ const variants=[
+  ['26FEBUARY2026','26FEB2026','2026-02-26'],['26FEBURARY2026','26FEB2026','2026-02-26'],['26AGUST2026','26AUG2026','2026-08-26'],
+  ['26SEPEMBER2026','26SEP2026','2026-09-26'],['26SEPTMBER2026','26SEP2026','2026-09-26'],['26SEPTEMER2026','26SEP2026','2026-09-26'],['26SEPTEBER2026','26SEP2026','2026-09-26'],['26SEPTEMEBER2026','26SEP2026','2026-09-26'],
+  ['26OCTBER2026','26OCT2026','2026-10-26'],['26NOVEMEBER2026','26NOV2026','2026-11-26'],['26DECEMEBER2026','26DEC2026','2026-12-26'],
+  ['3SEPT2026','03SEP2026','2026-09-03'],['SEPT32026','03SEP2026','2026-09-03'],
+ ] as const;
+ for(const[source,expected,iso]of variants){
+  const filename=`Brown_Jacob_(LM)_User_Agreement_${source}.pdf`,normalized=normalizeFilenameDate(filename);
+  assert.equal(normalized?.normalized,`Brown_Jacob_(LM)_User_Agreement_${expected}.pdf`,source);
+  assert.equal(normalized?.date.toISOString(),`${iso}T00:00:00.000Z`,source);
+ }
+});
+
+test('recognizes IBM date-only filename formats and normalizes them to DDMMMYYYY',()=>{
+ const variants=[
+  ['320826','26AUG2032'],['082626','26AUG2026'],['260826','26AUG2026'],
+  ['20260826','26AUG2026'],['08262026','26AUG2026'],['26082026','26AUG2026'],['2026-08-26','26AUG2026'],['20260826Z','26AUG2026'],
+  ['32AUG26','26AUG2032'],['26AUG26','26AUG2026'],['AUG2626','26AUG2026'],
+  ['2032AUG26','26AUG2032'],['26AUG2032','26AUG2032'],['AUG262032','26AUG2032'],
+  ['99349','15DEC1999'],['34999','15DEC1999'],['1999349','15DEC1999'],['3491999','15DEC1999'],
+  ['99-349','15DEC1999'],['349_99','15DEC1999'],['1999.349','15DEC1999'],['349 1999','15DEC1999'],
+ ] as const;
+ for(const[source,expected]of variants){
+  const filename=`Brown_Jacob_(LM)_User_Agreement_${source}.pdf`,normalized=normalizeFilenameDate(filename);
+  assert.equal(normalized?.normalized,`Brown_Jacob_(LM)_User_Agreement_${expected}.pdf`,source);
+ }
+});
+
+test('rejects ambiguous Julian, incomplete, and time-only IBM values',()=>{
+ for(const value of ['12045','2026-08','2026','--08-26','---26','235959','20260826T235959']){
+  const filename=`Brown_Jacob_(LM)_User_Agreement_${value}.pdf`;
+  assert.equal(parseDate(filename),undefined,filename);
+ }
 });
 
 test('rejects impossible dates rather than normalizing them',()=>{
