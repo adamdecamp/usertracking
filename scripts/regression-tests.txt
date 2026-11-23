@@ -11,6 +11,7 @@ tests/system-edit.test.ts
 tests/future-evidence-date.test.ts
 tests/dashboard-stats.test.ts
 tests/filename-regex-performance.test.ts
+tests/sync-review-guard.test.ts
 tests/executive-summary.test.ts
 tests/cleanup-utils.test.ts
 tests/concurrency-utils.test.ts
