@@ -47,8 +47,8 @@ export default function Guide(){
     <li>Only one menu stays open; choosing an option, opening another menu, pressing Escape, or moving focus away closes it.</li>
     <li><b>Local Changes</b> shows whether work is clean, pending, committing, or needs recovery.</li>
     <li><b>Recent Activity</b> shows the last five completed or failed actions for the session.</li>
-    <li>Processing panels show the stage, current item, count, percent, and elapsed time for that stage.</li>
-    <li>The elapsed timer resets whenever a new action or stage starts.</li>
+    <li>Processing panels show the stage, current item, count, percent, and two timers: <b>Current Process</b> and <b>Total Processing Time</b>.</li>
+    <li>Current Process restarts at each new stage. Total Processing Time keeps counting from the start of the action until it completes or stops with an error.</li>
     <li>Notifications are nonblocking; expand one to read or copy the full detail.</li>
    </ul>
   </section>
