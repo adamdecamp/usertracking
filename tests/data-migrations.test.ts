@@ -1,7 +1,7 @@
 import assert from'node:assert/strict';
 import{readFileSync}from'node:fs';
 import{test}from'node:test';
-import{compareApplicationVersions,currentManifestVersion,migrateAuditEntryPayload,migrateBackupPayload,migrateManifestPayload,migrateSyncIndexPayload,rollbackManifestV6ToV5,rollbackManifestV7ToV6}from'../app/data-migrations.ts';
+import{compareApplicationVersions,currentManifestVersion,migrateAuditEntryPayload,migrateBackupPayload,migrateManifestPayload,migrateSyncIndexPayload,rollbackManifestV6ToV5,rollbackManifestV7ToV6,rollbackManifestV8ToV7}from'../app/data-migrations.ts';
 import{applicationVersion}from'../app/version.ts';
 
 const fixture=(name:string)=>JSON.parse(readFileSync(new URL(`./fixtures/migrations/${name}`,import.meta.url),'utf8')) as unknown;
@@ -34,7 +34,6 @@ test('migrates v5 to an empty alias store and preserves a v6 alias store',()=>{
 });
 
 test('migrates v6 to v7 without inventing a system time zone and preserves one that is set',()=>{
- assert.equal(currentManifestVersion,7);
  const fixtureV6=fixture('manifest-v6.json') as Record<string,unknown>,v7=migrateManifestPayload(fixtureV6)!;
  assert.deepEqual(v7.systems,fixtureV6.systems);
  for(const system of v7.systems as Record<string,unknown>[])assert.equal('timeZone'in system,false);
@@ -43,7 +42,7 @@ test('migrates v6 to v7 without inventing a system time zone and preserves one t
 });
 
 test('rolls v7 back to v6 by removing only the system time zone',()=>{
- const v7=current({systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,timeZone:'America/Denver'}],users:[{id:'u1'}],recognitionAliases:[]}),rolled=rollbackManifestV7ToV6(v7)!;
+ const v7={...current({systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,timeZone:'America/Denver'}],users:[{id:'u1'}],recognitionAliases:[]}),version:7},rolled=rollbackManifestV7ToV6(v7)!;
  assert.equal(rolled.version,6);
  assert.deepEqual(rolled.systems,[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false}]);
  assert.deepEqual(rolled.users,[{id:'u1'}]);
@@ -98,4 +97,23 @@ test('enforces the persisted minimum client version policy',()=>{
  assert.equal(compareApplicationVersions('invalid','1.3.17'),undefined);
  assert.equal(migrateManifestPayload({version:currentManifestVersion,minimumApplicationVersion:'999.0.0',lastWriterVersion:'999.0.0',systems:[],users:[]}),undefined);
  assert.equal(migrateManifestPayload({version:currentManifestVersion,minimumApplicationVersion:'invalid',lastWriterVersion:applicationVersion,systems:[],users:[]}),undefined);
+});
+
+const contact={id:'c1',organization:'GOV',position:'ISSM',name:'Jordan Lee',methods:[{type:'Email',value:'jordan.lee@example.mil'},{type:'Phone',value:'(555) 555-0100 x12'}]};
+
+test('migrates v7 to v8 without inventing contacts and preserves organization contacts that are set',()=>{
+ assert.equal(currentManifestVersion,8);
+ const v7=migrateManifestPayload({version:7,minimumApplicationVersion:applicationVersion,lastWriterVersion:applicationVersion,systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,timeZone:'America/Denver'}],users:[],recognitionAliases:[]})!;
+ assert.equal(v7.version,8);
+ assert.equal('organizationContacts'in(v7.systems as Record<string,unknown>[])[0],false);
+ const withContacts=migrateManifestPayload(current({systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,organizationContacts:[contact]}],users:[],recognitionAliases:[]}))!;
+ assert.deepEqual((withContacts.systems as Record<string,unknown>[])[0].organizationContacts,[contact]);
+});
+
+test('rolls v8 back to v7 by removing only organization contacts',()=>{
+ const v8=current({systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,timeZone:'America/Denver',organizationContacts:[contact]}],users:[{id:'u1'}],recognitionAliases:[]}),rolled=rollbackManifestV8ToV7(v8)!;
+ assert.equal(rolled.version,7);
+ assert.deepEqual(rolled.systems,[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,timeZone:'America/Denver'}]);
+ assert.deepEqual(rolled.users,[{id:'u1'}]);
+ assert.equal(rollbackManifestV8ToV7({...v8,version:7}),undefined);
 });

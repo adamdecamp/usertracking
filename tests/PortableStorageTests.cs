@@ -133,6 +133,13 @@ internal static class PortableStorageTests
         return Json.Serialize(new Dictionary<string, object> { { "version", 2 }, { "updated", DateTime.UtcNow.ToString("o") }, { "systems", new object[] { system } }, { "users", new object[] { user } } });
     }
 
+    private static string DatabaseWithContacts(string email, object[] contacts)
+    {
+        Dictionary<string, object> database = (Dictionary<string, object>)Json.DeserializeObject(Database(email));
+        ((Dictionary<string, object>)((object[])database["systems"])[0])["organizationContacts"] = contacts;
+        return Json.Serialize(database);
+    }
+
     private static string DatabaseWithTimeZone(string email, string timeZone)
     {
         Dictionary<string, object> database = (Dictionary<string, object>)Json.DeserializeObject(Database(email));
@@ -812,9 +819,15 @@ internal static class PortableStorageTests
         Assert(repairedLegacyHistory.Contains("\"files\":[]") && repairedLegacyHistory.Contains("\"rolesBefore\":[]") && repairedLegacyHistory.Contains("\"rolesAfter\":[]"), "Storage verification must repair historical change entries that predate the non-identity array fields instead of blocking Sync.");
         storage.SaveManifest("mapping-key", DatabaseWithTimeZone("first@example.mil", "America/Denver"));
         string zonedManifest = storage.ReadManifest("mapping-key"), zonedCatalog = File.ReadAllText(Path.Combine(root, "System", "information-system-user-tracker.json"), Encoding.UTF8);
-        Assert(zonedManifest.Contains("\"timeZone\":\"America/Denver\"") && zonedManifest.Contains("\"version\":7") && zonedCatalog.Contains("\"version\":5"), "A system time zone must survive the sharded catalog round trip as manifest v7 in catalog v5.");
+        Assert(zonedManifest.Contains("\"timeZone\":\"America/Denver\"") && zonedManifest.Contains("\"version\":8") && zonedCatalog.Contains("\"version\":6"), "A system time zone must survive the sharded catalog round trip as manifest v8 in catalog v6.");
         bool rejectedTimeZone = false;try { storage.SaveManifest("mapping-key", DatabaseWithTimeZone("first@example.mil", "Denver time; DROP")); } catch (InvalidDataException) { rejectedTimeZone = true; }
         Assert(rejectedTimeZone && storage.ReadManifest("mapping-key").Contains("\"timeZone\":\"America/Denver\""), "A malformed system time zone must be rejected without replacing the verified database.");
+        var contact = new Dictionary<string, object> { { "id", "c1" }, { "organization", "GOV" }, { "position", "ISSM" }, { "name", "Jordan Lee" }, { "methods", new object[] { new Dictionary<string, object> { { "type", "Email" }, { "value", "jordan.lee@example.mil" } }, new Dictionary<string, object> { { "type", "Phone" }, { "value", "(555) 555-0100 x12" } } } } };
+        storage.SaveManifest("mapping-key", DatabaseWithContacts("first@example.mil", new object[] { contact }));
+        Assert(storage.ReadManifest("mapping-key").Contains("\"name\":\"Jordan Lee\"") && storage.ReadManifest("mapping-key").Contains("\"position\":\"ISSM\""), "Organization contacts must survive the sharded catalog round trip as manifest v8.");
+        Func<string, object, Dictionary<string, object>> changedContact = (key, value) => { var copy = new Dictionary<string, object>(contact);copy[key] = value;return copy; };
+        foreach (object bad in new object[] { new object[] { changedContact("methods", new object[0]) }, new object[] { changedContact("methods", new object[] { new Dictionary<string, object> { { "type", "Fax" }, { "value", "555" } } }) }, new object[] { changedContact("methods", new object[] { new Dictionary<string, object> { { "type", "Email" }, { "value", "not an email" } } }) }, new object[] { contact, contact }, new object[] { changedContact("name", "") } })
+        { bool rejectedContact = false;try { storage.SaveManifest("mapping-key", DatabaseWithContacts("first@example.mil", (object[])bad)); } catch (InvalidDataException) { rejectedContact = true; }Assert(rejectedContact && storage.ReadManifest("mapping-key").Contains("\"name\":\"Jordan Lee\""), "An invalid organization contact must be rejected without replacing the verified database."); }
         storage.SaveManifest("mapping-key", Database("first@example.mil"));
         string protectedLocalMappings = storage.CachedMappings(false, true);
         Assert(protectedLocalMappings.Contains("\"source\":\"local-cache\"") && protectedLocalMappings.Contains("first@example.mil") && Directory.EnumerateFiles(performanceCacheRoot, "verified-manifest.cache", SearchOption.AllDirectories).Any(), "A verified manifest save should refresh the Windows-user-protected local read cache without requiring shared-folder initialization.");

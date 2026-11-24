@@ -4,6 +4,8 @@
  * Keep browser handles, HTTP response shapes, and storage paths out of this
  * module. Those concerns belong to the presentation and infrastructure layers.
  */
+import type {OrganizationContact} from './organization-contacts.ts';
+
 export type ComplianceException={
  id:string;
  artifact:string;
@@ -24,6 +26,8 @@ export type SystemRecord={
  archived:boolean;
  /** IANA time zone (for example America/Denver) that decides when evidence becomes Due or Overdue. */
  timeZone?:string;
+ /** Manifest v8: points of contact for each organization in this system. */
+ organizationContacts?:OrganizationContact[];
 };
 
 export type ArtifactSource='Manual Add'|'Manual Update'|'Sync';

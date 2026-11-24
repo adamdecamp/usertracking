@@ -71,6 +71,15 @@ export default function Guide(){
     <li>Each document folder starts with the organization name, such as <code>LM SAAR</code> or <code>LM DoD Cyber Cert</code>.</li>
     <li>Place new files in the organization root and corrected files in its prefixed Rework folder.</li>
    </ul>
+   <h3>Organization Contacts</h3>
+   <ul>
+    <li>In <b>Manage Organizations</b>, choose <b>Add Contact</b> to record who to contact for an organization.</li>
+    <li>Choose a position: <b>Program Manager</b>, <b>CPSO/FSO/GSSO</b>, <b>ISSM</b>, <b>ISSO</b>, or <b>System Administrator</b>. Choose <b>Other</b> to enter a position of your own; it is then offered for every organization in this system.</li>
+    <li>Enter the contact&apos;s name, then choose <b>Email</b> or <b>Phone</b> and enter the address or number. Use <b>Add Email or Phone</b> for up to four entries per contact.</li>
+    <li>Contacts can be edited or removed at any time. Positions are not required, so an organization without a contact is not flagged.</li>
+    <li>Contacts are saved in the system database, included in Session Commit and backups, and every addition, change, or removal is recorded in the audit log by name and position.</li>
+    <li>Contacts need database version 8. After anyone saves a system with this version, operators on older R.A.P.T.O.R. releases must update before they can open that system.</li>
+   </ul>
   </section>
 
   <section id="users">
