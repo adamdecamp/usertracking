@@ -21,7 +21,7 @@ const filenameByRequirement:Record<string,{format:string;example:string}>={
 };
 
 /** Every Outlook draft uses one subject format: Tag — System — Topic — Detail. */
-export type OutlookDraftSubjectTag='Action Required'|'For Review';
+export type OutlookDraftSubjectTag='Action Required'|'For Review'|'Notice';
 export function outlookDraftSubject(tag:OutlookDraftSubjectTag,system:string,topic:string,detail:string){
  const part=(value:string)=>value.replace(/[\r\n]+/g,' ').replace(/\s+/g,' ').trim();
  return [tag,part(system)||'Information System',part(topic),part(detail)].filter(Boolean).join(' — ');
