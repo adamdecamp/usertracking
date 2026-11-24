@@ -1,13 +1,16 @@
 import type {SystemRecord} from '../domain/tracker-models.ts';
+import {describeOrganizationContactChanges} from '../domain/organization-contacts.ts';
 
 /** Audit description of an information-system edit, listing only the fields that changed. */
 export function describeSystemEdit(previous:SystemRecord,next:SystemRecord):string{
+ const contactChanges=describeOrganizationContactChanges(previous.organizationContacts,next.organizationContacts);
  return [
   previous.name!==next.name?`name ${previous.name} to ${next.name}`:'',
   previous.type!==next.type?`type ${previous.type} to ${next.type}`:'',
   previous.organization!==next.organization?`organization ${previous.organization||'not specified'} to ${next.organization||'not specified'}`:'',
   previous.archived!==next.archived?`${next.archived?'archived':'unarchived'} system and linked user records`:'',
   previous.timeZone!==next.timeZone?`time zone ${previous.timeZone||'not set'} to ${next.timeZone||'not set'}`:'',
+  contactChanges?`organization contacts ${contactChanges}`:'',
  ].filter(Boolean).join('; ');
 }
 

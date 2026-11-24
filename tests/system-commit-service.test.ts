@@ -25,7 +25,7 @@ test('system commit payload strictly scopes records and serialized state to one 
  assert.deepEqual(payload.scopedSystems.map(item=>item.id),['alpha']);
  assert.deepEqual(payload.scopedUsers.map(item=>item.id),['one','three']);
  assert.equal(payload.database.updated,'2026-10-16T12:00:00.000Z');
- assert.equal(payload.database.version,7);
+ assert.equal(payload.database.version,8);
  assert.equal(payload.database.minimumApplicationVersion,applicationVersion);
  assert.equal(payload.database.lastWriterVersion,applicationVersion);
  assert.equal(payload.stateHash,'abc123');

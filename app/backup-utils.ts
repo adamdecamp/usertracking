@@ -50,7 +50,7 @@ export async function verifyBackupSnapshot(text:string,expectedIntegrityHash:str
 
 async function validateBackupEnvelope(text:string){
  const value=JSON.parse(text) as Partial<BackupEnvelope>;
- if(value.backupVersion!==1||typeof value.created!=='string'||typeof value.contentHash!=='string'||!value.database||![2,3,4,5,6,currentManifestVersion].includes(value.database.version)||!Array.isArray(value.database.systems)||!Array.isArray(value.database.users)||(value.database.version>=6&&!Array.isArray(value.database.recognitionAliases)))throw new Error('The backup format is invalid.');
+ if(value.backupVersion!==1||typeof value.created!=='string'||typeof value.contentHash!=='string'||!value.database||![2,3,4,5,6,7,currentManifestVersion].includes(value.database.version)||!Array.isArray(value.database.systems)||!Array.isArray(value.database.users)||(value.database.version>=6&&!Array.isArray(value.database.recognitionAliases)))throw new Error('The backup format is invalid.');
  const contentHash=await sha256Hex(JSON.stringify({systems:value.database.systems,users:value.database.users,...(value.database.version>=6?{recognitionAliases:value.database.recognitionAliases??[]}: {})}));
  if(contentHash!==value.contentHash)throw new Error('The backup content hash does not match its records.');
  return value as BackupEnvelope;
