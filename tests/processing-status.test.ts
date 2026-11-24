@@ -9,7 +9,11 @@ test('every processing status uses the shared stage, progress, current-item, and
  assert.match(panel,/Stage: \{status\.phase\}/);
  assert.match(panel,/of \$\{status\.total\} \$\{status\.unit\} processed/);
  assert.match(panel,/Workload total is still being discovered/);
- assert.match(panel,/Elapsed \{elapsed\}/);
+ assert.match(panel,/Current Process <b>\{stageTime\}<\/b>/);
+ assert.match(panel,/Total Processing Time <b>\{totalTime\}<\/b>/);
+ assert.match(panel,/status\.operationStartedAtMs\?\?startedAt/);
+ assert.match(hook,/operationStartedAtMs:operationStart\(current\)/);
+ assert.match(hook,/current\?\.state==='running'\?operationStart\(current\):undefined/);
  assert.match(panel,/<b>Current:<\/b>/);
  assert.match(panel,/status\.startedAtMs\?\?now/);
  assert.match(panel,/status\.completedAtMs\?\?now/);
