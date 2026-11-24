@@ -225,7 +225,7 @@ test('User Agreement and 8140 notification templates are launcher-attached and e
  assert.match(page,/notificationTemplateFor\(state,selectedKind\)/);
  assert.match(page,/portableRequest\(draftRoot,'outlook-draft'/);
  assert.match(page,/templateType,auditSystemIds:systemIds/);
- assert.match(page,/Action Required: \$\{systemName\}/);
+ assert.match(page,/subject=outlookDraftSubject\('Action Required',systemName,selectedKind,state\)/);
  assert.match(page,/qualificationMemoTemplatePattern/);
  assert.match(launcher,/StageOutlookTemplateAttachment/);
  assert.match(launcher,/temporaryAttachmentPath = templateLookup\.GetAwaiter\(\)\.GetResult\(\)/);

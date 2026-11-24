@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {annualRevalidationNotice,availableNotificationKinds,digitalSignatureNotice,dodCyberTrainingUrl,individualNotificationBody,notificationBody,notificationKindForState,notificationTemplateFor,notificationUsesUserAgreementTemplate,privilegedUserTrainingUrl,qualificationMemoNotice,qualificationMemoTemplatePattern,userAgreementTemplateFilename} from '../app/notification-utils.ts';
+import {readFileSync} from 'node:fs';
+import {annualRevalidationNotice,availableNotificationKinds,digitalSignatureNotice,dodCyberTrainingUrl,individualNotificationBody,notificationBody,notificationKindForState,notificationTemplateFor,notificationUsesUserAgreementTemplate,outlookDraftSubject,privilegedUserTrainingUrl,qualificationMemoNotice,qualificationMemoTemplatePattern,userAgreementTemplateFilename} from '../app/notification-utils.ts';
 
 test('creates the approved missing-artifact message',()=>{
  const message=notificationBody('Missing','DoD Cyber Cert');
@@ -153,4 +154,14 @@ test('labels a first individual outreach without implying prior delivery',()=>{
  assert.match(message,/Contact Attempt 1: This is our first documented outreach/);
  assert.doesNotMatch(message,/previous Outlook draft/);
  assert.throws(()=>individualNotificationBody([{state:'Missing',requirement:'SAAR'}],0),/positive whole number/);
+});
+test('every Outlook draft subject uses Tag — System — Topic — Detail',()=>{
+ assert.equal(outlookDraftSubject('Action Required','ALPHA','Account Documents','Contact Attempt 2'),'Action Required — ALPHA — Account Documents — Contact Attempt 2');
+ assert.equal(outlookDraftSubject('Action Required','ALPHA','DTA Training','Due Within 30 Days'),'Action Required — ALPHA — DTA Training — Due Within 30 Days');
+ assert.equal(outlookDraftSubject('Action Required','ALPHA','DoD Cyber Cert','Overdue'),'Action Required — ALPHA — DoD Cyber Cert — Overdue');
+ assert.equal(outlookDraftSubject('For Review','ALPHA','User Status Snapshot','GOV'),'For Review — ALPHA — User Status Snapshot — GOV');
+ assert.equal(outlookDraftSubject('Action Required','  ','User\r\nAgreement',' Missing '),'Action Required — Information System — User Agreement — Missing','blank systems get a label and line breaks never reach the subject');
+ const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+ assert.equal((page.match(/subject=outlookDraftSubject\(/g)??[]).length,3,'all three draft builders use the shared subject');
+ assert.equal(/subject=`/.test(page),false,'no draft builds its own subject template');
 });

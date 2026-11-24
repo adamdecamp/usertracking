@@ -341,7 +341,7 @@ export default function Guide(){
    </ol>
    <ul>
     <li>Recipients are placed in BCC for bulk drafts.</li>
-    <li>The subject includes the information system name.</li>
+    <li>Every Outlook draft subject uses one format: <b>Tag — System — Topic — Detail</b>. Examples: <i>Action Required — ALPHA — DTA Training — Due Within 30 Days</i>, <i>Action Required — ALPHA — Account Documents — Contact Attempt 2</i>, and <i>For Review — ALPHA — User Status Snapshot — GOV</i>.</li>
     <li>SAAR appears only in Missing notifications because it does not expire.</li>
     <li>User Agreement notices attach the approved User Agreement template.</li>
      <li>8140 notices attach the newest approved template matching Last_First_(Org)_8140_Qualification_Memo_DDMMMYYYY.pdf.</li>
