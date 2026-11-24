@@ -65,7 +65,7 @@ internal sealed partial class PortableStorage
         return false;
     }
 
-    private string OutlookIntakeDirectory(string systemId) { return LocalPerformanceCacheDirectory(Root(systemId), "Outlook Intake"); }
+    internal string OutlookIntakeDirectory(string systemId) { return LocalPerformanceCacheDirectory(Root(systemId), "Outlook Intake"); }
 
     internal string[] ReadOutlookIntakeFolder(string systemId)
     {
@@ -97,6 +97,8 @@ internal sealed partial class PortableStorage
         var processed = new HashSet<string>(ledger, StringComparer.Ordinal);
         var saved = new List<Dictionary<string, object>>();var skipped = new List<Dictionary<string, object>>();
         int scanned = 0, previouslyProcessed = 0, withoutPdf = 0;string cleanFolder = CleanLine(folderName, 200);
+        // Built only when a usable PDF needs checking; see OutlookIntakeRecorded.cs.
+        var recorded = new Lazy<Dictionary<string, string>>(() => OutlookRecordedEvidence(systemId));
         try
         {
             foreach (OutlookIntakeMessage message in messages ?? Enumerable.Empty<OutlookIntakeMessage>())
@@ -108,7 +110,7 @@ internal sealed partial class PortableStorage
                 List<OutlookIntakeAttachment> pdfs = message.Attachments.Where(item => item != null && (item.Filename ?? "").Trim().EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)).Take(OutlookIntakeMaximumAttachments).ToList();
                 string sender = OutlookIntakeAddress(message.Sender), received = message.ReceivedUtc.ToUniversalTime().ToString("o");bool retry = false, approvedSender = approved.Contains(sender);
                 if (pdfs.Count == 0) withoutPdf++;
-                foreach (OutlookIntakeAttachment attachment in pdfs) retry |= !SaveOutlookIntakeAttachment(systemId, attachment, sender, approvedSender, received, organizations, stagingRoot, saved, skipped);
+                foreach (OutlookIntakeAttachment attachment in pdfs) retry |= !SaveOutlookIntakeAttachment(systemId, attachment, sender, approvedSender, received, organizations, stagingRoot, recorded, saved, skipped);
                 // A Word document or scan from a known user is listed so the operator can ask for a PDF instead.
                 if (approvedSender) foreach (OutlookIntakeAttachment document in message.Attachments.Where(item => item != null && OutlookIntakeOtherDocumentExtensions.Contains(Path.GetExtension((item.Filename ?? "").Trim()).ToLowerInvariant())).Take(OutlookIntakeMaximumAttachments))
                 {
@@ -125,13 +127,14 @@ internal sealed partial class PortableStorage
             AtomicWrite(ledgerPath, Encoding.UTF8.GetBytes(String.Join("\n", ledger) + (ledger.Count > 0 ? "\n" : "")));
             try { if (Directory.Exists(stagingRoot)) Directory.Delete(stagingRoot, true); } catch { }
         }
-        AppendAudit(systemId, "OUTLOOK INTAKE: folder " + (cleanFolder.Length > 0 ? cleanFolder : "Unnamed") + "; " + scanned + " messages read; " + saved.Count + " PDF attachments copied to organization intake for Sync review; " + skipped.Count + " attachments skipped; " + previouslyProcessed + " messages previously processed; no user record changed");
-        return json.Serialize(new Dictionary<string, object> { { "cancelled", false }, { "folder", cleanFolder }, { "scanned", scanned }, { "previouslyProcessed", previouslyProcessed }, { "withoutPdf", withoutPdf }, { "saved", saved }, { "skipped", skipped } });
+        int alreadyRecorded = skipped.Count(entry => entry.ContainsKey("recorded"));
+        AppendAudit(systemId, "OUTLOOK INTAKE: folder " + (cleanFolder.Length > 0 ? cleanFolder : "Unnamed") + "; " + scanned + " messages read; " + saved.Count + " PDF attachments copied to organization intake for Sync review; " + skipped.Count + " attachments skipped; " + alreadyRecorded + " already recorded; " + previouslyProcessed + " messages previously processed; no user record changed");
+        return json.Serialize(new Dictionary<string, object> { { "cancelled", false }, { "folder", cleanFolder }, { "scanned", scanned }, { "previouslyProcessed", previouslyProcessed }, { "withoutPdf", withoutPdf }, { "alreadyRecorded", alreadyRecorded }, { "saved", saved }, { "skipped", skipped } });
     }
 
     // Returns false when the attachment should be retried on a later check. Anything
     // the operator can resolve is held in Needs Attention (OutlookIntakeHold.cs).
-    private bool SaveOutlookIntakeAttachment(string systemId, OutlookIntakeAttachment attachment, string sender, bool approvedSender, string received, string[] organizations, string stagingRoot, List<Dictionary<string, object>> saved, List<Dictionary<string, object>> skipped)
+    private bool SaveOutlookIntakeAttachment(string systemId, OutlookIntakeAttachment attachment, string sender, bool approvedSender, string received, string[] organizations, string stagingRoot, Lazy<Dictionary<string, string>> recorded, List<Dictionary<string, object>> saved, List<Dictionary<string, object>> skipped)
     {
         string filename = SafePart(Path.GetFileName((attachment.Filename ?? "").Trim()), 180), code = OutlookIntakeOrganizationCode(filename);
         string organization = code == null ? null : organizations.FirstOrDefault(value => OutlookOrganizationMatches(code, value));
@@ -149,6 +152,13 @@ internal sealed partial class PortableStorage
                 // Unusable files from unknown senders are not worth an operator's attention.
                 if (!approvedSender) { skipped.Add(OutlookIntakeEntry(filename, organization, sender, received, invalid));return true; }
                 skipped.Add(OutlookHeldSkip(systemId, OutlookHoldInvalid, invalid + " Ask the sender to send it again as a PDF.", filename, code, organization, sender, received, null, out held));return held;
+            }
+            // A PDF already recorded in this system's database is a re-sent copy, whoever sent it and however it is named.
+            string recordedFor;
+            if (recorded.Value.TryGetValue(Sha256Bytes(bytes), out recordedFor))
+            {
+                var duplicate = OutlookIntakeEntry(filename, organization, sender, received, "Already recorded for " + recordedFor + ". This exact PDF is already in the database, so it was not copied.");
+                duplicate["recorded"] = true;skipped.Add(duplicate);return true;
             }
             if (!approvedSender)
             {

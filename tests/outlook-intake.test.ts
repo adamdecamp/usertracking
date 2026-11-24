@@ -13,7 +13,7 @@ const users=[
 ];
 const saved={filename:'Shaw_Vivian_(GOV)_DTA_Training_26AUG2026.pdf',sender:'vivian.shaw@example.mil',receivedUtc:'2026-11-20T15:00:00.0000000Z',organization:'GOV'};
 const skipped={filename:'scan001.pdf',sender:'vivian.shaw@example.mil',receivedUtc:'2026-11-20T15:00:00.0000000Z',reason:'The filename does not follow Last_First_(ORG)_Document_DDMMMYYYY.pdf.'};
-const result:OutlookIntakeResult={cancelled:false,folder:'RAPTOR Intake',scanned:7,previouslyProcessed:2,withoutPdf:1,saved:[saved],skipped:[skipped]};
+const result:OutlookIntakeResult={cancelled:false,folder:'RAPTOR Intake',scanned:7,previouslyProcessed:2,withoutPdf:1,alreadyRecorded:0,saved:[saved],skipped:[skipped]};
 
 test('only Official Emails of users in the selected system become approved senders',()=>{
  assert.deepEqual(outlookIntakeSenders(users,'s1'),['supervisor@example.mil','vivian.shaw@example.mil']);
@@ -120,4 +120,16 @@ test('every Outlook draft applies the Send From mailbox and never falls back to 
  assert.match(sendFrom,/"SendUsingAccount"/);
  assert.match(sendFrom,/"SentOnBehalfOfName"/);
  assert.equal(sendFrom.includes('"Send"'),false,'drafts are only displayed; the operator still sends them');
+});
+
+test('PDFs already recorded in the database are reported separately and never copied',()=>{
+ const duplicate={...skipped,filename:'renamed copy.pdf',reason:'Already recorded for Shaw, Vivian (DTA Training). This exact PDF is already in the database, so it was not copied.',recorded:true as const};
+ const decoded=decodeOutlookIntakeResult({...result,alreadyRecorded:1,skipped:[skipped,duplicate]});
+ assert.equal(decoded.alreadyRecorded,1);
+ assert.equal(decoded.skipped[1].recorded,true);
+ assert.equal(decodeOutlookIntakeResult({...result,alreadyRecorded:undefined}).alreadyRecorded,0,'a launcher without the duplicate check reports none');
+ assert.throws(()=>decodeOutlookIntakeResult({...result,saved:[{...saved,recorded:true}]}),/already-recorded flag/);
+ assert.equal(outlookIntakeSummary(decoded),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last 30 days (2 already checked); 1 PDF already recorded and not copied; 1 attachment skipped.');
+ const intake=readFileSync(new URL('../portable-launcher/OutlookIntake.cs',import.meta.url),'utf8');
+ assert.ok(intake.indexOf('recorded.Value.TryGetValue')<intake.indexOf('if (!approvedSender)\r\n')||intake.indexOf('recorded.Value.TryGetValue')<intake.indexOf('if (!approvedSender)\n'),'the duplicate check runs before any hold, so a recorded copy never needs attention');
 });
