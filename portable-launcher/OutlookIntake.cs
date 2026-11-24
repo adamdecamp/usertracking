@@ -75,15 +75,17 @@ internal sealed partial class PortableStorage
         {
             var value = json.DeserializeObject(File.ReadAllText(path, Encoding.UTF8)) as Dictionary<string, object>;
             if (value == null || !value.ContainsKey("storeId") || !value.ContainsKey("entryId")) return null;
-            return new[] { Convert.ToString(value["storeId"]), Convert.ToString(value["entryId"]), value.ContainsKey("name") ? Convert.ToString(value["name"]) : "" };
+            return new[] { Convert.ToString(value["storeId"]), Convert.ToString(value["entryId"]), value.ContainsKey("name") ? Convert.ToString(value["name"]) : "", value.ContainsKey("path") ? Convert.ToString(value["path"]) : "" };
         }
         catch (Exception) { return null; }
     }
 
-    internal void SaveOutlookIntakeFolder(string systemId, string storeId, string entryId, string name)
+    // The folder path (\\Mailbox\Inbox\RAPTOR) is kept beside Outlook's IDs so a
+    // folder whose ID stops resolving can still be found by name.
+    internal void SaveOutlookIntakeFolder(string systemId, string storeId, string entryId, string name, string path = "")
     {
         if (String.IsNullOrWhiteSpace(storeId) || String.IsNullOrWhiteSpace(entryId)) throw new InvalidDataException("Outlook did not identify the selected folder.");
-        string text = json.Serialize(new Dictionary<string, object> { { "storeId", storeId }, { "entryId", entryId }, { "name", CleanLine(name, 200) } });
+        string text = json.Serialize(new Dictionary<string, object> { { "storeId", storeId }, { "entryId", entryId }, { "name", CleanLine(name, 200) }, { "path", CleanLine(path, 1000) } });
         AtomicWrite(Path.Combine(OutlookIntakeDirectory(systemId), "folder.json"), Encoding.UTF8.GetBytes(text));
     }
 
@@ -217,7 +219,7 @@ internal sealed partial class TrackerContext
                 folder = OutlookCall(session, "PickFolder");
                 if (folder == null) return "{\"cancelled\":true}";
                 string name = Convert.ToString(OutlookGet(folder, "Name"));
-                storage.SaveOutlookIntakeFolder(systemId, Convert.ToString(OutlookGet(folder, "StoreID")), Convert.ToString(OutlookGet(folder, "EntryID")), name);
+                storage.SaveOutlookIntakeFolder(systemId, Convert.ToString(OutlookGet(folder, "StoreID")), Convert.ToString(OutlookGet(folder, "EntryID")), name, Convert.ToString(OutlookGet(folder, "FolderPath")));
                 storage.AppendAudit(systemId, "OUTLOOK INTAKE FOLDER SELECTED: " + CleanError(name));
                 return new JavaScriptSerializer().Serialize(new Dictionary<string, object> { { "cancelled", false }, { "folder", name } });
             }
@@ -236,7 +238,8 @@ internal sealed partial class TrackerContext
         int days = request.ContainsKey("days") ? Convert.ToInt32(request["days"]) : 30;
         if (days < 1 || days > PortableStorage.OutlookIntakeMaximumDays) throw new InvalidDataException("Outlook intake can look back between 1 and " + PortableStorage.OutlookIntakeMaximumDays + " days.");
         string[] folderId = storage.ReadOutlookIntakeFolder(systemId);
-        if (folderId == null) throw new InvalidOperationException("Choose the Outlook folder to check before checking Outlook.");
+        // No folder yet, or one Outlook can no longer find: the client asks the operator to choose it.
+        if (folderId == null) return "{\"needsFolder\":true}";
         return RunOutlookStaThread(delegate
         {
             object outlook = null, session = null, folder = null, items = null;
@@ -244,12 +247,59 @@ internal sealed partial class TrackerContext
             {
                 outlook = OutlookApplication();session = OutlookCall(outlook, "GetNamespace", "MAPI");
                 try { folder = OutlookCall(session, "GetFolderFromID", folderId[1], folderId[0]); }
-                catch (Exception error) { throw new InvalidOperationException("The saved Outlook folder " + CleanError(folderId[2]) + " is no longer available. Choose the Outlook folder again.", error); }
+                catch (Exception) { folder = OutlookFolderByPath(session, folderId[3]); }
+                if (folder == null)
+                {
+                    storage.AppendAudit(systemId, "OUTLOOK INTAKE FOLDER NOT FOUND: " + CleanError(folderId[2]) + "; operator asked to choose the folder again");
+                    return new JavaScriptSerializer().Serialize(new Dictionary<string, object> { { "needsFolder", true }, { "missing", CleanError(folderId[2]) } });
+                }
+                if (!String.Equals(Convert.ToString(OutlookGet(folder, "EntryID")), folderId[1], StringComparison.Ordinal)) storage.SaveOutlookIntakeFolder(systemId, Convert.ToString(OutlookGet(folder, "StoreID")), Convert.ToString(OutlookGet(folder, "EntryID")), folderId[2], folderId[3]);
                 items = OutlookGet(folder, "Items");OutlookCall(items, "Sort", "[ReceivedTime]", true);
                 return storage.ProcessOutlookIntake(systemId, Convert.ToString(OutlookGet(folder, "Name")), OutlookMessages(items, DateTime.Now.AddDays(-days)), senders);
             }
             finally { ReleaseComObject(items);ReleaseComObject(folder);ReleaseComObject(session);ReleaseComObject(outlook); }
         });
+    }
+
+    // Walks session.Folders by the saved FolderPath; null when any part is missing.
+    internal static object OutlookFolderByPath(object session, string path)
+    {
+        string[] parts = (path ?? "").Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return null;
+        object folder = null;
+        try
+        {
+            foreach (string part in parts)
+            {
+                object folders = OutlookGet(folder ?? session, "Folders"), next;
+                try { next = OutlookCall(folders, "Item", part); } finally { ReleaseComObject(folders); }
+                ReleaseComObject(folder);folder = next;
+            }
+            return folder;
+        }
+        catch (Exception) { ReleaseComObject(folder);return null; }
+    }
+
+    internal const string OutlookDialogOpenMessage = "Outlook has a window open that is waiting for your answer, such as a prompt asking whether to allow access, a reminder, or a sign-in box. Switch to Outlook, answer or close that window, and then try again.";
+
+    // Outlook refuses automation while one of its own dialogs waits for an answer
+    // ("Outlook can't do this because a dialog box is open").
+    internal static bool OutlookDialogOpen(Exception error)
+    {
+        for (Exception cause = error; cause != null; cause = cause.InnerException)
+            if (cause is COMException && cause.Message.IndexOf("dialog box is open", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+        return false;
+    }
+
+    // Retries a call for up to about ten seconds while an Outlook dialog is open, so a
+    // prompt the operator is already answering does not fail the draft.
+    internal static object OutlookWhenNoDialog(Func<object> call, int attempts = 5, int waitMilliseconds = 2000)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try { return call(); }
+            catch (Exception error) { if (attempt >= attempts || !OutlookDialogOpen(error)) throw;Thread.Sleep(waitMilliseconds); }
+        }
     }
 
     private static string RunOutlookStaThread(Func<string> work)
@@ -259,6 +309,7 @@ internal sealed partial class TrackerContext
         thread.IsBackground = true;thread.Name = "R.A.P.T.O.R. Outlook Intake";thread.SetApartmentState(ApartmentState.STA);thread.Start();
         if (!thread.Join(TimeSpan.FromMinutes(20))) throw new TimeoutException("Outlook did not finish within 20 minutes. Close any open Outlook dialog, then try again.");
         while (failure is TargetInvocationException && failure.InnerException != null) failure = failure.InnerException;
+        if (OutlookDialogOpen(failure)) throw new InvalidOperationException(OutlookDialogOpenMessage, failure);
         if (failure is COMException) throw new InvalidOperationException("Microsoft Outlook refused the request: " + CleanError(failure.Message) + " Outlook security settings may be blocking programmatic access.", failure);
         if (failure != null) throw failure;
         return result;

@@ -2,8 +2,8 @@
 
 import {useState} from 'react';
 import {decodeJsonResponse} from '../infrastructure/runtime-decoders';
-import {decodeOutlookFolderResult,decodeOutlookIntakeResult,type OutlookIntakeResult} from '../infrastructure/outlook-intake-contract';
-import {outlookIntakeLookbackDays,outlookIntakeRequest,outlookIntakeSummary,sentOnBehalf} from '../application/outlook-intake';
+import {decodeOutlookFolderResult,decodeOutlookIntakeCheck,type OutlookIntakeResult} from '../infrastructure/outlook-intake-contract';
+import {outlookFolderPrompt,outlookIntakeLookbackDays,outlookIntakeRequest,outlookIntakeSummary,sentOnBehalf} from '../application/outlook-intake';
 import type {UserRecord} from '../domain/tracker-models';
 import {OutlookNeedsAttention} from './OutlookNeedsAttention';
 
@@ -16,9 +16,20 @@ export function OutlookIntakePanel({systemId,users,request}:{systemId:string;use
  const skipped=result?.skipped.filter(file=>!file.held)??[];
  const run=async(kind:'folder'|'check')=>{
   setBusy(kind);setError('');setStatus(kind==='folder'?'Choose the folder in the Outlook window. It may open behind this window.':'Reading Outlook…');
+  const chooseFolder=async()=>decodeJsonResponse(await request('outlook-folder',{method:'POST'}),'Outlook folder selection',decodeOutlookFolderResult);
+  const check=async()=>decodeJsonResponse(await request('outlook-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:outlookIntakeRequest(users,systemId)}),'Outlook intake',decodeOutlookIntakeCheck);
   try{
-   if(kind==='folder'){const chosen=await decodeJsonResponse(await request('outlook-folder',{method:'POST'}),'Outlook folder selection',decodeOutlookFolderResult);setStatus(chosen.cancelled?'No folder was chosen.':`Outlook folder set to ${chosen.folder}. Choose Check Outlook to look for evidence.`);return}
-   const checked=await decodeJsonResponse(await request('outlook-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:outlookIntakeRequest(users,systemId)}),'Outlook intake',decodeOutlookIntakeResult);setResult(checked);setStatus(outlookIntakeSummary(checked));setChecks(count=>count+1);
+   if(kind==='folder'){const chosen=await chooseFolder();setStatus(chosen.cancelled?'No folder was chosen.':`Outlook folder set to ${chosen.folder}. Choose Check Outlook to look for evidence.`);return}
+   let checked=await check();
+   if('needsFolder' in checked){
+    // First use on this computer, or the saved folder can no longer be found: ask for it, then check.
+    setBusy('folder');setStatus(outlookFolderPrompt(checked.missing));
+    const chosen=await chooseFolder();
+    if(chosen.cancelled){setStatus('No folder was chosen, so Outlook was not checked.');return}
+    setBusy('check');setStatus('Reading Outlook…');checked=await check();
+    if('needsFolder' in checked)throw new Error('Outlook could not open the folder you chose. Choose Outlook Folder and try again.');
+   }
+   setResult(checked);setStatus(outlookIntakeSummary(checked));setChecks(count=>count+1);
   }catch(caught){setStatus('');setError(caught instanceof Error?caught.message:'Outlook could not be checked.')}
   finally{setBusy('')}
  };

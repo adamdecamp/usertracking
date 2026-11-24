@@ -47,6 +47,17 @@ export const decodeOutlookIntakeResult:RuntimeDecoder<OutlookIntakeResult>=value
  return{cancelled:false,folder:stringValue(record.folder,context,'$.folder',200),scanned:numberValue(record.scanned,context,'$.scanned'),previouslyProcessed:numberValue(record.previouslyProcessed,context,'$.previouslyProcessed'),withoutPdf:numberValue(record.withoutPdf,context,'$.withoutPdf'),alreadyRecorded:record.alreadyRecorded===undefined?0:numberValue(record.alreadyRecorded,context,'$.alreadyRecorded'),saved:decodeFiles(record.saved,'$.saved',false),skipped:decodeFiles(record.skipped,'$.skipped',true)};
 };
 
+export type OutlookIntakeNeedsFolder={needsFolder:true;missing?:string};
+
+/** A check either completes or reports that no usable folder is saved on this computer (`missing` names one Outlook can no longer find). */
+export const decodeOutlookIntakeCheck:RuntimeDecoder<OutlookIntakeResult|OutlookIntakeNeedsFolder>=value=>{
+ const record=objectValue(value,context);
+ if(record.needsFolder===undefined)return decodeOutlookIntakeResult(value);
+ if(record.needsFolder!==true)throw new RuntimeDecodeError(context,'$.needsFolder','true when a folder must be chosen');
+ const missing=optionalString(record,'missing',context,200);
+ return{needsFolder:true,...(missing?{missing}:{})};
+};
+
 export const decodeOutlookSendFrom:RuntimeDecoder<{address:string}>=value=>({address:stringValue(objectValue(value,'Outlook Send From').address,'Outlook Send From','$.address',254)});
 
 export const decodeOutlookFolderResult:RuntimeDecoder<OutlookFolderResult>=value=>{

@@ -1,5 +1,5 @@
 import {errorDetail} from '../error-utils.ts';
-import {canonicalManualEvidenceFilename} from '../filename-utils.ts';
+import {canonicalManualEvidenceFilename,preserveEvidenceExtension} from '../filename-utils.ts';
 import type {Artifact,UserRecord} from '../domain/tracker-models.ts';
 
 export type BestEffortFailure<T>={item:T;reason:string};
@@ -16,9 +16,10 @@ export async function relabelArtifactsForUserIdentity<TLocated extends{path:stri
  relocate:(artifact:Artifact,targetFilename:string,located:TLocated)=>Promise<string>,
 ){
  const result=await runBestEffort(previous.artifacts,async artifact=>{
-  const role=next.roles.includes('Privileged')?'PRIV':'GEN',targetFilename=canonicalManualEvidenceFilename({filename:artifact.filename,kind:artifact.kind,last:next.last,first:next.first,organization:next.organization,role,privilegedType:next.privilegedTypes[0]});
-  if(!targetFilename)throw new Error(`${artifact.filename} cannot be safely relabeled because its evidence type, role, or complete date is not recognizable.`);
-  const located=await locate(artifact);
+  const role=next.roles.includes('Privileged')?'PRIV':'GEN',canonical=canonicalManualEvidenceFilename({filename:artifact.filename,kind:artifact.kind,last:next.last,first:next.first,organization:next.organization,role,privilegedType:next.privilegedTypes[0]});
+  if(!canonical)throw new Error(`${artifact.filename} cannot be safely relabeled because its evidence type, role, or complete date is not recognizable.`);
+  // Canonical names end in .pdf.zip; a file stored as a plain PDF keeps .pdf.
+  const located=await locate(artifact),targetFilename=preserveEvidenceExtension(located.path,canonical);
   const path=await relocate(artifact,targetFilename,located);
   return{before:artifact,after:{...artifact,filename:targetFilename,path}};
  },error=>errorDetail(error,'The evidence file could not be relabeled.'));

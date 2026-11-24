@@ -444,8 +444,20 @@ internal static class PortableStorageTests
             storage.PublishWorkspace("intake", Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", database }, { "csv", "initial" } })));
             string workspace = storage.LocalWorkspacePath("intake");Directory.CreateDirectory(Path.Combine(workspace, "Organizations", "GOV"));
             Assert(storage.ReadOutlookIntakeFolder("intake") == null, "A new computer must ask the operator to choose the Outlook folder.");
-            storage.SaveOutlookIntakeFolder("intake", "store-1", "entry-1", "RAPTOR Intake");string[] folder = storage.ReadOutlookIntakeFolder("intake");
-            Assert(folder != null && folder[0] == "store-1" && folder[1] == "entry-1" && folder[2] == "RAPTOR Intake", "The chosen Outlook folder must be remembered on this computer.");
+            storage.SaveOutlookIntakeFolder("intake", "store-1", "entry-1", "RAPTOR Intake", "\\\\Group Mailbox\\Inbox\\RAPTOR Intake");string[] folder = storage.ReadOutlookIntakeFolder("intake");
+            Assert(folder != null && folder[0] == "store-1" && folder[1] == "entry-1" && folder[2] == "RAPTOR Intake" && folder[3] == "\\\\Group Mailbox\\Inbox\\RAPTOR Intake", "The chosen Outlook folder and its path must be remembered on this computer.");
+            var outlookSession = new FakeOutlookFolder("session", new FakeOutlookFolder("Group Mailbox", new FakeOutlookFolder("Inbox", new FakeOutlookFolder("RAPTOR Intake"))));
+            var foundByPath = TrackerContext.OutlookFolderByPath(outlookSession, folder[3]) as FakeOutlookFolder;
+            Assert(foundByPath != null && foundByPath.Name == "RAPTOR Intake", "When Outlook no longer resolves the saved folder ID, the folder must still be found by its saved path.");
+            Assert(TrackerContext.OutlookFolderByPath(outlookSession, "\\\\Group Mailbox\\Inbox\\Renamed") == null && TrackerContext.OutlookFolderByPath(outlookSession, "") == null, "A folder path that no longer exists, or a folder saved before paths were kept, must ask the operator to choose the folder again.");
+            int dialogAttempts = 0;
+            object afterDialog = TrackerContext.OutlookWhenNoDialog(delegate { if (++dialogAttempts < 3) throw new System.Reflection.TargetInvocationException(new System.Runtime.InteropServices.COMException("Outlook can't do this because a dialog box is open. Please close it and try again.")); return "draft"; }, 5, 1);
+            Assert((string)afterDialog == "draft" && dialogAttempts == 3, "An Outlook draft must wait briefly for an open Outlook dialog and then continue.");
+            int otherAttempts = 0;
+            try { TrackerContext.OutlookWhenNoDialog(delegate { otherAttempts++;throw new System.Runtime.InteropServices.COMException("The operation failed."); }, 5, 1);Assert(false, "Other Outlook errors must not be swallowed."); }
+            catch (System.Runtime.InteropServices.COMException) { Assert(otherAttempts == 1, "Only the open-dialog error may be retried."); }
+            try { TrackerContext.OutlookWhenNoDialog(delegate { throw new System.Runtime.InteropServices.COMException("Outlook can't do this because a dialog box is open."); }, 2, 1);Assert(false, "A dialog that stays open must eventually fail."); }
+            catch (Exception error) { Assert(TrackerContext.OutlookDialogOpen(error), "A dialog that stays open must be recognized so the operator sees the plain-language message."); }
             byte[] pdf = Encoding.ASCII.GetBytes("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n"), notPdf = Encoding.ASCII.GetBytes("PK\u0003\u0004 not a pdf");
             const string good = "Shaw_Vivian_(GOV)_DTA_Training_26AUG2026.pdf";
             var messages = new List<OutlookIntakeMessage>
@@ -912,6 +924,8 @@ internal static class PortableStorageTests
         Assert(!File.Exists(archivedEditPhysical) && File.Exists(archivedEditTargetPhysical) && Convert.ToString(archivedEdit["path"]).Replace('\\','/') == archivedEditTargetRelative.Replace('\\','/'), "Editing user information should relabel Archive evidence while preserving its Archive bucket and user association.");
         string reworkEditName = "Oldrework_Alex_(GOV)_User_Agreement_24AUG2026.pdf.zip", reworkEditTargetName = "Newrework_Alex_(EDITORG)_User_Agreement_24AUG2026.pdf.zip", reworkEditRelative = Path.Combine("Organizations", "GOV", "GOV Rework", reworkEditName), reworkEditPhysical = Path.Combine(root, reworkEditRelative), reworkEditTargetRelative = Path.Combine("Organizations", "EDITORG", "EDITORG Rework", reworkEditTargetName), reworkEditTargetPhysical = Path.Combine(root, reworkEditTargetRelative);Directory.CreateDirectory(Path.GetDirectoryName(reworkEditPhysical));File.WriteAllBytes(reworkEditPhysical, EvidenceZip(reworkEditName.Substring(0, reworkEditName.Length - 4), PdfBytes()));
         var reworkEdit = (Dictionary<string, object>)Json.DeserializeObject(storage.RelabelUserEvidence("mapping-key", reworkEditRelative, "EDITORG", "User Agreement", reworkEditTargetName));
+        var missingRelabel = (Dictionary<string, object>)Json.DeserializeObject(storage.RelabelUserEvidence("mapping-key", Path.Combine("Organizations", "GOV", "GOV DoD Cyber Cert", "Gone_Person_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf.zip"), "EDITORG", "DoD Cyber Cert", "Gone_Person_(EDITORG)_DoD_Cyber_Cert_24AUG2026.pdf.zip", new string('a', 64)));
+        Assert(missingRelabel.ContainsKey("missing") && Convert.ToBoolean(missingRelabel["missing"]) && !File.Exists(Path.Combine(localEvidenceRoot, "Organizations", "EDITORG", "Gone_Person_(EDITORG)_DoD_Cyber_Cert_24AUG2026.pdf.zip")), "Evidence missing from its recorded path must be reported as a result for Reconciliation, not as a launcher error on every save.");
         Assert(!File.Exists(reworkEditPhysical) && File.Exists(reworkEditTargetPhysical) && Convert.ToString(reworkEdit["path"]).Replace('\\','/') == reworkEditTargetRelative.Replace('\\','/'), "Editing user information should relabel Rework evidence while preserving its Rework status and user association.");
         string localGovIncoming = Path.Combine(localEvidenceRoot, "Organizations", "GOV");File.WriteAllText(Path.Combine(localGovIncoming, "operator-notes.txt"), "This non-evidence file must not require metadata validation.", Encoding.UTF8);
         string encryptedEvidenceName = "Encrypted_User_(GOV)_DoD_Cyber_Cert_24AUG2026.pdf", encryptedEvidencePath = Path.Combine(localGovIncoming, encryptedEvidenceName);File.WriteAllBytes(encryptedEvidencePath, EncryptedPdfBytes());
@@ -1307,5 +1321,24 @@ internal static class PortableStorageTests
 
         Console.WriteLine("Portable storage integration tests passed.");
         return 0;
+    }
+}
+
+public sealed class FakeOutlookFolder
+{
+    public FakeOutlookFolder(string name, params FakeOutlookFolder[] children) { Name = name;Folders = new FakeOutlookFolders(children); }
+    public string Name { get; private set; }
+    public FakeOutlookFolders Folders { get; private set; }
+}
+
+public sealed class FakeOutlookFolders
+{
+    private readonly FakeOutlookFolder[] children;
+    public FakeOutlookFolders(FakeOutlookFolder[] children) { this.children = children; }
+    public FakeOutlookFolder Item(object name)
+    {
+        FakeOutlookFolder match = children.FirstOrDefault(child => child.Name == Convert.ToString(name));
+        if (match == null) throw new System.Runtime.InteropServices.COMException("The attempted operation failed. An object could not be found.");
+        return match;
     }
 }

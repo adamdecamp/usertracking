@@ -670,7 +670,7 @@ internal sealed partial class TrackerContext : ApplicationContext
                 Type outlookType = Type.GetTypeFromProgID("Outlook.Application");
                 if (outlookType == null) { RefuseOutlookFallbackForSendFrom(sendFrom);string fallback = OutlookDraftFallback.Open(to, recipients, subject, htmlBody, body, attachmentPaths);RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + fallback + "; operator review required before sending", null, operationId);return; }
                 outlook = Activator.CreateInstance(outlookType);
-                message = outlookType.InvokeMember("CreateItem", BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance, null, outlook, new object[] { 0 });string sentFrom = ApplyOutlookSendFrom(outlook, message, sendFrom);
+                message = OutlookWhenNoDialog(() => outlookType.InvokeMember("CreateItem", BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance, null, outlook, new object[] { 0 }));string sentFrom = ApplyOutlookSendFrom(outlook, message, sendFrom);
                 Type messageType = message.GetType();
                 if (!String.IsNullOrWhiteSpace(to)) messageType.InvokeMember("To", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { to });
                 else messageType.InvokeMember("BCC", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { String.Join(";", recipients) });
@@ -680,14 +680,14 @@ internal sealed partial class TrackerContext : ApplicationContext
                     attachments = messageType.InvokeMember("Attachments", BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, null);
                     foreach (string attachmentPath in attachmentPaths) attachmentObjects.Add(attachments.GetType().InvokeMember("Add", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, attachments, new object[] { attachmentPath, Type.Missing, Type.Missing, Type.Missing }));
                 }
-                messageType.InvokeMember("Display", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { false });
+                OutlookWhenNoDialog(() => messageType.InvokeMember("Display", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { false }));
                 string signatureHtml = Convert.ToString(messageType.InvokeMember("HTMLBody", BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, null));
                 messageType.InvokeMember("HTMLBody", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { OutlookHtmlWithSignature(htmlBody, signatureHtml) });
                 RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + (String.IsNullOrWhiteSpace(to) ? recipients.Length + " BCC recipients" : "one To recipient") + "; managed templates " + (attachTemplate ? String.Join(", ", templateTypes) + " attached" : "not applicable") + "; organization snapshot " + (attachOrganizationSnapshot ? "attached" : "not applicable") + "; from " + sentFrom + "; operator review required before sending", null, operationId);
             }
             catch (Exception error)
             {
-                string failure = CleanError(error.InnerException != null ? error.InnerException.Message : error.Message);
+                string failure = OutlookDialogOpen(error) ? OutlookDialogOpenMessage : CleanError(error.InnerException != null ? error.InnerException.Message : error.Message);
                 RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT FAILED: operation " + operationId + "; " + failure, failure, operationId);
                 try { dispatcher.BeginInvoke(new Action(delegate { MessageBox.Show("Microsoft Outlook could not create the draft. " + failure, "R.A.P.T.O.R.", MessageBoxButtons.OK, MessageBoxIcon.Error); })); }
                 catch { }

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {decodeOutlookFolderResult,decodeOutlookHeldList,decodeOutlookIntakeResult,decodeOutlookSendFrom,type OutlookHeldItem,type OutlookIntakeResult} from '../app/infrastructure/outlook-intake-contract.ts';
-import {outlookHeldCorrection,outlookHeldDraft,outlookHeldFilename,outlookIntakeRequest,outlookIntakeSenders,outlookIntakeSummary,sentOnBehalf} from '../app/application/outlook-intake.ts';
+import {decodeOutlookFolderResult,decodeOutlookHeldList,decodeOutlookIntakeCheck,decodeOutlookIntakeResult,decodeOutlookSendFrom,type OutlookHeldItem,type OutlookIntakeResult} from '../app/infrastructure/outlook-intake-contract.ts';
+import {outlookFolderPrompt,outlookHeldCorrection,outlookHeldDraft,outlookHeldFilename,outlookIntakeRequest,outlookIntakeSenders,outlookIntakeSummary,sentOnBehalf} from '../app/application/outlook-intake.ts';
 
 const users=[
  {systemId:'s1',email:' Vivian.Shaw@Example.mil ',last:'Shaw',first:'Vivian'},
@@ -115,7 +115,9 @@ test('every Outlook draft applies the Send From mailbox and never falls back to 
  const read=program.indexOf('string sendFrom = storage.ReadOutlookSendFrom();'),lock=program.indexOf('Interlocked.CompareExchange(ref outlookDraftActive, 1, 0)');
  assert.ok(read>0&&read<lock,'the mailbox is read before the single-draft lock is taken, so a bad setting cannot leave the lock held');
  assert.match(program,/if \(outlookType == null\) \{ RefuseOutlookFallbackForSendFrom\(sendFrom\);/);
- assert.match(program,/new object\[\] \{ 0 \}\);string sentFrom = ApplyOutlookSendFrom\(outlook, message, sendFrom\);/);
+ assert.match(program,/new object\[\] \{ 0 \}\)\);string sentFrom = ApplyOutlookSendFrom\(outlook, message, sendFrom\);/);
+ assert.match(program,/OutlookWhenNoDialog\(\(\) => messageType\.InvokeMember\("Display"/,'a draft waits briefly for an open Outlook dialog before failing');
+ assert.match(program,/string failure = OutlookDialogOpen\(error\) \? OutlookDialogOpenMessage :/,'an open Outlook dialog is explained in plain language');
  assert.match(program,/"; from " \+ sentFrom \+ "; operator review required before sending"/);
  assert.match(sendFrom,/"SendUsingAccount"/);
  assert.match(sendFrom,/"SentOnBehalfOfName"/);
@@ -132,4 +134,13 @@ test('PDFs already recorded in the database are reported separately and never co
  assert.equal(outlookIntakeSummary(decoded),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last 30 days (2 already checked); 1 PDF already recorded and not copied; 1 attachment skipped.');
  const intake=readFileSync(new URL('../portable-launcher/OutlookIntake.cs',import.meta.url),'utf8');
  assert.ok(intake.indexOf('recorded.Value.TryGetValue')<intake.indexOf('if (!approvedSender)\r\n')||intake.indexOf('recorded.Value.TryGetValue')<intake.indexOf('if (!approvedSender)\n'),'the duplicate check runs before any hold, so a recorded copy never needs attention');
+});
+
+test('Check Outlook asks for a folder when none is saved or the saved one is gone',()=>{
+ assert.deepEqual(decodeOutlookIntakeCheck({needsFolder:true}),{needsFolder:true});
+ assert.deepEqual(decodeOutlookIntakeCheck({needsFolder:true,missing:'RAPTOR'}),{needsFolder:true,missing:'RAPTOR'});
+ assert.deepEqual(decodeOutlookIntakeCheck(result),result,'a completed check decodes as before');
+ assert.throws(()=>decodeOutlookIntakeCheck({needsFolder:false}),/folder must be chosen/);
+ assert.match(outlookFolderPrompt(),/^Choose the Outlook folder to check in the Outlook window\./);
+ assert.match(outlookFolderPrompt('RAPTOR'),/can no longer find the saved folder RAPTOR\. Choose it again in the Outlook window\./);
 });

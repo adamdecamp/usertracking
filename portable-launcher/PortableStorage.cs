@@ -2449,7 +2449,7 @@ internal sealed partial class PortableStorage : IDisposable
     {
         lock (RootLock(systemId))
         {
-            string root, source = ResolveRelabelEvidencePath(systemId, relative, expectedSha256, out root);RecoverTransactions(root);string normalized = Relative(root, source);
+            string root, source;try { source = ResolveRelabelEvidencePath(systemId, relative, expectedSha256, out root); } catch (FileNotFoundException) { return json.Serialize(new Dictionary<string, object> { { "path", relative }, { "missing", true } }); }RecoverTransactions(root);string normalized = Relative(root, source);
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string safeOrganization = ValidOrganizationName(organization), folder = ArtifactStorageFolder(kind), safeName = SafePart(filename, 180);
             if (!String.Equals(safeName, filename, StringComparison.Ordinal) || !String.Equals(Path.GetFileName(filename), filename, StringComparison.Ordinal)) throw new InvalidDataException("The relabeled evidence filename is invalid or too long.");

@@ -28,7 +28,7 @@ test('portable response contracts accept bounded valid payloads',()=>{
  assert.deepEqual(decodeStorageOperationReceipt({completed:false,running:true,failed:false,action:'workspace-publish',startedAtUtc:'2026-10-22T12:00:00.000Z',message:'Publishing evidence.'}),{completed:false,running:true,failed:false,action:'workspace-publish',startedAtUtc:'2026-10-22T12:00:00.000Z',message:'Publishing evidence.'});
  assert.deepEqual(decodeLauncherControlResponse({activeStorageRequests:2,longOperationActive:true,activeOperation:'sync'}),{activeStorageRequests:2,longOperationActive:true,activeOperation:'sync'});
  assert.equal(decodeNetworkQualificationResponse({generatedAtUtc:'2026-10-21T12:00:00.000Z',rating:'Ready',networkRoot:true,writeMs:10,readVerifyMs:20,renameMs:5,exclusiveLockMs:5,enumerateMs:15,totalMs:55,payloadBytes:65536,sha256Verified:true,recommendation:'Ready.'}).totalMs,55);
- assert.equal(decodePathMutationResponse('archived','Archive')({archived:'Archive/A.zip'}).path,'Archive/A.zip');
+ assert.equal(decodePathMutationResponse('archived','Archive')({archived:'Archive/A.zip'}).path,'Archive/A.zip'); assert.equal(decodePathMutationResponse('path','Evidence reassignment')({path:'Organizations/GOV/A.pdf.zip',missing:true}).missing,true);
  assert.equal(decodeStorageVerificationResponse({saved:'2026-10-16T00:00:00Z',backup:'2026-10-16T00:00:00Z',filename:'manifest.json',auditEntries:1,auditHeadHash:hash,manifestSha256:hash,backupRecoveryWarning:'Skipped one incomplete snapshot.',skippedBackupCount:1,backupRebuilt:false}).skippedBackupCount,1);
  const publication=decodePublishResponse({saved:'2026-10-16T00:00:00Z',publishedFiles:2,noChanges:false,evidenceFastPath:true,stateHash:hash});
  assert.equal(publication.publishedFiles,2);
