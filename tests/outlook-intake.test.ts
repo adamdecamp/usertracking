@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {decodeOutlookFolderResult,decodeOutlookIntakeResult,decodeOutlookSendFrom,type OutlookIntakeResult} from '../app/infrastructure/outlook-intake-contract.ts';
-import {outlookIntakeRequest,outlookIntakeSenders,outlookIntakeSummary,sentOnBehalf} from '../app/application/outlook-intake.ts';
+import {decodeOutlookFolderResult,decodeOutlookHeldList,decodeOutlookIntakeResult,decodeOutlookSendFrom,type OutlookHeldItem,type OutlookIntakeResult} from '../app/infrastructure/outlook-intake-contract.ts';
+import {outlookHeldCorrection,outlookHeldDraft,outlookHeldFilename,outlookIntakeRequest,outlookIntakeSenders,outlookIntakeSummary,sentOnBehalf} from '../app/application/outlook-intake.ts';
 
 const users=[
  {systemId:'s1',email:' Vivian.Shaw@Example.mil ',last:'Shaw',first:'Vivian'},
@@ -13,7 +13,7 @@ const users=[
 ];
 const saved={filename:'Shaw_Vivian_(GOV)_DTA_Training_26AUG2026.pdf',sender:'vivian.shaw@example.mil',receivedUtc:'2026-11-20T15:00:00.0000000Z',organization:'GOV'};
 const skipped={filename:'scan001.pdf',sender:'vivian.shaw@example.mil',receivedUtc:'2026-11-20T15:00:00.0000000Z',reason:'The filename does not follow Last_First_(ORG)_Document_DDMMMYYYY.pdf.'};
-const result:OutlookIntakeResult={cancelled:false,folder:'RAPTOR Intake',scanned:7,previouslyProcessed:2,withoutPdf:1,saved:[saved],skipped:[skipped]};
+const result:OutlookIntakeResult={cancelled:false,folder:'RAPTOR Intake',scanned:7,previouslyProcessed:2,withoutPdf:1,alreadyRecorded:0,saved:[saved],skipped:[skipped]};
 
 test('only Official Emails of users in the selected system become approved senders',()=>{
  assert.deepEqual(outlookIntakeSenders(users,'s1'),['supervisor@example.mil','vivian.shaw@example.mil']);
@@ -44,6 +44,55 @@ test('the summary says what was copied, that Sync review comes next, and what wa
  assert.equal(outlookIntakeSummary({...result,saved:[],skipped:[],previouslyProcessed:0,scanned:1}),'No new evidence was found in RAPTOR Intake. Read 1 message from the last 30 days.');
 });
 
+const people=[
+ {id:'u1',systemId:'s1',email:'vivian.shaw@example.mil',last:'Shaw',first:'Vivian',organization:'GOV',privilegedTypes:['DBA']},
+ {id:'u2',systemId:'s1',email:'lee.ng@example.mil',last:'Ng',first:'Lee',organization:'Acme Corp',privilegedTypes:[]},
+ {id:'u3',systemId:'s2',email:'other@example.mil',last:'Shaw',first:'Vivian',organization:'GOV',privilegedTypes:[]},
+];
+const organizations=['GOV','Acme Corp'];
+const held=(reason:OutlookHeldItem['reason'],filename:string,extra:Partial<OutlookHeldItem>={}):OutlookHeldItem=>({id:'0123456789abcdef0123456789abcdef',reason,detail:'Needs attention.',filename,code:'',organization:'',sender:'vivian.shaw@example.mil',receivedUtc:'2026-11-20T15:00:00.0000000Z',...extra});
+
+test('Needs Attention responses are decoded strictly',()=>{
+ const list={held:[held('organization','Shaw_Vivian_(XYZ)_DTA_Training_26AUG2026.pdf',{code:'XYZ'})],organizations};
+ assert.deepEqual(decodeOutlookHeldList(list),list);
+ assert.throws(()=>decodeOutlookHeldList({...list,held:[{...list.held[0],reason:'other'}]}),/known Needs Attention reason/);
+ assert.throws(()=>decodeOutlookHeldList({...list,held:[{...list.held[0],id:'../x'}]}),/Needs Attention id/);
+ assert.equal(decodeOutlookIntakeResult({...result,skipped:[{...skipped,held:'0123456789abcdef0123456789abcdef'}]}).skipped[0].held,'0123456789abcdef0123456789abcdef');
+ assert.equal(outlookIntakeSummary({...result,skipped:[{...skipped,held:'0123456789abcdef0123456789abcdef'}]}),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last 30 days (2 already checked); 1 attachment added to Needs Attention.');
+});
+
+test('each mismatch is prefilled from the filename and sender so only the failing field needs a choice',()=>{
+ const organization=held('organization','Shaw_Vivian_(XYZ)_DTA_Training_26AUG2026.pdf',{code:'XYZ'});
+ assert.deepEqual(outlookHeldDraft(organization,people,'s1',organizations),{userId:'u1',organization:'GOV',kind:'DTA Training',date:'2026-08-26',role:'',privilegedType:''},'the user organization is offered when the filename code is unknown');
+ assert.equal(outlookHeldCorrection(organization,{...outlookHeldDraft(organization,people,'s1',organizations),organization:'Acme Corp'},people),JSON.stringify({id:organization.id,organization:'Acme Corp'}));
+ const scan=held('filename','scan001.pdf');
+ const scanDraft=outlookHeldDraft(scan,people,'s1',organizations);
+ assert.deepEqual(scanDraft,{userId:'u1',organization:'GOV',kind:'',date:'',role:'',privilegedType:''},'the sender identifies the user when the filename cannot');
+ assert.deepEqual(outlookHeldFilename(scanDraft,people),{problem:'Choose the artifact type.'});
+ assert.deepEqual(outlookHeldFilename({...scanDraft,kind:'User Agreement',date:'2099-01-01'},people),{problem:'The document date cannot be in the future.'});
+ assert.deepEqual(outlookHeldFilename({...scanDraft,kind:'SAAR',date:'2026-08-26'},people),{problem:'Choose whether the SAAR is General or Privileged.'});
+ assert.deepEqual(outlookHeldFilename({...scanDraft,kind:'SAAR',role:'PRIV',privilegedType:'DBA',date:'2026-08-26'},people),{filename:'Shaw_Vivian_(GOV)_PRIV_DBA_SAAR_26AUG2026.pdf'});
+ assert.deepEqual(JSON.parse(outlookHeldCorrection(scan,{...scanDraft,kind:'User Agreement',date:'2026-08-26'},people)),{id:scan.id,organization:'GOV',filename:'Shaw_Vivian_(GOV)_User_Agreement_26AUG2026.pdf',forUser:'Shaw, Vivian'});
+ const stranger=held('sender','Ng_Lee_(Acme_Corp)_DoD_Cyber_Cert_26AUG2026.pdf',{sender:'lee.personal@example.com',code:'Acme_Corp'});
+ const strangerDraft=outlookHeldDraft(stranger,people,'s1',organizations);
+ assert.equal(strangerDraft.userId,'u2','an unknown sender is matched to the user named in the filename');
+ assert.deepEqual(JSON.parse(outlookHeldCorrection(stranger,strangerDraft,people)),{id:stranger.id,organization:'Acme Corp',filename:'Ng_Lee_(Acme_Corp)_DoD_Cyber_Cert_26AUG2026.pdf',forUser:'Ng, Lee'});
+ const conflict=held('conflict','Shaw_Vivian_(GOV)_DTA_Training_26AUG2026.pdf',{organization:'GOV',code:'GOV'});
+ assert.equal(outlookHeldCorrection(conflict,outlookHeldDraft(conflict,people,'s1',organizations),people),JSON.stringify({id:conflict.id,organization:'GOV'}));
+ assert.throws(()=>outlookHeldCorrection(held('invalid','Form.docx'),scanDraft,people),/not a usable PDF/);
+ assert.throws(()=>outlookHeldCorrection(scan,{...scanDraft,userId:''},people),/Choose the user/);
+});
+
+test('Needs Attention lives in the Outlook panel and the launcher validates every correction',()=>{
+ const panel=readFileSync(new URL('../app/components/OutlookIntakePanel.tsx',import.meta.url),'utf8'),hold=readFileSync(new URL('../portable-launcher/OutlookIntakeHold.cs',import.meta.url),'utf8');
+ assert.match(panel,/<OutlookNeedsAttention systemId=\{systemId\} users=\{users\} request=\{request\} refreshKey=\{checks\}\/>/);
+ assert.match(panel,/result\?\.skipped\.filter\(file=>!file\.held\)/);
+ assert.match(hold,/ValidOutlookIntakeFilename\(text\("filename"\), chosen\)/);
+ assert.match(hold,/if \(chosen == null\) throw new InvalidDataException/);
+ assert.match(hold,/lock \(RootLock\(systemId\)\)/);
+ for(const forbidden of ['OutlookCall(','"Delete"','"Move"'])assert.equal(hold.includes(forbidden),false,'Needs Attention never touches the Outlook mailbox');
+});
+
 test('the Outlook check lives in the operator-started Sync window and only in the portable launcher',()=>{
  const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8'),parts=readFileSync(new URL('../app/components/TrackerViewParts.tsx',import.meta.url),'utf8');
  assert.match(page,/outlook=\{<OutlookIntakePanel systemId=\{effectiveSelected\} users=\{users\} request=\{outlookRequest\(effectiveSelected\)\}\/>\}/);
@@ -71,4 +120,16 @@ test('every Outlook draft applies the Send From mailbox and never falls back to 
  assert.match(sendFrom,/"SendUsingAccount"/);
  assert.match(sendFrom,/"SentOnBehalfOfName"/);
  assert.equal(sendFrom.includes('"Send"'),false,'drafts are only displayed; the operator still sends them');
+});
+
+test('PDFs already recorded in the database are reported separately and never copied',()=>{
+ const duplicate={...skipped,filename:'renamed copy.pdf',reason:'Already recorded for Shaw, Vivian (DTA Training). This exact PDF is already in the database, so it was not copied.',recorded:true as const};
+ const decoded=decodeOutlookIntakeResult({...result,alreadyRecorded:1,skipped:[skipped,duplicate]});
+ assert.equal(decoded.alreadyRecorded,1);
+ assert.equal(decoded.skipped[1].recorded,true);
+ assert.equal(decodeOutlookIntakeResult({...result,alreadyRecorded:undefined}).alreadyRecorded,0,'a launcher without the duplicate check reports none');
+ assert.throws(()=>decodeOutlookIntakeResult({...result,saved:[{...saved,recorded:true}]}),/already-recorded flag/);
+ assert.equal(outlookIntakeSummary(decoded),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last 30 days (2 already checked); 1 PDF already recorded and not copied; 1 attachment skipped.');
+ const intake=readFileSync(new URL('../portable-launcher/OutlookIntake.cs',import.meta.url),'utf8');
+ assert.ok(intake.indexOf('recorded.Value.TryGetValue')<intake.indexOf('if (!approvedSender)\r\n')||intake.indexOf('recorded.Value.TryGetValue')<intake.indexOf('if (!approvedSender)\n'),'the duplicate check runs before any hold, so a recorded copy never needs attention');
 });

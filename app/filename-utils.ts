@@ -2,7 +2,7 @@ import {normalizePrivilegedType} from './privileged-type-utils.ts';
 
 export const agreementArtifactKind='User Agreement';
 export const artifactKinds=['SAAR','DoD Cyber Cert',agreementArtifactKind,'8140 Cert Memo','Privileged User Training Cert','DTA Training'];
-const legacyAgreementKinds=new Set(['GEN USER AGREEMENT','GEN AND PRIV AGREEMENT','DTA AGREEMENT']);
+const legacyAgreementKinds=new Set(['GEN USER AGREEMENT','GEN AND PRIV AGREEMENT']);
 export const canonicalArtifactKind=(kind:string)=>{const normalized=kind.trim().toUpperCase();if(legacyAgreementKinds.has(normalized))return agreementArtifactKind;if(normalized==='DTA TRAINING CERT')return'DTA Training';if(normalized==='8140 CERTIFICATION MEMO')return'8140 Cert Memo';if(normalized==='PRIVILEGED USER TRAINING')return'Privileged User Training Cert';return artifactKinds.find(value=>value.toUpperCase()===normalized)??kind};
 export function artifactStorageFolder(kind:string){
  const canonical=canonicalArtifactKind(kind);
@@ -144,9 +144,11 @@ export function artifactKindFromFilename(filename:string){
  const hasCyberCertificateAlias=(has('CYBER')&&(has('CERT')||has('CERTIFICATE')))||compactHasPair(compact,'CYBER','CERT')||compactHasPair(compact,'CYBER','CERTIFICATE');
  const hasDtaTrainingAlias=(has('DTA')||compact.includes('DATATRANSFERAGENT'))&&(hasTrainingAlias||hasCertificateAlias)||new RegExp(`^(?:(?:DTA|DATATRANSFERAGENT)(?:USER)?${trainingPattern}(?:CERT|CERTIFICATE|CERTIFICATION)?|${trainingPattern}(?:DTA|DATATRANSFERAGENT))$`).test(compact)||evidenceWords.some(value=>compact===`DTA${value}`||compact===`${value}DTA`);
  const hasPrivilegedTrainingAlias=(has('PRIV')||has('PRIVILEGED'))&&(hasTrainingAlias||hasCertificateAlias)||new RegExp(`^(?:PRIV(?:ILEGED)?(?:USER|ACCESS)?(?:CYBERSECURITY)?${trainingPattern}(?:CERT|CERTIFICATE|CERTIFICATION)?|${trainingPattern}PRIV(?:ILEGED)?)$`).test(compact)||evidenceWords.some(value=>compact===`PRIV${value}`||compact===`${value}PRIV`||compact===`PRIVILEGED${value}`||compact===`${value}PRIVILEGED`);
+ // DTA Agreement is no longer a recognized artifact; only an explicit "User Agreement" survives a DTA marker.
+ const retiredDtaAgreement=(has('DTA')||compact.includes('DATATRANSFERAGENT')||compact.includes('DTAAGREEMENT')||compact.includes('AGREEMENTDTA'))&&!has('USER')&&!compact.includes('USERAGREEMENT');
  let result:string|undefined;
  if(hasSaarMarker(filename))result='SAAR';
- else if(has('AGREEMENT')||has('AGREEMENTS')||compact.includes('AGREEMENT')||compactHasPair(compact,'ACCEPTABLE','USE'))result='User Agreement';
+ else if(!retiredDtaAgreement&&(has('AGREEMENT')||has('AGREEMENTS')||compact.includes('AGREEMENT')||compactHasPair(compact,'ACCEPTABLE','USE')))result='User Agreement';
  else if(has('8140')||compact.includes('8140')||has('8570'))result='8140 Cert Memo';
  else if(hasDtaTrainingAlias)result='DTA Training';
  else if(hasPrivilegedTrainingAlias)result='Privileged User Training Cert';

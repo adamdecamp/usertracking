@@ -20,6 +20,13 @@ const filenameByRequirement:Record<string,{format:string;example:string}>={
  'DTA Training':{format:'Last_First_(ORG)_DTA_Training_DDMMMYYYY.pdf',example:'Brown_Jacob_(LM)_DTA_Training_26AUG2026.pdf'},
 };
 
+/** Every Outlook draft uses one subject format: Tag — System — Topic — Detail. */
+export type OutlookDraftSubjectTag='Action Required'|'For Review'|'Notice';
+export function outlookDraftSubject(tag:OutlookDraftSubjectTag,system:string,topic:string,detail:string){
+ const part=(value:string)=>value.replace(/[\r\n]+/g,' ').replace(/\s+/g,' ').trim();
+ return [tag,part(system)||'Information System',part(topic),part(detail)].filter(Boolean).join(' — ');
+}
+
 export function notificationFilenameStandard(requirement:string){
  const fallback=`Last_First_(ORG)_${requirement.replace(/[^A-Za-z0-9]+/g,'_')}_DDMMMYYYY.pdf`;
  return filenameByRequirement[requirement]??{format:fallback,example:fallback.replace('Last_First_(ORG)','Brown_Jacob_(LM)').replace('DDMMMYYYY','26AUG2026')};

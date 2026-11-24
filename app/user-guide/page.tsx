@@ -234,7 +234,18 @@ export default function Guide(){
    </ol>
    <ul>
     <li>Outlook is only read. Nothing is moved, deleted, flagged, or sent, and each message is checked only once per computer.</li>
-    <li>Skipped attachments are listed with the reason. Attachments from unknown senders or for a missing organization are offered again on the next check, so they can be collected after the user or organization is added.</li>
+    <li>Attachments that do not match are held under <b>Needs Attention</b> on this computer instead of being skipped. Each one shows why it was held, and only the fixes that apply to it:
+     <ul>
+      <li><b>Organization Not Found:</b> choose the organization. The organization code in the filename is corrected to match.</li>
+      <li><b>Filename Not Recognized:</b> choose the user, organization, artifact type, and document date (and the SAAR type for a SAAR). R.A.P.T.O.R. builds the standard filename and shows it before copying.</li>
+      <li><b>Unknown Sender:</b> the sender is not a user&apos;s Official Email, or Outlook hid the address. Choose the user the file belongs to. This accepts that one file; the user&apos;s Official Email does not change.</li>
+      <li><b>Name Already Waiting:</b> a different file with the same name is already waiting for Sync. Run Sync, then choose <b>Retry</b>. The waiting file is never overwritten.</li>
+      <li><b>Not a Usable PDF:</b> a Word document, scan file, empty file, or a file named .pdf that is not a PDF. These can only be dismissed; ask the sender for a PDF.</li>
+     </ul>
+    </li>
+    <li><b>Copy to Intake</b> places the corrected file in the organization intake folder, and Daily Sync still checks its content, identity, and artifact type, sending mismatches to Rework as usual. <b>Dismiss</b> removes only the held copy; the email stays in Outlook. Every correction and dismissal is audited, and at most 500 attachments are held.</li>
+    <li>Unusable files from unknown senders are skipped without being held. A file that could not be saved because of an Outlook error is tried again on the next check.</li>
+    <li><b>Already recorded:</b> before anything is copied or held, each PDF is compared with the evidence already recorded in this system&apos;s database. An exact copy, even when renamed or sent by someone else, is skipped and reported as already recorded for that user and artifact type, so re-sent copies never reach Sync review. Evidence stored as a .pdf.zip is compared by the PDF inside it; the first check after new evidence is recorded may take a little longer while those PDFs are read.</li>
     <li>A file sent by one user but named for another, such as a supervisor sending for a team member, is marked so you can confirm the identity in Sync review.</li>
     <li>Requires the classic desktop Outlook app. The new Outlook app cannot be read by other programs, and some organizations block programmatic access; the Sync window shows the reason if Outlook refuses.</li>
     <li>Every check is recorded in the audit log with message and file counts. Email bodies are never stored.</li>
@@ -340,7 +351,7 @@ export default function Guide(){
    </ol>
    <ul>
     <li>Recipients are placed in BCC for bulk drafts.</li>
-    <li>The subject includes the information system name.</li>
+    <li>Every Outlook draft subject uses one format: <b>Tag — System — Topic — Detail</b>. Examples: <i>Action Required — ALPHA — DTA Training — Due Within 30 Days</i>, <i>Action Required — ALPHA — Account Documents — Contact Attempt 2</i>, and <i>For Review — ALPHA — User Status Snapshot — GOV</i>.</li>
     <li>SAAR appears only in Missing notifications because it does not expire.</li>
     <li>User Agreement notices attach the approved User Agreement template.</li>
      <li>8140 notices attach the newest approved template matching Last_First_(Org)_8140_Qualification_Memo_DDMMMYYYY.pdf.</li>
@@ -352,6 +363,20 @@ export default function Guide(){
     <li>Messages use the Sir/Ma&apos;am salutation and never request credentials.</li>
     <li>Draft attempts are recorded in the User Record and clear when the evidence is updated.</li>
     <li>R.A.P.T.O.R. prepares drafts but never sends email automatically.</li>
+   </ul>
+   <h3>Email All Active Users</h3>
+   <p>At the bottom of the notifications window, <b>Email All Active Users</b> prepares a general message to every enabled user of the selected information system, such as a maintenance notice.</p>
+   <ol>
+    <li>Select one information system at the top of the window.</li>
+    <li>Choose the subject tag (<b>Notice</b>, <b>Action Required</b>, or <b>For Review</b>), enter a topic, and optionally a detail. The subject follows the standard format, for example <i>Notice — ALPHA — System Maintenance — 15 DEC 2026</i>.</li>
+    <li>Optionally type the message, or write it in Outlook.</li>
+    <li>Open each batch, review the draft, and send it yourself.</li>
+   </ol>
+   <ul>
+    <li>Every address goes in BCC, so recipients never see each other. Drafts never have a To address.</li>
+    <li>Lists are split into batches of up to 40 recipients, each address appearing once.</li>
+    <li>Disabled users are left out, and the window shows how many active users have no valid Official Email.</li>
+    <li>Each batch is recorded in the audit log before its draft opens. These messages are not compliance notices, so nothing is added to User Records.</li>
    </ul>
   </section>
 

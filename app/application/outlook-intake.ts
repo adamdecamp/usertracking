@@ -1,5 +1,6 @@
-import {filenameIdentityMatches} from '../filename-utils.ts';
-import type {OutlookIntakeFile,OutlookIntakeResult} from '../infrastructure/outlook-intake-contract.ts';
+import {artifactKindFromFilename,evidenceDateIsInFuture,filenameIdentityMatches,parseDate} from '../filename-utils.ts';
+import {buildTrackerFilename} from '../document-renamer-utils.ts';
+import type {OutlookHeldItem,OutlookHeldReason,OutlookIntakeFile,OutlookIntakeResult} from '../infrastructure/outlook-intake-contract.ts';
 
 export const outlookIntakeLookbackDays=30;
 
@@ -25,7 +26,47 @@ export function sentOnBehalf(file:OutlookIntakeFile,users:readonly IntakeUser[],
 }
 
 export function outlookIntakeSummary(result:OutlookIntakeResult){
- const copied=result.saved.length,skipped=result.skipped.length,plural=(count:number,word:string)=>`${count} ${word}${count===1?'':'s'}`;
+ const copied=result.saved.length,held=result.skipped.filter(file=>file.held).length,recorded=result.skipped.filter(file=>file.recorded).length,skipped=result.skipped.length-held-recorded,plural=(count:number,word:string)=>`${count} ${word}${count===1?'':'s'}`;
  const lead=copied?`Copied ${plural(copied,'PDF')} from ${result.folder||'Outlook'} into organization intake. Start Daily Sync to review ${copied===1?'it':'them'}; no user record changes until you approve.`:`No new evidence was found in ${result.folder||'Outlook'}.`;
- return `${lead} Read ${plural(result.scanned,'message')} from the last ${outlookIntakeLookbackDays} days${result.previouslyProcessed?` (${result.previouslyProcessed} already checked)`:''}${skipped?`; ${plural(skipped,'attachment')} skipped`:''}.`;
+ return `${lead} Read ${plural(result.scanned,'message')} from the last ${outlookIntakeLookbackDays} days${result.previouslyProcessed?` (${result.previouslyProcessed} already checked)`:''}${recorded?`; ${plural(recorded,'PDF')} already recorded and not copied`:''}${held?`; ${plural(held,'attachment')} added to Needs Attention`:''}${skipped?`; ${plural(skipped,'attachment')} skipped`:''}.`;
+}
+
+export const outlookHeldReasonLabel:Record<OutlookHeldReason,string>={sender:'Unknown Sender',filename:'Filename Not Recognized',organization:'Organization Not Found',conflict:'Name Already Waiting',invalid:'Not a Usable PDF'};
+
+/** What the operator corrects for each held attachment. Daily Sync still validates the PDF afterward. */
+export type OutlookHeldDraft={userId:string;organization:string;kind:string;date:string;role:''|'GEN'|'PRIV';privilegedType:string};
+type DraftUser=IntakeUser&{id:string;organization:string;privilegedTypes:readonly string[]};
+
+const isoDate=(date:Date|undefined)=>date?date.toISOString().slice(0,10):'';
+
+/** Prefills the correction from the filename and sender so the operator usually changes only the field that failed. */
+export function outlookHeldDraft(item:OutlookHeldItem,users:readonly DraftUser[],systemId:string,organizations:readonly string[]):OutlookHeldDraft{
+ const own=users.filter(user=>user.systemId===systemId),byName=own.filter(user=>filenameIdentityMatches(item.filename,user)),bySender=own.filter(user=>address(user.email)===address(item.sender));
+ const user=byName.length===1?byName[0]:bySender.length===1?bySender[0]:undefined,key=(value:string)=>value.toUpperCase().replace(/[^A-Z0-9]+/g,''),known=(value:string)=>value.trim()?organizations.find(organization=>key(organization)===key(value))??'':'';
+ const kind=artifactKindFromFilename(item.filename)??'',upper=item.filename.toUpperCase(),role:OutlookHeldDraft['role']=kind!=='SAAR'?'':/(^|[^A-Z])PRIV/.test(upper)?'PRIV':/(^|[^A-Z])GEN/.test(upper)?'GEN':'';
+ return{userId:user?.id??'',organization:known(item.organization)||known(item.code)||known(user?.organization??''),kind,date:isoDate(parseDate(item.filename)),role,privilegedType:role==='PRIV'&&user?.privilegedTypes.length===1?user.privilegedTypes[0]:''};
+}
+
+/** The standard evidence filename for a completed draft, or why it cannot be built yet. */
+export function outlookHeldFilename(draft:OutlookHeldDraft,users:readonly DraftUser[]):{filename:string}|{problem:string}{
+ const user=users.find(candidate=>candidate.id===draft.userId);
+ if(!user)return{problem:'Choose the user this file belongs to.'};
+ if(!draft.organization)return{problem:'Choose the organization.'};
+ if(!draft.kind)return{problem:'Choose the artifact type.'};
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(draft.date))return{problem:'Enter the document date.'};
+ if(evidenceDateIsInFuture(new Date(`${draft.date}T00:00:00Z`)))return{problem:'The document date cannot be in the future.'};
+ if(draft.kind==='SAAR'&&!draft.role)return{problem:'Choose whether the SAAR is General or Privileged.'};
+ if(draft.kind==='SAAR'&&draft.role==='PRIV'&&!draft.privilegedType.trim())return{problem:'Enter the privileged access type.'};
+ const filename=buildTrackerFilename({kind:draft.kind,first:user.first,last:user.last,organization:draft.organization,date:draft.date,role:draft.kind==='SAAR'?draft.role:'',privilegedType:draft.privilegedType});
+ return filename?{filename}:{problem:'These details do not make a valid evidence filename.'};
+}
+
+/** The launcher request that resolves one held attachment. */
+export function outlookHeldCorrection(item:OutlookHeldItem,draft:OutlookHeldDraft,users:readonly DraftUser[]){
+ if(item.reason==='invalid')throw new Error('This attachment is not a usable PDF. Dismiss it and ask the sender for a PDF.');
+ if(item.reason==='conflict')return JSON.stringify({id:item.id,organization:item.organization});
+ if(item.reason==='organization'){if(!draft.organization)throw new Error('Choose the organization.');return JSON.stringify({id:item.id,organization:draft.organization})}
+ const built=outlookHeldFilename(draft,users);if('problem' in built)throw new Error(built.problem);
+ const user=users.find(candidate=>candidate.id===draft.userId)!;
+ return JSON.stringify({id:item.id,organization:draft.organization,filename:built.filename,forUser:`${user.last}, ${user.first}`});
 }

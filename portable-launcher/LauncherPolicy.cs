@@ -118,7 +118,7 @@ internal static class LauncherPolicy
         if (action == "manifest" || action == "csv" || action == "report") return 50L * MiB;
         if (action == "outlook-draft") return 40L * MiB;
         if (action == "outlook-intake") return 2L * MiB;
-        if (action == "outlook-sender") return 4L * KiB;
+        if (action == "outlook-sender" || action == "outlook-held") return 4L * KiB;
         if (action == "renamer-queue") return 20L * MiB;
         if (action == "restore-active") return 10L * MiB;
         if (action == "audit-batch") return 5L * MiB;
