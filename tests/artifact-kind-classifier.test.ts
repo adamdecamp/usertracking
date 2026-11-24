@@ -5,7 +5,7 @@ import {artifactKindFromFilename,artifactKinds,filenameMatchesKind,validateNewUs
 const cases:[kind:string,aliases:string[]][]= [
  ['SAAR',['GEN SAAR','PRIV dev SAAR','GEN DD Form 2875','PRIV admin DD2875','Form 2875','Access Request','GEN System Access Request','PRIV cyber System Authorization Access Request']],
  ['DoD Cyber Cert',['DoD Cyber Cert','DoD Cyber Certificate','DoW Cyber','DoW Cyber Cert','DoW Cyber Awareness','Cyber Cert','Cyber Certificate','Cyber Awareness','Cyber Awareness Challenge Certificate','Awareness Challenge Certification','Information Assurance Annual Awareness']],
- ['User Agreement',['User Agreement','User Agreements','General Agreement','GEN User Agreement','GEN and PRIV Agreement','DTA Agreement','Acceptable Use Policy']],
+ ['User Agreement',['User Agreement','User Agreements','General Agreement','GEN User Agreement','GEN and PRIV Agreement','Acceptable Use Policy']],
  ['8140 Cert Memo',['8140','8140 Cert','8140 Certification','8140 Memo','8140 Letter','Cert Memo','Certification Memo','Cert Letter','Certification Letter','8140 Certification Memorandum','DoD 8140 Qualification Memo','Cyber Workforce 8140 Certification','8570 Qualification']],
  ['Privileged User Training Cert',['PRIV Training','Privileged User Training','Privileged Access Training','Privileged User Cybersecurity Responsibilities','Responsibilities','Course Completion']],
  ['DTA Training',['DTA Training','DTA User Training Cert','DTA Course','DTA Responsibilities','Data Transfer Agent Training','Data Transfer Agent Course']],

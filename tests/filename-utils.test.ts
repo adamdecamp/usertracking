@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalManualEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,looksLikeEvidenceFilename,normalizeFilenameDate,operatorMarkedIncomplete,organizationArtifactStorageFolder,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
+import {artifactKindFromFilename,artifactStorageFolder,canRecoverNewUserSaarFromForm,canonicalArtifactKind,canonicalEvidenceFilename,canonicalManualEvidenceFilename,canonicalValidatedSaarFilename,disabledSaarFilename,evidenceFilenamePassesStorageGate,filenameIdentityMatches,filenameMatchesKind,identityFromFilename,legacy8570MemoFilename,looksLikeEvidenceFilename,normalizeFilenameDate,operatorMarkedIncomplete,organizationArtifactStorageFolder,organizationFrom,parseDate,pdfFilenameNeedsRework,preserveEvidenceExtension,validateNewUserSaarFilename,zipFilenameNeedsRework} from '../app/filename-utils.ts';
 
 const dod='Brown_Jacob_(LM)_DoD_Cyber_Cert_26AUG2026.pdf';
 const general='Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf';
@@ -285,10 +285,16 @@ test('consolidates legacy agreement filenames into one User Agreement requiremen
  for(const filename of [
   'Brown_Jacob_(LM)_GEN_User_Agreement_26AUG2026.pdf',
   'Brown_Jacob_(LM)_GEN_and_PRIV_Agreement_26AUG2026.pdf',
-  'Brown_Jacob_(LM)_DTA_Agreement_26AUG2026.pdf',
   'Brown_Jacob_(LM)_User_Agreements_26AUG2026.pdf',
  ])assert.equal(filenameMatchesKind(filename,'User Agreement'),true,filename);
- for(const kind of ['GEN User Agreement','GEN and PRIV Agreement','DTA Agreement'])assert.equal(canonicalArtifactKind(kind),'User Agreement');
+ for(const kind of ['GEN User Agreement','GEN and PRIV Agreement'])assert.equal(canonicalArtifactKind(kind),'User Agreement');
+});
+
+test('DTA Agreement is retired and no longer counts as a User Agreement',()=>{
+ for(const filename of ['Brown_Jacob_(LM)_DTA_Agreement_26AUG2026.pdf','Brown_Jacob_(LM)_DTAAgreement_26AUG2026.pdf','Brown_Jacob_(LM)_Data_Transfer_Agent_Agreement_26AUG2026.pdf','Brown Jacob (LM) dta agreement 26AUG2026.pdf'])assert.equal(artifactKindFromFilename(filename),undefined,filename);
+ assert.equal(canonicalArtifactKind('DTA Agreement'),'DTA Agreement','the retired label is no longer mapped to a requirement');
+ assert.equal(artifactKindFromFilename('Brown_Jacob_(LM)_DTA_User_Agreement_26AUG2026.pdf'),'User Agreement','an explicit User Agreement is still recognized');
+ assert.equal(artifactKindFromFilename('Brown_Jacob_(LM)_DTA_Training_26AUG2026.pdf'),'DTA Training');
  assert.equal(filenameMatchesKind('Brown_Jacob_(LM)_PRIV_admin_SAAR_26AUG2026.pdf','User Agreement'),false);
 });
 
