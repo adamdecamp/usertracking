@@ -4355,7 +4355,7 @@ internal sealed partial class PortableStorage : IDisposable
     private static string ArtifactStorageFolder(string kind)
     {
         string normalized = (kind ?? "").Trim().ToUpperInvariant();
-        if (normalized == "SAAR") return "SAAR";if (normalized == "DOD CYBER CERT") return "DoD Cyber Cert";if (normalized == "USER AGREEMENT" || normalized == "GEN USER AGREEMENT" || normalized == "GEN AND PRIV AGREEMENT" || normalized == "DTA AGREEMENT") return "User Agreement";if (normalized == "8140 CERT MEMO" || normalized == "8140 CERTIFICATION MEMO") return "8140 Certification Memo";if (normalized == "PRIVILEGED USER TRAINING CERT" || normalized == "PRIVILEGED USER TRAINING") return "Privileged User Training";if (normalized == "DTA TRAINING" || normalized == "DTA TRAINING CERT") return "DTA Training";
+        if (normalized == "SAAR") return "SAAR";if (normalized == "DOD CYBER CERT") return "DoD Cyber Cert";if (normalized == "USER AGREEMENT" || normalized == "GEN USER AGREEMENT" || normalized == "GEN AND PRIV AGREEMENT") return "User Agreement";if (normalized == "8140 CERT MEMO" || normalized == "8140 CERTIFICATION MEMO") return "8140 Certification Memo";if (normalized == "PRIVILEGED USER TRAINING CERT" || normalized == "PRIVILEGED USER TRAINING") return "Privileged User Training";if (normalized == "DTA TRAINING" || normalized == "DTA TRAINING CERT") return "DTA Training";
         throw new InvalidDataException("The associated evidence document type is invalid.");
     }
     private static string OrganizationArtifactStorageFolder(string folder, string organization)

@@ -225,7 +225,17 @@ export default function Guide(){
    </ol>
    <ul>
     <li>Outlook is only read. Nothing is moved, deleted, flagged, or sent, and each message is checked only once per computer.</li>
-    <li>Skipped attachments are listed with the reason. Attachments from unknown senders or for a missing organization are offered again on the next check, so they can be collected after the user or organization is added.</li>
+    <li>Attachments that do not match are held under <b>Needs Attention</b> on this computer instead of being skipped. Each one shows why it was held, and only the fixes that apply to it:
+     <ul>
+      <li><b>Organization Not Found:</b> choose the organization. The organization code in the filename is corrected to match.</li>
+      <li><b>Filename Not Recognized:</b> choose the user, organization, artifact type, and document date (and the SAAR type for a SAAR). R.A.P.T.O.R. builds the standard filename and shows it before copying.</li>
+      <li><b>Unknown Sender:</b> the sender is not a user&apos;s Official Email, or Outlook hid the address. Choose the user the file belongs to. This accepts that one file; the user&apos;s Official Email does not change.</li>
+      <li><b>Name Already Waiting:</b> a different file with the same name is already waiting for Sync. Run Sync, then choose <b>Retry</b>. The waiting file is never overwritten.</li>
+      <li><b>Not a Usable PDF:</b> a Word document, scan file, empty file, or a file named .pdf that is not a PDF. These can only be dismissed; ask the sender for a PDF.</li>
+     </ul>
+    </li>
+    <li><b>Copy to Intake</b> places the corrected file in the organization intake folder, and Daily Sync still checks its content, identity, and artifact type, sending mismatches to Rework as usual. <b>Dismiss</b> removes only the held copy; the email stays in Outlook. Every correction and dismissal is audited, and at most 500 attachments are held.</li>
+    <li>Unusable files from unknown senders are skipped without being held. A file that could not be saved because of an Outlook error is tried again on the next check.</li>
     <li>A file sent by one user but named for another, such as a supervisor sending for a team member, is marked so you can confirm the identity in Sync review.</li>
     <li>Requires the classic desktop Outlook app. The new Outlook app cannot be read by other programs, and some organizations block programmatic access; the Sync window shows the reason if Outlook refuses.</li>
     <li>Every check is recorded in the audit log with message and file counts. Email bodies are never stored.</li>

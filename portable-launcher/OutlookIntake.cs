@@ -106,15 +106,16 @@ internal sealed partial class PortableStorage
                 string key = String.IsNullOrWhiteSpace(message.MessageId) ? null : Sha256(message.MessageId.Trim());
                 if (key != null && processed.Contains(key)) { previouslyProcessed++;continue; }
                 List<OutlookIntakeAttachment> pdfs = message.Attachments.Where(item => item != null && (item.Filename ?? "").Trim().EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)).Take(OutlookIntakeMaximumAttachments).ToList();
-                string sender = OutlookIntakeAddress(message.Sender), received = message.ReceivedUtc.ToUniversalTime().ToString("o");bool retry = false;
+                string sender = OutlookIntakeAddress(message.Sender), received = message.ReceivedUtc.ToUniversalTime().ToString("o");bool retry = false, approvedSender = approved.Contains(sender);
                 if (pdfs.Count == 0) withoutPdf++;
-                else if (!approved.Contains(sender))
+                foreach (OutlookIntakeAttachment attachment in pdfs) retry |= !SaveOutlookIntakeAttachment(systemId, attachment, sender, approvedSender, received, organizations, stagingRoot, saved, skipped);
+                // A Word document or scan from a known user is listed so the operator can ask for a PDF instead.
+                if (approvedSender) foreach (OutlookIntakeAttachment document in message.Attachments.Where(item => item != null && OutlookIntakeOtherDocumentExtensions.Contains(Path.GetExtension((item.Filename ?? "").Trim()).ToLowerInvariant())).Take(OutlookIntakeMaximumAttachments))
                 {
-                    retry = true;
-                    string reason = sender.Length == 0 ? "Outlook did not reveal the sender address. Outlook security settings may be blocking programmatic access." : "The sender is not the Official Email of a user in this information system.";
-                    foreach (OutlookIntakeAttachment attachment in pdfs) skipped.Add(OutlookIntakeEntry(attachment.Filename, null, sender, received, reason));
+                    bool held;string name = SafePart(Path.GetFileName((document.Filename ?? "").Trim()), 180);
+                    skipped.Add(OutlookHeldSkip(systemId, OutlookHoldInvalid, "This is a " + Path.GetExtension(name).TrimStart('.').ToUpperInvariant() + " file, not a PDF. Ask the sender to send it as a PDF.", name, null, null, sender, received, null, out held));
+                    retry |= !held;
                 }
-                else foreach (OutlookIntakeAttachment attachment in pdfs) retry |= !SaveOutlookIntakeAttachment(systemId, attachment, sender, received, organizations, stagingRoot, saved, skipped);
                 if (key != null && !retry) { processed.Add(key);ledger.Add(key); }
             }
         }
@@ -128,31 +129,41 @@ internal sealed partial class PortableStorage
         return json.Serialize(new Dictionary<string, object> { { "cancelled", false }, { "folder", cleanFolder }, { "scanned", scanned }, { "previouslyProcessed", previouslyProcessed }, { "withoutPdf", withoutPdf }, { "saved", saved }, { "skipped", skipped } });
     }
 
-    // Returns false when the attachment should be retried on a later check.
-    private bool SaveOutlookIntakeAttachment(string systemId, OutlookIntakeAttachment attachment, string sender, string received, string[] organizations, string stagingRoot, List<Dictionary<string, object>> saved, List<Dictionary<string, object>> skipped)
+    // Returns false when the attachment should be retried on a later check. Anything
+    // the operator can resolve is held in Needs Attention (OutlookIntakeHold.cs).
+    private bool SaveOutlookIntakeAttachment(string systemId, OutlookIntakeAttachment attachment, string sender, bool approvedSender, string received, string[] organizations, string stagingRoot, List<Dictionary<string, object>> saved, List<Dictionary<string, object>> skipped)
     {
         string filename = SafePart(Path.GetFileName((attachment.Filename ?? "").Trim()), 180), code = OutlookIntakeOrganizationCode(filename);
-        if (code == null) { skipped.Add(OutlookIntakeEntry(filename, null, sender, received, "The filename does not follow Last_First_(ORG)_Document_DDMMMYYYY.pdf."));return true; }
-        string organization = organizations.FirstOrDefault(value => String.Equals(value, code, StringComparison.OrdinalIgnoreCase));
-        if (organization == null) { skipped.Add(OutlookIntakeEntry(filename, null, sender, received, "No organization folder named " + CleanLine(code, 100) + " exists in this information system."));return false; }
+        string organization = code == null ? null : organizations.FirstOrDefault(value => OutlookOrganizationMatches(code, value));
         if (attachment.SaveAs == null) { skipped.Add(OutlookIntakeEntry(filename, organization, sender, received, "Outlook did not provide the attachment content."));return false; }
-        string staging = Path.Combine(stagingRoot, Guid.NewGuid().ToString("N")), stagedPath = Path.Combine(staging, "attachment.pdf");
+        string staging = Path.Combine(stagingRoot, Guid.NewGuid().ToString("N")), stagedPath = Path.Combine(staging, "attachment.pdf");bool held;
         try
         {
             Directory.CreateDirectory(staging);
             attachment.SaveAs(stagedPath);
             var info = new FileInfo(stagedPath);
-            if (!info.Exists || info.Length == 0 || info.Length > EvidenceLimit) { skipped.Add(OutlookIntakeEntry(filename, organization, sender, received, "The attachment is empty or exceeds the evidence size limit."));return true; }
-            byte[] bytes = File.ReadAllBytes(stagedPath);
-            if (!OutlookIntakeLooksLikePdf(bytes)) { skipped.Add(OutlookIntakeEntry(filename, organization, sender, received, "The attachment is named .pdf but is not a PDF document."));return true; }
+            byte[] bytes = info.Exists && info.Length > 0 && info.Length <= EvidenceLimit ? File.ReadAllBytes(stagedPath) : null;
+            string invalid = bytes == null ? "The attachment is empty or exceeds the evidence size limit." : !OutlookIntakeLooksLikePdf(bytes) ? "The attachment is named .pdf but is not a PDF document." : null;
+            if (invalid != null)
+            {
+                // Unusable files from unknown senders are not worth an operator's attention.
+                if (!approvedSender) { skipped.Add(OutlookIntakeEntry(filename, organization, sender, received, invalid));return true; }
+                skipped.Add(OutlookHeldSkip(systemId, OutlookHoldInvalid, invalid + " Ask the sender to send it again as a PDF.", filename, code, organization, sender, received, null, out held));return held;
+            }
+            if (!approvedSender)
+            {
+                string reason = sender.Length == 0 ? "Outlook did not reveal the sender address. Outlook security settings may be blocking programmatic access." : "The sender is not the Official Email of a user in this information system.";
+                skipped.Add(OutlookHeldSkip(systemId, OutlookHoldSender, reason + " Choose the user it belongs to.", filename, code, organization, sender, received, bytes, out held));return held;
+            }
+            if (code == null) { skipped.Add(OutlookHeldSkip(systemId, OutlookHoldFilename, "The filename does not follow Last_First_(ORG)_Document_DDMMMYYYY.pdf. Enter the user, organization, artifact type, and date.", filename, null, null, sender, received, bytes, out held));return held; }
+            if (organization == null) { skipped.Add(OutlookHeldSkip(systemId, OutlookHoldOrganization, "No organization folder named " + CleanLine(code, 100) + " exists in this information system. Choose the organization to use.", filename, code, null, sender, received, bytes, out held));return held; }
             lock (RootLock(systemId))
             {
                 string destination = Path.Combine(LocalIntakeDirectory(systemId, organization), filename);
                 if (File.Exists(destination))
                 {
-                    bool same = String.Equals(Sha256Bytes(File.ReadAllBytes(destination)), Sha256Bytes(bytes), StringComparison.Ordinal);
-                    skipped.Add(OutlookIntakeEntry(filename, organization, sender, received, same ? "The same file is already waiting for Sync." : "A different file with this name is already waiting for Sync. Run Sync first, then check Outlook again."));
-                    return same;
+                    if (String.Equals(Sha256Bytes(File.ReadAllBytes(destination)), Sha256Bytes(bytes), StringComparison.Ordinal)) { skipped.Add(OutlookIntakeEntry(filename, organization, sender, received, "The same file is already waiting for Sync."));return true; }
+                    skipped.Add(OutlookHeldSkip(systemId, OutlookHoldConflict, "A different file with this name is already waiting for Sync. Run Sync first, then choose Retry.", filename, code, organization, sender, received, bytes, out held));return held;
                 }
                 AtomicWrite(destination, bytes);
             }
