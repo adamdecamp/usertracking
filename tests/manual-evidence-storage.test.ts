@@ -64,7 +64,8 @@ test('manual re-enable restores the newest disabled SAAR to the active folder wi
  assert.match(page,/async function restoreDisabledSaarForReactivation/);
  assert.match(page,/disabledSaarFilename\(artifact\.filename\)/);
  assert.match(page,/sort\(\(left,right\)=>parseDate\(right\.filename\)!\.getTime\(\)-parseDate\(left\.filename\)!\.getTime\(\)\)\[0\]/);
- assert.match(page,/relocateUserEvidenceFile\(root,located\.path,located\.ref,user,'SAAR',filename\)/);
+ assert.match(page,/target=preserveEvidenceExtension\(located\.path,filename\)/,'a disabled SAAR stored as a plain PDF keeps its .pdf extension');
+ assert.match(page,/relocateUserEvidenceFile\(root,located\.path,located\.ref,user,'SAAR',target\)/);
  assert.match(page,/if\(reactivating&&!replacements\.has\('SAAR'\)\)/);
  assert.match(page,/baseArtifacts=reactivating\?draft\.artifacts/);
  assert.match(page,/restored the disabled SAAR to the active SAAR folder/);

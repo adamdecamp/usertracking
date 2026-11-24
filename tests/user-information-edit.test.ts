@@ -29,3 +29,11 @@ test('best-effort evidence relabeling reports every failed file without throwing
  assert.deepEqual(result.completed,[]);
  assert.deepEqual(result.failures,[{item:1,reason:'failure 1'},{item:2,reason:'failure 2'}]);
 });
+
+test('identity edits keep the .pdf extension of evidence stored as a plain PDF',async()=>{
+ const prior={id:'user-2',systemId:'system-1',organization:'GOV',affiliatedOrganizations:[],last:'Ramey',first:'Edward',middle:'',email:'',disabled:false,roles:['General'],privilegedUsernames:[],privilegedTypes:[],artifacts:[{kind:'DoD Cyber Cert',filename:'Ramey_Edward_(GOV)_DoD_Cyber_Cert_18SEP2025.pdf',path:'Organizations/GOV/GOV DoD Cyber Cert/Ramey_Edward_(GOV)_DoD_Cyber_Cert_18SEP2025.pdf'},{kind:'User Agreement',filename:'Ramey_Edward_(GOV)_User_Agreement_08JAN2026.pdf.zip',path:'Organizations/GOV/GOV User Agreement/Ramey_Edward_(GOV)_User_Agreement_08JAN2026.pdf.zip'}]},next={...prior,last:'Edwards'},targets:string[]=[];
+ const result=await relabelArtifactsForUserIdentity(prior,next,async artifact=>({path:artifact.path!}),async(_artifact,filename)=>{targets.push(filename);return`Organizations/GOV/${filename}`});
+ assert.deepEqual(targets,['Edwards_Edward_(GOV)_DoD_Cyber_Cert_18SEP2025.pdf','Edwards_Edward_(GOV)_User_Agreement_08JAN2026.pdf.zip']);
+ assert.deepEqual(result.moves.map(move=>move.after.filename),targets);
+ assert.equal(result.issues.length,0);
+});

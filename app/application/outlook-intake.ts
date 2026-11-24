@@ -25,6 +25,11 @@ export function sentOnBehalf(file:OutlookIntakeFile,users:readonly IntakeUser[],
  return senders.length>0&&!senders.some(user=>filenameIdentityMatches(file.filename,user));
 }
 
+/** Shown while the Outlook folder picker is open because Check Outlook has no usable folder on this computer. */
+export function outlookFolderPrompt(missing?:string){
+ return`${missing?`Outlook can no longer find the saved folder ${missing}. Choose it again`:'Choose the Outlook folder to check'} in the Outlook window. It may open behind this window.`;
+}
+
 export function outlookIntakeSummary(result:OutlookIntakeResult){
  const copied=result.saved.length,held=result.skipped.filter(file=>file.held).length,recorded=result.skipped.filter(file=>file.recorded).length,skipped=result.skipped.length-held-recorded,plural=(count:number,word:string)=>`${count} ${word}${count===1?'':'s'}`;
  const lead=copied?`Copied ${plural(copied,'PDF')} from ${result.folder||'Outlook'} into organization intake. Start Daily Sync to review ${copied===1?'it':'them'}; no user record changes until you approve.`:`No new evidence was found in ${result.folder||'Outlook'}.`;

@@ -63,8 +63,8 @@ export const decodeLegacyWorkspaceReviewPackage:RuntimeDecoder<LegacyWorkspaceRe
 export type LegacyWorkspaceRecoveryResult=StorageVerificationResponse&{recoveryCompleted:true;archivedWorkspacePath:string;reviewPackage:LegacyWorkspaceReviewPackage};
 export const decodeLegacyWorkspaceRecoveryResult:RuntimeDecoder<LegacyWorkspaceRecoveryResult>=value=>{const context='Legacy workspace reset',record=objectValue(value,context),verification=decodeStorageVerificationResponse(value),recoveryCompleted=booleanValue(record.recoveryCompleted,context,'$.recoveryCompleted');if(!recoveryCompleted)throw new Error(`${context} did not confirm completion.`);return{...verification,recoveryCompleted:true,archivedWorkspacePath:stringValue(record.archivedWorkspacePath,context,'$.archivedWorkspacePath'),reviewPackage:decodeLegacyWorkspaceReviewPackage(record.reviewPackage)}};
 
-export type PathMutationResponse={path:string;collision?:boolean;existing?:string};
-export function decodePathMutationResponse(field:string,context:string):RuntimeDecoder<PathMutationResponse>{return value=>{const record=objectValue(value,context);return{path:stringValue(record[field],context,`$.${field}`),collision:optionalBoolean(record,'collision',context),existing:optionalString(record,'existing',context)}}}
+export type PathMutationResponse={path:string;collision?:boolean;existing?:string;missing?:boolean};
+export function decodePathMutationResponse(field:string,context:string):RuntimeDecoder<PathMutationResponse>{return value=>{const record=objectValue(value,context);return{path:stringValue(record[field],context,`$.${field}`),collision:optionalBoolean(record,'collision',context),existing:optionalString(record,'existing',context),missing:optionalBoolean(record,'missing',context)}}}
 
 export const decodeOrganizationList:RuntimeDecoder<string[]>=value=>stringArrayValue(value,'Organization listing','$',1000,200);
 export const decodeOrganizationResponse:RuntimeDecoder<{organization:string}>=value=>{const context='Organization creation',record=objectValue(value,context);return{organization:stringValue(record.organization,context,'$.organization',200)}};
