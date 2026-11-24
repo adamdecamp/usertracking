@@ -513,6 +513,28 @@ internal static class PortableStorageTests
             catch (InvalidDataException) { rejected = true; }
             Assert(rejected, "Outlook intake must refuse to run without at least one approved sender.");
             Assert(storage.ReadAuditLogs("intake").Contains("OUTLOOK INTAKE: folder RAPTOR Intake; 7 messages read; 1 PDF attachments copied"), "Every Outlook intake run must be recorded in the audit chain.");
+            byte[] recordedPdf = Encoding.ASCII.GetBytes("%PDF-1.4\nrecorded plain\n%%EOF\n"), zippedPdf = Encoding.ASCII.GetBytes("%PDF-1.4\nrecorded zipped\n%%EOF\n"), freshPdf = Encoding.ASCII.GetBytes("%PDF-1.4\nnot recorded\n%%EOF\n");
+            const string zipName = "Shaw_Vivian_(GOV)_DoD_Cyber_Cert_01JAN2026.pdf.zip";
+            byte[] recordedZip = TimestampedEvidenceZip(zipName.Substring(0, zipName.Length - 4), zippedPdf, 1);
+            Assert(storage.StoreEvidence("intake", "GOV", "DoD Cyber Cert", zipName, recordedZip) == zipName, "The zipped recorded-evidence fixture must be stored locally.");
+            var recordedDatabase = (Dictionary<string, object>)Json.DeserializeObject(Database("vivian.shaw@example.mil"));
+            ((Dictionary<string, object>)((object[])recordedDatabase["users"])[0])["artifacts"] = new object[] { new Dictionary<string, object> { { "kind", "DTA Training" }, { "filename", "Shaw_Vivian_(GOV)_DTA_Training_01JAN2026.pdf" }, { "sha256", Sha256(recordedPdf) } }, new Dictionary<string, object> { { "kind", "DoD Cyber Cert" }, { "filename", zipName }, { "sha256", Sha256(recordedZip) } } };
+            storage.SaveSystemState("intake", Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "database", recordedDatabase }, { "csv", "recorded" } })));
+            Func<string, List<OutlookIntakeMessage>> duplicates = suffix => new List<OutlookIntakeMessage>
+            {
+                FakeOutlookMessage("<dup-plain" + suffix + "@example.com>", "someone.else@example.com", "renamed copy.pdf", recordedPdf),
+                FakeOutlookMessage("<dup-zip" + suffix + "@example.mil>", "vivian.shaw@example.mil", "Shaw_Vivian_(GOV)_DoD_Cyber_Cert_02FEB2026.pdf", zippedPdf),
+                FakeOutlookMessage("<fresh" + suffix + "@example.mil>", "vivian.shaw@example.mil", "Shaw_Vivian_(GOV)_User_Agreement_03MAR2026.pdf", freshPdf),
+            };
+            int heldBefore = ((object[])((Dictionary<string, object>)Json.DeserializeObject(storage.OutlookIntakeHeld("intake", "GET", null)))["held"]).Length;
+            var recordedRun = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessOutlookIntake("intake", "RAPTOR Intake", duplicates("-1"), new[] { "vivian.shaw@example.mil" }));
+            object[] recordedSkipped = (object[])recordedRun["skipped"];
+            Assert(Convert.ToInt32(recordedRun["alreadyRecorded"]) == 2 && ((object[])recordedRun["saved"]).Length == 1 && reasonFor(recordedSkipped, "renamed copy.pdf").Contains("Already recorded for Shaw, Vivian (DTA Training)") && reasonFor(recordedSkipped, "Shaw_Vivian_(GOV)_DoD_Cyber_Cert_02FEB2026.pdf").Contains("Already recorded for Shaw, Vivian (DoD Cyber Cert)"), "A PDF already recorded in the database, plain or zipped, must be skipped whoever sends it and however it is named.");
+            Assert(recordedSkipped.Cast<Dictionary<string, object>>().All(entry => entry.ContainsKey("recorded") && !entry.ContainsKey("held")) && ((object[])((Dictionary<string, object>)Json.DeserializeObject(storage.OutlookIntakeHeld("intake", "GET", null)))["held"]).Length == heldBefore, "An already-recorded copy must never be held for correction.");
+            Assert(!Directory.EnumerateFiles(Path.Combine(workspace, "Organizations", "GOV"), "*02FEB2026*").Any() && File.Exists(Path.Combine(workspace, "Organizations", "GOV", "Shaw_Vivian_(GOV)_User_Agreement_03MAR2026.pdf")), "Only the attachment that is not already recorded may reach organization intake.");
+            Assert(storage.ReadAuditLogs("intake").Contains("1 PDF attachments copied to organization intake for Sync review; 2 attachments skipped; 2 already recorded"), "The intake audit entry must count already-recorded copies.");
+            var cachedRun = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessOutlookIntake("intake", "RAPTOR Intake", duplicates("-2"), new[] { "vivian.shaw@example.mil" }));
+            Assert(Convert.ToInt32(cachedRun["alreadyRecorded"]) == 2 && ((object[])cachedRun["saved"]).Length == 0 && File.Exists(Path.Combine(storage.OutlookIntakeDirectory("intake"), "recorded-pdf-hashes.json")), "The zipped-PDF hash cache must keep recognizing recorded evidence on later checks.");
             Assert(PortableStorage.ValidOutlookSendFrom(" Compliance@Example.mil ") == "compliance@example.mil" && PortableStorage.ValidOutlookSendFrom("") == null, "The Send From mailbox must be stored as one plain lower-case address.");
             foreach (string invalid in new[] { "Compliance <compliance@example.mil>", "compliance", "a@b.mil;c@d.mil" }) { bool refused = false;try { PortableStorage.ValidOutlookSendFrom(invalid); } catch (InvalidDataException) { refused = true; }Assert(refused, "The Send From mailbox must reject " + invalid + "."); }
             Assert(LauncherPolicy.StorageActionRequiresLease("outlook-sender", "POST") && LauncherPolicy.RequestBodyLimit("/api/storage/system/outlook-sender", "POST") == 4 * 1024, "Changing the Send From mailbox must require Full Access and a small request.");

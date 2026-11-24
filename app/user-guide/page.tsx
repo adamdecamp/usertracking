@@ -236,6 +236,7 @@ export default function Guide(){
     </li>
     <li><b>Copy to Intake</b> places the corrected file in the organization intake folder, and Daily Sync still checks its content, identity, and artifact type, sending mismatches to Rework as usual. <b>Dismiss</b> removes only the held copy; the email stays in Outlook. Every correction and dismissal is audited, and at most 500 attachments are held.</li>
     <li>Unusable files from unknown senders are skipped without being held. A file that could not be saved because of an Outlook error is tried again on the next check.</li>
+    <li><b>Already recorded:</b> before anything is copied or held, each PDF is compared with the evidence already recorded in this system&apos;s database. An exact copy, even when renamed or sent by someone else, is skipped and reported as already recorded for that user and artifact type, so re-sent copies never reach Sync review. Evidence stored as a .pdf.zip is compared by the PDF inside it; the first check after new evidence is recorded may take a little longer while those PDFs are read.</li>
     <li>A file sent by one user but named for another, such as a supervisor sending for a team member, is marked so you can confirm the identity in Sync review.</li>
     <li>Requires the classic desktop Outlook app. The new Outlook app cannot be read by other programs, and some organizations block programmatic access; the Sync window shows the reason if Outlook refuses.</li>
     <li>Every check is recorded in the audit log with message and file counts. Email bodies are never stored.</li>
