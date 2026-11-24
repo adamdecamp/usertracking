@@ -75,3 +75,4 @@ tests/keyed-serial-queue.test.ts
 tests/legacy-workspace-recovery.test.ts
 tests/read-only-recovery.test.ts
 tests/outlook-intake.test.ts
+tests/all-users-email.test.ts

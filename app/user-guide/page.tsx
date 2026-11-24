@@ -354,6 +354,20 @@ export default function Guide(){
     <li>Draft attempts are recorded in the User Record and clear when the evidence is updated.</li>
     <li>R.A.P.T.O.R. prepares drafts but never sends email automatically.</li>
    </ul>
+   <h3>Email All Active Users</h3>
+   <p>At the bottom of the notifications window, <b>Email All Active Users</b> prepares a general message to every enabled user of the selected information system, such as a maintenance notice.</p>
+   <ol>
+    <li>Select one information system at the top of the window.</li>
+    <li>Choose the subject tag (<b>Notice</b>, <b>Action Required</b>, or <b>For Review</b>), enter a topic, and optionally a detail. The subject follows the standard format, for example <i>Notice — ALPHA — System Maintenance — 15 DEC 2026</i>.</li>
+    <li>Optionally type the message, or write it in Outlook.</li>
+    <li>Open each batch, review the draft, and send it yourself.</li>
+   </ol>
+   <ul>
+    <li>Every address goes in BCC, so recipients never see each other. Drafts never have a To address.</li>
+    <li>Lists are split into batches of up to 40 recipients, each address appearing once.</li>
+    <li>Disabled users are left out, and the window shows how many active users have no valid Official Email.</li>
+    <li>Each batch is recorded in the audit log before its draft opens. These messages are not compliance notices, so nothing is added to User Records.</li>
+   </ul>
   </section>
 
   <section id="archive">
