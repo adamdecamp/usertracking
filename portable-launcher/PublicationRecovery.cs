@@ -19,6 +19,15 @@ internal sealed partial class PortableStorage
             if (File.Exists(candidate) || !File.Exists(destination) || !String.Equals(EvidencePdfSha256(destination), expectedPdfSha256, StringComparison.OrdinalIgnoreCase)) throw new IOException("An equivalent committed intake copy did not complete its verified move to Complete.");
             moved++;
         }
+        // The unzipped PDF a committed .pdf.zip was made from is redundant once the
+        // ZIP is verified on the share and in Complete; remove only an exact match.
+        string loosePdf = filename.EndsWith(".pdf.zip", StringComparison.OrdinalIgnoreCase) ? Path.Combine(organizationRoot, filename.Substring(0, filename.Length - 4)) : null;
+        if (loosePdf != null && File.Exists(loosePdf) && String.Equals(EvidencePdfSha256(loosePdf), expectedPdfSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            File.Delete(loosePdf);
+            if (File.Exists(loosePdf)) throw new IOException("The unzipped copy of a committed PDF could not be removed from the organization folder.");
+            moved++;
+        }
         return moved;
     }
 
