@@ -3,9 +3,10 @@
 import {useState} from 'react';
 import {decodeJsonResponse} from '../infrastructure/runtime-decoders';
 import {decodeOutlookFolderResult,decodeOutlookIntakeCheck,type OutlookIntakeResult} from '../infrastructure/outlook-intake-contract';
-import {outlookFolderPrompt,outlookIntakeLookbackDays,outlookIntakeRequest,outlookIntakeSummary,sentOnBehalf} from '../application/outlook-intake';
+import {outlookFolderPrompt,outlookIntakeLookbackDays,outlookIntakeRequest} from '../application/outlook-intake';
 import type {UserRecord} from '../domain/tracker-models';
 import {OutlookNeedsAttention} from './OutlookNeedsAttention';
+import {OutlookIntakeResults} from './OutlookIntakeResults';
 
 export type OutlookIntakeRequest=(action:'outlook-folder'|'outlook-intake'|'outlook-sender'|'outlook-held',init?:RequestInit)=>Promise<Response>;
 
@@ -13,7 +14,6 @@ export type OutlookIntakeRequest=(action:'outlook-folder'|'outlook-intake'|'outl
 export function OutlookIntakePanel({systemId,users,request}:{systemId:string;users:readonly UserRecord[];request?:OutlookIntakeRequest}){
  const[busy,setBusy]=useState<''|'folder'|'check'>(''),[status,setStatus]=useState(''),[error,setError]=useState(''),[result,setResult]=useState<OutlookIntakeResult>(),[checks,setChecks]=useState(0);
  if(!request)return null;
- const skipped=result?.skipped.filter(file=>!file.held)??[];
  const run=async(kind:'folder'|'check')=>{
   setBusy(kind);setError('');setStatus(kind==='folder'?'Choose the folder in the Outlook window. It may open behind this window.':'Reading Outlook…');
   const chooseFolder=async()=>decodeJsonResponse(await request('outlook-folder',{method:'POST'}),'Outlook folder selection',decodeOutlookFolderResult);
@@ -29,7 +29,8 @@ export function OutlookIntakePanel({systemId,users,request}:{systemId:string;use
     setBusy('check');setStatus('Reading Outlook…');checked=await check();
     if('needsFolder' in checked)throw new Error('Outlook could not open the folder you chose. Choose Outlook Folder and try again.');
    }
-   setResult(checked);setStatus(outlookIntakeSummary(checked));setChecks(count=>count+1);
+   // The results table states the outcome; the status line is only for progress and folder prompts.
+   setResult(checked);setStatus('');setChecks(count=>count+1);
   }catch(caught){setStatus('');setError(caught instanceof Error?caught.message:'Outlook could not be checked.')}
   finally{setBusy('')}
  };
@@ -39,8 +40,7 @@ export function OutlookIntakePanel({systemId,users,request}:{systemId:string;use
   <div className="directory-actions"><button type="button" disabled={!!busy} onClick={()=>void run('check')}>{busy==='check'?'Checking Outlook…':'Check Outlook'}</button><button type="button" disabled={!!busy} onClick={()=>void run('folder')}>{busy==='folder'?'Waiting for Outlook…':'Choose Outlook Folder'}</button></div>
   {status&&<p className="hint" role="status">{status}</p>}
   {error&&<p className="restore-warning" role="alert">{error}</p>}
-  {result&&result.saved.length>0&&<ul className="outlook-intake-list">{result.saved.map(file=><li key={`${file.organization}/${file.filename}`}><b>{file.filename}</b> <small>from {file.sender}</small>{sentOnBehalf(file,users,systemId)&&<small className="restore-warning"> Sent for someone else. Confirm the identity in Sync review.</small>}</li>)}</ul>}
+  {result&&!busy&&<OutlookIntakeResults result={result} users={users} systemId={systemId}/>}
   <OutlookNeedsAttention systemId={systemId} users={users} request={request} refreshKey={checks}/>
-  {skipped.length>0&&<details><summary>{skipped.length} Skipped Attachment{skipped.length===1?'':'s'}</summary><ul className="outlook-intake-list">{skipped.map((file,index)=><li key={`${index}:${file.filename}`}><b>{file.filename}</b> <small>{file.sender?`from ${file.sender}: `:''}{file.reason}</small></li>)}</ul></details>}
  </section>;
 }

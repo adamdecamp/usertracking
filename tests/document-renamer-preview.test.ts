@@ -128,14 +128,15 @@ test('dashboard reports user-level compliance and age never removes overdue evid
  assert.match(page,/Compliant Users/);
  assert.match(page,/Non-Compliant Users/);
  assert.doesNotMatch(page,/Current Records/);
- assert.match(readFileSync(new URL('../app/application/dashboard-stats.ts',import.meta.url),'utf8'),/required\.every\(k=>statusFor\(user,k,asOf\)==='Current'\)/);
+ assert.match(readFileSync(new URL('../app/application/dashboard-stats.ts',import.meta.url),'utf8'),/if\(userIsCompliant\(user,asOf\)\)compliantUsers\+\+/);
+ assert.match(readFileSync(new URL('../app/application/user-compliance.ts',import.meta.url),'utf8'),/required\.length>0&&required\.every\(kind=>statusFor\(user,kind,asOf\)==='Current'\)/);
  assert.match(page,/archiveCandidates=distinctByPath\(duplicateCandidates\),reworkCandidates=distinctByPath\(correctionSources\)/);
  assert.doesNotMatch(page,/Recognizable filename date is more than 90 days overdue/);
 });
 
 test('Inspection Package is removed while core audit and reporting controls remain',()=>{
  assert.doesNotMatch(dashboard,/Inspection Package|generateInspectionPackage|inspection-package/);
- assert.match(dashboard,/>Compliance Snapshot</);
+ assert.match(dashboard,/>Compliance Snapshot \(PDF\)</);
  assert.match(dashboard,/>View Audit Log</);
  assert.match(dashboard,/>Release Health</);
 });

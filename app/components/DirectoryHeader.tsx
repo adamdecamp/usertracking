@@ -1,4 +1,5 @@
 import type {Dispatch,SetStateAction} from 'react';
+import {complianceFilterAll,complianceFilterChoices} from '../application/user-compliance';
 
 type Setter=Dispatch<SetStateAction<string>>;
 
@@ -18,6 +19,7 @@ type DirectoryHeaderProps={
  privilegedTypeFilter:string;
  artifactFilter:string;
  statusFilter:string;
+ complianceFilter:string;
  organizations:string[];
  affiliatedOrganizations:string[];
  privilegedTypes:string[];
@@ -34,6 +36,7 @@ type DirectoryHeaderProps={
  setPrivilegedTypeFilter:Setter;
  setArtifactFilter:Setter;
  setStatusFilter:Setter;
+ setComplianceFilter:Setter;
  setVisibleColumnKinds:(value:string[])=>void;
  onFiltersChanged:()=>void;
  onReset:()=>void;
@@ -47,7 +50,7 @@ export function DirectoryHeader(props:DirectoryHeaderProps){
  const change=(setter:Setter)=>(event:React.ChangeEvent<HTMLInputElement|HTMLSelectElement>)=>{setter(event.target.value);props.onFiltersChanged()};
  // Highlight any filter that is narrowing the list, so nothing filters silently.
  const on=(active:boolean)=>active?'active':undefined;
- const anyActive=!!props.query.trim()||props.accountFilter!=='Active users'||props.statusFilter!=='All statuses'||props.roleFilter!=='All roles'||props.emailFilter!=='All email statuses'||props.saarFilter!=='All SAAR statuses'||props.organizationFilter!=='All organizations'||props.affiliationFilter!=='All affiliated organizations'||props.privilegedTypeFilter!=='All privileged user types'||props.artifactFilter!=='All artifacts';
+ const anyActive=!!props.query.trim()||props.accountFilter!=='Active users'||props.statusFilter!=='All statuses'||props.roleFilter!=='All roles'||props.emailFilter!=='All email statuses'||props.saarFilter!=='All SAAR statuses'||props.organizationFilter!=='All organizations'||props.affiliationFilter!=='All affiliated organizations'||props.privilegedTypeFilter!=='All privileged user types'||props.artifactFilter!=='All artifacts'||props.complianceFilter!==complianceFilterAll;
  const toggleColumn=(kind:string)=>{const shown=props.visibleColumnKinds.includes(kind);props.setVisibleColumnKinds(shown?props.visibleColumnKinds.filter(value=>value!==kind):Array.from(new Set([...props.visibleColumnKinds,kind])))};
  const allColumnsShown=props.directoryColumns.every(([,kind])=>props.visibleColumnKinds.includes(kind));
  return <div className="directory-head">
@@ -57,7 +60,7 @@ export function DirectoryHeader(props:DirectoryHeaderProps){
    <div className="directory-actions">
     <button disabled={!props.hasSystem} onClick={props.onContacts}>Organization Contacts</button>
     {props.canWrite&&<>
-     <button disabled={!props.hasSystem||!props.hasUsers} onClick={props.onSnapshot}>Organization Snapshot</button>
+     <button disabled={!props.hasSystem||!props.hasUsers} onClick={props.onSnapshot}>Organization Status File</button>
      <button disabled={!props.hasSystem||!props.hasVisibleUsers} onClick={props.onExport}>Export CSV</button>
      <button className="primary" disabled={!props.hasSystem} onClick={props.onAdd}>+ Add User</button>
     </>}
@@ -66,6 +69,7 @@ export function DirectoryHeader(props:DirectoryHeaderProps){
   <div className="filters">
    <input aria-label="Search User Directory" className={on(!!props.query.trim())} placeholder="Search Users, Usernames, Email, Storage Org, Agency, or Contractor…" value={props.query} onChange={change(props.setQuery)}/>
    <select aria-label="User Status Filter" className={on(props.accountFilter!=='Active users')} value={props.accountFilter} onChange={change(props.setAccountFilter)}><option>Active users</option><option>Disabled users</option><option>All users</option></select>
+   <select aria-label="User Compliance Filter" className={on(props.complianceFilter!==complianceFilterAll)} value={props.complianceFilter} onChange={change(props.setComplianceFilter)}>{complianceFilterChoices.map(value=><option key={value} value={value}>{value===complianceFilterAll?'Any Compliance':value}</option>)}</select>
    <select aria-label="Compliance Status Filter" className={on(props.statusFilter!=='All statuses')} value={props.statusFilter} onChange={change(props.setStatusFilter)}><option value="All statuses">All Statuses</option><option>Missing</option><option>Due Within 30 Days</option><option>Overdue</option><option>Current</option></select>
    <select aria-label="Artifact Filter" className={on(props.artifactFilter!=='All artifacts')} value={props.artifactFilter} onChange={change(props.setArtifactFilter)}><option value="All artifacts">All Artifacts</option>{props.artifactKinds.map(value=><option key={value}>{value}</option>)}</select>
    <select aria-label="Role Filter" className={on(props.roleFilter!=='All roles')} value={props.roleFilter} onChange={event=>{props.setRoleFilter(event.target.value);if(event.target.value==='General')props.setPrivilegedTypeFilter('All privileged user types');props.onFiltersChanged()}}><option value="All roles">All Roles</option><option>General</option><option>Privileged</option></select>

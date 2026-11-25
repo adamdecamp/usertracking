@@ -146,6 +146,7 @@ export default function Guide(){
     <li>Filter by system, organization, status, role, privileged type, email, SAAR, artifact, and compliance.</li>
     <li>Select <b>SAAR Missing</b> to isolate records without a SAAR.</li>
     <li>The Privileged User Type filter and column hide when General is selected.</li>
+    <li>The <b>Compliance</b> column shows <b>Compliant</b>, <b>Not Compliant</b>, or <b>Disabled</b> for each user. Use the compliance filter to show only one, or choose the <b>Compliant Users</b> or <b>Non-Compliant Users</b> tile on the dashboard. The column, filter, tiles, and CSV export all use the same rule.</li>
     <li>Use <b>Reset Filters</b> to restore the defaults.</li>
     <li>Choose 20, 40, 50, or 100 rows per page from the controls above or below the table.</li>
    </ul>
@@ -231,6 +232,7 @@ export default function Guide(){
    <ol>
     <li>Choose <b>Sync</b>, then <b>Choose Outlook Folder</b> once on each computer and select the folder in the Outlook window. If you choose <b>Check Outlook</b> first, or the saved folder was moved or renamed, R.A.P.T.O.R. asks you to choose the folder and then checks it.</li>
     <li>Choose <b>Check Outlook</b>. PDF attachments from the last 30 days are copied into their organization intake folder when the sender&apos;s address is the Official Email of a user in this system, the filename names an existing organization, and the file is a real PDF.</li>
+    <li>Read the results table. It shows how many attachments were <b>Copied to Intake</b>, <b>Already Recorded</b>, <b>Duplicates</b>, added to <b>Needs Attention</b>, or <b>Skipped</b>. Choose <b>Show Files</b> in any row to see the files and the reason for each.</li>
     <li>Start <b>Daily Sync</b> and review the results as usual. No user record changes until you approve it.</li>
    </ol>
    <ul>
@@ -323,8 +325,9 @@ export default function Guide(){
 
   <section id="exports">
    <h2>7. Reports, Exports, and Notification Messages</h2>
-   <h3>Compliance Snapshot</h3>
+   <h3>Compliance Snapshot (PDF)</h3>
    <ul>
+    <li>Choose <b>Compliance Snapshot (PDF)</b> under <b>Reports &amp; Oversight</b>. This is the PDF report; the <b>Organization Status File</b> below is a different, read-only file for an ISSO to open in R.A.P.T.O.R.</li>
     <li>Select mapped systems, organizations, and the reporting date.</li>
     <li>Disabled users are excluded.</li>
     <li>The PDF includes report identity, UTC time, operator, versions, scope, totals, aging, exceptions, and required breakdowns.</li>
@@ -350,8 +353,9 @@ export default function Guide(){
     <li>A user is compliant when every required item is current. An item due within 30 days still counts as current. An approved exception is shown beside the item but does not make the user compliant, matching the dashboard totals.</li>
     <li>Use <b>Reset Filters</b> before exporting all users in the selected system.</li>
    </ul>
-   <h3>Organization Snapshot</h3>
+   <h3>Organization Status File</h3>
    <ul>
+    <li>Choose <b>Organization Status File</b> at the top of the User Directory. It makes a read-only <code>.raptor-status.json</code> file for one organization, which its ISSO opens with <b>Open Organization Status File</b> (called Open Organization Snapshot in older versions). For a PDF report, use Compliance Snapshot (PDF).</li>
     <li>Select one organization. Its ISSO email is filled in from Organization Contacts when one is recorded; you can change it.</li>
     <li>Include disabled users in the snapshot.</li>
     <li>Use passphrase encryption for transport outside the protected shared folder.</li>

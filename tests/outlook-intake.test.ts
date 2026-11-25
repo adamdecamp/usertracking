@@ -86,7 +86,8 @@ test('each mismatch is prefilled from the filename and sender so only the failin
 test('Needs Attention lives in the Outlook panel and the launcher validates every correction',()=>{
  const panel=readFileSync(new URL('../app/components/OutlookIntakePanel.tsx',import.meta.url),'utf8'),hold=readFileSync(new URL('../portable-launcher/OutlookIntakeHold.cs',import.meta.url),'utf8');
  assert.match(panel,/<OutlookNeedsAttention systemId=\{systemId\} users=\{users\} request=\{request\} refreshKey=\{checks\}\/>/);
- assert.match(panel,/result\?\.skipped\.filter\(file=>!file\.held\)/);
+ assert.match(panel,/<OutlookIntakeResults result=\{result\} users=\{users\} systemId=\{systemId\}\/>/);
+ assert.match(readFileSync(new URL('../app/components/OutlookIntakeResults.tsx',import.meta.url),'utf8'),/row\.key!=='held'/,'held files are listed once, in Needs Attention, not again in the results table');
  assert.match(hold,/ValidOutlookIntakeFilename\(text\("filename"\), chosen\)/);
  assert.match(hold,/if \(chosen == null\) throw new InvalidDataException/);
  assert.match(hold,/lock \(RootLock\(systemId\)\)/);

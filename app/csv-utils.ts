@@ -3,6 +3,7 @@ import {oneLineText as oneLine} from './error-utils.ts';
 import {artifactKinds} from './filename-utils.ts';
 import {daysOverdueFor,daysUntilDueFor,directoryStatusFor,exceptionFor,newestArtifactFor,requiredKinds,statusFor} from './user-status-utils.ts';
 import {requirementStatusLabel} from './user-requirements.ts';
+import {complianceLabels,userComplianceLabel} from './application/user-compliance.ts';
 
 function safeCsv(value:string){const clean=oneLine(String(value));return /^[=+\-@\t]/.test(clean)?`'${clean}`:clean}
 const render=(rows:string[][])=>rows.map(row=>row.map(value=>`"${safeCsv(value).replaceAll('"','""')}"`).join(',')).join('\n');
@@ -14,7 +15,7 @@ export function csvRows(users:UserRecord[],systems:SystemRecord[],kinds:string[]
  return render(rows);
 }
 
-export const csvCompliance={compliant:'Compliant',notCompliant:'Not Compliant',disabled:'Disabled'} as const;
+export {complianceLabels as csvCompliance} from './application/user-compliance.ts';
 
 /** One requirement's plain-language status for the directory export, and whether it counts as met. */
 function requirementCell(user:UserRecord,kind:string,asOf:Date){
@@ -37,7 +38,7 @@ export function filteredDirectoryCsvRows(users:UserRecord[],system:SystemRecord,
  let notCompliant=0;
  for(const user of users){
   const required=requiredKinds(user),cells=new Map(required.map(kind=>[kind,requirementCell(user,kind,asOf)])),unmet=required.filter(kind=>!cells.get(kind)!.met);
-  const compliance=user.disabled?csvCompliance.disabled:unmet.length||!required.length?csvCompliance.notCompliant:csvCompliance.compliant;if(compliance===csvCompliance.notCompliant)notCompliant++;
+  const compliance=userComplianceLabel(user,asOf);if(compliance===complianceLabels.notCompliant)notCompliant++;
   rows.push([compliance,user.last,user.first,user.email,user.organization,user.affiliatedOrganizations.join('; '),system.name,user.disabled?'Disabled':'Active',user.roles.join('; '),user.privilegedTypes.join('; '),String(unmet.length),unmet.map(kind=>`${kind}: ${cells.get(kind)!.text}`).join('; '),...columns.map(kind=>cells.get(kind)?.text??'Not required'),user.privilegedUsernames.join('; '),source(user,'identity'),source(user,'organization'),source(user,'officialEmail'),source(user,'accountType')]);
  }
  // The byte-order mark lets Excel open names with accents correctly.
