@@ -235,7 +235,8 @@ export default function Guide(){
    <p>In Full Access, the Sync window can collect evidence that users email back. Ask users to reply with the requested file named in the standard format, such as <b>Brown_Jacob_(LM)_DTA_Training_26AUG2026.pdf</b>. An Outlook rule that moves those replies into a dedicated folder keeps the check fast.</p>
    <ol>
     <li>Choose <b>Sync</b>, then <b>Choose Outlook Folder</b> once on each computer and select the folder in the Outlook window. If you choose <b>Check Outlook</b> first, or the saved folder was moved or renamed, R.A.P.T.O.R. asks you to choose the folder and then checks it.</li>
-    <li>Choose <b>Check Outlook</b>. PDF attachments from the last 30 days are copied into their organization intake folder when the sender&apos;s address is the Official Email of a user in this system, the filename names an existing organization, and the file is a real PDF.</li>
+    <li>Choose how far back to read with <b>Look Back</b>: 1 day, 3 days, or 1 to 4 weeks (1 week is the default). Messages already checked are skipped quickly, so a short period suits a daily check and a longer one catches up after time away.</li>
+    <li>Choose <b>Check Outlook</b>. PDF attachments from that period are copied into their organization intake folder when the sender&apos;s address is the Official Email of a user in this system, the filename names an existing organization, and the file is a real PDF.</li>
     <li>Read the results table. It shows how many attachments were <b>Copied to Intake</b>, <b>Already Recorded</b>, <b>Duplicates</b>, added to <b>Needs Attention</b>, or <b>Skipped</b>. Choose <b>Show Files</b> in any row to see the files and the reason for each.</li>
     <li>Start <b>Daily Sync</b> and review the results as usual. No user record changes until you approve it.</li>
    </ol>

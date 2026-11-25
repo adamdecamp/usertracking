@@ -5,9 +5,9 @@ import {outlookIntakeLead,outlookIntakeRows,sentOnBehalf} from '../application/o
 import type {UserRecord} from '../domain/tracker-models';
 
 /** Check Outlook's result: one line on what happened, then a count for each outcome with its files. */
-export function OutlookIntakeResults({result,users,systemId}:{result:OutlookIntakeResult;users:readonly UserRecord[];systemId:string}){
+export function OutlookIntakeResults({result,days,users,systemId}:{result:OutlookIntakeResult;days:number;users:readonly UserRecord[];systemId:string}){
  return <div className="outlook-results">
-  <p className="hint" role="status">{outlookIntakeLead(result)}</p>
+  <p className="hint" role="status">{outlookIntakeLead(result,days)}</p>
   <table aria-label="Check Outlook Results">
    <thead><tr><th>Result</th><th>Count</th><th>What It Means</th></tr></thead>
    <tbody>{outlookIntakeRows(result).map(row=><tr key={row.key} className={row.files.length?undefined:'empty-result'}>

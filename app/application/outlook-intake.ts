@@ -2,7 +2,16 @@ import {artifactKindFromFilename,evidenceDateIsInFuture,filenameIdentityMatches,
 import {buildTrackerFilename} from '../document-renamer-utils.ts';
 import type {OutlookHeldItem,OutlookHeldReason,OutlookIntakeFile,OutlookIntakeResult} from '../infrastructure/outlook-intake-contract.ts';
 
-export const outlookIntakeLookbackDays=30;
+/** How far back Check Outlook reads. The launcher accepts 1 to 90 days; these are the choices offered. */
+export const outlookIntakeLookbackChoices=[{days:1,label:'1 day'},{days:3,label:'3 days'},{days:7,label:'1 week'},{days:14,label:'2 weeks'},{days:21,label:'3 weeks'},{days:28,label:'4 weeks'}] as const;
+export const outlookIntakeLookbackDays=7;
+
+/** "the last day", "the last 3 days", "the last week", "the last 2 weeks". */
+export function outlookIntakeWindow(days:number){
+ if(days===1)return'the last day';
+ if(days===7)return'the last week';
+ return days%7===0?`the last ${days/7} weeks`:`the last ${days} days`;
+}
 
 type IntakeUser={systemId:string;email:string;last:string;first:string};
 
@@ -13,10 +22,11 @@ export function outlookIntakeSenders(users:readonly IntakeUser[],systemId:string
  return Array.from(new Set(users.filter(user=>user.systemId===systemId).map(user=>address(user.email)).filter(email=>/^[^@\s]+@[^@\s]+$/.test(email)))).sort();
 }
 
-export function outlookIntakeRequest(users:readonly IntakeUser[],systemId:string){
+export function outlookIntakeRequest(users:readonly IntakeUser[],systemId:string,days:number=outlookIntakeLookbackDays){
+ if(!outlookIntakeLookbackChoices.some(choice=>choice.days===days))throw new Error('Choose how far back to check Outlook.');
  const senders=outlookIntakeSenders(users,systemId);
  if(!senders.length)throw new Error('No user in this information system has an Official Email, so there is no approved sender to accept evidence from.');
- return JSON.stringify({senders,days:outlookIntakeLookbackDays});
+ return JSON.stringify({senders,days});
 }
 
 /** A copied file named for someone other than its sender (for example, sent by a supervisor) needs a closer look in Sync review. */
@@ -30,17 +40,17 @@ export function outlookFolderPrompt(missing?:string){
  return`${missing?`Outlook can no longer find the saved folder ${missing}. Choose it again`:'Choose the Outlook folder to check'} in the Outlook window. It may open behind this window.`;
 }
 
-export function outlookIntakeSummary(result:OutlookIntakeResult){
+export function outlookIntakeSummary(result:OutlookIntakeResult,days:number=outlookIntakeLookbackDays){
  const copied=result.saved.length,held=result.skipped.filter(file=>file.held).length,recorded=result.skipped.filter(file=>file.recorded).length,duplicates=result.skipped.filter(file=>file.duplicate).length,skipped=result.skipped.length-held-recorded-duplicates,plural=(count:number,word:string)=>`${count} ${word}${count===1?'':'s'}`;
  const lead=copied?`Copied ${plural(copied,'PDF')} from ${result.folder||'Outlook'} into organization intake. Start Daily Sync to review ${copied===1?'it':'them'}; no user record changes until you approve.`:`No new evidence was found in ${result.folder||'Outlook'}.`;
- return `${lead} Read ${plural(result.scanned,'message')} from the last ${outlookIntakeLookbackDays} days${result.previouslyProcessed?` (${result.previouslyProcessed} already checked)`:''}${recorded?`; ${plural(recorded,'PDF')} already recorded and not copied`:''}${duplicates?`; ${plural(duplicates,'duplicate PDF')} already waiting and not copied again`:''}${held?`; ${plural(held,'attachment')} added to Needs Attention`:''}${skipped?`; ${plural(skipped,'attachment')} skipped`:''}.`;
+ return `${lead} Read ${plural(result.scanned,'message')} from ${outlookIntakeWindow(days)}${result.previouslyProcessed?` (${result.previouslyProcessed} already checked)`:''}${recorded?`; ${plural(recorded,'PDF')} already recorded and not copied`:''}${duplicates?`; ${plural(duplicates,'duplicate PDF')} already waiting and not copied again`:''}${held?`; ${plural(held,'attachment')} added to Needs Attention`:''}${skipped?`; ${plural(skipped,'attachment')} skipped`:''}.`;
 }
 
 /** The sentence above the results table: what happened and what to do next, without the per-category counts the table shows. */
-export function outlookIntakeLead(result:OutlookIntakeResult){
+export function outlookIntakeLead(result:OutlookIntakeResult,days:number=outlookIntakeLookbackDays){
  const copied=result.saved.length,folder=result.folder||'Outlook',plural=(count:number,word:string)=>`${count} ${word}${count===1?'':'s'}`;
  const lead=copied?`Copied ${plural(copied,'PDF')} from ${folder}. Start Daily Sync to review ${copied===1?'it':'them'}; no user record changes until you approve.`:`No new evidence was found in ${folder}.`;
- return `${lead} Read ${plural(result.scanned,'message')} from the last ${outlookIntakeLookbackDays} days${result.previouslyProcessed?`, ${result.previouslyProcessed} of them already checked`:''}.`;
+ return `${lead} Read ${plural(result.scanned,'message')} from ${outlookIntakeWindow(days)}${result.previouslyProcessed?`, ${result.previouslyProcessed} of them already checked`:''}.`;
 }
 
 export type OutlookIntakeRow={key:'copied'|'recorded'|'duplicate'|'held'|'skipped';label:string;meaning:string;files:OutlookIntakeFile[]};
