@@ -78,7 +78,7 @@ test('disabled users retain supporting-artifact status for reactivation review',
  assert.doesNotMatch(page,/u\.disabled\?'':statusFor\(u,k\)/);
  assert.doesNotMatch(page,/status not applicable/);
  assert.match(page,/exception=u\.disabled\?undefined:exceptionFor\(u,kind,directoryAsOf\)/);
- assert.match(page,/remaining\.push\(\{\.\.\.artifact,filename,path:destination\}\)/);
+ assert.match(readFileSync(new URL('../app/application/pending-evidence-commit.ts',import.meta.url),'utf8'),/artifacts\.push\(\{\.\.\.artifact,filename:basename\(destination\),path:destination\}\)/,'a disabled user keeps references to the archived copies');
  assert.match(statusUtils,/kind!=='SAAR'\|\|user\.disabled\|\|!disabledSaarFilename/);
  assert.doesNotMatch(page,/recoverDisabledEvidenceStatus\(/);
  assert.doesNotMatch(page,/archive-locations\?organization=/);

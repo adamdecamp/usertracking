@@ -75,7 +75,7 @@ test('operator logoff arms launcher shutdown before final network publication',(
 
 test('shutdown always rechecks protected local status after a manual Session Commit',()=>{
  const shutdown=page.slice(page.indexOf('async function publishForShutdown'),page.indexOf('async function releaseLeaseForShutdown'));
- assert.match(shutdown,/publishSystemWorkspace\(root,systemId,systems,users,signal\)/,'Logoff must rerun the local workspace-status preflight so a later Incoming drop is not skipped.');
+ assert.match(shutdown,/publishSystemWorkspace\(root,systemId,queued\.systems,queued\.users,signal\)/,'Logoff must rerun the local workspace-status preflight so a later Incoming drop is not skipped.');
  assert.match(shutdown,/performed:result\.noChanges!==true/,'Only the launcher workspace-status no-change result may suppress shutdown publication.');
  assert.doesNotMatch(shutdown,/manualSessionCommitHashes|shutdownPublicationRequired/,'A matching React state hash cannot prove that the local evidence workspace is unchanged.');
  assert.doesNotMatch(page,/manualSessionCommitHashes|shutdownPublicationRequired/);
@@ -210,5 +210,5 @@ test('successful disable and delete operations keep missing evidence in the audi
  assert.match(deleteUser,/formatDeleteUserCompletionAudit/);
  assert.match(formatDeleteUserCompletionAudit({last:'Missing',first:'Evidence',justification:'Verified duplicate',moved:[],missingErrors:['missing.pdf.zip']}),/already-missing evidence reference/);
  assert.doesNotMatch(userSubmit,/Disable user completed with missing evidence files/);
- assert.match(userSubmit,/archive exception/);
+ assert.match(userSubmit,/queued its evidence files for the organization Archive at the next Session Commit/,'disabling records the archive for Session Commit instead of moving files');
 });

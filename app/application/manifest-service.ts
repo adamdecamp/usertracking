@@ -1,6 +1,7 @@
 import {migrateManifestPayload} from '../data-migrations';
 import {isValidTimeZone} from '../compliance-time-zone';
 import {decodeOrganizationContacts} from '../domain/organization-contacts';
+import {decodePendingEvidenceMoves} from '../domain/pending-evidence-moves';
 import {artifactKinds,canonicalArtifactKind} from '../filename-utils';
 import {validManifestArtifactPath} from '../manifest-validation';
 import {normalizePrivilegedTypes} from '../privileged-type-utils';
@@ -24,7 +25,8 @@ export function decodeTrackerManifest(value:unknown):TrackerDatabase|undefined{
   if(!boundedString(s.id,100)||!boundedString(s.name,200)||!boundedString(s.type,200)||!boundedString(s.organization,200)||typeof s.archived!=='boolean')return;
   if(s.timeZone!==undefined&&!isValidTimeZone(s.timeZone))return;
   const organizationContacts=s.organizationContacts===undefined?undefined:decodeOrganizationContacts(s.organizationContacts);if(s.organizationContacts!==undefined&&!organizationContacts)return;
-  systems.push({id:s.id,name:s.name,type:s.type,organization:s.organization,archived:s.archived,...(s.timeZone!==undefined?{timeZone:s.timeZone}:{}),...(organizationContacts?{organizationContacts}:{})});
+  const pendingEvidenceMoves=s.pendingEvidenceMoves===undefined?undefined:decodePendingEvidenceMoves(s.pendingEvidenceMoves);if(s.pendingEvidenceMoves!==undefined&&!pendingEvidenceMoves)return;
+  systems.push({id:s.id,name:s.name,type:s.type,organization:s.organization,archived:s.archived,...(s.timeZone!==undefined?{timeZone:s.timeZone}:{}),...(organizationContacts?{organizationContacts}:{}),...(pendingEvidenceMoves?.length?{pendingEvidenceMoves}:{})});
  }
  const ids=new Set(systems.map(system=>system.id)),users:UserRecord[]=[];
  for(const item of raw.users){
