@@ -35,7 +35,8 @@ export default function Guide(){
    <ul>
     <li><b>Read-Only:</b> Search, filter, review, report, and export without changing records or evidence.</li>
     <li><b>Full Access:</b> Requires verified storage and the single-editor lease.</li>
-    <li>Read-Only Access is identified by a persistent banner and gold frame.</li>
+    <li>Read-Only Access is identified by a persistent banner and gold frame. Choose <b>Switch to Full Access</b> in the banner to make changes.</li>
+    <li>Keyboard users can press Tab once after the page loads and choose <b>Skip to User Directory</b>. Windows open on their first control, Esc closes them, and focus returns to where you were.</li>
     <li>Multiple Read-Only operators may connect; only one Full Access operator may edit at a time.</li>
     <li>If Full Access is already locked, R.A.P.T.O.R. identifies the current editor by full name, Windows ID, workstation, and session start time.</li>
     <li>Open <b>User Administration → Operator Directory</b> to view names and Windows IDs recorded in the selected system&apos;s verified audit history.</li>
@@ -77,6 +78,7 @@ export default function Guide(){
     <li>Choose <b>Add Contact</b> to record who to contact for an organization. Contacts are also shown at the bottom of <b>Manage Organizations</b>.</li>
     <li>Choose a position: <b>Program Manager</b>, <b>CPSO/FSO/GSSO</b>, <b>ISSM</b>, <b>ISSO</b>, or <b>System Administrator</b>. Choose <b>Other</b> to enter a position of your own; it is then offered for every organization in this system.</li>
     <li>Enter the contact&apos;s name, then choose <b>Email</b> or <b>Phone</b> and enter the address or number. Use <b>Add Email or Phone</b> for up to four entries per contact.</li>
+    <li>A User Record opens with <b>What to Do Next</b>: each missing, overdue, or soon-due item and what to do about it, or that nothing is needed and when the next item is due.</li>
     <li>A User Record shows the contacts for that user&apos;s Storage Organization, so you can email or call them while working the record.</li>
     <li>Contacts can be edited or removed at any time. Positions are not required, so an organization without a contact is not flagged.</li>
     <li>Contacts are saved in the system database, included in Session Commit and backups, and every addition, change, or removal is recorded in the audit log by name and position.</li>
