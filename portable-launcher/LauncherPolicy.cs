@@ -93,6 +93,7 @@ internal static class LauncherPolicy
             || String.Equals(action, "last-logon", StringComparison.Ordinal)
             || String.Equals(action, "performance", StringComparison.Ordinal)
             || String.Equals(action, "sync-job", StringComparison.Ordinal)
+            || String.Equals(action, "last-results", StringComparison.Ordinal)
             || String.Equals(action, "operation-status", StringComparison.Ordinal)
             || String.Equals(action, "workspace-progress", StringComparison.Ordinal)
             || String.Equals(action, "recovery", StringComparison.Ordinal)
@@ -118,6 +119,7 @@ internal static class LauncherPolicy
         if (action == "state-commit" || action == "workspace-publish") return 100L * MiB;
         if (action == "workspace-status" || action == "workspace-recovery-export" || action == "workspace-recovery-reset") return 4L * KiB;
         if (action == "sync-job") return 64L * KiB;
+        if (action == "last-results") return 50L * MiB;
         if (action == "manifest" || action == "csv" || action == "report") return 50L * MiB;
         if (action == "outlook-draft") return 40L * MiB;
         if (action == "outlook-intake") return 2L * MiB;

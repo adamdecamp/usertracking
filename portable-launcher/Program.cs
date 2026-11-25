@@ -301,6 +301,7 @@ internal sealed partial class TrackerContext : ApplicationContext
                     else if (action == "sync-job" && parts[0] == "GET") response = storage.ReadSyncJob(systemId);
                     else if (action == "sync-job" && parts[0] == "POST") response = storage.SaveSyncJob(systemId, requestBody);
                     else if (action == "sync-job" && parts[0] == "DELETE") response = storage.ClearSyncJob(systemId);
+                    else if (action == "last-results" && (parts[0] == "GET" || parts[0] == "POST" || parts[0] == "DELETE")) response = storage.LastResults(systemId, parts[0], requestBody, QueryValue(target, "kind"));
                     else if (action == "operation-status" && parts[0] == "GET") response = storage.ReadOperationReceipt(systemId, QueryValue(target, "operation"));
                     else if (action == "recovery" && parts[0] == "GET") response = storage.ReadRecoveryCenter(systemId);
                     else if (action == "recovery-defer" && parts[0] == "POST") response = storage.DeferRecoveryRetry(systemId, QueryValue(target, "key"));
