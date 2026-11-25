@@ -25,7 +25,7 @@ test('the portable launcher prepares a validated ISSO To-line draft with a bound
 });
 
 test('the startup gate can import a damage-checked organization snapshot in read-only mode',()=>{
- assert.match(sessionPanels,/Open Organization Snapshot/);
+ assert.match(sessionPanels,/Open Organization Status File/);
  assert.match(page,/parseOrganizationStatusPackage/);
  assert.match(page,/setAccessMode\('read-only'\)/);
  assert.match(page,/organizationStatusTrustNote\(requiresPassphrase\)/);

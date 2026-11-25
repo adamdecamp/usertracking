@@ -1,5 +1,6 @@
 import type {UserRecord} from '../domain/tracker-models.ts';
 import {isDueWithin30Days,requiredKinds,statusFor} from '../user-status-utils.ts';
+import {userIsCompliant} from './user-compliance.ts';
 
 /** People affected and how many of their required items are in this state. */
 export type IssueCount={users:number;items:number};
@@ -23,7 +24,7 @@ export function dashboardStats(activeUsers:readonly UserRecord[],asOf=new Date()
  for(const user of activeUsers){
   const required=requiredKinds(user);let userDue=0,userOverdue=0,userMissing=0;
   for(const kind of required){const status=statusFor(user,kind,asOf);if(status==='Current'&&isDueWithin30Days(user,kind,asOf))userDue++;if(status==='Overdue')userOverdue++;if(status==='Missing')userMissing++}
-  if(required.length>0&&required.every(k=>statusFor(user,k,asOf)==='Current'))compliantUsers++;
+  if(userIsCompliant(user,asOf))compliantUsers++;
   if(userDue){due.users++;due.items+=userDue}if(userOverdue){overdue.users++;overdue.items+=userOverdue}if(userMissing){missing.users++;missing.items+=userMissing}
  }
  return{activeUsers:activeUsers.length,compliantUsers,nonCompliantUsers:activeUsers.length-compliantUsers,due,overdue,missing};

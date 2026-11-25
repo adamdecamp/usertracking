@@ -36,6 +36,27 @@ export function outlookIntakeSummary(result:OutlookIntakeResult){
  return `${lead} Read ${plural(result.scanned,'message')} from the last ${outlookIntakeLookbackDays} days${result.previouslyProcessed?` (${result.previouslyProcessed} already checked)`:''}${recorded?`; ${plural(recorded,'PDF')} already recorded and not copied`:''}${duplicates?`; ${plural(duplicates,'duplicate PDF')} already waiting and not copied again`:''}${held?`; ${plural(held,'attachment')} added to Needs Attention`:''}${skipped?`; ${plural(skipped,'attachment')} skipped`:''}.`;
 }
 
+/** The sentence above the results table: what happened and what to do next, without the per-category counts the table shows. */
+export function outlookIntakeLead(result:OutlookIntakeResult){
+ const copied=result.saved.length,folder=result.folder||'Outlook',plural=(count:number,word:string)=>`${count} ${word}${count===1?'':'s'}`;
+ const lead=copied?`Copied ${plural(copied,'PDF')} from ${folder}. Start Daily Sync to review ${copied===1?'it':'them'}; no user record changes until you approve.`:`No new evidence was found in ${folder}.`;
+ return `${lead} Read ${plural(result.scanned,'message')} from the last ${outlookIntakeLookbackDays} days${result.previouslyProcessed?`, ${result.previouslyProcessed} of them already checked`:''}.`;
+}
+
+export type OutlookIntakeRow={key:'copied'|'recorded'|'duplicate'|'held'|'skipped';label:string;meaning:string;files:OutlookIntakeFile[]};
+
+/** One row per outcome, always in the same order, so the operator can see at a glance where every attachment went. */
+export function outlookIntakeRows(result:OutlookIntakeResult):OutlookIntakeRow[]{
+ const held=result.skipped.filter(file=>file.held),recorded=result.skipped.filter(file=>!file.held&&file.recorded),duplicates=result.skipped.filter(file=>!file.held&&!file.recorded&&file.duplicate),other=result.skipped.filter(file=>!file.held&&!file.recorded&&!file.duplicate);
+ return[
+  {key:'copied',label:'Copied to Intake',meaning:'Waiting for your review in Daily Sync.',files:result.saved},
+  {key:'recorded',label:'Already Recorded',meaning:'This exact PDF is already in the database, so it was not copied.',files:recorded},
+  {key:'duplicate',label:'Duplicates',meaning:'The same PDF is already waiting for Sync or in Needs Attention, or came in another email.',files:duplicates},
+  {key:'held',label:'Needs Attention',meaning:'Correct or dismiss each one in Needs Attention below.',files:held},
+  {key:'skipped',label:'Skipped',meaning:'Not copied. Each file shows why.',files:other},
+ ];
+}
+
 export const outlookHeldReasonLabel:Record<OutlookHeldReason,string>={sender:'Unknown Sender',filename:'Filename Not Recognized',organization:'Organization Not Found',conflict:'Name Already Waiting',invalid:'Not a Usable PDF'};
 
 /** What the operator corrects for each held attachment. Daily Sync still validates the PDF afterward. */
