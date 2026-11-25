@@ -170,6 +170,34 @@ internal static class PortableStorageTests
         return Json.Serialize(new Dictionary<string, object> { { "version", 2 }, { "updated", DateTime.UtcNow.ToString("o") }, { "systems", new object[] { system } }, { "users", users } });
     }
 
+    private static void RunLastResultsStore(PortableStorage storage, string sharedRoot)
+    {
+        Func<Action, bool> rejected = action => { try { action(); return false; } catch (InvalidDataException) { return true; } };
+        Func<object, byte[]> body = value => Encoding.UTF8.GetBytes(Json.Serialize(value));
+        Func<Dictionary<string, object>, string, object, Dictionary<string, object>> with = (source, key, value) => { var copy = new Dictionary<string, object>(source); if (value == null) copy.Remove(key); else copy[key] = value; return copy; };
+        string now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), workspaceSystem = Path.Combine(storage.LocalWorkspacePath("mapping-key"), "System");
+        var syncResult = new Dictionary<string, object> { { "version", 1 }, { "kind", "sync" }, { "systemId", "logical-system-id" }, { "savedAtUtc", now }, { "savedBy", "Synthetic Operator" }, { "baseStateHash", new string('a', 64) }, { "review", new Dictionary<string, object> { { "systemId", "logical-system-id" }, { "candidates", new object[0] } } } };
+        var reconciliationResult = new Dictionary<string, object> { { "version", 1 }, { "kind", "reconciliation" }, { "systemId", "logical-system-id" }, { "savedAtUtc", now }, { "savedBy", "Synthetic Operator" }, { "scanned", 12 }, { "issues", new object[] { new Dictionary<string, object> { { "id", "i1" }, { "category", "File Collision" }, { "severity", "High" }, { "summary", "Synthetic" }, { "detail", "Synthetic detail" } } } } };
+        Assert(storage.LastResults("mapping-key", "POST", body(syncResult), null).Contains("\"saved\":true") && storage.LastResults("mapping-key", "POST", body(reconciliationResult), null).Contains("\"saved\":true"), "A Sync review and a Reconciliation must save even though their logical system id differs from the mapped storage id.");
+        var read = (Dictionary<string, object>)Json.DeserializeObject(storage.LastResults("mapping-key", "GET", null, null));
+        Assert(read["sync"] is Dictionary<string, object> && Convert.ToString(((Dictionary<string, object>)read["sync"])["baseStateHash"]) == new string('a', 64) && read["reconciliation"] is Dictionary<string, object> && ((object[])((Dictionary<string, object>)read["reconciliation"])["issues"]).Length == 1, "Saved results must round-trip through the protected store.");
+        string syncFile = Path.Combine(workspaceSystem, "last-results-sync.json.dpapi"), syncText = File.ReadAllText(syncFile);
+        Assert(syncText.Contains("DPAPI-CurrentUser") && !syncText.Contains("logical-system-id") && !syncText.Contains("Synthetic Operator"), "Saved results must be encrypted for the current Windows user on disk.");
+        Assert(!Directory.EnumerateFiles(sharedRoot, "last-results-*", SearchOption.AllDirectories).Any(), "Saved results must never be written to the shared folder.");
+        Assert(rejected(() => storage.LastResults("mapping-key", "POST", body(with(syncResult, "kind", null)), null)), "A saved result without a supported kind must be rejected.");
+        Assert(rejected(() => storage.LastResults("mapping-key", "POST", body(with(syncResult, "kind", "outlook")), null)), "Only Sync and Reconciliation results may be saved.");
+        Assert(rejected(() => storage.LastResults("mapping-key", "POST", body(with(syncResult, "version", 2)), null)), "An unknown saved-result version must be rejected.");
+        Assert(rejected(() => storage.LastResults("mapping-key", "POST", body(with(syncResult, "baseStateHash", "not-a-hash")), null)), "A saved Sync review must carry a SHA-256 records fingerprint.");
+        Assert(rejected(() => storage.LastResults("mapping-key", "POST", body(with(reconciliationResult, "issues", "none")), null)), "A saved Reconciliation must carry an issue list.");
+        Assert(rejected(() => storage.LastResults("mapping-key", "POST", new byte[0], null)) && rejected(() => storage.LastResults("mapping-key", "PUT", null, null)) && rejected(() => storage.LastResults("mapping-key", "DELETE", null, "../manifest")), "Empty bodies, unsupported methods, and unknown kinds must be rejected.");
+        File.WriteAllText(syncFile, "{\"version\":1,\"protection\":\"tampered\"}");
+        read = (Dictionary<string, object>)Json.DeserializeObject(storage.LastResults("mapping-key", "GET", null, null));
+        Assert(read["sync"] == null && !File.Exists(syncFile) && read["reconciliation"] != null, "An unreadable saved result must be discarded without affecting the other result.");
+        storage.LastResults("mapping-key", "DELETE", null, "reconciliation");storage.LastResults("mapping-key", "DELETE", null, "reconciliation");
+        read = (Dictionary<string, object>)Json.DeserializeObject(storage.LastResults("mapping-key", "GET", null, null));
+        Assert(read["sync"] == null && read["reconciliation"] == null, "Clearing a saved result must be idempotent.");
+    }
+
     private static void RunStorageEnumerationFuzz(string parent)
     {
         string fuzzRoot = Path.Combine(parent, "Storage Fuzz (Mapped), Unicode-\u00e9");
@@ -839,6 +867,7 @@ internal static class PortableStorageTests
         storage.Map("mapping-key", root);
         string syncCheckpoint = Json.Serialize(new Dictionary<string, object> { { "version", 1 }, { "systemId", "mapping-key" }, { "runId", "11111111-1111-4111-8111-111111111111" }, { "mode", "Daily Sync" }, { "scope", "Entire System" }, { "stage", "Discovery" }, { "startedAtUtc", "2026-10-21T12:00:00.000Z" }, { "updatedAtUtc", "2026-10-21T12:01:00.000Z" }, { "processed", 10 }, { "total", 20 }, { "message", "Discovery in progress." }, { "recoverable", true } });
         Assert(storage.SaveSyncJob("mapping-key", Encoding.UTF8.GetBytes(syncCheckpoint)).Contains("\"saved\":true") && storage.ReadSyncJob("mapping-key").Contains("\"stage\":\"Discovery\""), "The DPAPI-protected Sync checkpoint should round-trip through strict validation.");storage.ClearSyncJob("mapping-key");Assert(storage.ReadSyncJob("mapping-key").Contains("\"checkpoint\":null"), "Clearing a completed Sync checkpoint should be idempotent.");
+        RunLastResultsStore(storage, root);
         var qualification = (Dictionary<string, object>)Json.DeserializeObject(storage.RunNetworkQualification("mapping-key"));Assert(Convert.ToBoolean(qualification["sha256Verified"]) && Convert.ToInt64(qualification["payloadBytes"], CultureInfo.InvariantCulture) == 65536 && !Directory.EnumerateFiles(Path.Combine(root, "System", "Storage Transactions", "Network Qualification"), ".raptor-probe-*", SearchOption.TopDirectoryOnly).Any(), "Network qualification should verify bounded storage operations and remove every probe file.");
         Assert(!File.Exists(Path.Combine(root, "information-system-user-tracker.json")) && File.Exists(Path.Combine(root, "System", "information-system-user-tracker.json")) && !File.Exists(Path.Combine(root, "tracker-document-renamer-queue.json")) && File.Exists(Path.Combine(root, "System", "tracker-document-renamer-queue.json")) && !File.Exists(Path.Combine(root, "tracker-active-session.json")) && File.Exists(Path.Combine(root, "System", "tracker-active-session.json")), "Mapping should migrate legacy operational JSON files into System without losing them.");
         Assert(Directory.Exists(Path.Combine(root, "Organizations")), "Mapping should create the top-level Organizations folder.");
