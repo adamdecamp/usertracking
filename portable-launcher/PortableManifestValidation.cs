@@ -47,6 +47,40 @@ internal sealed partial class PortableStorage
         }
     }
 
+    // Manifest v9 adds optional per-system pendingEvidenceMoves: file moves that record changes queued for Session Commit.
+    internal static void ValidateSystemPendingEvidenceMoves(Dictionary<string, object> system)
+    {
+        if (!system.ContainsKey("pendingEvidenceMoves")) return;
+        object[] moves = system["pendingEvidenceMoves"] as object[];
+        if (moves == null || moves.Length > 5000) throw new InvalidDataException("A system record has an invalid pendingEvidenceMoves list.");
+        var ids = new HashSet<string>(StringComparer.Ordinal);var works = new HashSet<string>(new[] { "archive-user", "restore-saar", "relabel-user", "archive-file", "archive-deleted-user" }, StringComparer.Ordinal);
+        foreach (object raw in moves)
+        {
+            Dictionary<string, object> move = raw as Dictionary<string, object>;
+            if (move == null) throw new InvalidDataException("A pending evidence move is invalid.");
+            if (!ids.Add(RequiredBoundedString(move, "id", 100, false, "pending evidence move"))) throw new InvalidDataException("The pending evidence moves contain a duplicate ID.");
+            string work = RequiredBoundedString(move, "work", 30, false, "pending evidence move"), userId = RequiredBoundedString(move, "userId", 100, false, "pending evidence move"), requestedAt = RequiredBoundedString(move, "requestedAt", 50, false, "pending evidence move");
+            RequiredBoundedString(move, "userLabel", 300, true, "pending evidence move");RequiredBoundedString(move, "requestedBy", 500, false, "pending evidence move");
+            DateTime parsed;if (!works.Contains(work) || !DateTime.TryParse(requestedAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out parsed)) throw new InvalidDataException("A pending evidence move is invalid.");
+            if (move.ContainsKey("file") != (work == "archive-file") || move.ContainsKey("user") != (work == "archive-deleted-user")) throw new InvalidDataException("A pending evidence move has fields that do not match its work.");
+            if (move.ContainsKey("file"))
+            {
+                Dictionary<string, object> file = move["file"] as Dictionary<string, object>;
+                if (file == null || !file.ContainsKey("path")) throw new InvalidDataException("A pending evidence move is missing its file.");
+                ValidateArtifactRecord(file);
+            }
+            if (move.ContainsKey("user"))
+            {
+                Dictionary<string, object> user = move["user"] as Dictionary<string, object>;
+                if (user == null || !String.Equals(RequiredBoundedString(user, "id", 100, false, "pending evidence move"), userId, StringComparison.Ordinal)) throw new InvalidDataException("A pending evidence move names a different user.");
+                RequiredBoundedString(user, "last", 100, true, "pending evidence move");RequiredBoundedString(user, "first", 100, true, "pending evidence move");RequiredBoundedString(user, "organization", 200, true, "pending evidence move");RequiredBoolean(user, "disabled", "pending evidence move");
+                object[] artifacts = user.ContainsKey("artifacts") ? user["artifacts"] as object[] : null;
+                if (artifacts == null || artifacts.Length > 100) throw new InvalidDataException("A pending evidence move has an invalid artifact list.");
+                foreach (object artifact in artifacts) { Dictionary<string, object> item = artifact as Dictionary<string, object>;if (item == null) throw new InvalidDataException("A pending evidence move has an invalid artifact.");ValidateArtifactRecord(item); }
+            }
+        }
+    }
+
     private static void ValidateExtractionProvenance(Dictionary<string, object> provenance)
     {
         var keys = new HashSet<string>(new[] { "identity", "organization", "officialEmail", "designation", "accountType" }, StringComparer.Ordinal);var sources = new HashSet<string>(new[] { "Filename", "Organization Folder", "SAAR AcroForm", "DD2875 XFA", "Selectable PDF Text", "Operator" }, StringComparer.Ordinal);if (provenance.Count > keys.Count) throw new InvalidDataException("A user extraction-provenance record exceeds its field limit.");

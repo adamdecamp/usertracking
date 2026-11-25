@@ -43,7 +43,7 @@ test('packages the R.A.P.T.O.R. brand and application icons consistently',()=>{
  assert.ok(portableIndex.includes(`/favicon.ico?v=${packageData.version}`));
  assert.match(launcher,/path == "\/favicon\.ico" \|\| path == "\/raptor-icon\.png"/);
  assert.match(launcher,/result\.Add\("\/raptor-icon\.png", new WebAsset \{ Bytes = LoadResource\("Tracker\.BrandLogo"\), ContentType = "image\/png" \}\)/);
- assert.match(page,/archived\.blockingErrors\.length/);
+ assert.match(page,/\(isMissingEvidenceError\(error\)\?missingErrors:blockingErrors\)\.push\(message\)/);
  assert.doesNotMatch(page,/Delete user completed with missing evidence files/);
  assert.doesNotMatch(page,/Disable user completed with missing evidence files/);
  assert.match(page,/formatDeleteUserCompletionAudit/);

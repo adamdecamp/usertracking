@@ -131,17 +131,17 @@ export default function Guide(){
    <h3>Edit, Disable, Re-Enable, or Delete</h3>
    <ul>
     <li>Open a User Record and choose <b>Edit User Information</b> to correct name, organization, middle initial, or Official Email.</li>
-    <li>Name or organization corrections save the User Record first, before any evidence file is relabeled or moved.</li>
-    <li>Available evidence is then relabeled as best-effort follow-up work without overwriting collisions.</li>
-    <li>Name or organization corrections also relabel associated Archive and Rework evidence while keeping each file in the same storage category.</li>
+    <li><b>Changes save right away; files move at Session Commit.</b> Editing, disabling, re-enabling, deleting a user, and moving evidence from one user to another save the record locally at once. The file renames and moves they need are queued and run at the next <b>Session Commit</b> (or at logoff), before the database is published, so you do not wait on the shared folder while you work.</li>
+    <li>Queued moves follow the record as it stands at commit. If you disable a user and re-enable them before committing, nothing is archived.</li>
+    <li>Name or organization corrections rename available evidence at commit without overwriting collisions, including associated Archive and Rework evidence, which stays in the same storage category.</li>
     <li>If an individual file is stale, unavailable, or slow, its existing association remains with the corrected user and the file is listed for later Reconciliation. The user correction is not reversed.</li>
     <li>A pre-existing duplicate identity or Official Email is flagged for Reconciliation but does not block an operator from correcting the User Record.</li>
     <li>Disable normally requires an updated SAAR; a documented justification may override the upload.</li>
-    <li>Disabling preserves supporting-document status and archives associated evidence.</li>
+    <li>Disabling preserves supporting-document status. Its evidence moves to the organization Archive at the next Session Commit.</li>
     <li>A newer active SAAR may propose reactivation, but an operator must approve it.</li>
-    <li>Manual re-enable restores the newest disabled SAAR when no replacement SAAR is supplied.</li>
-    <li>Deleting a user requires a written justification and confirmation.</li>
-    <li>Missing files are logged but do not block an authorized disable or delete.</li>
+    <li>Manual re-enable brings the newest disabled SAAR back to the active SAAR folder at the next Session Commit when no replacement SAAR is supplied.</li>
+    <li>Deleting a user requires a written justification and confirmation. The record is removed right away; its evidence is found and archived at the next Session Commit.</li>
+    <li>At commit, a file that is already missing is logged and skipped. A file that cannot be moved for another reason (for example, the shared folder is busy) stays queued and is tried again at the next commit; the commit summary lists it as a warning.</li>
    </ul>
    <h3>User Directory</h3>
    <ul>

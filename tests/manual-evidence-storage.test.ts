@@ -51,24 +51,24 @@ test('missing supporting evidence does not change the single-SAAR storage path',
  assert.match(addUser,/missing evidence override/);
 });
 
-test('manual disable stores a disabled-name SAAR and moves it into the permanent SAAR Archive',()=>{
+test('manual disable stores a disabled-name SAAR now and archives it with the other files at Session Commit',()=>{
  assert.match(store,/disabledSaar:kind==='SAAR'&&disabledSaar/);
- assert.match(page,/async function storeAndArchiveDisabledSaar/);
- assert.match(page,/storeEvidenceArtifact\(root,user,'SAAR',file,'Manual Update',true\)/);
- assert.match(page,/archiveFilename:stored\.filename/);
- assert.match(page,/disabledSaarArchive=await storeAndArchiveDisabledSaar\(root,draft,saar\)/);
- assert.match(page,/stored the updated disabled SAAR in the permanent SAAR Archive/);
+ assert.doesNotMatch(page,/async function storeAndArchiveDisabledSaar/,'the upload is no longer moved to the SAAR Archive while the operator waits');
+ assert.match(page,/if\(saar\)replacements\.set\('SAAR',await storeEvidenceArtifact\(root,draft,'SAAR',saar,'Manual Update',disabling\)\)/);
+ assert.match(page,/moves=disabling\?\[newPendingEvidenceMove\('archive-user',draft,currentActor\(\)\)\]/);
+ assert.match(page,/queued its evidence files for the organization Archive at the next Session Commit/);
 });
 
-test('manual re-enable restores the newest disabled SAAR to the active folder without the disabled marker',()=>{
+test('manual re-enable queues the newest disabled SAAR to return to the active folder at Session Commit',()=>{
  assert.match(page,/async function restoreDisabledSaarForReactivation/);
  assert.match(page,/disabledSaarFilename\(artifact\.filename\)/);
  assert.match(page,/sort\(\(left,right\)=>parseDate\(right\.filename\)!\.getTime\(\)-parseDate\(left\.filename\)!\.getTime\(\)\)\[0\]/);
  assert.match(page,/target=preserveEvidenceExtension\(located\.path,filename\)/,'a disabled SAAR stored as a plain PDF keeps its .pdf extension');
  assert.match(page,/relocateUserEvidenceFile\(root,located\.path,located\.ref,user,'SAAR',target\)/);
- assert.match(page,/if\(reactivating&&!replacements\.has\('SAAR'\)\)/);
- assert.match(page,/baseArtifacts=reactivating\?draft\.artifacts/);
- assert.match(page,/restored the disabled SAAR to the active SAAR folder/);
+ assert.match(page,/restoreQueued=reactivating&&!replacements\.has\('SAAR'\)/);
+ assert.match(page,/restoreQueued\?\[newPendingEvidenceMove\('restore-saar',draft,currentActor\(\)\)\]/);
+ assert.match(page,/restoreSaar:user=>restoreDisabledSaarForReactivation\(root,user\)/,'Session Commit performs the restore');
+ assert.doesNotMatch(page,/restoredDisabledSaar=await restoreDisabledSaarForReactivation/,'the restore no longer runs while the operator waits');
 });
 
 test('encrypted evidence requires the complete filename gate in manual storage and Sync',()=>{

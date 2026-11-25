@@ -5,6 +5,7 @@
  * module. Those concerns belong to the presentation and infrastructure layers.
  */
 import type {OrganizationContact} from './organization-contacts.ts';
+import type {PendingEvidenceMove} from './pending-evidence-moves.ts';
 
 export type ComplianceException={
  id:string;
@@ -28,6 +29,8 @@ export type SystemRecord={
  timeZone?:string;
  /** Manifest v8: points of contact for each organization in this system. */
  organizationContacts?:OrganizationContact[];
+ /** Manifest v9: file moves recorded by record changes, run at the next Session Commit. */
+ pendingEvidenceMoves?:PendingEvidenceMove[];
 };
 
 export type ArtifactSource='Manual Add'|'Manual Update'|'Sync';

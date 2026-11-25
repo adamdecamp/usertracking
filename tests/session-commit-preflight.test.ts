@@ -82,7 +82,7 @@ test('Session Commit queue wait matches its long-running transport window',()=>{
 test('logoff rechecks local evidence after a clean manual commit even when React state is unchanged',()=>{
  const shutdown=page.slice(page.indexOf('async function publishForShutdown'),page.indexOf('async function releaseLeaseForShutdown'));
  const statusPath=page.slice(page.indexOf('async function publishSystemWorkspace'),page.indexOf('async function publishForShutdown'));
- assert.match(shutdown,/withOperationTimeout\(signal=>publishSystemWorkspace\(root,systemId,systems,users,signal\)/,'Every shutdown path must enter the same local preflight used by manual Session Commit.');
+ assert.match(shutdown,/const queued=await runQueuedEvidenceMoves\(root,systemId\),result=await withOperationTimeout\(signal=>publishSystemWorkspace\(root,systemId,queued\.systems,queued\.users,signal\)/,'Every shutdown path must run queued file moves, then enter the same local preflight used by manual Session Commit.');
  assert.match(statusPath,/'workspace-status'/,'The shared shutdown path must observe evidence-only Incoming changes through protected local status.');
  assert.match(statusPath,/if\(status\.noChanges\)[\s\S]*?return/,'Only an authoritative no-change response may skip workspace-publish.');
  assert.doesNotMatch(shutdown,/stateHash[\s\S]*?return\{performed:false/,'A matching browser state hash must not bypass the local evidence check.');

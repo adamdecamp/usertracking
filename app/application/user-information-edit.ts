@@ -30,9 +30,10 @@ export function userInformationEvidenceWarning(issueCount:number,issueDetails:st
  return`The user record was saved. ${issueCount} associated evidence file${issueCount===1?' was':'s were'} not relabeled and remain recorded at the prior filename or location: ${issueDetails}\n\nThe completed user-record change and this evidence exception were recorded in Administrative Change History. Run Reconciliation when you are ready to review the retained file locations.`;
 }
 
-export function userInformationEditNotice(issueCount:number,issueDetails:string,duplicateDetail:string){
- if(issueCount||duplicateDetail)return{message:[issueCount?userInformationEvidenceWarning(issueCount,issueDetails):'',duplicateDetail].filter(Boolean).join(' '),tone:'warning' as const,title:issueCount?'User Updated — Evidence Needs Review':'User Updated — Duplicate Review Needed'};
- return{message:'The user information and associated evidence references were updated.',tone:'success' as const,title:'User Information Updated'};
+export function userInformationEditNotice(issueCount:number,issueDetails:string,duplicateDetail:string,renameQueued=false){
+ const queued=renameQueued?'The user information is saved. Associated evidence files are renamed to match at the next Session Commit.':'';
+ if(issueCount||duplicateDetail)return{message:[queued,issueCount?userInformationEvidenceWarning(issueCount,issueDetails):'',duplicateDetail].filter(Boolean).join(' '),tone:'warning' as const,title:issueCount?'User Updated — Evidence Needs Review':'User Updated — Duplicate Review Needed'};
+ return{message:queued||'The user information and associated evidence references were updated.',tone:'success' as const,title:'User Information Updated'};
 }
 
 /**

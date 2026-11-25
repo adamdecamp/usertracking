@@ -82,3 +82,4 @@ tests/directory-csv.test.ts
 tests/user-compliance.test.ts
 tests/ui-sharing-filters.test.ts
 tests/next-steps-a11y.test.ts
+tests/pending-evidence-moves.test.ts
