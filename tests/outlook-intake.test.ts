@@ -13,7 +13,7 @@ const users=[
 ];
 const saved={filename:'Shaw_Vivian_(GOV)_DTA_Training_26AUG2026.pdf',sender:'vivian.shaw@example.mil',receivedUtc:'2026-11-20T15:00:00.0000000Z',organization:'GOV'};
 const skipped={filename:'scan001.pdf',sender:'vivian.shaw@example.mil',receivedUtc:'2026-11-20T15:00:00.0000000Z',reason:'The filename does not follow Last_First_(ORG)_Document_DDMMMYYYY.pdf.'};
-const result:OutlookIntakeResult={cancelled:false,folder:'RAPTOR Intake',scanned:7,previouslyProcessed:2,withoutPdf:1,alreadyRecorded:0,saved:[saved],skipped:[skipped]};
+const result:OutlookIntakeResult={cancelled:false,folder:'RAPTOR Intake',scanned:7,previouslyProcessed:2,withoutPdf:1,alreadyRecorded:0,duplicates:0,saved:[saved],skipped:[skipped]};
 
 test('only Official Emails of users in the selected system become approved senders',()=>{
  assert.deepEqual(outlookIntakeSenders(users,'s1'),['supervisor@example.mil','vivian.shaw@example.mil']);
@@ -134,6 +134,19 @@ test('PDFs already recorded in the database are reported separately and never co
  assert.equal(outlookIntakeSummary(decoded),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last 30 days (2 already checked); 1 PDF already recorded and not copied; 1 attachment skipped.');
  const intake=readFileSync(new URL('../portable-launcher/OutlookIntake.cs',import.meta.url),'utf8');
  assert.ok(intake.indexOf('recorded.Value.TryGetValue')<intake.indexOf('if (!approvedSender)\r\n')||intake.indexOf('recorded.Value.TryGetValue')<intake.indexOf('if (!approvedSender)\n'),'the duplicate check runs before any hold, so a recorded copy never needs attention');
+});
+
+test('PDFs already waiting for Sync, held in Needs Attention, or copied earlier in the check are reported as duplicates',()=>{
+ const duplicate={...skipped,filename:'Shaw_Vivian_(GOV)_DTA_Training_06MAY2026.pdf',reason:'Duplicate: this exact PDF is copied earlier in this check as Shaw_Vivian_(GOV)_DTA_Training_05MAY2026.pdf in GOV, so it was not copied again.',duplicate:true as const};
+ const decoded=decodeOutlookIntakeResult({...result,duplicates:1,skipped:[skipped,duplicate]});
+ assert.equal(decoded.duplicates,1);
+ assert.equal(decoded.skipped[1].duplicate,true);
+ assert.equal(decodeOutlookIntakeResult({...result,duplicates:undefined}).duplicates,0,'an older launcher reports no duplicates');
+ assert.throws(()=>decodeOutlookIntakeResult({...result,saved:[{...saved,duplicate:true}]}),/duplicate flag/);
+ assert.equal(outlookIntakeSummary(decoded),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last 30 days (2 already checked); 1 duplicate PDF already waiting and not copied again; 1 attachment skipped.');
+ const intake=readFileSync(new URL('../portable-launcher/OutlookIntake.cs',import.meta.url),'utf8');
+ const recordedCheck=intake.indexOf('OutlookRecordedMatch(recorded.Value'),waitingCheck=intake.indexOf('waiting.Value.Hashes.TryGetValue(pdfHash'),firstHold=intake.indexOf('if (!approvedSender)\r\n')>=0?intake.indexOf('if (!approvedSender)\r\n'):intake.indexOf('if (!approvedSender)\n');
+ assert.ok(recordedCheck>0&&recordedCheck<waitingCheck&&waitingCheck<firstHold,'the duplicate check runs after the recorded check and before any hold, so a duplicate never needs attention');
 });
 
 test('Check Outlook asks for a folder when none is saved or the saved one is gone',()=>{

@@ -31,9 +31,9 @@ export function outlookFolderPrompt(missing?:string){
 }
 
 export function outlookIntakeSummary(result:OutlookIntakeResult){
- const copied=result.saved.length,held=result.skipped.filter(file=>file.held).length,recorded=result.skipped.filter(file=>file.recorded).length,skipped=result.skipped.length-held-recorded,plural=(count:number,word:string)=>`${count} ${word}${count===1?'':'s'}`;
+ const copied=result.saved.length,held=result.skipped.filter(file=>file.held).length,recorded=result.skipped.filter(file=>file.recorded).length,duplicates=result.skipped.filter(file=>file.duplicate).length,skipped=result.skipped.length-held-recorded-duplicates,plural=(count:number,word:string)=>`${count} ${word}${count===1?'':'s'}`;
  const lead=copied?`Copied ${plural(copied,'PDF')} from ${result.folder||'Outlook'} into organization intake. Start Daily Sync to review ${copied===1?'it':'them'}; no user record changes until you approve.`:`No new evidence was found in ${result.folder||'Outlook'}.`;
- return `${lead} Read ${plural(result.scanned,'message')} from the last ${outlookIntakeLookbackDays} days${result.previouslyProcessed?` (${result.previouslyProcessed} already checked)`:''}${recorded?`; ${plural(recorded,'PDF')} already recorded and not copied`:''}${held?`; ${plural(held,'attachment')} added to Needs Attention`:''}${skipped?`; ${plural(skipped,'attachment')} skipped`:''}.`;
+ return `${lead} Read ${plural(result.scanned,'message')} from the last ${outlookIntakeLookbackDays} days${result.previouslyProcessed?` (${result.previouslyProcessed} already checked)`:''}${recorded?`; ${plural(recorded,'PDF')} already recorded and not copied`:''}${duplicates?`; ${plural(duplicates,'duplicate PDF')} already waiting and not copied again`:''}${held?`; ${plural(held,'attachment')} added to Needs Attention`:''}${skipped?`; ${plural(skipped,'attachment')} skipped`:''}.`;
 }
 
 export const outlookHeldReasonLabel:Record<OutlookHeldReason,string>={sender:'Unknown Sender',filename:'Filename Not Recognized',organization:'Organization Not Found',conflict:'Name Already Waiting',invalid:'Not a Usable PDF'};

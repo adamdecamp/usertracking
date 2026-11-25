@@ -235,6 +235,7 @@ export default function Guide(){
    </ol>
    <ul>
     <li>Outlook is only read. Nothing is moved, deleted, flagged, or sent, and each message is checked only once per computer.</li>
+    <li>Duplicates are compared by file content, not by name. A PDF is not copied again when the same PDF is already waiting for Sync, already held under Needs Attention, or was already copied from another email in the same check. The result lists each duplicate and where the original already is.</li>
     <li>Attachments that do not match are held under <b>Needs Attention</b> on this computer instead of being skipped. Each one shows why it was held, and only the fixes that apply to it:
      <ul>
       <li><b>Organization Not Found:</b> choose the organization. The organization code in the filename is corrected to match.</li>
