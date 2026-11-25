@@ -343,6 +343,10 @@ export default function Guide(){
     <li>Set User Directory filters first.</li>
     <li>Choose <b>Export CSV</b> beside Add User.</li>
     <li>The export contains the complete filtered result, not only the visible page.</li>
+    <li>To export one organization, choose it in the <b>Storage Org</b> filter first. The file is named with the system, organization, and date.</li>
+    <li>Each user is one row. The first column, <b>Compliance</b>, says <b>Compliant</b>, <b>Not Compliant</b>, or <b>Disabled</b>. In Excel, choose <b>Data &gt; Filter</b> and filter that column.</li>
+    <li><b>Requirements not met</b> and <b>Action needed</b> list what each user still needs, such as <i>DoD Cyber Cert: Overdue 12 Days</i>. Each requirement also has its own column; one a user does not need says <b>Not required</b>.</li>
+    <li>A user is compliant when every required item is current. An item due within 30 days still counts as current. An approved exception is shown beside the item but does not make the user compliant, matching the dashboard totals.</li>
     <li>Use <b>Reset Filters</b> before exporting all users in the selected system.</li>
    </ul>
    <h3>Organization Snapshot</h3>
