@@ -84,4 +84,5 @@ tests/ui-sharing-filters.test.ts
 tests/next-steps-a11y.test.ts
 tests/pending-evidence-moves.test.ts
 tests/last-results.test.ts
+tests/sync-unchanged-save.test.ts
 tests/rework-marker.test.ts
