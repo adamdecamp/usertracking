@@ -25,7 +25,7 @@ internal sealed partial class PortableStorage
         var index = new OutlookWaitingIndex();
         string organizationsRoot = Path.Combine(LocalEvidenceRoot(systemId), "Organizations");
         int files = 0;
-        // New intake lands in the organization folder itself and corrected files in its Rework folder; both wait for Sync.
+        // New and REWORK-marked intake waits in the organization folder itself; a legacy Rework folder is still checked.
         foreach (string organizationRoot in Directory.Exists(organizationsRoot) ? Directory.EnumerateDirectories(organizationsRoot) : Enumerable.Empty<string>())
         {
             string organization = Path.GetFileName(organizationRoot);
