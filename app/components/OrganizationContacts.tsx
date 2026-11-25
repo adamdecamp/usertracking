@@ -9,7 +9,7 @@ type Draft={id:string;organization:string;position:string;customPosition:string;
 const placeholder=(type:ContactMethodType)=>type==='Email'?'name@example.mil':'(555) 555-0100 x123';
 
 /** Program Manager, CPSO/FSO/GSSO, ISSM, ISSO, System Administrator, and custom positions for each organization. */
-export function OrganizationContacts({organizations,contacts,onSave}:{organizations:readonly string[];contacts:readonly OrganizationContact[];onSave:(contacts:OrganizationContact[])=>Promise<void>}){
+export function OrganizationContacts({organizations,contacts,onSave,readOnly=false}:{organizations:readonly string[];contacts:readonly OrganizationContact[];onSave:(contacts:OrganizationContact[])=>Promise<void>;readOnly?:boolean}){
  const[draft,setDraft]=useState<Draft>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[status,setStatus]=useState(''),[filter,setFilter]=useState('all');
  const choices=contactPositionChoices(contacts),allOrganizations=Array.from(new Set([...organizations,...contacts.map(contact=>contact.organization)])).sort((left,right)=>left.localeCompare(right));
  const shown=sortContacts(contacts.filter(contact=>filter==='all'||contact.organization===filter)),groups=Array.from(new Set(shown.map(contact=>contact.organization)));
@@ -22,12 +22,12 @@ export function OrganizationContacts({organizations,contacts,onSave}:{organizati
  const updateMethod=(index:number,change:Partial<ContactMethod>)=>setDraft(current=>current&&{...current,methods:current.methods.map((method,position)=>position===index?{...method,...change}:method)});
  return <section className="organization-contacts" aria-label="Organization Contacts">
   <h3>Organization Contacts</h3>
-  <p className="hint">Record who to contact for each organization. Choose a standard position or <b>Other</b> to create your own; custom positions are offered for every organization in this system. Changes are saved to the database, audited, and included in the next Session Commit.</p>
+  {readOnly?<p className="hint">This session is read-only, so contacts can be viewed but not changed. Select an email address or phone number to contact them.</p>:<p className="hint">Record who to contact for each organization. Choose a standard position or <b>Other</b> to create your own; custom positions are offered for every organization in this system. Changes are saved to the database, audited, and included in the next Session Commit.</p>}
   <div className="directory-actions">
    <label className="organization-contacts-filter">Organization<select aria-label="Filter Contacts by Organization" value={filter} onChange={event=>setFilter(event.target.value)}><option value="all">All Organizations</option>{allOrganizations.map(value=><option key={value}>{value}</option>)}</select></label>
-   <button type="button" className="primary" disabled={busy||!!draft||!allOrganizations.length||contacts.length>=contactLimits.perSystem} onClick={startAdd}>Add Contact</button>
+   {!readOnly&&<button type="button" className="primary" disabled={busy||!!draft||!allOrganizations.length||contacts.length>=contactLimits.perSystem} onClick={startAdd}>Add Contact</button>}
   </div>
-  {!allOrganizations.length&&<p className="hint">Create an organization before adding its contacts.</p>}
+  {!readOnly&&!allOrganizations.length&&<p className="hint">Create an organization before adding its contacts.</p>}
   {draft&&<div className="organization-contact-form">
    <div className="form-grid">
     <label><span>Organization</span><select aria-label="Contact Organization" value={draft.organization} onChange={event=>update({organization:event.target.value})}><option value="">Choose…</option>{allOrganizations.map(value=><option key={value}>{value}</option>)}</select></label>
@@ -52,9 +52,9 @@ export function OrganizationContacts({organizations,contacts,onSave}:{organizati
    <h4>{organization}</h4>
    <div className="system-list">{shown.filter(contact=>contact.organization===organization).map(contact=><div key={contact.id}>
     <div><strong>{contact.position}</strong><small>{contact.name}</small><small>{contact.methods.map((method,index)=><span key={index}>{index>0?' · ':''}<a href={method.type==='Email'?`mailto:${method.value}`:`tel:${method.value.replace(/[^0-9+]/g,'')}`}>{method.value}</a></span>)}</small></div>
-    <div className="directory-actions"><button type="button" disabled={busy||!!draft} onClick={()=>startEdit(contact)}>Edit</button><button type="button" disabled={busy||!!draft} onClick={()=>remove(contact)}>Remove</button></div>
+    {!readOnly&&<div className="directory-actions"><button type="button" disabled={busy||!!draft} onClick={()=>startEdit(contact)}>Edit</button><button type="button" disabled={busy||!!draft} onClick={()=>remove(contact)}>Remove</button></div>}
    </div>)}</div>
   </div>)}
-  {!contacts.length&&allOrganizations.length>0&&<div className="empty">No contacts have been added yet.</div>}
+  {!contacts.length&&(readOnly||allOrganizations.length>0)&&<div className="empty">No contacts have been added yet.</div>}
  </section>;
 }

@@ -19,7 +19,7 @@ internal static class OutlookDraftFallback
 
     internal static byte[] BuildEml(string to, IEnumerable<string> bcc, string subject, string htmlBody, IEnumerable<string> attachmentPaths)
     {
-        string safeTo = Header(to, "To", 254), safeSubject = Header(subject, "subject", 200), safeBcc = String.Join(", ", (bcc ?? Enumerable.Empty<string>()).Select(value => Header(value, "BCC", 254)));
+        string safeTo = String.Join(", ", (to ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries).Select(value => Header(value.Trim(), "To", 254)).Where(value => value.Length > 0)), safeSubject = Header(subject, "subject", 200), safeBcc = String.Join(", ", (bcc ?? Enumerable.Empty<string>()).Select(value => Header(value, "BCC", 254)));
         string[] attachments = (attachmentPaths ?? Enumerable.Empty<string>()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (attachments.Length > MaximumAttachmentCount) throw new InvalidDataException("The fallback draft has too many attachments.");
         long attachmentBytes = 0;foreach (string path in attachments) { if (String.IsNullOrWhiteSpace(path) || !File.Exists(path)) throw new FileNotFoundException("A fallback draft attachment is unavailable.", path);attachmentBytes += new FileInfo(path).Length; }
@@ -46,7 +46,7 @@ internal static class OutlookDraftFallback
         catch
         {
             if ((attachmentPaths ?? Enumerable.Empty<string>()).Any()) throw;
-            string recipient = !String.IsNullOrWhiteSpace(to) ? to : "", bccQuery = String.Join(";", bcc ?? Enumerable.Empty<string>()), uri = "mailto:" + Uri.EscapeDataString(recipient) + "?subject=" + Uri.EscapeDataString(subject ?? "") + "&body=" + Uri.EscapeDataString(plainBody ?? "") + (String.IsNullOrWhiteSpace(bccQuery) ? "" : "&bcc=" + Uri.EscapeDataString(bccQuery));Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });return "mailto fallback";
+            string recipient = !String.IsNullOrWhiteSpace(to) ? String.Join(",", to.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries).Select(value => value.Trim())) : "", bccQuery = String.Join(";", bcc ?? Enumerable.Empty<string>()), uri = "mailto:" + Uri.EscapeDataString(recipient) + "?subject=" + Uri.EscapeDataString(subject ?? "") + "&body=" + Uri.EscapeDataString(plainBody ?? "") + (String.IsNullOrWhiteSpace(bccQuery) ? "" : "&bcc=" + Uri.EscapeDataString(bccQuery));Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });return "mailto fallback";
         }
     }
 }

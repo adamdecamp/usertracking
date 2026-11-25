@@ -73,7 +73,8 @@ export default function Guide(){
    </ul>
    <h3>Organization Contacts</h3>
    <ul>
-    <li>In <b>Manage Organizations</b>, choose <b>Add Contact</b> to record who to contact for an organization.</li>
+    <li>Choose <b>Organization Contacts</b> at the top of the User Directory, or under <b>User Administration</b>, to open the contacts directly. Read-Only sessions can view them and select an email address or phone number, but cannot change them.</li>
+    <li>Choose <b>Add Contact</b> to record who to contact for an organization. Contacts are also shown at the bottom of <b>Manage Organizations</b>.</li>
     <li>Choose a position: <b>Program Manager</b>, <b>CPSO/FSO/GSSO</b>, <b>ISSM</b>, <b>ISSO</b>, or <b>System Administrator</b>. Choose <b>Other</b> to enter a position of your own; it is then offered for every organization in this system.</li>
     <li>Enter the contact&apos;s name, then choose <b>Email</b> or <b>Phone</b> and enter the address or number. Use <b>Add Email or Phone</b> for up to four entries per contact.</li>
     <li>Contacts can be edited or removed at any time. Positions are not required, so an organization without a contact is not flagged.</li>
@@ -328,6 +329,15 @@ export default function Guide(){
     <li>The PDF includes report identity, UTC time, operator, versions, scope, totals, aging, exceptions, and required breakdowns.</li>
     <li>A checksum-protected copy is stored under <code>System/Reports</code>.</li>
    </ul>
+   <h3>Email Each Organization Its Compliance Snapshot</h3>
+   <ul>
+    <li>In <b>Compliance Snapshot</b>, check <b>Email each organization its own Compliance Snapshot</b>, then check the contact positions to address, such as <b>ISSM</b> and <b>ISSO</b>.</li>
+    <li>Each selected organization gets its own PDF covering only its active users. Every PDF is stored and audited under <code>System/Reports</code> like any other Compliance Snapshot.</li>
+    <li>Each organization&apos;s PDF is attached to its own Outlook draft, addressed to its <b>Organization Contacts</b> in the checked positions. Up to 20 addresses go on the To line.</li>
+    <li>An organization with no email address for the checked positions is listed and skipped. Add one in Organization Contacts and run it again.</li>
+    <li>Drafts open one at a time. Review each draft before sending. R.A.P.T.O.R. never sends email.</li>
+    <li>This needs the R.A.P.T.O.R. portable application and Microsoft Outlook. If Outlook asks whether to allow access, choose <b>Allow</b>.</li>
+   </ul>
    <h3>CSV Export</h3>
    <ul>
     <li>Set User Directory filters first.</li>
@@ -337,7 +347,7 @@ export default function Guide(){
    </ul>
    <h3>Organization Snapshot</h3>
    <ul>
-    <li>Select one organization and enter its ISSO email.</li>
+    <li>Select one organization. Its ISSO email is filled in from Organization Contacts when one is recorded; you can change it.</li>
     <li>Include disabled users in the snapshot.</li>
     <li>Use passphrase encryption for transport outside the protected shared folder.</li>
     <li>An unencrypted snapshot is checked for file damage only; anyone could edit it and recompute its checksum. Encrypt it when the recipient must trust that it was not altered.</li>

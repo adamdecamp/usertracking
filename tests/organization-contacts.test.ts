@@ -55,11 +55,26 @@ test('contacts sort by organization, then standard position order, and edits are
 });
 
 test('contacts are edited in Manage Organizations and saved through the audited system edit',()=>{
- const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8'),panel=readFileSync(new URL('../app/components/OrganizationContacts.tsx',import.meta.url),'utf8'),manifest=readFileSync(new URL('../app/application/manifest-service.ts',import.meta.url),'utf8');
+ const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8'),panel=readFileSync(new URL('../app/components/OrganizationContacts.tsx',import.meta.url),'utf8'),modal=readFileSync(new URL('../app/components/OrganizationsModal.tsx',import.meta.url),'utf8'),manifest=readFileSync(new URL('../app/application/manifest-service.ts',import.meta.url),'utf8');
  assert.match(page,/onContacts=\{organizationContacts=>updateInformationSystem\(\{\.\.\.system,organizationContacts\}\)\}/);
- assert.match(page,/<OrganizationContacts organizations=\{organizations\} contacts=\{system\.organizationContacts\?\?\[\]\} onSave=\{onContacts\}\/>/);
+ assert.match(modal,/<OrganizationContacts organizations=\{organizations\} contacts=\{system\.organizationContacts\?\?\[\]\} onSave=\{onContacts\}\/>/);
  assert.match(page,/organizationContacts=next\.organizationContacts\?\?previous\.organizationContacts/);
  assert.match(panel,/<option value=\{otherPosition\}>Other…<\/option>/);
  assert.match(panel,/<option>Email<\/option><option>Phone<\/option>/);
  assert.match(manifest,/decodeOrganizationContacts\(s\.organizationContacts\)/);
+});
+
+test('Organization Contacts open directly from the User Directory and the User Administration menu, including read-only sessions',()=>{
+ const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8'),directory=readFileSync(new URL('../app/components/DirectoryHeader.tsx',import.meta.url),'utf8'),header=readFileSync(new URL('../app/components/OperatorDashboardHeader.tsx',import.meta.url),'utf8'),modal=readFileSync(new URL('../app/components/OrganizationsModal.tsx',import.meta.url),'utf8'),panel=readFileSync(new URL('../app/components/OrganizationContacts.tsx',import.meta.url),'utf8');
+ assert.match(page,/onSnapshot=\{\(\)=>setModal\('organization-status'\)\} onContacts=\{\(\)=>setModal\('contacts'\)\}/);
+ assert.match(page,/onManageOrganizations=\{\(\)=>setModal\('organizations'\)\} onContacts=\{\(\)=>setModal\('contacts'\)\}/);
+ assert.match(page,/modal==='contacts'\?'Organization Contacts'/);
+ assert.match(page,/<OrganizationContactsModal key=\{modal\}[^>]*canWrite=\{canWrite\} manage=\{modal==='organizations'\}/);
+ // The button sits before the write-only actions, so read-only sessions see it too.
+ assert.ok(directory.indexOf('Organization Contacts</button>')<directory.indexOf('{props.canWrite&&<>'));
+ assert.match(header,/runMenuAction\(props\.onContacts\)\}>Organization Contacts<\/button>/);
+ assert.match(modal,/manage&&canWrite\?<OrganizationsModal/);
+ assert.match(modal,/readOnly=\{!canWrite\}/);
+ assert.match(panel,/\{!readOnly&&<button type="button" className="primary"/);
+ assert.match(panel,/\{!readOnly&&<div className="directory-actions"><button type="button" disabled=\{busy\|\|!!draft\} onClick=\{\(\)=>startEdit\(contact\)\}>Edit/);
 });

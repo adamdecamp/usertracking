@@ -77,3 +77,4 @@ tests/read-only-recovery.test.ts
 tests/outlook-intake.test.ts
 tests/organization-contacts.test.ts
 tests/all-users-email.test.ts
+tests/organization-report-email.test.ts

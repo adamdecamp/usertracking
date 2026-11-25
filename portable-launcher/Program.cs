@@ -597,7 +597,7 @@ internal sealed partial class TrackerContext : ApplicationContext
         catch (Exception error) { throw new InvalidDataException("The Outlook draft request is not valid JSON.", error); }
         if (request == null) throw new InvalidDataException("The Outlook draft request is invalid.");
         string to = request.ContainsKey("to") ? Convert.ToString(request["to"]) : "", bcc = request.ContainsKey("bcc") ? Convert.ToString(request["bcc"]) : "", subject = request.ContainsKey("subject") ? Convert.ToString(request["subject"]) : "", body = request.ContainsKey("body") ? Convert.ToString(request["body"]) : "";
-        string attachmentFilename = request.ContainsKey("attachmentFilename") ? Convert.ToString(request["attachmentFilename"]) : "", attachmentText = request.ContainsKey("attachmentText") ? Convert.ToString(request["attachmentText"]) : "";
+        string attachmentFilename = request.ContainsKey("attachmentFilename") ? Convert.ToString(request["attachmentFilename"]) : "", attachmentText = request.ContainsKey("attachmentText") ? Convert.ToString(request["attachmentText"]) : "", reportFilename = request.ContainsKey("reportFilename") ? Convert.ToString(request["reportFilename"]) : "", reportSha256 = request.ContainsKey("reportSha256") ? Convert.ToString(request["reportSha256"]) : "";
         object[] requestedTemplateValues = request.ContainsKey("templateTypes") ? request["templateTypes"] as object[] : null;
         string[] templateTypes = requestedTemplateValues == null ? new string[0] : requestedTemplateValues.Select(value => Convert.ToString(value)).Where(value => !String.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
         string legacyTemplateType = request.ContainsKey("templateType") ? Convert.ToString(request["templateType"]) : "";
@@ -613,7 +613,8 @@ internal sealed partial class TrackerContext : ApplicationContext
         string[] auditSystemIds = requestedAuditSystemIds.Concat(new[] { systemId }).Distinct(StringComparer.Ordinal).ToArray();
         if (auditSystemIds.Length == 0 || auditSystemIds.Length > 40) throw new InvalidDataException("The Outlook audit-system list is invalid.");
         if (bcc.Length > 8000 || bcc.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook BCC list is invalid.");
-        if (to.Length > 254 || to.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook To address is invalid.");
+        // An organization email may address several contacts; To accepts up to 20 addresses separated by semicolons.
+        if (to.Length > 5200 || to.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook To address is invalid.");
         if (String.IsNullOrWhiteSpace(subject) || subject.Length > 200 || subject.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("The Outlook subject is invalid.");
         if (body.Length > 20000 || body.IndexOf('\0') >= 0) throw new InvalidDataException("The Outlook message body is invalid or too large.");
         string[] recipients = bcc.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries).Select(value => value.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -626,12 +627,13 @@ internal sealed partial class TrackerContext : ApplicationContext
         }
         if (!String.IsNullOrWhiteSpace(to))
         {
-            try { var parsed = new System.Net.Mail.MailAddress(to.Trim());if (!String.Equals(parsed.Address, to.Trim(), StringComparison.OrdinalIgnoreCase)) throw new FormatException();to = parsed.Address; }
+            try { string[] toAddresses = to.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries).Select(value => value.Trim()).Where(value => value.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();if (toAddresses.Length == 0 || toAddresses.Length > 20) throw new FormatException();foreach (string address in toAddresses) { var parsed = new System.Net.Mail.MailAddress(address);if (address.Length > 254 || !String.Equals(parsed.Address, address, StringComparison.OrdinalIgnoreCase)) throw new FormatException(); }to = String.Join("; ", toAddresses); }
             catch { throw new InvalidDataException("The Outlook To address is invalid."); }
         }
         bool attachOrganizationSnapshot = !String.IsNullOrEmpty(attachmentText) || !String.IsNullOrEmpty(attachmentFilename);
         if (templateTypes.Length > 2 || templateTypes.Any(value => !String.Equals(value, "user-agreement", StringComparison.Ordinal) && !String.Equals(value, "8140-qualification-memo", StringComparison.Ordinal))) throw new InvalidDataException("The Outlook template list is invalid.");
-        if (attachTemplate && attachOrganizationSnapshot) throw new InvalidDataException("Template documents and an organization snapshot cannot be attached to the same Outlook draft.");
+        bool attachReport = !String.IsNullOrEmpty(reportFilename) || !String.IsNullOrEmpty(reportSha256);if (attachReport) PortableStorage.ValidateOutlookReportReference(reportFilename, reportSha256);
+        if ((attachTemplate ? 1 : 0) + (attachOrganizationSnapshot ? 1 : 0) + (attachReport ? 1 : 0) > 1) throw new InvalidDataException("Only one kind of attachment (template documents, an organization snapshot, or a Compliance Snapshot) can be added to an Outlook draft.");
         if (attachOrganizationSnapshot)
         {
             if (String.IsNullOrWhiteSpace(attachmentText) || Encoding.UTF8.GetByteCount(attachmentText) > 25 * 1024 * 1024) throw new InvalidDataException("The organization status attachment is empty or exceeds 25 MB.");
@@ -660,6 +662,7 @@ internal sealed partial class TrackerContext : ApplicationContext
                         temporaryAttachmentPaths.Add(temporaryAttachmentPath);attachmentPaths.Add(temporaryAttachmentPath);
                     }
                 }
+                else if (attachReport) { Task<string> reportLookup = Task.Run(() => storage.StageOutlookReportAttachment(systemId, reportFilename, reportSha256));if (!reportLookup.Wait(TimeSpan.FromMinutes(5))) throw new TimeoutException("The Compliance Snapshot could not be read from the Reports folder within five minutes. Confirm that the mapped folder is available and try again.");string stagedReport = reportLookup.GetAwaiter().GetResult();temporaryAttachmentPaths.Add(stagedReport);attachmentPaths.Add(stagedReport); }
                 else if (attachOrganizationSnapshot)
                 {
                     string temporaryDirectory = Path.Combine(Path.GetTempPath(), "RAPTOR", "Organization Status");Directory.CreateDirectory(temporaryDirectory);
@@ -683,7 +686,7 @@ internal sealed partial class TrackerContext : ApplicationContext
                 OutlookWhenNoDialog(() => messageType.InvokeMember("Display", BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { false }));
                 string signatureHtml = Convert.ToString(messageType.InvokeMember("HTMLBody", BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, null));
                 messageType.InvokeMember("HTMLBody", BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance, null, message, new object[] { OutlookHtmlWithSignature(htmlBody, signatureHtml) });
-                RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + (String.IsNullOrWhiteSpace(to) ? recipients.Length + " BCC recipients" : "one To recipient") + "; managed templates " + (attachTemplate ? String.Join(", ", templateTypes) + " attached" : "not applicable") + "; organization snapshot " + (attachOrganizationSnapshot ? "attached" : "not applicable") + "; from " + sentFrom + "; operator review required before sending", null, operationId);
+                RecordOutlookOutcome(auditSystemIds, "OUTLOOK DRAFT DISPLAYED: operation " + operationId + "; " + (String.IsNullOrWhiteSpace(to) ? recipients.Length + " BCC recipients" : to.Split(';').Length == 1 ? "one To recipient" : to.Split(';').Length + " To recipients") + "; managed templates " + (attachTemplate ? String.Join(", ", templateTypes) + " attached" : "not applicable") + "; organization snapshot " + (attachOrganizationSnapshot ? "attached" : "not applicable") + (attachReport ? "; compliance snapshot " + reportFilename + " attached" : "") + "; from " + sentFrom + "; operator review required before sending", null, operationId);
             }
             catch (Exception error)
             {
@@ -708,7 +711,7 @@ internal sealed partial class TrackerContext : ApplicationContext
         outlookThread.SetApartmentState(ApartmentState.STA);
         try { outlookThread.Start(); }
         catch { Interlocked.Exchange(ref outlookDraftActive, 0);throw; }
-        string[] responseAttachments = attachTemplate ? templateTypes.Select(value => String.Equals(value, "8140-qualification-memo", StringComparison.Ordinal) ? PortableStorage.QualificationMemoTemplatePattern : PortableStorage.UserAgreementTemplateFilename).ToArray() : attachOrganizationSnapshot ? new[] { attachmentFilename } : new string[0];
+        string[] responseAttachments = attachTemplate ? templateTypes.Select(value => String.Equals(value, "8140-qualification-memo", StringComparison.Ordinal) ? PortableStorage.QualificationMemoTemplatePattern : PortableStorage.UserAgreementTemplateFilename).ToArray() : attachOrganizationSnapshot ? new[] { attachmentFilename } : attachReport ? new[] { reportFilename } : new string[0];
         string responseAttachment = responseAttachments.FirstOrDefault(), responseAttachmentList = "[" + String.Join(",", responseAttachments.Select(value => "\"" + Json(value) + "\"")) + "]";
         return "{\"queued\":true,\"operationId\":\"" + operationId + "\",\"attachment\":" + (responseAttachment == null ? "null" : "\"" + Json(responseAttachment) + "\"") + ",\"attachments\":" + responseAttachmentList + "}";
     }
