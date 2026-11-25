@@ -12,6 +12,19 @@ export function storageWorkInProgress(localOperations:number,launcher?:LauncherA
  return localOperations>0||(launcher?.activeStorageRequests??0)>0||launcher?.longOperationActive===true;
 }
 
+/**
+ * Processing is never idle time: a running Sync, commit, Reconciliation, Check
+ * Outlook, report, or any in-flight storage request keeps the session active.
+ */
+export function idleClockBusy(protectedWork:boolean,processingRunning:boolean,activeStorageRequests:number){
+ return protectedWork||processingRunning||activeStorageRequests>0;
+}
+
+/** While busy the idle clock is held at now, so the 15 minutes start only when the work ends. */
+export function idleActivityTime(lastActivity:number,busy:boolean,now:number){
+ return busy?Math.max(lastActivity,now):lastActivity;
+}
+
 export function sessionIdleExpired(now:number,lastActivity:number,operationInProgress:boolean,timeout=idleTimeoutMs){
  return !operationInProgress&&now-lastActivity>=timeout;
 }
