@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {decodeOutlookFolderResult,decodeOutlookHeldList,decodeOutlookIntakeCheck,decodeOutlookIntakeResult,decodeOutlookSendFrom,type OutlookHeldItem,type OutlookIntakeResult} from '../app/infrastructure/outlook-intake-contract.ts';
-import {outlookFolderPrompt,outlookHeldCorrection,outlookHeldDraft,outlookHeldFilename,outlookIntakeRequest,outlookIntakeSenders,outlookIntakeSummary,sentOnBehalf} from '../app/application/outlook-intake.ts';
+import {outlookFolderPrompt,outlookHeldCorrection,outlookHeldDraft,outlookHeldFilename,outlookIntakeLead,outlookIntakeLookbackChoices,outlookIntakeRequest,outlookIntakeSenders,outlookIntakeSummary,outlookIntakeWindow,sentOnBehalf} from '../app/application/outlook-intake.ts';
 
 const users=[
  {systemId:'s1',email:' Vivian.Shaw@Example.mil ',last:'Shaw',first:'Vivian'},
@@ -17,8 +17,25 @@ const result:OutlookIntakeResult={cancelled:false,folder:'RAPTOR Intake',scanned
 
 test('only Official Emails of users in the selected system become approved senders',()=>{
  assert.deepEqual(outlookIntakeSenders(users,'s1'),['supervisor@example.mil','vivian.shaw@example.mil']);
- assert.deepEqual(JSON.parse(outlookIntakeRequest(users,'s1')),{senders:['supervisor@example.mil','vivian.shaw@example.mil'],days:30});
+ assert.deepEqual(JSON.parse(outlookIntakeRequest(users,'s1')),{senders:['supervisor@example.mil','vivian.shaw@example.mil'],days:7});
  assert.throws(()=>outlookIntakeRequest(users,'empty'),/no approved sender/);
+});
+
+test('Check Outlook offers 1 day, 3 days, and 1 to 4 weeks, sends the choice, and reports the period it read',()=>{
+ assert.deepEqual(outlookIntakeLookbackChoices.map(choice=>`${choice.label}=${choice.days}`),['1 day=1','3 days=3','1 week=7','2 weeks=14','3 weeks=21','4 weeks=28']);
+ for(const choice of outlookIntakeLookbackChoices)assert.equal(JSON.parse(outlookIntakeRequest(users,'s1',choice.days)).days,choice.days);
+ assert.ok(outlookIntakeLookbackChoices.every(choice=>choice.days>=1&&choice.days<=90),'every choice is within what the launcher accepts');
+ assert.throws(()=>outlookIntakeRequest(users,'s1',30),/how far back/);
+ assert.equal(outlookIntakeWindow(1),'the last day');
+ assert.equal(outlookIntakeWindow(3),'the last 3 days');
+ assert.equal(outlookIntakeWindow(7),'the last week');
+ assert.equal(outlookIntakeWindow(21),'the last 3 weeks');
+ assert.match(outlookIntakeSummary(result,3),/Read 7 messages from the last 3 days \(2 already checked\)/);
+ assert.match(outlookIntakeLead(result,1),/Read 7 messages from the last day, 2 of them already checked\.$/);
+ const panel=readFileSync(new URL('../app/components/OutlookIntakePanel.tsx',import.meta.url),'utf8');
+ assert.match(panel,/outlookIntakeRequest\(users,systemId,days\)/,'the chosen period is sent to the launcher');
+ assert.match(panel,/setResult\(checked\);setResultDays\(days\)/,'the result names the period that was actually read');
+ assert.match(panel,/<OutlookIntakeResults result=\{result\} days=\{resultDays\}/);
 });
 
 test('a file named for someone other than its sender is flagged for review',()=>{
@@ -40,8 +57,8 @@ test('the launcher response is decoded strictly',()=>{
 });
 
 test('the summary says what was copied, that Sync review comes next, and what was skipped',()=>{
- assert.equal(outlookIntakeSummary(result),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last 30 days (2 already checked); 1 attachment skipped.');
- assert.equal(outlookIntakeSummary({...result,saved:[],skipped:[],previouslyProcessed:0,scanned:1}),'No new evidence was found in RAPTOR Intake. Read 1 message from the last 30 days.');
+ assert.equal(outlookIntakeSummary(result),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last week (2 already checked); 1 attachment skipped.');
+ assert.equal(outlookIntakeSummary({...result,saved:[],skipped:[],previouslyProcessed:0,scanned:1}),'No new evidence was found in RAPTOR Intake. Read 1 message from the last week.');
 });
 
 const people=[
@@ -58,7 +75,7 @@ test('Needs Attention responses are decoded strictly',()=>{
  assert.throws(()=>decodeOutlookHeldList({...list,held:[{...list.held[0],reason:'other'}]}),/known Needs Attention reason/);
  assert.throws(()=>decodeOutlookHeldList({...list,held:[{...list.held[0],id:'../x'}]}),/Needs Attention id/);
  assert.equal(decodeOutlookIntakeResult({...result,skipped:[{...skipped,held:'0123456789abcdef0123456789abcdef'}]}).skipped[0].held,'0123456789abcdef0123456789abcdef');
- assert.equal(outlookIntakeSummary({...result,skipped:[{...skipped,held:'0123456789abcdef0123456789abcdef'}]}),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last 30 days (2 already checked); 1 attachment added to Needs Attention.');
+ assert.equal(outlookIntakeSummary({...result,skipped:[{...skipped,held:'0123456789abcdef0123456789abcdef'}]}),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last week (2 already checked); 1 attachment added to Needs Attention.');
 });
 
 test('each mismatch is prefilled from the filename and sender so only the failing field needs a choice',()=>{
@@ -86,7 +103,7 @@ test('each mismatch is prefilled from the filename and sender so only the failin
 test('Needs Attention lives in the Outlook panel and the launcher validates every correction',()=>{
  const panel=readFileSync(new URL('../app/components/OutlookIntakePanel.tsx',import.meta.url),'utf8'),hold=readFileSync(new URL('../portable-launcher/OutlookIntakeHold.cs',import.meta.url),'utf8');
  assert.match(panel,/<OutlookNeedsAttention systemId=\{systemId\} users=\{users\} request=\{request\} refreshKey=\{checks\}\/>/);
- assert.match(panel,/<OutlookIntakeResults result=\{result\} users=\{users\} systemId=\{systemId\}\/>/);
+ assert.match(panel,/<OutlookIntakeResults result=\{result\} days=\{resultDays\} users=\{users\} systemId=\{systemId\}\/>/);
  assert.match(readFileSync(new URL('../app/components/OutlookIntakeResults.tsx',import.meta.url),'utf8'),/row\.key!=='held'/,'held files are listed once, in Needs Attention, not again in the results table');
  assert.match(hold,/ValidOutlookIntakeFilename\(text\("filename"\), chosen\)/);
  assert.match(hold,/if \(chosen == null\) throw new InvalidDataException/);
@@ -132,7 +149,7 @@ test('PDFs already recorded in the database are reported separately and never co
  assert.equal(decoded.skipped[1].recorded,true);
  assert.equal(decodeOutlookIntakeResult({...result,alreadyRecorded:undefined}).alreadyRecorded,0,'a launcher without the duplicate check reports none');
  assert.throws(()=>decodeOutlookIntakeResult({...result,saved:[{...saved,recorded:true}]}),/already-recorded flag/);
- assert.equal(outlookIntakeSummary(decoded),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last 30 days (2 already checked); 1 PDF already recorded and not copied; 1 attachment skipped.');
+ assert.equal(outlookIntakeSummary(decoded),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last week (2 already checked); 1 PDF already recorded and not copied; 1 attachment skipped.');
  const intake=readFileSync(new URL('../portable-launcher/OutlookIntake.cs',import.meta.url),'utf8');
  assert.ok(intake.indexOf('recorded.Value.TryGetValue')<intake.indexOf('if (!approvedSender)\r\n')||intake.indexOf('recorded.Value.TryGetValue')<intake.indexOf('if (!approvedSender)\n'),'the duplicate check runs before any hold, so a recorded copy never needs attention');
 });
@@ -144,7 +161,7 @@ test('PDFs already waiting for Sync, held in Needs Attention, or copied earlier 
  assert.equal(decoded.skipped[1].duplicate,true);
  assert.equal(decodeOutlookIntakeResult({...result,duplicates:undefined}).duplicates,0,'an older launcher reports no duplicates');
  assert.throws(()=>decodeOutlookIntakeResult({...result,saved:[{...saved,duplicate:true}]}),/duplicate flag/);
- assert.equal(outlookIntakeSummary(decoded),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last 30 days (2 already checked); 1 duplicate PDF already waiting and not copied again; 1 attachment skipped.');
+ assert.equal(outlookIntakeSummary(decoded),'Copied 1 PDF from RAPTOR Intake into organization intake. Start Daily Sync to review it; no user record changes until you approve. Read 7 messages from the last week (2 already checked); 1 duplicate PDF already waiting and not copied again; 1 attachment skipped.');
  const intake=readFileSync(new URL('../portable-launcher/OutlookIntake.cs',import.meta.url),'utf8');
  const recordedCheck=intake.indexOf('OutlookRecordedMatch(recorded.Value'),waitingCheck=intake.indexOf('waiting.Value.Hashes.TryGetValue(pdfHash'),firstHold=intake.indexOf('if (!approvedSender)\r\n')>=0?intake.indexOf('if (!approvedSender)\r\n'):intake.indexOf('if (!approvedSender)\n');
  assert.ok(recordedCheck>0&&recordedCheck<waitingCheck&&waitingCheck<firstHold,'the duplicate check runs after the recorded check and before any hold, so a duplicate never needs attention');

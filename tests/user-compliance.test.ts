@@ -54,6 +54,6 @@ test('Check Outlook results are one row per outcome, always in the same order',(
  const rows=outlookIntakeRows(result);
  assert.deepEqual(rows.map(row=>[row.key,row.files.map(item=>item.filename)]),[['copied',['new.pdf']],['recorded',['rec.pdf']],['duplicate',['dup.pdf']],['held',['held.pdf']],['skipped',['odd.pdf']]]);
  assert.equal(rows.reduce((total,row)=>total+row.files.length,0),result.saved.length+result.skipped.length,'every attachment appears in exactly one row');
- assert.equal(outlookIntakeLead(result),'Copied 1 PDF from RAPTOR Intake. Start Daily Sync to review it; no user record changes until you approve. Read 5 messages from the last 30 days, 2 of them already checked.');
- assert.equal(outlookIntakeLead({...result,saved:[],scanned:1,previouslyProcessed:0}),'No new evidence was found in RAPTOR Intake. Read 1 message from the last 30 days.');
+ assert.equal(outlookIntakeLead(result),'Copied 1 PDF from RAPTOR Intake. Start Daily Sync to review it; no user record changes until you approve. Read 5 messages from the last week, 2 of them already checked.');
+ assert.equal(outlookIntakeLead({...result,saved:[],scanned:1,previouslyProcessed:0}),'No new evidence was found in RAPTOR Intake. Read 1 message from the last week.');
 });
