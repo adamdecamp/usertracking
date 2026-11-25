@@ -36,12 +36,13 @@ test('the User Directory shows a Compliance column, filters by it, and the dashb
  assert.match(page,/onClick=\{\(\)=>showCompliance\(complianceLabels\.compliant\)\}><span>Compliant Users/);
  assert.match(page,/onClick=\{\(\)=>showCompliance\(complianceLabels\.notCompliant\)\}><span>Non-Compliant Users/);
  assert.match(header,/aria-label="User Compliance Filter"/);
- assert.match(header,/props\.complianceFilter!==complianceFilterAll;/,'an active compliance filter enables Reset Filters');
+ assert.match(header,/const shownActive=\[!!props\.query\.trim\(\),props\.complianceFilter!==complianceFilterAll,/,'an active compliance filter enables Reset Filters');
 });
 
 test('the snapshot names say what each one produces',()=>{
  const header=readFileSync(new URL('../app/components/DirectoryHeader.tsx',import.meta.url),'utf8'),modal=readFileSync(new URL('../app/components/OrganizationStatusModal.tsx',import.meta.url),'utf8'),page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
- assert.match(header,/>Organization Status File<\/button>/);
+ assert.match(header,/onClick=\{props\.onSnapshot\}>Share with Organizations<\/button>/);
+ assert.match(readFileSync(new URL('../app/components/ShareWithOrganizationsModal.tsx',import.meta.url),'utf8'),/<strong>Organization Status File<\/strong>/);
  assert.match(page,/modal==='organization-status'\?'Organization Status File'/);
  assert.match(modal,/<h2>Organization Status File<\/h2>/);
  assert.match(modal,/Open Organization Status File \(Open Organization Snapshot in older versions\)/,'the email still helps recipients on older versions');
