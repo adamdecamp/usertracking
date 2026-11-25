@@ -161,7 +161,9 @@ test('every Outlook draft subject uses Tag — System — Topic — Detail',()=>
  assert.equal(outlookDraftSubject('Action Required','ALPHA','DoD Cyber Cert','Overdue'),'Action Required — ALPHA — DoD Cyber Cert — Overdue');
  assert.equal(outlookDraftSubject('For Review','ALPHA','User Status Snapshot','GOV'),'For Review — ALPHA — User Status Snapshot — GOV');
  assert.equal(outlookDraftSubject('Action Required','  ','User\r\nAgreement',' Missing '),'Action Required — Information System — User Agreement — Missing','blank systems get a label and line breaks never reach the subject');
- const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+ const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8')+readFileSync(new URL('../app/components/OrganizationStatusModal.tsx',import.meta.url),'utf8'),organizationEmail=readFileSync(new URL('../app/application/organization-report-email.ts',import.meta.url),'utf8');
  assert.equal((page.match(/subject=outlookDraftSubject\(/g)??[]).length,3,'all three draft builders use the shared subject');
+ assert.match(page,/subject:organizationReportSubject\(/);
+ assert.match(organizationEmail,/return outlookDraftSubject\('For Review'/,'organization Compliance Snapshot emails use the shared subject too');
  assert.equal(/subject=`/.test(page),false,'no draft builds its own subject template');
 });

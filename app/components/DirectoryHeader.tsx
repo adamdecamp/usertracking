@@ -38,6 +38,7 @@ type DirectoryHeaderProps={
  onFiltersChanged:()=>void;
  onReset:()=>void;
  onSnapshot:()=>void;
+ onContacts:()=>void;
  onExport:()=>void;
  onAdd:()=>void;
 };
@@ -52,11 +53,15 @@ export function DirectoryHeader(props:DirectoryHeaderProps){
  return <div className="directory-head">
   <div className="directory-title-row">
    <div><p className="eyebrow">User Directory</p><h2>{props.title??'No Information Systems Configured'}</h2></div>
-   {props.canWrite&&<div className="directory-actions">
-    <button disabled={!props.hasSystem||!props.hasUsers} onClick={props.onSnapshot}>Organization Snapshot</button>
-    <button disabled={!props.hasSystem||!props.hasVisibleUsers} onClick={props.onExport}>Export CSV</button>
-    <button className="primary" disabled={!props.hasSystem} onClick={props.onAdd}>+ Add User</button>
-   </div>}
+   {/* Organization Contacts is one click away for every session, including read-only ones. */}
+   <div className="directory-actions">
+    <button disabled={!props.hasSystem} onClick={props.onContacts}>Organization Contacts</button>
+    {props.canWrite&&<>
+     <button disabled={!props.hasSystem||!props.hasUsers} onClick={props.onSnapshot}>Organization Snapshot</button>
+     <button disabled={!props.hasSystem||!props.hasVisibleUsers} onClick={props.onExport}>Export CSV</button>
+     <button className="primary" disabled={!props.hasSystem} onClick={props.onAdd}>+ Add User</button>
+    </>}
+   </div>
   </div>
   <div className="filters">
    <input aria-label="Search User Directory" className={on(!!props.query.trim())} placeholder="Search Users, Usernames, Email, Storage Org, Agency, or Contractor…" value={props.query} onChange={change(props.setQuery)}/>

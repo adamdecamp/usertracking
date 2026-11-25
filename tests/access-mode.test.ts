@@ -67,7 +67,7 @@ test('Full Access requires startup integrity verification and safely falls back 
 
 test('Read-Only controls expose lookup without mutation workflows',()=>{
  assert.match(dashboard,/props\.canWrite&&<button[\s\S]{0,300}props\.onSync/);
- assert.match(directoryHeader,/props\.canWrite&&<div className="directory-actions"/);
+ assert.match(directoryHeader,/props\.canWrite&&<>[\s\S]{0,200}props\.onSnapshot[\s\S]{0,200}props\.onExport[\s\S]{0,200}props\.onAdd/);
  assert.match(page,/system\.archived\|\|trackerWindow\(\)\.__trackerAccessMode==='read-only'/);
  assert.match(page,/accessMode==='read-only'\)\{setStatusFilter\(state\)/);
 });
