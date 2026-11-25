@@ -74,7 +74,7 @@ test('both Sync modes normalize complete noncanonical ZIP names before routing a
 test('disabled users retain supporting-artifact status for reactivation review',()=>{
  assert.match(page,/const status=statusFor\(u,kind,directoryAsOf\)/);
  assert.match(page,/<Status kind=\{kind\} value=\{status\}/);
- assert.match(csvUtils,/const filterStatus=directoryStatusFor\(user,kind,asOf\)/);
+ assert.match(csvUtils,/const status=directoryStatusFor\(user,kind,asOf\)/);
  assert.doesNotMatch(page,/u\.disabled\?'':statusFor\(u,k\)/);
  assert.doesNotMatch(page,/status not applicable/);
  assert.match(page,/exception=u\.disabled\?undefined:exceptionFor\(u,kind,directoryAsOf\)/);

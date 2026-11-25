@@ -78,3 +78,4 @@ tests/outlook-intake.test.ts
 tests/organization-contacts.test.ts
 tests/all-users-email.test.ts
 tests/organization-report-email.test.ts
+tests/directory-csv.test.ts
