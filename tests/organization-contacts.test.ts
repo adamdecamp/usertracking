@@ -66,7 +66,7 @@ test('contacts are edited in Manage Organizations and saved through the audited 
 
 test('Organization Contacts open directly from the User Directory and the User Administration menu, including read-only sessions',()=>{
  const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8'),directory=readFileSync(new URL('../app/components/DirectoryHeader.tsx',import.meta.url),'utf8'),header=readFileSync(new URL('../app/components/OperatorDashboardHeader.tsx',import.meta.url),'utf8'),modal=readFileSync(new URL('../app/components/OrganizationsModal.tsx',import.meta.url),'utf8'),panel=readFileSync(new URL('../app/components/OrganizationContacts.tsx',import.meta.url),'utf8');
- assert.match(page,/onSnapshot=\{\(\)=>setModal\('organization-status'\)\} onContacts=\{\(\)=>setModal\('contacts'\)\}/);
+ assert.match(page,/onSnapshot=\{\(\)=>setModal\('share'\)\} onContacts=\{\(\)=>setModal\('contacts'\)\}/);
  assert.match(page,/onManageOrganizations=\{\(\)=>setModal\('organizations'\)\} onContacts=\{\(\)=>setModal\('contacts'\)\}/);
  assert.match(page,/modal==='contacts'\?'Organization Contacts'/);
  assert.match(page,/<OrganizationContactsModal key=\{modal\}[^>]*canWrite=\{canWrite\} manage=\{modal==='organizations'\}/);

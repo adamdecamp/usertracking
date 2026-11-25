@@ -77,6 +77,7 @@ export default function Guide(){
     <li>Choose <b>Add Contact</b> to record who to contact for an organization. Contacts are also shown at the bottom of <b>Manage Organizations</b>.</li>
     <li>Choose a position: <b>Program Manager</b>, <b>CPSO/FSO/GSSO</b>, <b>ISSM</b>, <b>ISSO</b>, or <b>System Administrator</b>. Choose <b>Other</b> to enter a position of your own; it is then offered for every organization in this system.</li>
     <li>Enter the contact&apos;s name, then choose <b>Email</b> or <b>Phone</b> and enter the address or number. Use <b>Add Email or Phone</b> for up to four entries per contact.</li>
+    <li>A User Record shows the contacts for that user&apos;s Storage Organization, so you can email or call them while working the record.</li>
     <li>Contacts can be edited or removed at any time. Positions are not required, so an organization without a contact is not flagged.</li>
     <li>Contacts are saved in the system database, included in Session Commit and backups, and every addition, change, or removal is recorded in the audit log by name and position.</li>
     <li>Contacts need database version 8. After anyone saves a system with this version, operators on older R.A.P.T.O.R. releases must update before they can open that system.</li>
@@ -143,7 +144,8 @@ export default function Guide(){
    <h3>User Directory</h3>
    <ul>
     <li>Search by name, email, Storage Organization, Affiliated Organization, contractor, privileged account, or type.</li>
-    <li>Filter by system, organization, status, role, privileged type, email, SAAR, artifact, and compliance.</li>
+    <li>Filter by system, organization, status, role, privileged type, email, SAAR, artifact, and compliance. Search, compliance, status, and Storage Org are always shown; choose <b>More Filters</b> for the rest. More Filters stays open while one of its filters is set, so no filter is ever hidden while it narrows the list.</li>
+    <li>Choose a <b>Quick View</b> for common questions: <b>Not Compliant</b>, <b>Overdue</b>, <b>Due Within 30 Days</b>, <b>Missing Items</b>, <b>SAAR Missing</b>, or <b>Official Email Missing</b>. A quick view clears the other filters first.</li>
     <li>Select <b>SAAR Missing</b> to isolate records without a SAAR.</li>
     <li>The Privileged User Type filter and column hide when General is selected.</li>
     <li>The <b>Compliance</b> column shows <b>Compliant</b>, <b>Not Compliant</b>, or <b>Disabled</b> for each user. Use the compliance filter to show only one, or choose the <b>Compliant Users</b> or <b>Non-Compliant Users</b> tile on the dashboard. The column, filter, tiles, and CSV export all use the same rule.</li>
@@ -325,6 +327,13 @@ export default function Guide(){
 
   <section id="exports">
    <h2>7. Reports, Exports, and Notification Messages</h2>
+   <h3>Share with Organizations</h3>
+   <ul>
+    <li>Choose <b>Share with Organizations</b> at the top of the User Directory. Select the organizations; each shows its active users and whether an ISSM or ISSO email is recorded.</li>
+    <li><b>Create PDF</b> or <b>Email Each Organization</b> opens Compliance Snapshot (PDF) with this system and those organizations already chosen.</li>
+    <li><b>Download CSV</b> saves one row per active user in those organizations, with Compliance first.</li>
+    <li><b>Create Status File</b> opens the Organization Status File for the one selected organization.</li>
+   </ul>
    <h3>Compliance Snapshot (PDF)</h3>
    <ul>
     <li>Choose <b>Compliance Snapshot (PDF)</b> under <b>Reports &amp; Oversight</b>. This is the PDF report; the <b>Organization Status File</b> below is a different, read-only file for an ISSO to open in R.A.P.T.O.R.</li>
@@ -355,7 +364,7 @@ export default function Guide(){
    </ul>
    <h3>Organization Status File</h3>
    <ul>
-    <li>Choose <b>Organization Status File</b> at the top of the User Directory. It makes a read-only <code>.raptor-status.json</code> file for one organization, which its ISSO opens with <b>Open Organization Status File</b> (called Open Organization Snapshot in older versions). For a PDF report, use Compliance Snapshot (PDF).</li>
+    <li>Choose <b>Share with Organizations</b> at the top of the User Directory, select one organization, then <b>Create Status File</b>. It makes a read-only <code>.raptor-status.json</code> file for one organization, which its ISSO opens with <b>Open Organization Status File</b> (called Open Organization Snapshot in older versions). For a PDF report, use Compliance Snapshot (PDF).</li>
     <li>Select one organization. Its ISSO email is filled in from Organization Contacts when one is recorded; you can change it.</li>
     <li>Include disabled users in the snapshot.</li>
     <li>Use passphrase encryption for transport outside the protected shared folder.</li>

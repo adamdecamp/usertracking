@@ -80,3 +80,4 @@ tests/all-users-email.test.ts
 tests/organization-report-email.test.ts
 tests/directory-csv.test.ts
 tests/user-compliance.test.ts
+tests/ui-sharing-filters.test.ts
