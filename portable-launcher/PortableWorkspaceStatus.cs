@@ -1,7 +1,9 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 internal sealed partial class PortableStorage
@@ -196,5 +198,39 @@ internal sealed partial class PortableStorage
     {
         FileSystemWatcher[] watchers;lock (workspaceStatusGate) { watchers = new List<FileSystemWatcher>(workspaceStatusWatchers.Values).ToArray();workspaceStatusWatchers.Clear();workspaceStatusWatcherRoots.Clear();workspaceStatusGenerations.Clear();exposedLocalWorkspaces.Clear(); }
         foreach (FileSystemWatcher watcher in watchers) try { watcher.Dispose(); } catch { }
+    }
+}
+
+/// <summary>
+/// Compares database content independently of JSON field order. Records that
+/// were reloaded from disk can serialize their fields in a different order
+/// than the browser's in-memory copy; that alone must never count as a change,
+/// rewrite the local database, or mark it for publication to the shared folder.
+/// </summary>
+internal sealed partial class PortableStorage
+{
+    private string CanonicalStateHash(Dictionary<string, object> database)
+    {
+        var state = new SortedDictionary<string, object>(StringComparer.Ordinal) { { "systems", Canonical(database["systems"]) }, { "users", Canonical(database["users"]) } };
+        return Sha256(json.Serialize(state));
+    }
+
+    private static object Canonical(object value)
+    {
+        var dictionary = value as IDictionary<string, object>;
+        if (dictionary != null)
+        {
+            var sorted = new SortedDictionary<string, object>(StringComparer.Ordinal);
+            foreach (KeyValuePair<string, object> pair in dictionary) if (pair.Value != null) sorted[pair.Key] = Canonical(pair.Value);
+            return sorted;
+        }
+        if (value is string || !(value is IEnumerable)) return value;
+        return ((IEnumerable)value).Cast<object>().Select(Canonical).ToArray();
+    }
+
+    /// <summary>True when both databases hold the same systems and users, ignoring field order and null fields.</summary>
+    private bool SameDatabaseContent(Dictionary<string, object> requested, Dictionary<string, object> existing)
+    {
+        return existing != null && String.Equals(CanonicalStateHash(requested), CanonicalStateHash(existing), StringComparison.OrdinalIgnoreCase);
     }
 }

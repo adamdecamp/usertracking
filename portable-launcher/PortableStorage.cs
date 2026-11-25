@@ -784,9 +784,9 @@ internal sealed partial class PortableStorage : IDisposable
                 state = ReadLocalWorkspaceState(workspaceRoot);
             }
             if (state == null || !IsSha256(state.BaseSharedSha256)) throw new InvalidDataException("The local workspace has not been initialized from a verified shared master database.");
-            string stateHash = StateHash(database), existingHash = null;
-            try { existingHash = StateHash(ReadLocalWorkspaceDatabase(workspaceRoot)); } catch { }
-            bool unchanged = String.Equals(stateHash, existingHash, StringComparison.OrdinalIgnoreCase);string saved = unchanged ? (String.IsNullOrWhiteSpace(state.SavedAtUtc) ? DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) : state.SavedAtUtc) : WriteLocalWorkspaceDatabase(workspaceRoot, database, state.BaseSharedSha256, true);
+            string stateHash = StateHash(database), existingHash = null;Dictionary<string, object> existingDatabase = null;
+            try { existingDatabase = ReadLocalWorkspaceDatabase(workspaceRoot);existingHash = StateHash(existingDatabase); } catch { }
+            bool unchanged = String.Equals(stateHash, existingHash, StringComparison.OrdinalIgnoreCase) || SameDatabaseContent(database, existingDatabase);string saved = unchanged ? (String.IsNullOrWhiteSpace(state.SavedAtUtc) ? DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) : state.SavedAtUtc) : WriteLocalWorkspaceDatabase(workspaceRoot, database, state.BaseSharedSha256, true);
             if (unchanged && !String.Equals(state.DatabaseStateHash, stateHash, StringComparison.OrdinalIgnoreCase)) { state.DatabaseStateHash = stateHash;WriteLocalWorkspaceState(workspaceRoot, state); }
             return json.Serialize(new Dictionary<string, object> { { "saved", saved }, { "backup", state.PulledAtUtc ?? saved }, { "snapshotCreated", false }, { "backupPending", state.Dirty || !unchanged }, { "unchanged", unchanged }, { "stateHash", stateHash }, { "localWorkspace", true }, { "workspacePath", workspaceRoot }, { "sharedCommitPending", state.Dirty || !unchanged } });
         }
