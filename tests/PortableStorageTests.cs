@@ -434,7 +434,7 @@ internal static class PortableStorageTests
     {
         Assert(PortableStorage.OutlookIntakeOrganizationCode("Shaw_Vivian_(GOV)_DTA_Training_26AUG2026.pdf") == "GOV" && PortableStorage.OutlookIntakeOrganizationCode("scan001.pdf") == null && PortableStorage.OutlookIntakeOrganizationCode("Shaw_(GOV)_DTA.pdf") == null && PortableStorage.OutlookIntakeOrganizationCode("Shaw_Vivian_(GOV)_DTA.docx") == null, "Outlook intake must read the organization only from a Last_First_(ORG) PDF filename.");
         Assert(PortableStorage.OutlookIntakeAddress(" <Vivian.Shaw@Example.mil> ") == "vivian.shaw@example.mil" && PortableStorage.OutlookIntakeAddress("Vivian Shaw") == "" && PortableStorage.OutlookIntakeAddress("/O=EXCHANGE/OU=GROUP/CN=RECIPIENTS") == "", "Outlook intake must compare only real SMTP sender addresses.");
-        Assert(LauncherPolicy.StorageActionRequiresLease("outlook-intake", "POST") && LauncherPolicy.StorageActionRequiresSerialization("outlook-intake") && LauncherPolicy.StorageActionRequiresLease("outlook-folder", "POST") && !LauncherPolicy.StorageActionRequiresSerialization("outlook-folder") && LauncherPolicy.RequestBodyLimit("/api/storage/system/outlook-intake", "POST") == 2L * 1024 * 1024, "Outlook intake must require Full Access, and choosing its folder must not hold the storage queue open behind an Outlook dialog.");
+        Assert(LauncherPolicy.StorageActionRequiresLease("outlook-intake", "POST") && !LauncherPolicy.StorageActionRequiresSerialization("outlook-intake") && LauncherPolicy.StorageActionRequiresLease("outlook-folder", "POST") && !LauncherPolicy.StorageActionRequiresSerialization("outlook-folder") && LauncherPolicy.RequestBodyLimit("/api/storage/system/outlook-intake", "POST") == 2L * 1024 * 1024, "Outlook intake must require Full Access, and neither checking Outlook nor choosing its folder may hold the storage queue open while Outlook is read or shows a dialog; the check takes the queue itself only to file its copies.");
         string shared = Path.Combine(parent, "outlook-intake-share"), cache = Path.Combine(parent, "outlook-intake", "mappings.json");
         Directory.CreateDirectory(shared);
         using (var storage = new PortableStorage("DOMAIN\\intake", cache))
@@ -554,6 +554,35 @@ internal static class PortableStorageTests
             Assert(storage.ReadAuditLogs("intake").Contains("1 PDF attachments copied to organization intake for Sync review; 2 attachments skipped; 2 already recorded"), "The intake audit entry must count already-recorded copies.");
             var cachedRun = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessOutlookIntake("intake", "RAPTOR Intake", duplicates("-2"), new[] { "vivian.shaw@example.mil" }));
             Assert(Convert.ToInt32(cachedRun["alreadyRecorded"]) == 2 && ((object[])cachedRun["saved"]).Length == 0 && File.Exists(Path.Combine(storage.OutlookIntakeDirectory("intake"), "recorded-pdf-hashes.json")), "The zipped-PDF hash cache must keep recognizing recorded evidence on later checks.");
+            string recordedCachePath = Path.Combine(storage.OutlookIntakeDirectory("intake"), "recorded-pdf-hashes.json");
+            Assert(File.ReadAllText(recordedCachePath).Contains(Sha256(recordedZip)), "The zipped-PDF cache must be keyed by the recorded container hash, so later checks need no file access to use it.");
+            File.WriteAllText(recordedCachePath, "{\"C:\\\\old\\\\path.pdf.zip|10|20\":\"" + Sha256(zippedPdf) + "\"}", Encoding.UTF8);
+            storage.OutlookRecordedHashBudget = TimeSpan.Zero;
+            var namedRun = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessOutlookIntake("intake", "RAPTOR Intake", new List<OutlookIntakeMessage> { FakeOutlookMessage("<dup-named@example.mil>", "vivian.shaw@example.mil", zipName.Substring(0, zipName.Length - 4), zippedPdf) }, new[] { "vivian.shaw@example.mil" }));
+            Assert(Convert.ToInt32(namedRun["alreadyRecorded"]) == 1 && ((object[])namedRun["saved"]).Length == 0, "With no time left for the full index, a re-sent file with the stored file's name must still be checked against that file and skipped.");
+            Assert(File.ReadAllText(recordedCachePath).Contains(Sha256(recordedZip)) && !File.ReadAllText(recordedCachePath).Contains("old"), "A zip checked by name must be cached, and old path-keyed cache entries dropped.");
+            var budgetIndex = storage.OutlookRecordedEvidence("intake");
+            Assert(budgetIndex.Pending == 0 && budgetIndex.HashedThisCheck == 0 && budgetIndex.Hashes.ContainsKey(Sha256(zippedPdf)), "A cached zip must be recognized without reading it again.");
+            File.Delete(recordedCachePath);
+            var unbudgeted = storage.OutlookRecordedEvidence("intake");
+            Assert(unbudgeted.Pending == 1 && unbudgeted.HashedThisCheck == 0 && !unbudgeted.Hashes.ContainsKey(Sha256(zippedPdf)), "With no time budget, the full index must not read any stored zip.");
+            storage.OutlookRecordedHashBudget = TimeSpan.FromSeconds(30);
+            var budgeted = storage.OutlookRecordedEvidence("intake");
+            Assert(budgeted.HashedThisCheck == 1 && budgeted.Hashes.ContainsKey(Sha256(zippedPdf)), "Within its time budget, the index must read uncached zips.");
+            string readingRoot = Path.Combine(parent, "outlook-reading");int saveCalls = 0;
+            var toStage = new List<OutlookIntakeMessage> { FakeOutlookMessage("<dup-plain-1@example.com>", "someone.else@example.com", "renamed copy.pdf", recordedPdf), FakeOutlookMessage("<stage-new@example.mil>", "vivian.shaw@example.mil", "Shaw_Vivian_(GOV)_User_Agreement_04APR2026.pdf", freshPdf) };
+            toStage[0].Attachments[0].SaveAs = path => { saveCalls++;File.WriteAllBytes(path, recordedPdf); };
+            toStage[1].Attachments.Add(new OutlookIntakeAttachment { Filename = "Shaw form.docx", SaveAs = path => { saveCalls++; } });
+            toStage[1].Attachments.Add(new OutlookIntakeAttachment { Filename = "broken.pdf", SaveAs = path => { throw new IOException("Outlook refused the attachment."); } });
+            List<OutlookIntakeMessage> stagedMessages = storage.StageOutlookIntakeMessages("intake", toStage, readingRoot, CancellationToken.None);
+            Assert(stagedMessages.Count == 2 && stagedMessages[0].Attachments.Count == 0 && saveCalls == 0, "A message filed on an earlier check must be counted without copying its attachments out of Outlook again.");
+            Assert(stagedMessages[1].Attachments.Count == 3 && stagedMessages[1].Attachments[0].SaveAs != null && stagedMessages[1].Attachments[1].SaveAs == null && stagedMessages[1].Attachments[2].SaveAs == null && Directory.EnumerateFiles(readingRoot).Count() == 1, "New PDFs must be copied to this computer before filing; other documents are kept by name only, and a PDF Outlook would not provide is left for a later check.");
+            var stagedRun = (Dictionary<string, object>)Json.DeserializeObject(storage.ProcessOutlookIntake("intake", "RAPTOR Intake", stagedMessages, new[] { "vivian.shaw@example.mil" }));
+            Assert(((object[])stagedRun["saved"]).Length == 1 && Convert.ToInt32(stagedRun["previouslyProcessed"]) == 1 && File.Exists(Path.Combine(workspace, "Organizations", "GOV", "Shaw_Vivian_(GOV)_User_Agreement_04APR2026.pdf")), "Filing staged copies must work exactly like filing directly from Outlook.");
+            var cancelled = new CancellationTokenSource();cancelled.Cancel();bool stopped = false;
+            try { storage.StageOutlookIntakeMessages("intake", new List<OutlookIntakeMessage> { FakeOutlookMessage("<late@example.mil>", "vivian.shaw@example.mil", "late.pdf", freshPdf) }, Path.Combine(parent, "outlook-reading-late"), cancelled.Token); }
+            catch (OperationCanceledException) { stopped = true; }
+            Assert(stopped && !Directory.EnumerateFiles(Path.Combine(parent, "outlook-reading-late")).Any(), "A check that has timed out must stop reading Outlook before copying anything more.");
             Assert(PortableStorage.ValidOutlookSendFrom(" Compliance@Example.mil ") == "compliance@example.mil" && PortableStorage.ValidOutlookSendFrom("") == null, "The Send From mailbox must be stored as one plain lower-case address.");
             foreach (string invalid in new[] { "Compliance <compliance@example.mil>", "compliance", "a@b.mil;c@d.mil" }) { bool refused = false;try { PortableStorage.ValidOutlookSendFrom(invalid); } catch (InvalidDataException) { refused = true; }Assert(refused, "The Send From mailbox must reject " + invalid + "."); }
             Assert(LauncherPolicy.StorageActionRequiresLease("outlook-sender", "POST") && LauncherPolicy.RequestBodyLimit("/api/storage/system/outlook-sender", "POST") == 4 * 1024, "Changing the Send From mailbox must require Full Access and a small request.");

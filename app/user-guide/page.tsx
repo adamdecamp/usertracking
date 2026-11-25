@@ -228,7 +228,7 @@ export default function Guide(){
    <h3>Evidence from Outlook</h3>
    <p>In Full Access, the Sync window can collect evidence that users email back. Ask users to reply with the requested file named in the standard format, such as <b>Brown_Jacob_(LM)_DTA_Training_26AUG2026.pdf</b>. An Outlook rule that moves those replies into a dedicated folder keeps the check fast.</p>
    <ol>
-    <li>Choose <b>Sync</b>, then <b>Choose Outlook Folder</b> once on each computer and select the folder in the Outlook window.</li>
+    <li>Choose <b>Sync</b>, then <b>Choose Outlook Folder</b> once on each computer and select the folder in the Outlook window. If you choose <b>Check Outlook</b> first, or the saved folder was moved or renamed, R.A.P.T.O.R. asks you to choose the folder and then checks it.</li>
     <li>Choose <b>Check Outlook</b>. PDF attachments from the last 30 days are copied into their organization intake folder when the sender&apos;s address is the Official Email of a user in this system, the filename names an existing organization, and the file is a real PDF.</li>
     <li>Start <b>Daily Sync</b> and review the results as usual. No user record changes until you approve it.</li>
    </ol>
@@ -245,8 +245,10 @@ export default function Guide(){
     </li>
     <li><b>Copy to Intake</b> places the corrected file in the organization intake folder, and Daily Sync still checks its content, identity, and artifact type, sending mismatches to Rework as usual. <b>Dismiss</b> removes only the held copy; the email stays in Outlook. Every correction and dismissal is audited, and at most 500 attachments are held.</li>
     <li>Unusable files from unknown senders are skipped without being held. A file that could not be saved because of an Outlook error is tried again on the next check.</li>
-    <li><b>Already recorded:</b> before anything is copied or held, each PDF is compared with the evidence already recorded in this system&apos;s database. An exact copy, even when renamed or sent by someone else, is skipped and reported as already recorded for that user and artifact type, so re-sent copies never reach Sync review. Evidence stored as a .pdf.zip is compared by the PDF inside it; the first check after new evidence is recorded may take a little longer while those PDFs are read.</li>
+    <li><b>Already recorded:</b> before anything is copied or held, each PDF is compared with the evidence already recorded in this system&apos;s database. An exact copy, even when renamed or sent by someone else, is skipped and reported as already recorded for that user and artifact type, so re-sent copies never reach Sync review. Evidence stored as a .pdf.zip is compared by the PDF inside it. A stored file with the same name is always compared; the rest are read for about 30 seconds per check and remembered on this computer, so on a large system the full comparison builds up over the first few checks.</li>
     <li>A file sent by one user but named for another, such as a supervisor sending for a team member, is marked so you can confirm the identity in Sync review.</li>
+    <li>While Outlook is being read, the rest of R.A.P.T.O.R. keeps working; the system is held only briefly while the copies are filed. A check that takes longer than 20 minutes is stopped, and nothing from it is copied.</li>
+    <li><b>Outlook security prompt:</b> if Outlook shows &quot;A program is trying to access e-mail address information&quot;, choose <b>Allow</b> (allowing for 10 minutes is enough for one check). The check waits until you answer, and drafts wait about 10 seconds before reporting that an Outlook window is open. If the prompt appears every time, ask your IT administrator about Outlook&apos;s programmatic access setting.</li>
     <li>Requires the classic desktop Outlook app. The new Outlook app cannot be read by other programs, and some organizations block programmatic access; the Sync window shows the reason if Outlook refuses.</li>
     <li>Every check is recorded in the audit log with message and file counts. Email bodies are never stored.</li>
    </ul>

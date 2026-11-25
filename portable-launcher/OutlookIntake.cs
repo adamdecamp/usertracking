@@ -89,6 +89,44 @@ internal sealed partial class PortableStorage
         AtomicWrite(Path.Combine(OutlookIntakeDirectory(systemId), "folder.json"), Encoding.UTF8.GetBytes(text));
     }
 
+    /// <summary>
+    /// Copies new messages' PDF attachments out of Outlook into a per-computer
+    /// reading folder. Reading Outlook is the slow part of a check and can wait on
+    /// an Outlook prompt, so it runs before the system's storage queue is taken;
+    /// filing the copies afterward (ProcessOutlookIntake) is quick. Stops at the
+    /// next message once <paramref name="cancel"/> is signalled.
+    /// </summary>
+    internal List<OutlookIntakeMessage> StageOutlookIntakeMessages(string systemId, IEnumerable<OutlookIntakeMessage> messages, string readingRoot, CancellationToken cancel)
+    {
+        string ledgerPath = Path.Combine(OutlookIntakeDirectory(systemId), "processed-messages.txt");
+        var processed = new HashSet<string>(File.Exists(ledgerPath) ? File.ReadAllLines(ledgerPath, Encoding.UTF8).Where(line => line.Length == 64) : Enumerable.Empty<string>(), StringComparer.Ordinal);
+        Directory.CreateDirectory(readingRoot);
+        var staged = new List<OutlookIntakeMessage>();
+        foreach (OutlookIntakeMessage message in messages ?? Enumerable.Empty<OutlookIntakeMessage>())
+        {
+            cancel.ThrowIfCancellationRequested();
+            if (message == null) continue;
+            var copy = new OutlookIntakeMessage { MessageId = message.MessageId, Sender = message.Sender, ReceivedUtc = message.ReceivedUtc };
+            staged.Add(copy);
+            // Filed on an earlier check: ProcessOutlookIntake only counts it, so its attachments are not copied again.
+            if (!String.IsNullOrWhiteSpace(message.MessageId) && processed.Contains(Sha256(message.MessageId.Trim()))) continue;
+            foreach (OutlookIntakeAttachment attachment in message.Attachments.Where(item => item != null).Take(OutlookIntakeMaximumAttachments))
+            {
+                string name = (attachment.Filename ?? "").Trim();
+                if (!name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Word documents and scans are only listed by name; their content is never needed.
+                    if (OutlookIntakeOtherDocumentExtensions.Contains(Path.GetExtension(name).ToLowerInvariant())) copy.Attachments.Add(new OutlookIntakeAttachment { Filename = attachment.Filename });
+                    continue;
+                }
+                string stagedPath = Path.Combine(readingRoot, Guid.NewGuid().ToString("N") + ".pdf");bool copied = false;
+                if (attachment.SaveAs != null) { try { attachment.SaveAs(stagedPath);copied = File.Exists(stagedPath); } catch (Exception) { } }
+                copy.Attachments.Add(new OutlookIntakeAttachment { Filename = attachment.Filename, SaveAs = copied ? new Action<string>(destination => File.Copy(stagedPath, destination, true)) : null });
+            }
+        }
+        return staged;
+    }
+
     public string ProcessOutlookIntake(string systemId, string folderName, IEnumerable<OutlookIntakeMessage> messages, IEnumerable<string> senders)
     {
         var approved = new HashSet<string>((senders ?? Enumerable.Empty<string>()).Select(OutlookIntakeAddress).Where(address => address.Length > 0), StringComparer.OrdinalIgnoreCase);
@@ -100,7 +138,7 @@ internal sealed partial class PortableStorage
         var saved = new List<Dictionary<string, object>>();var skipped = new List<Dictionary<string, object>>();
         int scanned = 0, previouslyProcessed = 0, withoutPdf = 0;string cleanFolder = CleanLine(folderName, 200);
         // Built only when a usable PDF needs checking; see OutlookIntakeRecorded.cs.
-        var recorded = new Lazy<Dictionary<string, string>>(() => OutlookRecordedEvidence(systemId));
+        var recorded = new Lazy<OutlookRecordedIndex>(() => OutlookRecordedEvidence(systemId));
         try
         {
             foreach (OutlookIntakeMessage message in messages ?? Enumerable.Empty<OutlookIntakeMessage>())
@@ -127,6 +165,7 @@ internal sealed partial class PortableStorage
         {
             if (ledger.Count > OutlookIntakeLedgerLimit) ledger = ledger.Skip(ledger.Count - OutlookIntakeLedgerLimit).ToList();
             AtomicWrite(ledgerPath, Encoding.UTF8.GetBytes(String.Join("\n", ledger) + (ledger.Count > 0 ? "\n" : "")));
+            if (recorded.IsValueCreated) SaveOutlookRecordedCache(systemId, recorded.Value);
             try { if (Directory.Exists(stagingRoot)) Directory.Delete(stagingRoot, true); } catch { }
         }
         int alreadyRecorded = skipped.Count(entry => entry.ContainsKey("recorded"));
@@ -136,7 +175,7 @@ internal sealed partial class PortableStorage
 
     // Returns false when the attachment should be retried on a later check. Anything
     // the operator can resolve is held in Needs Attention (OutlookIntakeHold.cs).
-    private bool SaveOutlookIntakeAttachment(string systemId, OutlookIntakeAttachment attachment, string sender, bool approvedSender, string received, string[] organizations, string stagingRoot, Lazy<Dictionary<string, string>> recorded, List<Dictionary<string, object>> saved, List<Dictionary<string, object>> skipped)
+    private bool SaveOutlookIntakeAttachment(string systemId, OutlookIntakeAttachment attachment, string sender, bool approvedSender, string received, string[] organizations, string stagingRoot, Lazy<OutlookRecordedIndex> recorded, List<Dictionary<string, object>> saved, List<Dictionary<string, object>> skipped)
     {
         string filename = SafePart(Path.GetFileName((attachment.Filename ?? "").Trim()), 180), code = OutlookIntakeOrganizationCode(filename);
         string organization = code == null ? null : organizations.FirstOrDefault(value => OutlookOrganizationMatches(code, value));
@@ -156,8 +195,8 @@ internal sealed partial class PortableStorage
                 skipped.Add(OutlookHeldSkip(systemId, OutlookHoldInvalid, invalid + " Ask the sender to send it again as a PDF.", filename, code, organization, sender, received, null, out held));return held;
             }
             // A PDF already recorded in this system's database is a re-sent copy, whoever sent it and however it is named.
-            string recordedFor;
-            if (recorded.Value.TryGetValue(Sha256Bytes(bytes), out recordedFor))
+            string recordedFor = OutlookRecordedMatch(recorded.Value, Sha256Bytes(bytes), filename);
+            if (recordedFor != null)
             {
                 var duplicate = OutlookIntakeEntry(filename, organization, sender, received, "Already recorded for " + recordedFor + ". This exact PDF is already in the database, so it was not copied.");
                 duplicate["recorded"] = true;skipped.Add(duplicate);return true;
@@ -240,25 +279,59 @@ internal sealed partial class TrackerContext
         string[] folderId = storage.ReadOutlookIntakeFolder(systemId);
         // No folder yet, or one Outlook can no longer find: the client asks the operator to choose it.
         if (folderId == null) return "{\"needsFolder\":true}";
-        return RunOutlookStaThread(delegate
+        lock (outlookIntakeSystems) { if (!outlookIntakeSystems.Add(systemId)) throw new InvalidOperationException("Outlook is already being checked for this information system. Wait for that check to finish."); }
+        string readingRoot = Path.Combine(storage.OutlookIntakeDirectory(systemId), "Reading", Guid.NewGuid().ToString("N"));
+        var cancel = new CancellationTokenSource();
+        try
         {
-            object outlook = null, session = null, folder = null, items = null;
-            try
+            // Phase 1, outside the storage queue: read Outlook and copy new attachments to this computer.
+            string folderName = null;bool folderMissing = false;List<OutlookIntakeMessage> staged = null;
+            RunOutlookStaThread(delegate
             {
-                outlook = OutlookApplication();session = OutlookCall(outlook, "GetNamespace", "MAPI");
-                try { folder = OutlookCall(session, "GetFolderFromID", folderId[1], folderId[0]); }
-                catch (Exception) { folder = OutlookFolderByPath(session, folderId[3]); }
-                if (folder == null)
+                object outlook = null, session = null, folder = null, items = null;
+                try
                 {
-                    storage.AppendAudit(systemId, "OUTLOOK INTAKE FOLDER NOT FOUND: " + CleanError(folderId[2]) + "; operator asked to choose the folder again");
-                    return new JavaScriptSerializer().Serialize(new Dictionary<string, object> { { "needsFolder", true }, { "missing", CleanError(folderId[2]) } });
+                    outlook = OutlookApplication();session = OutlookCall(outlook, "GetNamespace", "MAPI");
+                    try { folder = OutlookCall(session, "GetFolderFromID", folderId[1], folderId[0]); }
+                    catch (Exception) { folder = OutlookFolderByPath(session, folderId[3]); }
+                    if (folder == null) { folderMissing = true;return null; }
+                    if (!String.Equals(Convert.ToString(OutlookGet(folder, "EntryID")), folderId[1], StringComparison.Ordinal)) storage.SaveOutlookIntakeFolder(systemId, Convert.ToString(OutlookGet(folder, "StoreID")), Convert.ToString(OutlookGet(folder, "EntryID")), folderId[2], folderId[3]);
+                    items = OutlookGet(folder, "Items");OutlookCall(items, "Sort", "[ReceivedTime]", true);
+                    folderName = Convert.ToString(OutlookGet(folder, "Name"));
+                    staged = storage.StageOutlookIntakeMessages(systemId, OutlookMessages(items, DateTime.Now.AddDays(-days)), readingRoot, cancel.Token);
+                    return null;
                 }
-                if (!String.Equals(Convert.ToString(OutlookGet(folder, "EntryID")), folderId[1], StringComparison.Ordinal)) storage.SaveOutlookIntakeFolder(systemId, Convert.ToString(OutlookGet(folder, "StoreID")), Convert.ToString(OutlookGet(folder, "EntryID")), folderId[2], folderId[3]);
-                items = OutlookGet(folder, "Items");OutlookCall(items, "Sort", "[ReceivedTime]", true);
-                return storage.ProcessOutlookIntake(systemId, Convert.ToString(OutlookGet(folder, "Name")), OutlookMessages(items, DateTime.Now.AddDays(-days)), senders);
-            }
-            finally { ReleaseComObject(items);ReleaseComObject(folder);ReleaseComObject(session);ReleaseComObject(outlook); }
-        });
+                finally { ReleaseComObject(items);ReleaseComObject(folder);ReleaseComObject(session);ReleaseComObject(outlook); }
+            }, cancel);
+            // Phase 2, inside the storage queue: file the copies into organization intake.
+            return WithStorageQueue(systemId, "outlook intake", delegate
+            {
+                if (!folderMissing) return storage.ProcessOutlookIntake(systemId, folderName, staged, senders);
+                storage.AppendAudit(systemId, "OUTLOOK INTAKE FOLDER NOT FOUND: " + CleanError(folderId[2]) + "; operator asked to choose the folder again");
+                return new JavaScriptSerializer().Serialize(new Dictionary<string, object> { { "needsFolder", true }, { "missing", CleanError(folderId[2]) } });
+            });
+        }
+        finally
+        {
+            lock (outlookIntakeSystems) outlookIntakeSystems.Remove(systemId);
+            try { if (Directory.Exists(readingRoot)) Directory.Delete(readingRoot, true); } catch (Exception) { }
+        }
+    }
+
+    private readonly HashSet<string> outlookIntakeSystems = new HashSet<string>(StringComparer.Ordinal);
+
+    // Takes this system's storage queue, as the request router does for serialized actions, for one step of a longer action.
+    private string WithStorageQueue(string systemId, string operation, Func<string> work)
+    {
+        SemaphoreSlim queue = StorageQueue(systemId);
+        if (!queue.Wait(TimeSpan.FromMinutes(2)))
+        {
+            string active = ActiveStorageOperation(systemId);
+            throw new InvalidOperationException("This information system is busy completing " + (String.IsNullOrWhiteSpace(active) ? "another verified operation" : active) + " after waiting 120 seconds. Check Outlook again when it finishes; nothing was copied.");
+        }
+        SetActiveStorageOperation(systemId, operation);
+        try { return work(); }
+        finally { ClearActiveStorageOperation(systemId);queue.Release(); }
     }
 
     // Walks session.Folders by the saved FolderPath; null when any part is missing.
@@ -302,12 +375,17 @@ internal sealed partial class TrackerContext
         }
     }
 
-    private static string RunOutlookStaThread(Func<string> work)
+    // On timeout, signals cancel so abandoned reading stops at the next message instead of running on unseen.
+    private static string RunOutlookStaThread(Func<string> work, CancellationTokenSource cancel = null)
     {
         string result = null;Exception failure = null;
         var thread = new Thread(delegate () { try { result = work(); } catch (Exception error) { failure = error; } });
         thread.IsBackground = true;thread.Name = "R.A.P.T.O.R. Outlook Intake";thread.SetApartmentState(ApartmentState.STA);thread.Start();
-        if (!thread.Join(TimeSpan.FromMinutes(20))) throw new TimeoutException("Outlook did not finish within 20 minutes. Close any open Outlook dialog, then try again.");
+        if (!thread.Join(TimeSpan.FromMinutes(20)))
+        {
+            if (cancel != null) cancel.Cancel();
+            throw new TimeoutException("Outlook did not finish within 20 minutes, so the check was stopped and nothing was copied. If Outlook asked whether to allow access, choose Allow, then try again.");
+        }
         while (failure is TargetInvocationException && failure.InnerException != null) failure = failure.InnerException;
         if (OutlookDialogOpen(failure)) throw new InvalidOperationException(OutlookDialogOpenMessage, failure);
         if (failure is COMException) throw new InvalidOperationException("Microsoft Outlook refused the request: " + CleanError(failure.Message) + " Outlook security settings may be blocking programmatic access.", failure);
