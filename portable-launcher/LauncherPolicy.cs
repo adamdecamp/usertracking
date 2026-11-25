@@ -23,6 +23,9 @@ internal static class LauncherPolicy
             // Choosing the intake folder waits on an Outlook dialog and writes only a
             // per-computer setting, so it must not hold the system storage queue.
             && !String.Equals(action, "outlook-folder", StringComparison.Ordinal)
+            // Check Outlook reads Outlook first, which can take minutes or wait on an
+            // Outlook prompt, then takes the queue itself only to file the copies.
+            && !String.Equals(action, "outlook-intake", StringComparison.Ordinal)
             && !String.Equals(action, "file-location", StringComparison.Ordinal)
             && !String.Equals(action, "performance", StringComparison.Ordinal)
             && !String.Equals(action, "diagnostics", StringComparison.Ordinal)
