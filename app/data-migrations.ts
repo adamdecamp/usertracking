@@ -4,11 +4,11 @@ import {applicationVersion} from './version.ts';
 
 /**
  * v7 adds an optional per-system `timeZone`; v8 adds optional per-system
- * `organizationContacts`. Older clients rebuild system records field by field
- * and would silently drop these, so they must refuse newer databases rather
- * than open them.
+ * `organizationContacts`; v9 adds optional per-system `pendingEvidenceMoves`.
+ * Older clients rebuild system records field by field and would silently drop
+ * these, so they must refuse newer databases rather than open them.
  */
-export const currentManifestVersion=8;
+export const currentManifestVersion=9;
 export const currentBackupVersion=1;
 export const currentAuditVersion=1;
 export const currentSyncIndexVersion=1;
@@ -89,6 +89,19 @@ export function rollbackManifestV8ToV7(value:unknown):JsonRecord|undefined{
  const input=clone(value);
  if(Array.isArray(input.systems))input.systems=input.systems.map(system=>{if(!record(system))return system;const rest={...system};delete rest.organizationContacts;return rest});
  input.version=7;return input;
+}
+
+/**
+ * Explicit rollback for the additive v9 pending evidence moves. Refuses while
+ * any move is still waiting, because v8 would forget it and leave the file in
+ * place; run Session Commit first. Otherwise drops only the empty field.
+ */
+export function rollbackManifestV9ToV8(value:unknown):JsonRecord|undefined{
+ if(!record(value)||value.version!==9)return;
+ if(Array.isArray(value.systems)&&value.systems.some(system=>record(system)&&Array.isArray(system.pendingEvidenceMoves)&&system.pendingEvidenceMoves.length>0))return;
+ const input=clone(value);
+ if(Array.isArray(input.systems))input.systems=input.systems.map(system=>{if(!record(system))return system;const rest={...system};delete rest.pendingEvidenceMoves;return rest});
+ input.version=8;return input;
 }
 
 export function migrateBackupPayload(value:unknown):JsonRecord|undefined{

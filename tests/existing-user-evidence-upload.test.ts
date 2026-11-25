@@ -61,9 +61,13 @@ test('delete-user archival tolerates evidence that was already moved or is missi
  assert.match(launcher,/action == "evidence-exists" && parts\[0\] == "GET"/,'The launcher must expose the metadata-only existence endpoint.');
  assert.match(storage,/public string EvidenceExists\(string systemId, string relative\)[\s\S]*?new FileInfo\(path\)[\s\S]*?\{ "exists", true \}/,'The existence endpoint must inspect metadata without reading the evidence contents.');
  const deleteFlow=page.slice(page.indexOf('async function deleteUserRecord('),page.indexOf('async function openEvidenceLocation('));
- assert.match(deleteFlow,/if\(archived\.blockingErrors\.length\)/,'Only non-missing archive failures may block record deletion.');
- assert.match(deleteFlow,/users\.filter\(item=>item\.id!==user\.id\)/,'The user record must still be removed when evidence is already absent.');
+ const commit=readFileSync(new URL('../app/application/pending-evidence-commit.ts',import.meta.url),'utf8');
+ assert.match(commit,/if\(result\.blockingErrors\.length\)retained\.push\(move\)/,'Only non-missing archive failures keep a deleted user’s archive request for the next commit.');
+ assert.match(deleteFlow,/newPendingEvidenceMove\('archive-deleted-user'/,'Deleting a user queues its file archive for Session Commit.');
+ assert.doesNotMatch(deleteFlow,/archiveAllUserEvidence\(/,'Deleting a user must not scan or move files before the record is removed.');
+ assert.match(deleteFlow,/users\.filter\(item=>item\.id!==user\.id\)/,'The user record is removed right away.');
  assert.match(deleteFlow,/formatDeleteUserCompletionAudit/,'The completed deletion must write the structured audit summary.');
+ assert.match(formatDeleteUserCompletionAudit({last:'User',first:'Test',justification:'Duplicate record',moved:[],missingErrors:[],queued:2}),/2 associated evidence records and any other active files for this user queued for the organization Archive at the next Session Commit/);
  const audit=formatDeleteUserCompletionAudit({last:'User',first:'Test',justification:'Duplicate record',moved:[],missingErrors:['missing.pdf.zip: The archived evidence file no longer exists.']});
  assert.match(audit,/1 already-missing evidence reference was logged without blocking deletion/);
  assert.match(audit,/missing evidence missing\.pdf\.zip: The archived evidence file no longer exists\./,'The deletion audit must retain the missing filename and reason for later review.');

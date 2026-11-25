@@ -140,6 +140,13 @@ internal static class PortableStorageTests
         return Json.Serialize(database);
     }
 
+    private static string DatabaseWithPendingMoves(string email, object[] moves)
+    {
+        Dictionary<string, object> database = (Dictionary<string, object>)Json.DeserializeObject(Database(email));
+        ((Dictionary<string, object>)((object[])database["systems"])[0])["pendingEvidenceMoves"] = moves;
+        return Json.Serialize(database);
+    }
+
     private static string DatabaseWithTimeZone(string email, string timeZone)
     {
         Dictionary<string, object> database = (Dictionary<string, object>)Json.DeserializeObject(Database(email));
@@ -877,7 +884,7 @@ internal static class PortableStorageTests
         Assert(repairedLegacyHistory.Contains("\"files\":[]") && repairedLegacyHistory.Contains("\"rolesBefore\":[]") && repairedLegacyHistory.Contains("\"rolesAfter\":[]"), "Storage verification must repair historical change entries that predate the non-identity array fields instead of blocking Sync.");
         storage.SaveManifest("mapping-key", DatabaseWithTimeZone("first@example.mil", "America/Denver"));
         string zonedManifest = storage.ReadManifest("mapping-key"), zonedCatalog = File.ReadAllText(Path.Combine(root, "System", "information-system-user-tracker.json"), Encoding.UTF8);
-        Assert(zonedManifest.Contains("\"timeZone\":\"America/Denver\"") && zonedManifest.Contains("\"version\":8") && zonedCatalog.Contains("\"version\":6"), "A system time zone must survive the sharded catalog round trip as manifest v8 in catalog v6.");
+        Assert(zonedManifest.Contains("\"timeZone\":\"America/Denver\"") && zonedManifest.Contains("\"version\":9") && zonedCatalog.Contains("\"version\":7"), "A system time zone must survive the sharded catalog round trip as manifest v9 in catalog v7.");
         bool rejectedTimeZone = false;try { storage.SaveManifest("mapping-key", DatabaseWithTimeZone("first@example.mil", "Denver time; DROP")); } catch (InvalidDataException) { rejectedTimeZone = true; }
         Assert(rejectedTimeZone && storage.ReadManifest("mapping-key").Contains("\"timeZone\":\"America/Denver\""), "A malformed system time zone must be rejected without replacing the verified database.");
         var contact = new Dictionary<string, object> { { "id", "c1" }, { "organization", "GOV" }, { "position", "ISSM" }, { "name", "Jordan Lee" }, { "methods", new object[] { new Dictionary<string, object> { { "type", "Email" }, { "value", "jordan.lee@example.mil" } }, new Dictionary<string, object> { { "type", "Phone" }, { "value", "(555) 555-0100 x12" } } } } };
@@ -886,6 +893,13 @@ internal static class PortableStorageTests
         Func<string, object, Dictionary<string, object>> changedContact = (key, value) => { var copy = new Dictionary<string, object>(contact);copy[key] = value;return copy; };
         foreach (object bad in new object[] { new object[] { changedContact("methods", new object[0]) }, new object[] { changedContact("methods", new object[] { new Dictionary<string, object> { { "type", "Fax" }, { "value", "555" } } }) }, new object[] { changedContact("methods", new object[] { new Dictionary<string, object> { { "type", "Email" }, { "value", "not an email" } } }) }, new object[] { contact, contact }, new object[] { changedContact("name", "") } })
         { bool rejectedContact = false;try { storage.SaveManifest("mapping-key", DatabaseWithContacts("first@example.mil", (object[])bad)); } catch (InvalidDataException) { rejectedContact = true; }Assert(rejectedContact && storage.ReadManifest("mapping-key").Contains("\"name\":\"Jordan Lee\""), "An invalid organization contact must be rejected without replacing the verified database."); }
+        // Manifest v9: file moves queued by record changes for the next Session Commit (synthetic data only).
+        var queuedMove = new Dictionary<string, object> { { "id", "m1" }, { "work", "archive-file" }, { "userId", "u9" }, { "userLabel", "Prior, Owner" }, { "requestedAt", "2026-11-25T12:00:00.000Z" }, { "requestedBy", "Operator" }, { "file", new Dictionary<string, object> { { "kind", "SAAR" }, { "filename", "Prior_Owner_(GOV)_GEN_SAAR_01OCT2026.pdf.zip" }, { "path", "Organizations/GOV/GOV SAAR/Prior_Owner_(GOV)_GEN_SAAR_01OCT2026.pdf.zip" } } } };
+        storage.SaveManifest("mapping-key", DatabaseWithPendingMoves("first@example.mil", new object[] { queuedMove }));
+        Assert(storage.ReadManifest("mapping-key").Contains("\"work\":\"archive-file\"") && storage.ReadManifest("mapping-key").Contains("\"userLabel\":\"Prior, Owner\""), "Pending evidence moves must survive the sharded catalog round trip as manifest v9.");
+        Func<string, object, Dictionary<string, object>> changedMove = (key, value) => { var copy = new Dictionary<string, object>(queuedMove);if (value == null) copy.Remove(key);else copy[key] = value;return copy; };
+        foreach (object bad in new object[] { new object[] { changedMove("work", "shred") }, new object[] { changedMove("file", null) }, new object[] { changedMove("file", new Dictionary<string, object> { { "kind", "SAAR" }, { "filename", "x.pdf.zip" }, { "path", "../outside.pdf.zip" } }) }, new object[] { changedMove("requestedAt", "not a date") }, new object[] { queuedMove, queuedMove } })
+        { bool rejectedMove = false;try { storage.SaveManifest("mapping-key", DatabaseWithPendingMoves("first@example.mil", (object[])bad)); } catch (InvalidDataException) { rejectedMove = true; }Assert(rejectedMove && storage.ReadManifest("mapping-key").Contains("\"userLabel\":\"Prior, Owner\""), "An invalid pending evidence move must be rejected without replacing the verified database."); }
         storage.SaveManifest("mapping-key", Database("first@example.mil"));
         string protectedLocalMappings = storage.CachedMappings(false, true);
         Assert(protectedLocalMappings.Contains("\"source\":\"local-cache\"") && protectedLocalMappings.Contains("first@example.mil") && Directory.EnumerateFiles(performanceCacheRoot, "verified-manifest.cache", SearchOption.AllDirectories).Any(), "A verified manifest save should refresh the Windows-user-protected local read cache without requiring shared-folder initialization.");
