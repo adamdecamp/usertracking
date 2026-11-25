@@ -27,7 +27,7 @@ export default function Guide(){
     <li>Select an information system or choose <b>Map System Folder</b>.</li>
     <li>For Full Access, wait for storage verification and the exclusive editor lock.</li>
     <li>Choose <b>Sync</b>, then select Daily Sync or Legacy Import and the required scope.</li>
-    <li>Review proposed record changes, conflicts, Rework items, and cleanup actions.</li>
+    <li>Review proposed record changes, conflicts, REWORK items, and cleanup actions.</li>
     <li>Apply verified updates, then choose <b>Commit Session</b> to publish local changes.</li>
     <li>Choose <b>Log Off</b> when finished so pending work completes and the editor lock is released.</li>
    </ol>
@@ -70,7 +70,9 @@ export default function Guide(){
     <li>Use <b>Manage Organizations</b> to create each organization beneath it.</li>
     <li>The Information System Organization description does not create an evidence folder.</li>
     <li>Each document folder starts with the organization name, such as <code>LM SAAR</code> or <code>LM DoD Cyber Cert</code>.</li>
-    <li>Place new files in the organization root and corrected files in its prefixed Rework folder.</li>
+    <li>Place new files in the organization root. A file that needs correction stays there too, with <code>REWORK_</code> added to the start of its filename, for example <code>REWORK_Doe_Jane_(ORG)_SAAR_01JAN2026.pdf</code>.</li>
+    <li>Fix the file and its name in place. You may keep the <code>REWORK_</code> prefix: every Sync rechecks REWORK files, and once the rest of the name passes every storage rule, Sync removes the prefix and files the document normally.</li>
+    <li>Rework folders are no longer created or scanned. Files already in an existing Rework folder are left alone; move them to the organization folder by hand when you are ready to correct them.</li>
    </ul>
    <h3>Organization Contacts</h3>
    <ul>
@@ -133,7 +135,7 @@ export default function Guide(){
     <li>Open a User Record and choose <b>Edit User Information</b> to correct name, organization, middle initial, or Official Email.</li>
     <li><b>Changes save right away; files move at Session Commit.</b> Editing, disabling, re-enabling, deleting a user, and moving evidence from one user to another save the record locally at once. The file renames and moves they need are queued and run at the next <b>Session Commit</b> (or at logoff), before the database is published, so you do not wait on the shared folder while you work.</li>
     <li>Queued moves follow the record as it stands at commit. If you disable a user and re-enable them before committing, nothing is archived.</li>
-    <li>Name or organization corrections rename available evidence at commit without overwriting collisions, including associated Archive and Rework evidence, which stays in the same storage category.</li>
+    <li>Name or organization corrections rename available evidence at commit without overwriting collisions, including associated Archive evidence and files in an existing Rework folder, which stay in the same storage category.</li>
     <li>If an individual file is stale, unavailable, or slow, its existing association remains with the corrected user and the file is listed for later Reconciliation. The user correction is not reversed.</li>
     <li>A pre-existing duplicate identity or Official Email is flagged for Reconciliation but does not block an operator from correcting the User Record.</li>
     <li>Disable normally requires an updated SAAR; a documented justification may override the upload.</li>
@@ -170,7 +172,7 @@ export default function Guide(){
     <li>Julian day formats include <b>YYDDD, DDDYY, YYYYDDD, and DDDYYYY</b> when the orientation is unambiguous.</li>
     <li>Safe filename separators include underscores, hyphens, periods, commas, and spaces. A slash is not accepted because Windows treats it as a path separator.</li>
     <li>Common month variations and mistakes—such as SEPT, FEBUARY, AGUST, SEPTMBER, OCTBER, NOVEMEBER, and DECEMEBER—are recognized only when they form a valid date.</li>
-    <li>Ambiguous short numeric and Julian dates are interpreted only when the result is deterministic; otherwise the file remains in Rework for operator correction.</li>
+    <li>Ambiguous short numeric and Julian dates are interpreted only when the result is deterministic; otherwise the file keeps its REWORK_ prefix for operator correction.</li>
     <li>The immediate organization folder is authoritative and replaces an incorrect filename organization.</li>
     <li>Files must pass the complete filename gate before entering a managed document folder.</li>
    </ul>
@@ -187,14 +189,14 @@ export default function Guide(){
    <ul>
     <li>Filename normalization runs during Sync; there is no separate Document Renamer button.</li>
     <li>Canonical unchanged files stay on the metadata-only fast path.</li>
-    <li>New, changed, loose, or corrected Rework PDFs receive full applicable validation.</li>
+    <li>New, changed, loose, or corrected REWORK PDFs receive full applicable validation.</li>
     <li>SAAR, DD Form 2875, Form 2875, Access Request, System Access Request, and System Authorization Access Request indicators map to <code>SAAR</code>.</li>
     <li>DoD Cyber, DoW Cyber, Cyber Cert, Cyber Certificate, Cyber Awareness, and Awareness Challenge normalize to <code>DoD_Cyber_Cert</code>.</li>
     <li>User Agreement, General Agreement, Privileged Agreement, combined agreements, and Acceptable Use normalize to <code>User_Agreement</code>.</li>
     <li>8140 Cert, 8140 Certification, 8140 Memo, 8140 Letter, Cert Memo, Certification Memo, Cert Letter, Certification Letter, and legacy 8570 indicators route to the 8140 Certification Memo folder.</li>
     <li>Priv or Privileged paired with Training, Course, Responsibilities, Cert, Certificate, or Certification routes to Privileged User Training.</li>
     <li>DTA or Data Transfer Agent paired with Training, Course, Responsibilities, Cert, Certificate, or Certification routes to DTA Training.</li>
-    <li>Ambiguous, unidentified, incomplete, or invalid active files go to Rework.</li>
+    <li>Ambiguous, unidentified, incomplete, or invalid active files are marked REWORK in their organization folder. Files in unaccepted formats are marked the same way.</li>
     <li>Ambiguous dates, multiple possible document types, identity conflicts, duplicate content under another identity, and same-name users across organizations always require operator review.</li>
     <li>The review panel shows the parsed filename values, exact proposed stored filename, decision reasons, and up to three user candidates before any correction is applied.</li>
     <li>Use <b>Apply to Similar Files</b> only after confirming that the displayed pattern represents the same user, organization, and document type.</li>
@@ -216,7 +218,7 @@ export default function Guide(){
    <h2>5. Shared-Folder Sync, Audit Logs, and Backups</h2>
    <h3>Choose the Correct Sync</h3>
    <ul>
-    <li><b>Daily Sync:</b> Fast routine processing for organization-root intake files and Rework.</li>
+    <li><b>Daily Sync:</b> Fast routine processing for organization-root intake files, including REWORK files.</li>
     <li><b>Legacy Import:</b> Historical recovery for unmanaged or inconsistently named repositories.</li>
     <li><b>Targeted Sync:</b> Processes one immediate organization folder.</li>
     <li><b>Full System Sync:</b> Processes every organization in the selected system.</li>
@@ -252,7 +254,7 @@ export default function Guide(){
       <li><b>Not a Usable PDF:</b> a Word document, scan file, empty file, or a file named .pdf that is not a PDF. These can only be dismissed; ask the sender for a PDF.</li>
      </ul>
     </li>
-    <li><b>Copy to Intake</b> places the corrected file in the organization intake folder, and Daily Sync still checks its content, identity, and artifact type, sending mismatches to Rework as usual. <b>Dismiss</b> removes only the held copy; the email stays in Outlook. Every correction and dismissal is audited, and at most 500 attachments are held.</li>
+    <li><b>Copy to Intake</b> places the corrected file in the organization intake folder, and Daily Sync still checks its content, identity, and artifact type, marking mismatches REWORK as usual. <b>Dismiss</b> removes only the held copy; the email stays in Outlook. Every correction and dismissal is audited, and at most 500 attachments are held.</li>
     <li>Unusable files from unknown senders are skipped without being held. A file that could not be saved because of an Outlook error is tried again on the next check.</li>
     <li><b>Already recorded:</b> before anything is copied or held, each PDF is compared with the evidence already recorded in this system&apos;s database. An exact copy, even when renamed or sent by someone else, is skipped and reported as already recorded for that user and artifact type, so re-sent copies never reach Sync review. Evidence stored as a .pdf.zip is compared by the PDF inside it. A stored file with the same name is always compared; the rest are read for about 30 seconds per check and remembered on this computer, so on a large system the full comparison builds up over the first few checks.</li>
     <li>A file sent by one user but named for another, such as a supervisor sending for a team member, is marked so you can confirm the identity in Sync review.</li>
@@ -282,7 +284,7 @@ export default function Guide(){
     <li>Changes remain local until <b>Commit Session</b> publishes them to the shared system.</li>
     <li>Only changed files and changed organization data are published.</li>
     <li>Successful files move to the local Complete area for manual review; nothing is deleted automatically.</li>
-    <li>Files in Complete are final local copies and are never resubmitted; only Pending Upload, the organization root, or Rework can supply new evidence.</li>
+    <li>Files in Complete are final local copies and are never resubmitted; only Pending Upload or the organization root, including REWORK files, can supply new evidence.</li>
     <li>A clean manual commit prevents a redundant shutdown commit.</li>
     <li>Network retry, journaling, checksums, and resumable operations protect slow or interrupted shares.</li>
    </ul>
@@ -313,7 +315,7 @@ export default function Guide(){
     <li>Reconciliation compares database-recorded active evidence with current active locations.</li>
     <li>It reports collisions, duplicate identities or emails, possible duplicate users, changed hashes, organization conflicts, and contradictory account states.</li>
     <li>Possible duplicate users include reversed names, common nicknames, matching initials, and close spelling. The operator must review and correct the records; Reconciliation never merges them.</li>
-    <li>It ignores unrecorded evidence and files in Archive or Rework.</li>
+    <li>It ignores unrecorded evidence, REWORK files, and files in Archive or an existing Rework folder.</li>
     <li>Missing requirements remain in normal reporting and are not Reconciliation issues.</li>
     <li>Reconciliation is read-only and never moves files or changes records.</li>
     <li>Choose <b>Generate PDF Report</b> for a correction reference stored under <code>System/Reports</code>.</li>

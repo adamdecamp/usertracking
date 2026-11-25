@@ -868,7 +868,7 @@ internal sealed partial class PortableStorage : IDisposable
             foreach (Dictionary<string, object> item in localEvidence.Values.Where(item => Convert.ToBoolean(item["pending"], CultureInfo.InvariantCulture)))
             {
                 string relative = Convert.ToString(item["destination"], CultureInfo.InvariantCulture), originalRelative = relative, source = SafeRelativePath(workspaceRoot, Convert.ToString(item["localPath"], CultureInfo.InvariantCulture)), hash = Convert.ToString(item["sha256"], CultureInfo.InvariantCulture);
-                if (IsFinalCompleteLocalEvidencePath(workspaceRoot, source)) { preparationWarnings.Add(Path.GetFileName(source) + ": the local Complete copy was excluded from publication. Move it to the organization root or Rework only when an intentional new submission is required.");continue; }
+                if (IsFinalCompleteLocalEvidencePath(workspaceRoot, source)) { preparationWarnings.Add(Path.GetFileName(source) + ": the local Complete copy was excluded from publication. Move it to the organization root only when an intentional new submission is required.");continue; }
                 if (!source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) { if (associatedPaths.Contains(relative)) throw new InvalidDataException("A locally associated evidence PDF must be compressed before publication: " + Path.GetFileName(source));deferredLocalPdfs++;continue; }
                 if (!String.Equals(hashCache.Container(source), hash, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A locally prepared evidence file changed before publication. The local session was preserved.");
                 relative = CanonicalPublicationRelative(requestedDatabase, relative, Path.GetFileName(source));
@@ -1318,12 +1318,12 @@ internal sealed partial class PortableStorage : IDisposable
                     string name = Path.GetFileName(directory);
                     if (!scanningSharedRoot && IsCompleteStorageDirectory(name)) continue;
                     bool permanentSaarArchive = IsPermanentSaarArchiveDirectory(name);
-                    bool rework = IsReworkStorageDirectory(name);
+                    if (IsReworkStorageDirectory(name)) continue;
                     bool incoming = IsIncomingStorageDirectory(name), artifactStorage = IsArtifactStorageDirectory(name), managedStorage = IsManagedStorageDirectory(name) || incoming || artifactStorage;
                     if (current.Item3) continue;
-                    if (dailyIncomingOnly && managedStorage && !incoming && !rework) continue;
+                    if (dailyIncomingOnly && managedStorage && !incoming) continue;
                     if (permanentSaarArchive) continue;
-                    if (!dailyIncomingOnly && managedStorage && !rework && !incoming && !((fullRescan || legacyImport) && artifactStorage)) continue;
+                    if (!dailyIncomingOnly && managedStorage && !incoming && !((fullRescan || legacyImport) && artifactStorage)) continue;
                     if (directoryEntry.IsReparsePoint || !directoryEntry.HasAttributes && IsScanReparsePoint(root, directory)) continue;
                     pending.Push(Tuple.Create(directory, current.Item2 + 1, permanentSaarArchive));
                 }
@@ -1430,8 +1430,8 @@ internal sealed partial class PortableStorage : IDisposable
                 foreach (DirectoryScanEntry directoryEntry in PrioritizedDirectories(directoryEntries))
                 {
                     string directory = directoryEntry.Path;
-                    string name = Path.GetFileName(directory);bool rework = IsReworkStorageDirectory(name);
-                    if (IsCompleteStorageDirectory(name) || IsManagedStorageDirectory(name) && !rework) { if (name.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase)) skippedArchives++;continue; }
+                    string name = Path.GetFileName(directory);
+                    if (IsCompleteStorageDirectory(name) || IsManagedStorageDirectory(name)) { if (name.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase)) skippedArchives++;continue; }
                     if (!directoryEntry.IsReparsePoint && (directoryEntry.HasAttributes || !IsScanReparsePoint(root, directory))) pending.Push(Tuple.Create(directory, current.Item2 + 1));
                 }
             }
@@ -2006,7 +2006,7 @@ internal sealed partial class PortableStorage : IDisposable
                 if (IsArchiveEvidencePath(currentDestination) && normalized.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries).Any(IsCompleteStorageDirectory))
                     return json.Serialize(new Dictionary<string, object> { { "archived", currentDestination }, { "alreadyCompleted", true } });
             }
-            if (ContainsManagedStorageDirectory(normalized) && !(allowReworkSource && IsOrganizationReworkEvidencePath(normalized))) throw new InvalidDataException("Only active evidence files can be moved to an organization Archive folder. Collision cleanup may move a verified file from its organization Rework folder.");
+            if (IsOrganizationReworkEvidencePath(normalized) ? !allowReworkSource : ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active evidence files can be moved to an organization Archive folder. Collision cleanup may move a verified REWORK-marked file.");
             if (!File.Exists(source)) { if (TryResolveCompletedArchive(systemId, relative, requestedFilename, out alreadyArchived)) return json.Serialize(new Dictionary<string, object> { { "archived", alreadyArchived }, { "alreadyCompleted", true } });throw new FileNotFoundException("The selected evidence file no longer exists."); }
             string validationError;
             if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
@@ -2129,7 +2129,7 @@ internal sealed partial class PortableStorage : IDisposable
                     if (scanned >= 100000) { errors.Add(RetentionError(root, current.Item1, "Archive preflight file limit exceeded."));break; }
                     string filename = Path.GetFileName(source);
                     if (!dailyFullSweep && current.Item3) { unchangedSkipped++;continue; }
-                    if (!dailyFullSweep && !current.Item5)
+                    if (!dailyFullSweep && !HasReworkMarker(filename))
                     {
                         string relative = Relative(root, source).Replace(Path.DirectorySeparatorChar, '/');Dictionary<string, object> cached;long size = sourceEntry.HasMetadata ? sourceEntry.Size : 0L, modified = sourceEntry.HasMetadata ? sourceEntry.LastModifiedUnixMs : 0L;
                         if (!sourceEntry.HasMetadata) try { var metadata = new FileInfo(source);size = metadata.Length;modified = new DateTimeOffset(metadata.LastWriteTimeUtc).ToUnixTimeMilliseconds(); } catch { }
@@ -2152,14 +2152,14 @@ internal sealed partial class PortableStorage : IDisposable
                     bool supported = filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
                     if (!supported)
                     {
-                        if (current.Item3 || current.Item5 || IsRootControlFile(root, source)) continue;
+                        if (current.Item3 || HasReworkMarker(filename) || IsRootControlFile(root, source)) continue;
                         scanned++;
                         try
                         {
-                            Tuple<string, string> orgLocation = OrganizationStorageLocation(root, source);string directory = Path.Combine(orgLocation.Item1, SafePart(orgLocation.Item2, 60) + " Rework");Directory.CreateDirectory(directory);
-                            string destination = UniqueDestination(directory, Path.GetFileName(source)), sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "rework", source, destination, sourceHash, "");
+                            Tuple<string, string> orgLocation = OrganizationStorageLocation(root, source);string directory = orgLocation.Item1;
+                            string destination = UniqueDestination(directory, WithReworkMarker(Path.GetFileName(source))), sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "rework", source, destination, sourceHash, "");
                             File.Move(source, destination);FailAfter("rework-retention-move");
-                            if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The unaccepted-file Rework move failed its SHA-256 integrity check.");
+                            if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The unaccepted-file REWORK rename failed its SHA-256 integrity check.");
                             CompleteTransaction(transaction);
                             moved.Add(new Dictionary<string, object> { { "source", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "archived", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') }, { "bucket", "Unaccepted File Format" }, { "evidenceDate", "Not Applicable" } });
                         }
@@ -2168,12 +2168,12 @@ internal sealed partial class PortableStorage : IDisposable
                     }
                     scanned++;
                     string effectiveSource = source;
-                    if (current.Item5 && effectiveSource.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    if (HasReworkMarker(filename) && effectiveSource.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
                     {
                         try
                         {
                             string original = Relative(root, effectiveSource).Replace(Path.DirectorySeparatorChar, '/');
-                            string extractedPath = ExtractEvidenceZip(root, effectiveSource, current.Item1, "rework-extract", "Rework");
+                            string extractedPath = ExtractEvidenceZip(root, effectiveSource, current.Item1, "rework-extract", "Rework", ReworkMarker);
                             effectiveSource = extractedPath;filename = Path.GetFileName(extractedPath);
                             moved.Add(new Dictionary<string, object> { { "source", original }, { "archived", Relative(root, extractedPath).Replace(Path.DirectorySeparatorChar, '/') }, { "bucket", "Rework Extraction" }, { "evidenceDate", "Not Applicable" } });
                         }
@@ -2217,7 +2217,7 @@ internal sealed partial class PortableStorage : IDisposable
                     bool isIncoming = IsIncomingStorageDirectory(name);
                     bool reparsePoint = directoryEntry.IsReparsePoint || !directoryEntry.HasAttributes && IsScanReparsePoint(root, directory);
                     if (current.Item3 || name.EndsWith(" Archive", StringComparison.OrdinalIgnoreCase)) { if (!fastDaily && !reparsePoint) pending.Push(Tuple.Create(directory, current.Item2 + 1, true, current.Item4 || isSaarArchive, false, false));continue; }
-                    if (IsReworkStorageDirectory(name)) { pending.Push(Tuple.Create(directory, current.Item2 + 1, false, false, true, false));continue; }
+                    if (IsReworkStorageDirectory(name)) continue;
                     if (isIncoming) { pending.Push(Tuple.Create(directory, current.Item2 + 1, false, false, false, true));continue; }
                     if (IsManagedStorageDirectory(name) || IsArtifactStorageDirectory(name) || reparsePoint) continue;
                     pending.Push(Tuple.Create(directory, current.Item2 + 1, false, false, false, false));
@@ -2278,25 +2278,26 @@ internal sealed partial class PortableStorage : IDisposable
         lock (RootLock(systemId))
         {
             string root, source = ResolveEvidencePath(systemId, relative, out root);RecoverTransactions(root);string normalized = Relative(root, source);
-            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active correction evidence can be moved to an organization Rework folder.");
+            if (ContainsManagedStorageDirectory(normalized)) throw new InvalidDataException("Only active correction evidence can be marked REWORK.");
             bool sourceIsPdf = source.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase), sourceIsZip = source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
-            if (!sourceIsPdf && !sourceIsZip) throw new InvalidDataException("Only a PDF or a ZIP containing one PDF can be moved to Rework.");
+            if (!sourceIsPdf && !sourceIsZip) throw new InvalidDataException("Only a PDF or a ZIP containing one PDF can be marked REWORK.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected correction evidence no longer exists.");
             Tuple<string, string> organization = OrganizationStorageLocation(root, source);
-            string directory = Path.Combine(organization.Item1, SafePart(organization.Item2, 60) + " Rework"), filename = SafePart(Path.GetFileName(source), 180);
+            string directory = organization.Item1, filename = WithReworkMarker(Path.GetFileName(source));
             Directory.CreateDirectory(directory);
             if (sourceIsZip)
             {
-                string extractedDestination = ExtractEvidenceZip(root, source, directory, "rework-extract", "Rework");
+                string extractedDestination = ExtractEvidenceZip(root, source, directory, "rework-extract", "Rework", ReworkMarker);
                 if (IsLocalWorkspaceRoot(systemId, root)) ForgetLocalEvidence(systemId, source);
                 string extracted = Relative(root, extractedDestination).Replace(Path.DirectorySeparatorChar, '/');
                 return json.Serialize(new Dictionary<string, object> { { "reworked", extracted }, { "extracted", true }, { "sourceRemoved", false }, { "sourcePreserved", true } });
             }
             string extension = Path.GetExtension(filename), stem = Path.GetFileNameWithoutExtension(filename), destination = Path.Combine(directory, filename);
+            if (String.Equals(Path.GetFullPath(destination), Path.GetFullPath(source), StringComparison.OrdinalIgnoreCase)) return json.Serialize(new Dictionary<string, object> { { "reworked", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "extracted", false }, { "sourceRemoved", false }, { "alreadyCompleted", true } });
             for (int index = 1; File.Exists(destination); index++) destination = Path.Combine(directory, stem + "_" + index.ToString(CultureInfo.InvariantCulture) + extension);
             string sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "rework", source, destination, sourceHash, "");
             File.Move(source, destination);FailAfter("rework-move");
-            if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The Rework move failed its SHA-256 integrity check.");
+            if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The REWORK rename failed its SHA-256 integrity check.");
             CompleteTransaction(transaction);
             if (IsLocalWorkspaceRoot(systemId, root)) ForgetLocalEvidence(systemId, source);
             string reworked = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
@@ -2358,14 +2359,14 @@ internal sealed partial class PortableStorage : IDisposable
         candidates[relative] = new Dictionary<string, object> { { "path", relative }, { "filename", Path.GetFileName(path) }, { "folder", folder.Replace(Path.DirectorySeparatorChar, '/') }, { "size", new FileInfo(path).Length } };
     }
 
-    private string ExtractEvidenceZip(string root, string source, string directory, string operation, string label)
+    private string ExtractEvidenceZip(string root, string source, string directory, string operation, string label, string marker = null)
     {
         string validationError;if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected ZIP evidence is invalid." : validationError);
         string embeddedName, sourceName = SafePart(Path.GetFileName(source), 180);
         using (Stream input = File.Open(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
         using (var archive = new ZipArchive(input, ZipArchiveMode.Read, false)) embeddedName = Path.GetFileName(archive.Entries.Single(entry => !entry.FullName.EndsWith("/", StringComparison.Ordinal)).FullName);
         string filename = sourceName.EndsWith(".pdf.zip", StringComparison.OrdinalIgnoreCase) ? sourceName.Substring(0, sourceName.Length - 4) : SafePart(embeddedName, 180);
-        if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) filename = SafePart(Path.GetFileNameWithoutExtension(filename), 175) + ".pdf";
+        if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) filename = SafePart(Path.GetFileNameWithoutExtension(filename), 175) + ".pdf";if (marker != null) filename = WithReworkMarker(filename);
         string exactDestination = Path.Combine(directory, filename), sourcePdfHash = EvidencePdfSha256(source);
         if (File.Exists(exactDestination))
         {
@@ -2394,7 +2395,7 @@ internal sealed partial class PortableStorage : IDisposable
         {
             string root, source = ResolveEvidencePath(systemId, relative, out root);RecoverTransactions(root);string normalized = Relative(root, source), safeFolder = SafePart(folder, 60);
             if (!ArtifactDirectoryNames.Any(item => String.Equals(item, safeFolder, StringComparison.OrdinalIgnoreCase)) || !String.Equals(safeFolder, folder, StringComparison.Ordinal)) throw new InvalidDataException("The evidence document-type folder is invalid.");
-            if (ContainsManagedStorageDirectory(normalized) && !IsOrganizationReworkEvidencePath(normalized)) throw new InvalidDataException("Only active evidence or corrected evidence in an organization Rework folder can be organized by document type.");
+            if (ContainsManagedStorageDirectory(normalized) && !IsOrganizationReworkEvidencePath(normalized)) throw new InvalidDataException("Only active evidence or corrected REWORK-marked evidence can be organized by document type.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string validationError;if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
             Tuple<string, string> organization = OrganizationStorageLocation(root, source);bool local = IsLocalWorkspaceRoot(systemId, root);string canonicalFolder = OrganizationArtifactStorageFolder(safeFolder, organization.Item2), directory = local ? LocalIntakeDirectory(systemId, organization.Item2) : Path.Combine(organization.Item1, canonicalFolder);Directory.CreateDirectory(directory);
@@ -2417,7 +2418,7 @@ internal sealed partial class PortableStorage : IDisposable
         lock (RootLock(systemId))
         {
             string root, source = ResolveEvidencePath(systemId, relative, out root);RecoverTransactions(root);string normalized = Relative(root, source);
-            if (ContainsManagedStorageDirectory(normalized) && !IsOrganizationReworkEvidencePath(normalized)) throw new InvalidDataException("Only active evidence or evidence in an organization Rework folder can be normalized.");
+            if (ContainsManagedStorageDirectory(normalized) && !IsOrganizationReworkEvidencePath(normalized)) throw new InvalidDataException("Only active evidence or REWORK-marked evidence can be normalized.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
             string safeName = SafePart(filename, 180);
             if (!String.Equals(safeName, filename, StringComparison.Ordinal) || !String.Equals(Path.GetFileName(filename), filename, StringComparison.Ordinal)) throw new InvalidDataException("The normalized evidence filename is invalid or too long.");
@@ -2663,7 +2664,7 @@ internal sealed partial class PortableStorage : IDisposable
             string working = ReadWorkingManifest(systemId);if (!String.IsNullOrWhiteSpace(working)) EnsureLocalWorkspaceOrganizationFolders(localRoot, ValidateDatabase(working));
             string[] localNames = Directory.EnumerateDirectories(localDirectory, "*", SearchOption.TopDirectoryOnly).Select(path => new DirectoryInfo(path).Name).Where(name => !ReservedOrganizationName(name)).ToArray();
             string[] names = localNames.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
-            foreach (string name in names) { string localOrganization = Path.Combine(localDirectory, name);Directory.CreateDirectory(localOrganization);Directory.CreateDirectory(Path.Combine(localOrganization, SafePart(name, 80) + " Rework"));Directory.CreateDirectory(Path.Combine(localOrganization, SafePart(name, 80) + " Complete")); }
+            foreach (string name in names) { string localOrganization = Path.Combine(localDirectory, name);Directory.CreateDirectory(localOrganization);Directory.CreateDirectory(Path.Combine(localOrganization, SafePart(name, 80) + " Complete")); }
             return json.Serialize(names);
         }
     }
@@ -2673,7 +2674,7 @@ internal sealed partial class PortableStorage : IDisposable
         string organization = ValidOrganizationName(requested);
         lock (RootLock(systemId))
         {
-            string directory = Path.Combine(LocalEvidenceRoot(systemId), "Organizations", organization);Directory.CreateDirectory(directory);Directory.CreateDirectory(Path.Combine(directory, SafePart(organization, 80) + " Rework"));Directory.CreateDirectory(Path.Combine(directory, SafePart(organization, 80) + " Complete"));
+            string directory = Path.Combine(LocalEvidenceRoot(systemId), "Organizations", organization);Directory.CreateDirectory(directory);Directory.CreateDirectory(Path.Combine(directory, SafePart(organization, 80) + " Complete"));
             return json.Serialize(new Dictionary<string, object> { { "organization", organization } });
         }
     }
@@ -3663,7 +3664,6 @@ internal sealed partial class PortableStorage : IDisposable
         foreach (string organization in organizations)
         {
             string directory = Path.Combine(organizationsRoot, organization);Directory.CreateDirectory(directory);
-            Directory.CreateDirectory(Path.Combine(directory, SafePart(organization, 80) + " Rework"));
             Directory.CreateDirectory(Path.Combine(directory, SafePart(organization, 80) + " Complete"));
         }
     }
@@ -3874,7 +3874,7 @@ internal sealed partial class PortableStorage : IDisposable
 
     private string LocalIntakeDirectory(string systemId, string organization)
     {
-        string clean = ValidOrganizationName(organization), organizationRoot = Path.Combine(LocalEvidenceRoot(systemId), "Organizations", clean);Directory.CreateDirectory(organizationRoot);foreach (string suffix in new[] { " Rework", " Complete" }) Directory.CreateDirectory(Path.Combine(organizationRoot, SafePart(clean, 80) + suffix));return organizationRoot;
+        string clean = ValidOrganizationName(organization), organizationRoot = Path.Combine(LocalEvidenceRoot(systemId), "Organizations", clean);Directory.CreateDirectory(organizationRoot);foreach (string suffix in new[] { " Complete" }) Directory.CreateDirectory(Path.Combine(organizationRoot, SafePart(clean, 80) + suffix));return organizationRoot;
     }
 
     private string StageLocalArchive(string systemId, string source, string requestedFilename)
@@ -3901,7 +3901,7 @@ internal sealed partial class PortableStorage : IDisposable
             changed |= MigrateLegacyLocalDirectory(systemId, workspaceRoot, records, incoming, organizationRoot, false);
             changed |= MigrateLegacyLocalDirectory(systemId, workspaceRoot, records, published, completeRoot, false);
             changed |= MigrateLegacyLocalDirectory(systemId, workspaceRoot, records, retained, completeRoot, null);
-            Directory.CreateDirectory(Path.Combine(organizationRoot, prefix + " Rework"));Directory.CreateDirectory(completeRoot);
+            Directory.CreateDirectory(completeRoot);
         }if (changed) WriteLocalEvidenceMap(systemId, records);
     }
 
@@ -4251,17 +4251,8 @@ internal sealed partial class PortableStorage : IDisposable
         return false;
     }
 
-    private static bool IsOrganizationReworkEvidencePath(string relative)
-    {
-        string[] parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
-        bool foundRework = false;
-        for (int index = 0; index < parts.Length - 1; index++)
-        {
-            if (IsReworkStorageDirectory(parts[index])) { foundRework = true;continue; }
-            if (IsManagedStorageDirectory(parts[index])) return false;
-        }
-        return foundRework;
-    }
+    // Rework is now a REWORK_ filename marker inside the organization folder; see PortableReworkMarker.cs.
+    private static bool IsOrganizationReworkEvidencePath(string relative) { return IsReworkMarkedEvidencePath(relative); }
 
     private static bool IsOrganizationIncomingEvidencePath(string relative)
     {

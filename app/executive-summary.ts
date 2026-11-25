@@ -48,7 +48,7 @@ export async function createExecutiveSummaryPdf(input:ExecutiveSummaryInput){
  let rightY=611;rightY=heading(page,'Audit and Inspection Readiness',322,rightY,bold);rightY=bullets(page,[
   'Tamper-evident daily audit logs use ISO 8601 UTC timestamps, a SHA-256 chain, and the active Windows operator identity.',
   'Daily CSV and compressed versioned JSON backups include checksums, retention controls, explicit data migrations, integrity verification, and guided restoration.',
-  'Clean Up review identifies invalid, duplicate, superseded, and loose PDF evidence for approved organization Rework, organization Archive, or ZIP conversion.'
+  'Clean Up review identifies invalid, duplicate, superseded, and loose PDF evidence for approved REWORK marking, organization Archive, or ZIP conversion.'
  ],322,rightY,248,regular);rightY-=2;rightY=heading(page,'Secure, Lightweight Deployment',322,rightY,bold);bullets(page,[
   'One portable Windows executable runs locally without an installer or cloud database.',
   'Local-loopback hosting, organization-sharded records, and protected local read caching reduce network traffic while keeping authoritative data under existing Windows or SMB permissions.',
