@@ -30,8 +30,9 @@ export function organizationStorageLocation(path:string,rootFallback=''){
  return{organization,relativeDirectory:organizationIndex>=0?directories.slice(0,organizationIndex+1).join('/'):''};
 }
 
+/** Archive goes to the organization's Archive folder; Rework stays in the organization folder itself under a REWORK_ filename. */
 export function organizationCleanupDirectory(path:string,rootFallback:string,category:'Rework'|'Archive'){
- const location=organizationStorageLocation(path,rootFallback),organization=token(location.organization,60)||'Organization',folder=`${organization} ${category}`;
+ const location=organizationStorageLocation(path,rootFallback),organization=token(location.organization,60)||'Organization',folder=category==='Rework'?'':`${organization} ${category}`;
  return{...location,folder,path:[location.relativeDirectory,folder].filter(Boolean).join('/')};
 }
 

@@ -86,6 +86,6 @@ function encryptedFilenameOverrideAllowed(filename:string,path:string,rootName='
 export async function validateReadableOrStrictEncryptedEvidence(inspected:InspectedEvidence,filename:string,path:string,rootName='',expected?:ExpectedEvidenceIdentity){
  try{const{PDFDocument}=await import('pdf-lib');await PDFDocument.load(inspected.pdfBytes);return false}
  catch(error){if(!inspected.encryptedPdf||!/encrypt/i.test(errorDetail(error,'PDF validation failed.')))throw error}
- if(!encryptedFilenameOverrideAllowed(filename,path,rootName,expected))throw new Error('The encrypted PDF cannot be content-validated and its filename does not pass the complete Last_First_(ORG)_Artifact_DDMMMYYYY gate. Move it to Rework for correction.');
+ if(!encryptedFilenameOverrideAllowed(filename,path,rootName,expected))throw new Error('The encrypted PDF cannot be content-validated and its filename does not pass the complete Last_First_(ORG)_Artifact_DDMMMYYYY gate. Mark it REWORK for correction.');
  return true;
 }

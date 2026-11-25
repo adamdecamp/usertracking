@@ -139,12 +139,12 @@ test('reserves document-type folders so they cannot become organizations',()=>{
  for(const reserved of['Organizations','User Evidence','SAAR','DoD Cyber Cert','User Agreement','8140 Certification Memo','Privileged User Training','DTA Training','System','Error Reports','Audit Logs','backup','Reports','Sync Journals','Storage Transactions','GOV Rework','LM Archive','CON','LPT1.txt'])assert.equal(validOrganizationFolderName(reserved),false,reserved);
 });
 
-test('places Rework and Archive inside the authoritative organization folder',()=>{
+test('keeps Rework in the organization folder itself and places Archive inside it',()=>{
  assert.deepEqual(organizationStorageLocation('User Evidence/GDMS/Brown_Jacob/file.pdf','SYSTEM'),{organization:'GDMS',relativeDirectory:'User Evidence/GDMS'});
  assert.deepEqual(organizationStorageLocation('Organizations/GDMS/SAAR/file.pdf','SYSTEM'),{organization:'GDMS',relativeDirectory:'Organizations/GDMS'});
- assert.deepEqual(organizationCleanupDirectory('User Evidence/GDMS/Brown_Jacob/file.pdf','SYSTEM','Rework'),{organization:'GDMS',relativeDirectory:'User Evidence/GDMS',folder:'GDMS Rework',path:'User Evidence/GDMS/GDMS Rework'});
+ assert.deepEqual(organizationCleanupDirectory('User Evidence/GDMS/Brown_Jacob/file.pdf','SYSTEM','Rework'),{organization:'GDMS',relativeDirectory:'User Evidence/GDMS',folder:'',path:'User Evidence/GDMS'});
  assert.equal(organizationCleanupDirectory('NGC/Brown_Jacob/Brown_Jacob_(NGC)_SAAR_26AUG2026.pdf','SYSTEM','Archive').path,'NGC/NGC Archive');
- assert.equal(organizationCleanupDirectory('Brown_Jacob/Brown_Jacob_(GDMS)_SAAR_26AUG2026.pdf','GDMS','Rework').path,'GDMS Rework');
+ assert.equal(organizationCleanupDirectory('Brown_Jacob/Brown_Jacob_(GDMS)_SAAR_26AUG2026.pdf','GDMS','Rework').path,'');
  assert.equal(organizationCleanupDirectory('file.pdf','GDMS','Archive').path,'GDMS Archive');
 });
 

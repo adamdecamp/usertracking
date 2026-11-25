@@ -23,10 +23,10 @@ test('offers only entire-system or immediate-organization Sync scope',()=>{
  assert.match(syncUi,/<option value="system">Entire Information System<\/option>/);
  assert.match(syncUi,/<option value="organization"[^>]*>One Organization<\/option>/);
  assert.match(syncUi,/deeper subfolders cannot be selected as a separate scope/);
- assert.match(syncUi,/place new evidence directly in the applicable organization folder and corrected evidence in its Rework folder/);
+ assert.match(syncUi,/place new evidence directly in the applicable organization folder and leave evidence that needs correction there with REWORK_ at the start of its filename/);
  assert.match(syncUi,/Full Rescan — Inspect Active Document Folders and Ignore Cached Validation/);
  assert.match(page,/dailyIncomingOnly=!legacyImport&&!forceFull/);
- assert.match(page,/Checking organization-root intake files and Rework/);
+ assert.match(page,/Checking organization-root intake files, including REWORK files/);
  assert.doesNotMatch(page,/onClick=\{\(\)=>void sync\(true\)\}/);
 });
 
