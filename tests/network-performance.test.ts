@@ -133,7 +133,8 @@ test('changed evidence is staged locally once and validated with adaptive bounde
  assert.match(storage,/EvidenceValidationCacheDirectory/);
  assert.match(storage,/Parallel\.ForEach\(validations\.Skip\(1\)/);
  assert.match(storage,/AdaptiveValidationConcurrency/);
- assert.match(storage,/if \(IsNetworkRoot\(root\)\) return probeMilliseconds >= 750 \? 1 : 2/);
+ assert.match(storage,/if \(IsNetworkRoot\(root\)\) return probeMilliseconds >= 1500 \? 2 : 4/);
+ assert.match(storage,/if \(count <= 1 \|\| probeMilliseconds >= 3000\) return 1;/,'a very slow first file still drops validation to one file at a time');
  assert.match(storage,/ReadRelativeFile[\s\S]*?StagedEvidencePath[\s\S]*?File\.ReadAllBytes\(staged\)/);
  assert.match(storage,/PruneEvidenceValidationCache\(root, true\)/);
  assert.match(launcher,/action == "sync-cache-clear"[\s\S]*?ClearEvidenceValidationCache/);
@@ -163,6 +164,18 @@ test('audit appends reuse a protected verified checkpoint while explicit verific
  assert.match(storage,/AppendAuditBatch[\s\S]*?VerifyAuditChainIncrementalWithRetry/);
  assert.match(storage,/ProtectedData\.Protect[\s\S]*?AuditCheckpointEntropy/);
  assert.match(storage,/public string VerifyAuditLogs[\s\S]*?VerifyAuditChainWithRetry/);
+});
+
+test('startup reuses a recently fully verified audit checkpoint; explicit checks stay full-chain',()=>{
+ const lastLogon=fs.readFileSync(new URL('../portable-launcher/PortableLastLogon.cs',import.meta.url),'utf8');
+ assert.match(storage,/AuditState audit = startup \? VerifyAuditChainForStartup\([^;]*\) : VerifyAuditChain\(/);
+ assert.match(storage,/"fullVerifiedAtUtc", state\.Incremental \? state\.FullVerifiedAtUtc \?\? "" : DateTime\.UtcNow/,'only a complete chain verification refreshes the full-verification time');
+ assert.match(lastLogon,/StartupAuditFullVerificationDays = 7/);
+ assert.match(lastLogon,/now - fullyVerified < TimeSpan\.FromDays\(StartupAuditFullVerificationDays\)/);
+ assert.match(launcher,/VerifyLatest\(systemId, QueryValue\(target, "logical"\), String\.Equals\(QueryValue\(target, "audit"\), "startup", StringComparison\.Ordinal\)\)/);
+ assert.match(page,/verify\?logical=\$\{encodeURIComponent\(systemId\)\}\$\{startup\?'&audit=startup':''\}/);
+ assert.equal((page.match(/verifyMappedStorageHealth\([^)]*,true,true\)/g)??[]).length,5,'the five startup, reconnect, and Full Access paths use the startup check');
+ for(const explicit of ['async function verifyStorage','async function openReleaseHealth',"updateProcessing('Verifying Restored Database And Audit Chain'"]){const start=page.indexOf(explicit);assert.ok(start>=0,explicit);assert.match(page.slice(start,start+1500),/verifyMappedStorageHealth\(root,systemId,true\)/,`${explicit} keeps the full-chain check`)}
 });
 
 test('Windows change notifications are advisory hints with overflow fallback to authoritative scans',()=>{

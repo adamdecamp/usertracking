@@ -1,8 +1,37 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 
 internal sealed partial class PortableStorage
 {
+    private const int StartupAuditFullVerificationDays = 7;
+
+    // Startup reuses this Windows user's protected checkpoint when every audit filename, length, and
+    // modification time still matches it and a complete chain verification ran within the last week.
+    // Otherwise, and for another Windows user or computer, startup verifies the whole chain. Explicit
+    // verification, Release Health, restoration, and audit viewing always verify the whole chain.
+    private AuditState VerifyAuditChainForStartup(string directory)
+    {
+        AuditState cached = ReadAuditCheckpoint(directory);DateTimeOffset fullyVerified, now = DateTimeOffset.UtcNow;
+        bool recent = cached != null && cached.FullVerifiedAtUtc != null && DateTimeOffset.TryParse(cached.FullVerifiedAtUtc, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out fullyVerified) && fullyVerified <= now.AddMinutes(5) && now - fullyVerified < TimeSpan.FromDays(StartupAuditFullVerificationDays);
+        if (recent) { cached.Incremental = true;return cached; }
+        AuditState full = VerifyAuditChainWithRetry(directory);
+        if (cached == null || cached.Entries != full.Entries || !String.Equals(cached.HeadHash, full.HeadHash, StringComparison.OrdinalIgnoreCase)) return full;
+        // The checkpoint covers exactly the chain just verified, so record the full verification on it. The
+        // audit lock and a second checkpoint read make sure no entry was appended in between.
+        try
+        {
+            using (AcquireAuditFileLock(directory))
+            {
+                AuditState locked = ReadAuditCheckpoint(directory);
+                if (locked != null && locked.Entries == full.Entries && String.Equals(locked.HeadHash, full.HeadHash, StringComparison.OrdinalIgnoreCase)) { locked.Incremental = true;locked.FullVerifiedAtUtc = now.ToString("o", CultureInfo.InvariantCulture);SaveAuditCheckpoint(directory, locked); }
+            }
+        }
+        catch (IOException) { }
+        return full;
+    }
+
     public string ReadLastLogon(string systemId)
     {
         lock (RootLock(systemId))

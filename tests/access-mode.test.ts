@@ -58,9 +58,9 @@ test('the dashboard can switch between Read-Only and Full Access without restart
 });
 
 test('Full Access requires startup integrity verification and safely falls back to Read-Only',()=>{
- assert.match(page,/verifyMappedStorageHealth\(root,target,true\)/);
- assert.match(page,/verifyMappedStorageHealth\(h,mappedSystemId,true\)/);
- assert.match(page,/verifyMappedStorageHealth\(root,systemId,true\)/);
+ assert.match(page,/verifyMappedStorageHealth\(root,target,true,true\)/);
+ assert.match(page,/verifyMappedStorageHealth\(h,mappedSystemId,true,true\)/);
+ assert.match(page,/verifyMappedStorageHealth\(root,systemId,true,true\)/);
  assert.match(page,/Full Access was not opened because startup integrity verification failed\. Read-Only Access remains available\./);
  assert.match(page,/trackerWindow\(\)\.__trackerAccessMode='read-only'/);
 });
