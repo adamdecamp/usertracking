@@ -7,6 +7,7 @@ import {organizationCleanupDirectory} from '../app/document-renamer-utils.ts';
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
 const marker=readFileSync(new URL('../portable-launcher/PortableReworkMarker.cs',import.meta.url),'utf8');
+const browserRework=readFileSync(new URL('../app/browser-rework.ts',import.meta.url),'utf8');
 
 test('the REWORK marker is recognized on names and paths, added once, and removed for validation',()=>{
  assert.equal(hasReworkMarker('REWORK_Doe_Jane_(ORG)_SAAR_01JAN2026.pdf'),true);
@@ -35,9 +36,9 @@ test('Sync reads REWORK files under their unmarked name and clears the marker on
  assert.match(page,/insideOrganizationRework\(entry\.path\)&&evidenceFilenamePassesStorageGate\(entry\.filename,[\s\S]{0,500}?normalizeEvidenceDate\(h,item,item\.filename\)/);
  assert.match(page,/CLEAR REWORK MARKER: \$\{previousPath\} renamed to \$\{result\.path\}/);
  assert.match(page,/scanResult\.evidence=scanResult\.evidence\.filter\(entry=>entry!==item\);normalizationFailures\.push\(\{[^}]*reason:`REWORK marker kept:/,'a marker that cannot be cleared keeps the file out of filing');
- assert.match(page,/safeName=withReworkMarker\(safeFilePart\(requestedName/);
- assert.match(page,/safeName=withReworkMarker\(safeFilePart\(ref\.name,180\)\)/);
- assert.doesNotMatch(page,/getDirectoryHandle\(`\$\{safeFilePart\(organization,80\)\} Rework`/,'no Rework folder is created');
+ assert.match(browserRework,/safeName=withReworkMarker\(safeFilePart\(requestedName/);
+ assert.match(browserRework,/safeName=withReworkMarker\(safeFilePart\(ref\.name,180\)\)/);
+ assert.doesNotMatch(page+browserRework,/getDirectoryHandle\(`\$\{safeFilePart\(organization,80\)\} Rework`/,'no Rework folder is created');
  assert.match(page,/if\(reworkDirectory\|\|permanentSaarArchiveDirectory\(name\)/,'legacy Rework folders are not scanned');
  assert.match(page,/else if\(isRework\)continue;/);
 });
