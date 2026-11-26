@@ -2159,7 +2159,7 @@ internal sealed partial class PortableStorage : IDisposable
                             Tuple<string, string> orgLocation = OrganizationStorageLocation(root, source);string directory = orgLocation.Item1;
                             string destination = UniqueDestination(directory, WithReworkMarker(Path.GetFileName(source))), sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "rework", source, destination, sourceHash, "");
                             File.Move(source, destination);FailAfter("rework-retention-move");
-                            if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The unaccepted-file REWORK rename failed its SHA-256 integrity check.");
+                            if (!MoveKeepsContents(root, source, destination) && !String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The unaccepted-file REWORK rename failed its SHA-256 integrity check.");
                             CompleteTransaction(transaction);
                             moved.Add(new Dictionary<string, object> { { "source", Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "archived", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') }, { "bucket", "Unaccepted File Format" }, { "evidenceDate", "Not Applicable" } });
                         }
@@ -2202,7 +2202,7 @@ internal sealed partial class PortableStorage : IDisposable
                         Directory.CreateDirectory(directory);destination = UniqueDestination(directory, filename);
                         string sourceHash = Sha256Bytes(File.ReadAllBytes(effectiveSource)), transaction = BeginTransaction(root, "retention-preflight", effectiveSource, destination, sourceHash, "");
                         File.Move(effectiveSource, destination);FailAfter("rework-retention-move");
-                        if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The Archive preflight evidence failed its SHA-256 integrity check.");
+                        if (!MoveKeepsContents(root, effectiveSource, destination) && !String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The Archive preflight evidence failed its SHA-256 integrity check.");
                         CompleteTransaction(transaction);
                         moved.Add(new Dictionary<string, object> { { "source", Relative(root, effectiveSource).Replace(Path.DirectorySeparatorChar, '/') }, { "archived", Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') }, { "bucket", bucket }, { "evidenceDate", evidenceDate.HasValue ? evidenceDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : permanentSaar ? "Permanent SAAR" : "Recognized Filename Year" } });
                     }
@@ -2297,7 +2297,7 @@ internal sealed partial class PortableStorage : IDisposable
             for (int index = 1; File.Exists(destination); index++) destination = Path.Combine(directory, stem + "_" + index.ToString(CultureInfo.InvariantCulture) + extension);
             string sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "rework", source, destination, sourceHash, "");
             File.Move(source, destination);FailAfter("rework-move");
-            if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The REWORK rename failed its SHA-256 integrity check.");
+            if (!MoveKeepsContents(root, source, destination) && !String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The REWORK rename failed its SHA-256 integrity check.");
             CompleteTransaction(transaction);
             if (IsLocalWorkspaceRoot(systemId, root)) ForgetLocalEvidence(systemId, source);
             string reworked = Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/');
@@ -2397,15 +2397,15 @@ internal sealed partial class PortableStorage : IDisposable
             if (!ArtifactDirectoryNames.Any(item => String.Equals(item, safeFolder, StringComparison.OrdinalIgnoreCase)) || !String.Equals(safeFolder, folder, StringComparison.Ordinal)) throw new InvalidDataException("The evidence document-type folder is invalid.");
             if (ContainsManagedStorageDirectory(normalized) && !IsOrganizationReworkEvidencePath(normalized)) throw new InvalidDataException("Only active evidence or corrected REWORK-marked evidence can be organized by document type.");
             if (!File.Exists(source)) throw new FileNotFoundException("The selected evidence file no longer exists.");
-            string validationError;if (!TryValidateEvidenceFile(source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
+            byte[] sourceBytes = ReadAllBytesWithRetry(source, EvidenceLimit);string validationError;if (!TryValidateEvidenceBytes(sourceBytes, source, out validationError)) throw new InvalidDataException(String.IsNullOrWhiteSpace(validationError) ? "The selected evidence file is invalid." : validationError);
             Tuple<string, string> organization = OrganizationStorageLocation(root, source);bool local = IsLocalWorkspaceRoot(systemId, root);string canonicalFolder = OrganizationArtifactStorageFolder(safeFolder, organization.Item2), directory = local ? LocalIntakeDirectory(systemId, organization.Item2) : Path.Combine(organization.Item1, canonicalFolder);Directory.CreateDirectory(directory);
             string canonical = Path.Combine("Organizations", organization.Item2, canonicalFolder, Path.GetFileName(source)).Replace(Path.DirectorySeparatorChar, '/'), previous = local ? LocalPublicEvidencePath(systemId, source) : relative;
             string destination = Path.Combine(directory, Path.GetFileName(source));
             if (String.Equals(source, destination, StringComparison.OrdinalIgnoreCase)) { if (local) RegisterLocalEvidence(systemId, source, canonical, previous);return json.Serialize(new Dictionary<string, object> { { "organized", local ? canonical : Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "alreadyCompleted", true } }); }
             if (File.Exists(destination)) return json.Serialize(new Dictionary<string, object> { { "organized", local ? previous : Relative(root, source).Replace(Path.DirectorySeparatorChar, '/') }, { "collision", true }, { "existing", local ? canonical : Relative(root, destination).Replace(Path.DirectorySeparatorChar, '/') } });
-            string sourceHash = Sha256Bytes(File.ReadAllBytes(source)), transaction = BeginTransaction(root, "organize", source, destination, sourceHash, "");
+            string sourceHash = Sha256Bytes(sourceBytes), transaction = BeginTransaction(root, "organize", source, destination, sourceHash, "");
             File.Move(source, destination);FailAfter("organize-move");
-            try { if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The organized evidence failed its SHA-256 integrity check."); }
+            try { if (!MoveKeepsContents(root, source, destination) && !String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The organized evidence failed its SHA-256 integrity check."); }
             catch { if (!File.Exists(source) && File.Exists(destination)) File.Move(destination, source);throw; }
             CompleteTransaction(transaction);
             if (local) RegisterLocalEvidence(systemId, destination, canonical, previous);
@@ -2433,7 +2433,7 @@ internal sealed partial class PortableStorage : IDisposable
             File.Move(source, destination);FailAfter("rename-move");
             try
             {
-                if (!String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The renamed PDF failed its content-integrity check.");
+                if (!MoveKeepsContents(root, source, destination) && !String.Equals(sourceHash, Sha256Bytes(File.ReadAllBytes(destination)), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The renamed PDF failed its content-integrity check.");
             }
             catch
             {
@@ -4954,6 +4954,10 @@ internal sealed partial class PortableStorage : IDisposable
 
     private static string Sha256Stream(Stream value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(value)).Replace("-", "").ToLowerInvariant(); } }
     private static string Sha256(string value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(value))).Replace("-", "").ToLowerInvariant(); } }
+    private static bool TryValidateEvidenceBytes(byte[] bytes, string path, out string error) { error = "";try { using (var stream = new MemoryStream(bytes, false)) { if (path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) ValidatePdfStream(stream, Path.GetFileName(path), bytes.LongLength);else if (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) ValidateEvidenceZip(stream, Path.GetFileName(path));else { error = "Only PDF evidence or a ZIP containing one PDF is accepted.";return false; } }return true; } catch (Exception ex) { error = CleanLine(ex.Message, 300);return false; } }
+    // A rename in one directory, or a move within one local volume that passes no junction, is a metadata change that cannot rewrite file contents, so its post-move SHA-256 reread is skipped. Network and cross-volume moves are still reread.
+    private static bool MoveKeepsContents(string root, string source, string destination) { try { string from = Path.GetDirectoryName(Path.GetFullPath(source)), to = Path.GetDirectoryName(Path.GetFullPath(destination));if (String.Equals(from, to, StringComparison.OrdinalIgnoreCase)) return true;return !IsNetworkRoot(root) && String.Equals(Path.GetPathRoot(from), Path.GetPathRoot(to), StringComparison.OrdinalIgnoreCase) && !ThroughReparsePoint(from) && !ThroughReparsePoint(to); } catch { return false; } }
+    private static bool ThroughReparsePoint(string directory) { for (var current = new DirectoryInfo(directory); current != null && current.Parent != null; current = current.Parent) if ((current.Attributes & FileAttributes.ReparsePoint) != 0) return true;return false; }
     private static string Sha256Bytes(byte[] value) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(value)).Replace("-", "").ToLowerInvariant(); } }
     private static byte[] ReadAllBytesWithRetry(string path, long limit)
     {
