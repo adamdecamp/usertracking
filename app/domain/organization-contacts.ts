@@ -74,6 +74,29 @@ export function decodeOrganizationContacts(value:unknown):OrganizationContact[]|
  return contacts;
 }
 
+/** Most CC addresses an individual email may carry; the launcher enforces the same limit. */
+export const individualEmailCcLimit=20;
+
+/** The organization's contacts that have an email address, offered as individual CC choices. */
+export function ccContactChoices(contacts:readonly OrganizationContact[],organization:string){
+ return sortContacts(contacts.filter(contact=>contact.organization.toUpperCase()===organization.toUpperCase()&&contact.methods.some(method=>method.type==='Email')));
+}
+
+/**
+ * CC recipients for an individual email from the chosen contact ids: each contact's first email address,
+ * without duplicates or the user's own address. Labels (position and name) are for the audit record.
+ */
+export function individualEmailCc(contacts:readonly OrganizationContact[],organization:string,selectedIds:readonly string[],userEmail:string){
+ const chosen=new Set(selectedIds),seen=new Set([userEmail.trim().toLowerCase()]),emails:string[]=[],labels:string[]=[];
+ for(const contact of ccContactChoices(contacts,organization)){
+  if(!chosen.has(contact.id))continue;
+  const email=contact.methods.find(method=>method.type==='Email')!.value.trim().toLowerCase();
+  if(seen.has(email)||emails.length>=individualEmailCcLimit)continue;
+  seen.add(email);emails.push(email);labels.push(`${contact.position} ${contact.name}`);
+ }
+ return{emails,labels};
+}
+
 const contactKey=(contact:OrganizationContact)=>`${contact.organization} ${contact.position} ${contact.name}`;
 const sameContact=(left:OrganizationContact,right:OrganizationContact)=>JSON.stringify([left.organization,left.position,left.name,left.methods])===JSON.stringify([right.organization,right.position,right.name,right.methods]);
 

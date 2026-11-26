@@ -85,4 +85,5 @@ tests/next-steps-a11y.test.ts
 tests/pending-evidence-moves.test.ts
 tests/last-results.test.ts
 tests/sync-unchanged-save.test.ts
+tests/individual-email-cc.test.ts
 tests/rework-marker.test.ts
