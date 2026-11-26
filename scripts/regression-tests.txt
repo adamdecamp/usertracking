@@ -86,4 +86,5 @@ tests/pending-evidence-moves.test.ts
 tests/last-results.test.ts
 tests/sync-unchanged-save.test.ts
 tests/individual-email-cc.test.ts
+tests/ui-ux-pass.test.ts
 tests/rework-marker.test.ts

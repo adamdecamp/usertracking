@@ -27,6 +27,21 @@ export function manualAddEvidenceGate(input:{requiredKinds:string[];selectedKind
  return{allowed:missingKinds.length===0||overrideApplied,missingKinds,overrideApplied,justification};
 }
 
+/** Plain-language reasons the Add User button is still disabled, in the order the form asks for them. */
+export function addUserBlockers(input:{last:string;first:string;organization:string;emailValid:boolean;privilegedNeeded:boolean;privilegedValid:boolean;missingKinds:string[];overrideSelected:boolean;overrideComment:string;saarReading:boolean}){
+ const blockers:string[]=[],supporting=input.missingKinds.filter(kind=>kind!=='SAAR');
+ if(!input.last.trim())blockers.push('Last Name');
+ if(!input.first.trim())blockers.push('First Name');
+ if(!input.organization.trim())blockers.push('Storage Organization');
+ if(!input.emailValid)blockers.push('a valid Official Email');
+ if(input.privilegedNeeded&&!input.privilegedValid)blockers.push('a Privileged Username ending in its type, such as name_admin');
+ if(input.missingKinds.includes('SAAR'))blockers.push('the SAAR (it cannot be overridden)');
+ if(supporting.length&&!input.overrideSelected)blockers.push(`${supporting.join(', ')}, or check Override Missing Supporting Evidence`);
+ if(supporting.length&&input.overrideSelected&&!input.overrideComment.trim())blockers.push('an Override Justification');
+ if(input.saarReading)blockers.push('the SAAR to finish reading');
+ return blockers;
+}
+
 const emailPattern=/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
 
 export function officialEmailUpdate(currentEmail:string,nextEmail:string,otherEmails:string[]=[]){
