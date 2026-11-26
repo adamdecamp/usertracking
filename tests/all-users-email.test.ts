@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {activeUserEmails,activeUsersWithoutEmail,allUsersEmailBatches,allUsersEmailBody,allUsersEmailRequest,allUsersEmailSubject} from '../app/application/all-users-email.ts';
+import {readPageSource} from './page-source.ts';
 
 const users=[
  {systemId:'s1',email:' Vivian.Shaw@Example.mil ',disabled:false},
@@ -41,7 +42,7 @@ test('drafts are BCC only, never addressed To anyone, and use the standard subje
 });
 
 test('the notification window offers the all-users draft and every batch is audited before it opens',()=>{
- const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8'),panel=readFileSync(new URL('../app/components/AllUsersEmail.tsx',import.meta.url),'utf8');
+ const page=readPageSource(),panel=readFileSync(new URL('../app/components/AllUsersEmail.tsx',import.meta.url),'utf8');
  assert.match(page,/<AllUsersEmail systems=\{systems\} users=\{users\} systemId=\{sys\} request=\{outlookRequest\(sys\)\} audit=\{appendAudit\}\/>/);
  const auditAt=panel.indexOf('await audit('),draftAt=panel.indexOf("request('outlook-draft'");
  assert.ok(auditAt>0&&draftAt>auditAt,'the audit entry is written before the draft is requested');

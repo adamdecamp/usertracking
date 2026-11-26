@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {ccContactChoices,individualEmailCc,individualEmailCcLimit,type OrganizationContact} from '../app/domain/organization-contacts.ts';
+import {readPageSource} from './page-source.ts';
 
 const contact=(id:string,organization:string,position:string,name:string,...methods:OrganizationContact['methods']):OrganizationContact=>({id,organization,position,name,methods});
 const contacts=[
@@ -26,7 +27,7 @@ test('CC recipients use each chosen contact\'s first email, without duplicates o
 });
 
 test('the User Record offers CC choices and the draft carries them to Outlook and the audit',()=>{
- const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+ const page=readPageSource();
  assert.match(page,/<IndividualEmailCc contacts=\{system\.organizationContacts\?\?\[\]\} organization=\{draft\.organization\} userEmail=\{draft\.email\} selected=\{ccContactIds\}/);
  assert.match(page,/onPrepareNotification\(draft,notificationIssues,ccContactIds\)/);
  assert.match(page,/cc=individualEmailCc\(system\?\.organizationContacts\?\?\[\],user\.organization,ccContactIds,user\.email\)/);

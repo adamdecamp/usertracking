@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
+import {readPageSource} from './page-source.ts';
 
 const read=(path:string)=>readFileSync(new URL(path,import.meta.url),'utf8');
-const page=read('../app/page.tsx');
+const page=readPageSource();
 
 test('Sync does not insert the organization into a filename with no recognizable document type',()=>{
  assert.match(page,/organizationNormalization=deferSaarOrganization\|\|!identity\|\|!artifactKindFromFilename\(dated\)\?undefined:normalizeFilenameOrganization\(dated,folderOrganization\)/);

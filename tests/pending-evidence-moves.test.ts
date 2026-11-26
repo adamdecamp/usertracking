@@ -89,6 +89,21 @@ test('a missing file is reported and dropped, a busy folder keeps the request, a
  await assert.rejects(runPendingEvidenceMoves(system([move('archive-user',busy)]),[busy],operations({archive:async()=>{throw new LeaseLost('lease lost')}}).ops),LeaseLost);
 });
 
+test('archiving a disabled user’s files together gives the same results as one file at a time',async()=>{
+ const people=()=>[user('u1','Doe',[file('Doe','DoD Cyber Cert','DoD_Cyber_Cert'),file('Doe','SAAR','GEN_SAAR','GOV SAAR Archive'),{...file('Doe','User Agreement','User_Agreement'),filename:'MISSING.pdf.zip'}],{disabled:true}),user('u2','Busy',[{...file('Busy','DoD Cyber Cert','DoD_Cyber_Cert'),filename:'BUSY.pdf.zip'}],{disabled:true})];
+ const queue=(records:UserRecord[])=>system(records.map(record=>move('archive-user',record)));
+ const single=operations(),singleUsers=people(),oneAtATime=await runPendingEvidenceMoves(queue(singleUsers),singleUsers,single.ops);
+ const batches:string[][]=[],batched=operations();
+ batched.ops.archiveMany=async(owner,artifacts)=>{batches.push(artifacts.map(artifact=>artifact.filename));const outcomes:({ok:true;value:string}|{ok:false;error:unknown})[]=[];for(const artifact of artifacts)try{outcomes.push({ok:true,value:await batched.ops.archive(owner,artifact)})}catch(error){outcomes.push({ok:false,error})}return outcomes};
+ const batchedUsers=people(),together=await runPendingEvidenceMoves(queue(batchedUsers),batchedUsers,batched.ops);
+ assert.deepEqual(batches,[['Doe_Test_(GOV)_DoD_Cyber_Cert_01OCT2026.pdf.zip','MISSING.pdf.zip'],['BUSY.pdf.zip']],'one call per user, without files already in Archive');
+ assert.deepEqual({users:together.users,audit:together.audit,retained:together.retained,warnings:together.warnings},{users:oneAtATime.users,audit:oneAtATime.audit,retained:oneAtATime.retained,warnings:oneAtATime.warnings});
+ const failedUsers=people(),failed=await runPendingEvidenceMoves(queue(failedUsers),failedUsers,operations({archiveMany:async()=>{throw new Error('The launcher stopped responding.')}}).ops);
+ assert.equal(failed.retained,2,'a failed batch keeps every request for the next commit');
+ assert.equal(failed.users[0].artifacts[0].filename,'Doe_Test_(GOV)_DoD_Cyber_Cert_01OCT2026.pdf.zip','files that did not move keep their references');
+ const leaseUsers=people();await assert.rejects(runPendingEvidenceMoves(queue(leaseUsers),leaseUsers,operations({archiveMany:async()=>{throw new LeaseLost('lease lost')}}).ops),LeaseLost);
+});
+
 test('requests follow the record as it stands at commit and run renames before archives',async()=>{
  const active=user('u1','Back',[file('Back','DoD Cyber Cert','DoD_Cyber_Cert')]);
  const disabled=user('u2','Away',[file('Away','DoD Cyber Cert','DoD_Cyber_Cert')],{disabled:true});

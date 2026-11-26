@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {readFileSync} from 'node:fs';
+import {readPageSource} from './page-source.ts';
 
-const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const page=readPageSource();
 const userModal=page.slice(page.indexOf('function UserModal('),page.indexOf('function MessageAutomation('));
 
 test('privilege modification accepts an operator-entered Privileged User Type',()=>{

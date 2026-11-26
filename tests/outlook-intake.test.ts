@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {decodeOutlookFolderResult,decodeOutlookHeldList,decodeOutlookIntakeCheck,decodeOutlookIntakeResult,decodeOutlookSendFrom,type OutlookHeldItem,type OutlookIntakeResult} from '../app/infrastructure/outlook-intake-contract.ts';
 import {outlookFolderPrompt,outlookHeldCorrection,outlookHeldDraft,outlookHeldFilename,outlookIntakeLead,outlookIntakeLookbackChoices,outlookIntakeRequest,outlookIntakeSenders,outlookIntakeSummary,outlookIntakeWindow,sentOnBehalf} from '../app/application/outlook-intake.ts';
+import {readPageSource} from './page-source.ts';
 
 const users=[
  {systemId:'s1',email:' Vivian.Shaw@Example.mil ',last:'Shaw',first:'Vivian'},
@@ -112,7 +113,7 @@ test('Needs Attention lives in the Outlook panel and the launcher validates ever
 });
 
 test('the Outlook check lives in the operator-started Sync window and only in the portable launcher',()=>{
- const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8'),parts=readFileSync(new URL('../app/components/TrackerViewParts.tsx',import.meta.url),'utf8');
+ const page=readPageSource(),parts=readFileSync(new URL('../app/components/TrackerViewParts.tsx',import.meta.url),'utf8');
  assert.match(page,/outlook=\{<OutlookIntakePanel systemId=\{effectiveSelected\} users=\{users\} request=\{outlookRequest\(effectiveSelected\)\}\/>\}/);
  assert.match(page,/return root&&isPortableRoot\(root\)\?/);
  assert.match(parts,/\{outlook\}<button className="primary full"/);
@@ -124,7 +125,7 @@ test('the Send From mailbox is decoded strictly and shown in the notification wi
  assert.deepEqual(decodeOutlookSendFrom({address:'compliance@example.mil'}),{address:'compliance@example.mil'});
  assert.deepEqual(decodeOutlookSendFrom({address:''}),{address:''});
  assert.throws(()=>decodeOutlookSendFrom({}),/Outlook Send From/);
- const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+ const page=readPageSource();
  assert.match(page,/<h2>\{state\} Artifact Notifications<\/h2><OutlookSendFromSetting request=\{outlookRequest\(/);
 });
 

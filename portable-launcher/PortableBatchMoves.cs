@@ -24,6 +24,27 @@ internal sealed partial class PortableStorage
         return RunEvidenceMoveBatch(body, leaseStillHeld, item => NormalizeEvidenceFilename(systemId, BatchText(item, "path"), BatchText(item, "filename")));
     }
 
+    // Clean Up, Unarchive, and Session Commit archive several files the same way. Each item
+    // names one of four allowed actions and gets exactly the single-file operation's result.
+    public string EvidenceActionBatch(string systemId, byte[] body, Func<bool> leaseStillHeld)
+    {
+        return RunEvidenceMoveBatch(body, leaseStillHeld, item =>
+        {
+            string action = BatchText(item, "action"), path = BatchText(item, "path");
+            if (action == "archive")
+            {
+                object filename, rework;
+                string requested = item.TryGetValue("filename", out filename) ? filename as string : null;
+                bool allowRework = item.TryGetValue("rework", out rework) && rework is bool && (bool)rework;
+                return ArchiveEvidence(systemId, path, requested ?? "", allowRework);
+            }
+            if (action == "rework") return MoveEvidenceToRework(systemId, path);
+            if (action == "compress") return CompressEvidence(systemId, path);
+            if (action == "unarchive") return UnarchiveEvidence(systemId, path);
+            throw new InvalidDataException("The evidence batch action is not supported.");
+        });
+    }
+
     private string RunEvidenceMoveBatch(byte[] body, Func<bool> leaseStillHeld, Func<Dictionary<string, object>, string> move)
     {
         object[] items;

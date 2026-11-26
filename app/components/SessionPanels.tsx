@@ -1,6 +1,10 @@
 'use client';
 /* eslint-disable @next/next/no-img-element -- The static brand asset must work in the portable Vite build. */
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useRef,useState,useSyncExternalStore} from 'react';
+
+/** False in the server-rendered page and true once React makes it interactive, so an early click is never silently lost. */
+const noSubscription=()=>()=>undefined;
+function useInteractive(){return useSyncExternalStore(noSubscription,()=>true,()=>false)}
 
 export function OperatorIdentityGate({windowsUser,initialName,onSave}:{windowsUser:string;initialName?:string;onSave:(fullName:string)=>Promise<void>}){
  const input=useRef<HTMLInputElement>(null),[saving,setSaving]=useState(false),[error,setError]=useState('');
@@ -9,9 +13,9 @@ export function OperatorIdentityGate({windowsUser,initialName,onSave}:{windowsUs
 }
 
 export function AccessModeGate({onReadOnly,onFull,onOpenSnapshot}:{onReadOnly:()=>void;onFull:()=>void;onOpenSnapshot:(file:File)=>void|Promise<void>}){
- const firstAction=useRef<HTMLButtonElement>(null);
- useEffect(()=>{firstAction.current?.focus()},[]);
- return <div className="access-mode-gate" role="dialog" aria-modal="true" aria-labelledby="access-mode-title"><div className="access-mode-card"><img className="access-mode-logo" src="/raptor-icon.png" alt=""/><p className="eyebrow">R.A.P.T.O.R. Session</p><h2 id="access-mode-title">Choose Your Access</h2><p>Use Read-Only Access to look up user and compliance status without changing shared records. Full Access verifies the live database checksum, newest backup, and audit chain before enabling changes.</p><div className="access-mode-options"><button ref={firstAction} type="button" onClick={onReadOnly}><strong>Read-Only Access</strong><span>Multiple viewers · No editor lock · 15-minute inactivity timeout</span></button><button type="button" className="primary" onClick={onFull}><strong>Full Access</strong><span>Required startup health check · One exclusive editor</span></button><label className="access-import"><strong>Open Organization Status File</strong><span>Offline · Damage checked · Read only</span><input type="file" accept=".json,.raptor-status.json,application/json" onChange={event=>{const file=event.target.files?.[0];event.currentTarget.value='';if(file)void onOpenSnapshot(file)}}/></label></div><small>If startup integrity verification fails, R.A.P.T.O.R. keeps the mapped system available in Read-Only Access for review and recovery.</small></div></div>;
+ const firstAction=useRef<HTMLButtonElement>(null),interactive=useInteractive();
+ useEffect(()=>{if(interactive)firstAction.current?.focus()},[interactive]);
+ return <div className="access-mode-gate" role="dialog" aria-modal="true" aria-labelledby="access-mode-title"><div className="access-mode-card"><img className="access-mode-logo" src="/raptor-icon.png" alt=""/><p className="eyebrow">R.A.P.T.O.R. Session</p><h2 id="access-mode-title">Choose Your Access</h2><p>Use Read-Only Access to look up user and compliance status without changing shared records. Full Access verifies the live database checksum, newest backup, and audit chain before enabling changes.</p><div className="access-mode-options"><button ref={firstAction} type="button" disabled={!interactive} onClick={onReadOnly}><strong>Read-Only Access</strong><span>Multiple viewers · No editor lock · 15-minute inactivity timeout</span></button><button type="button" className="primary" disabled={!interactive} onClick={onFull}><strong>Full Access</strong><span>Required startup health check · One exclusive editor</span></button><label className="access-import"><strong>Open Organization Status File</strong><span>Offline · Damage checked · Read only</span><input type="file" accept=".json,.raptor-status.json,application/json" disabled={!interactive} onChange={event=>{const file=event.target.files?.[0];event.currentTarget.value='';if(file)void onOpenSnapshot(file)}}/></label></div><small>If startup integrity verification fails, R.A.P.T.O.R. keeps the mapped system available in Read-Only Access for review and recovery.</small></div></div>;
 }
 
 export function SessionLock({accessMode,state,message,portableHost,onReconnect,onEndSession}:{accessMode:string;state:'idle'|'logged-off'|'blocked';message:string;portableHost:boolean;onReconnect:()=>void|Promise<void>;onEndSession:()=>void|Promise<void>}){

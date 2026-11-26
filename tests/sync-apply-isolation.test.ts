@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readPageSource} from './page-source.ts';
 
-const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const page=readPageSource();
 const apply=page.slice(page.indexOf('async function applyVerifiedSync'),page.indexOf('function resetFilters'));
 
 test('Verified Sync isolates per-file provenance failures and commits successful work',()=>{

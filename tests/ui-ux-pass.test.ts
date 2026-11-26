@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {addUserBlockers} from '../app/user-update-utils.ts';
 import {notificationSummary} from '../app/notification-summary.ts';
+import {readPageSource} from './page-source.ts';
 
 const read=(path:string)=>readFileSync(new URL(path,import.meta.url),'utf8');
 const ready={last:'Doe',first:'Jane',organization:'ORG',emailValid:true,privilegedNeeded:false,privilegedValid:false,missingKinds:[] as string[],overrideSelected:false,overrideComment:'',saarReading:false};
@@ -14,7 +15,7 @@ test('Add User explains every reason its button is still disabled',()=>{
  assert.deepEqual(addUserBlockers({...ready,missingKinds:['User Agreement'],overrideSelected:true}),['an Override Justification'],'a checked override still needs its justification');
  assert.deepEqual(addUserBlockers({...ready,missingKinds:['User Agreement'],overrideSelected:true,overrideComment:'Documents to follow'}),[],'a justified override clears the supporting-evidence blocker');
  assert.deepEqual(addUserBlockers({...ready,privilegedNeeded:true,saarReading:true}),['a Privileged Username ending in its type, such as name_admin','the SAAR to finish reading']);
- const page=read('../app/page.tsx');
+ const page=readPageSource();
  assert.match(page,/<p className="add-user-blockers" role="status">Still needed to add this user: \{addUserBlockers\(/);
 });
 
