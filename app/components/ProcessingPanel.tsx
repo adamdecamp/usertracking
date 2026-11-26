@@ -1,8 +1,16 @@
 'use client';
 
 import {useEffect,useState} from 'react';
+import {formatStepDuration,slowestStep,type ProcessingStep} from '../processing-steps.ts';
 
-export type ProcessingStatus={title:string;phase:string;processed:number;total?:number;unit:string;state:'running'|'complete'|'error';detail?:string;startedAtMs?:number;operationStartedAtMs?:number;completedAtMs?:number};
+export type ProcessingStatus={title:string;phase:string;processed:number;total?:number;unit:string;state:'running'|'complete'|'error';detail?:string;startedAtMs?:number;operationStartedAtMs?:number;completedAtMs?:number;steps?:ProcessingStep[]};
+
+/** After a multi-stage operation such as Sync finishes, lists how long each stage took. */
+export function ProcessingSteps({steps}:{steps?:ProcessingStep[]}){
+ if(!steps||steps.length<2)return null;
+ const slowest=slowestStep(steps)!;
+ return <details className="processing-steps"><summary>Time per step · slowest: {slowest.phase} ({formatStepDuration(slowest.ms)})</summary><ol>{steps.map(step=><li key={step.phase}><span>{step.phase}</span><b>{formatStepDuration(step.ms)}</b></li>)}</ol></details>;
+}
 
 /** Stage and total timers read as m:ss, or h:mm:ss after an hour. */
 export function formatProcessingDuration(seconds:number){const whole=Math.max(0,Math.floor(seconds)),hours=Math.floor(whole/3600),minutes=Math.floor(whole%3600/60),secs=String(whole%60).padStart(2,'0');return hours?`${hours}:${String(minutes).padStart(2,'0')}:${secs}`:`${minutes}:${secs}`}
@@ -12,5 +20,5 @@ export function ProcessingPanel({status,onDismiss}:{status:ProcessingStatus;onDi
  useEffect(()=>{if(status.state!=='running')return;const timer=window.setInterval(()=>setNow(Date.now()),1000);return()=>window.clearInterval(timer)},[status.state,status.startedAtMs]);
  const startedAt=status.startedAtMs??now,endedAt=status.completedAtMs??now,operationStartedAt=Math.min(status.operationStartedAtMs??startedAt,startedAt),stageTime=formatProcessingDuration((endedAt-startedAt)/1000),totalTime=formatProcessingDuration((endedAt-operationStartedAt)/1000);
  const hasTotal=status.total!==undefined,percentage=hasTotal?(status.total===0?(status.state==='complete'?100:0):Math.min(100,Math.round(status.processed/status.total!*100))):undefined,count=hasTotal?`${Math.min(status.processed,status.total!)} of ${status.total} ${status.unit} processed`:status.processed>0?`${status.processed} ${status.unit} processed · Total still being discovered`:'Workload total is still being discovered';
- return <section className={`processing-panel ${status.state}`} role="status" aria-live="polite"><div className="processing-heading"><div><p className="eyebrow">Processing Status</p><strong>{status.title}</strong><small>Stage: {status.phase}</small></div><div className="processing-value">{percentage!==undefined?`${percentage}%`:status.state==='running'?'Working…':status.state==='complete'?'Complete':'Attention'}{status.state!=='running'&&<button type="button" aria-label="Dismiss Processing Status" onClick={onDismiss}>×</button>}</div></div><div className={`processing-track ${hasTotal?'':'indeterminate'}`} role="progressbar" aria-label={`${status.title}: ${status.phase}`} aria-valuemin={0} aria-valuemax={hasTotal?100:undefined} aria-valuenow={percentage}><span style={percentage!==undefined?{width:`${percentage}%`}:undefined}/></div><div className="processing-detail"><span>{count}<span className="processing-timers"><span>Current Process <b>{stageTime}</b></span><span>Total Processing Time <b>{totalTime}</b></span></span></span>{status.detail&&<small><b>Current:</b> {status.detail}</small>}</div></section>
+ return <section className={`processing-panel ${status.state}`} role="status" aria-live="polite"><div className="processing-heading"><div><p className="eyebrow">Processing Status</p><strong>{status.title}</strong><small>Stage: {status.phase}</small></div><div className="processing-value">{percentage!==undefined?`${percentage}%`:status.state==='running'?'Working…':status.state==='complete'?'Complete':'Attention'}{status.state!=='running'&&<button type="button" aria-label="Dismiss Processing Status" onClick={onDismiss}>×</button>}</div></div><div className={`processing-track ${hasTotal?'':'indeterminate'}`} role="progressbar" aria-label={`${status.title}: ${status.phase}`} aria-valuemin={0} aria-valuemax={hasTotal?100:undefined} aria-valuenow={percentage}><span style={percentage!==undefined?{width:`${percentage}%`}:undefined}/></div><div className="processing-detail"><span>{count}<span className="processing-timers"><span>Current Process <b>{stageTime}</b></span><span>Total Processing Time <b>{totalTime}</b></span></span></span>{status.detail&&<small><b>Current:</b> {status.detail}</small>}</div>{status.state!=='running'&&<ProcessingSteps steps={status.steps}/>}</section>
 }

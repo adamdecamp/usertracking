@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
+import {readPageSource} from './page-source.ts';
 
-const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const page=readPageSource();
 const application=readFileSync(new URL('../app/application/sync-user-match-application.ts',import.meta.url),'utf8');
 const editApplication=readFileSync(new URL('../app/application/user-information-edit.ts',import.meta.url),'utf8');
 const relabelRecovery=readFileSync(new URL('../portable-launcher/PortableEvidenceRelabelRecovery.cs',import.meta.url),'utf8');

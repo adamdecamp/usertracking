@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {existsSync,readFileSync,statSync} from 'node:fs';
 import test from 'node:test';
+import {readPageSource} from './page-source.ts';
 
 const validation=readFileSync(new URL('../.github/workflows/security-build.yml',import.meta.url),'utf8');
 const release=readFileSync(new URL('../.github/workflows/signed-release.yml',import.meta.url),'utf8');
@@ -8,7 +9,7 @@ const buildScript=readFileSync(new URL('../scripts/build-portable.ps1',import.me
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const portableIndex=readFileSync(new URL('../portable/index.html',import.meta.url),'utf8');
 const packageData=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as{version:string};
-const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const page=readPageSource();
 const operatorHeader=readFileSync(new URL('../app/components/OperatorDashboardHeader.tsx',import.meta.url),'utf8');
 const dashboard=`${page}\n${operatorHeader}`;
 const deletionService=readFileSync(new URL('../app/application/user-deletion-service.ts',import.meta.url),'utf8');

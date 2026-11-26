@@ -3,8 +3,9 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {hasReworkMarker,withReworkMarker,withoutReworkMarker} from '../app/rework-marker.ts';
 import {organizationCleanupDirectory} from '../app/document-renamer-utils.ts';
+import {readPageSource} from './page-source.ts';
 
-const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const page=readPageSource();
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
 const marker=readFileSync(new URL('../portable-launcher/PortableReworkMarker.cs',import.meta.url),'utf8');
 const browserRework=readFileSync(new URL('../app/browser-rework.ts',import.meta.url),'utf8');

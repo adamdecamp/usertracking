@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {installGlobalErrorReporting} from '../app/error-report-events.ts';
 import {errorReportDetail} from '../app/error-utils.ts';
+import {readPageSource} from './page-source.ts';
 
 test('uncaught browser errors and unhandled rejections reach the central reporter',async()=>{
  const listeners=new Map<string,(event:unknown)=>void>(),original=Object.getOwnPropertyDescriptor(globalThis,'window');
@@ -25,7 +26,7 @@ test('daily reports preserve full multi-line error detail while alerts remain bo
 });
 
 test('launcher failures and unavailable shares retain a daily error report',()=>{
- const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8'),storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8'),page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+ const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8'),storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8'),page=readPageSource();
  assert.match(launcher,/Windows launcher storage operation/);
  assert.match(launcher,/storage\.StoreErrorReport\(systemId/);
  assert.match(launcher,/Windows launcher startup failure/);
