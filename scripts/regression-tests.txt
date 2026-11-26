@@ -90,3 +90,4 @@ tests/ui-ux-pass.test.ts
 tests/walkthrough-followups.test.ts
 tests/rework-marker.test.ts
 tests/sync-speed.test.ts
+tests/progress-and-pdf-worker.test.ts

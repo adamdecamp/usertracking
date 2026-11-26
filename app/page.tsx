@@ -2,7 +2,8 @@
 import {lazy,useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {zip} from 'fflate';
 import type {PerformanceReport} from './components/OperationalPanels';
-import {ProcessingPanel,type ProcessingStatus} from './components/ProcessingPanel';
+import type {ProcessingStatus} from './components/ProcessingPanel';
+import {LiveProcessingStatus} from './components/LiveProcessingStatus';
 import {useProcessingStatus} from './components/useProcessingStatus';
 import {useRecoveryCenter} from './components/useRecoveryCenter';
 import {AccessModeGate,OperatorIdentityGate,SessionLock} from './components/SessionPanels';
@@ -17,7 +18,6 @@ import {EvidenceFilePicker} from './components/EvidenceFilePicker';
 import {AccessibleModal} from './components/AccessibleModal';
 import {ConfirmationCenter,requestConfirmation} from './components/ConfirmationCenter';
 import {NotificationCenter,notify} from './components/NotificationCenter';
-import {OperationHistory} from './components/OperationHistory';
 import type {SessionChangeSummary} from './components/SessionChangeIndicator';
 import {OperatorDashboardHeader} from './components/OperatorDashboardHeader';
 import {configureRecognitionAliasBridge,recognitionAliasSnapshot,RecognitionAliasPanel,RenamerReviewCard} from './components/RenamerReview';
@@ -129,7 +129,7 @@ const safeFilePart=(value:string,maxLength=80)=>oneLine(value).replace(/[<>:"/\\
 const scanPathKey=(path:string)=>path.replaceAll('\\','/').toUpperCase();
 const zipFiles=(files:Record<string,Uint8Array>)=>withOperationTimeout(()=>new Promise<Uint8Array>((resolve,reject)=>zip(files,{level:1},(error,data)=>error?reject(error):resolve(data))),{timeoutMs:120000,message:'ZIP creation did not finish within two minutes. No source file was removed.'});
 const extractPdfText=async(bytes:Uint8Array,maxPages=15,options:{signal?:AbortSignal;timeoutMs?:number}={})=>(await import('./pdf-text')).extractPdfText(bytes,maxPages,options);
-const readSaarFormFields=async(bytes:Uint8Array)=>(await import('./saar-form-utils')).readSaarFormFields(bytes);
+const readSaarFormFields=async(bytes:Uint8Array)=>(await import('./pdf-check-client')).readSaarFieldsOffThread(bytes);
 async function readSaar(handle?:EvidenceHandle,signal?:AbortSignal,recoverOfficialEmailFromText=true):Promise<SaarReadResult>{
  if(!handle)return{email:'',error:'The SAAR file could not be opened.',emailRecoveryAttempted:recoverOfficialEmailFromText};
  try{return await withReadRetry(async operationSignal=>{throwIfSyncCancelled(operationSignal);const file=await evidenceFile(handle,operationSignal);throwIfSyncCancelled(operationSignal);return await readSaarFileCore(file,recoverOfficialEmailFromText,operationSignal)},{timeoutMs:saarReadTimeoutMs,retryTimeoutMs:60000,signal,message:'The SAAR could not be read within 30 seconds.',retryMessage:'The SAAR could not be read after one isolated retry within 60 seconds.'})}catch(error){throwIfSyncCancelled(signal);return{email:'',error:error instanceof OperationTimeoutError?error.message:'The SAAR file could not be opened.',emailRecoveryAttempted:recoverOfficialEmailFromText}}
@@ -435,7 +435,7 @@ export default function Home(){
  const[accessMode,setAccessMode]=useState<AccessMode>('unselected'),[sessionState,setSessionState]=useState<'unmapped'|'starting'|'active'|'idle'|'logged-off'|'blocked'>('unmapped'),[sessionMessage,setSessionMessage]=useState(''),[syncRunning,setSyncRunning]=useState(false),[syncScopeOpen,setSyncScopeOpen]=useState(false);
  const[operatorFullName,setOperatorFullName]=useState(()=>trackerWindow().__operatorFullName??'');
  const{lastLogonNotice,presentLastLogon,closeLastLogon}=useLastLogonNotice(systems);
- const{processing,setProcessing,startProcessing,updateProcessing,finishProcessing,failProcessing,operationHistory,clearOperationHistory}=useProcessingStatus();
+ const{processing,processingLive,setProcessing,startProcessing,updateProcessing,finishProcessing,failProcessing,operationHistory,clearOperationHistory}=useProcessingStatus();
  const[sessionChangeSummary,setSessionChangeSummary]=useState<SessionChangeSummary>({state:'unavailable'});
  const[storageHealth,setStorageHealth]=useState<Record<string,StorageHealth>>({});
  const[reconciliationReportGenerating,setReconciliationReportGenerating]=useState(false),[reconciliationReportStatus,setReconciliationReportStatus]=useState(''),[reconciliationSavedAt,setReconciliationSavedAt]=useState(''),[lastResults,setLastResults]=useState<LastResultsState|null>(null);
@@ -966,8 +966,7 @@ function duplicateArchiveCandidates(usersToCheck:UserRecord[],evidence:ScannedEv
  return <main className={['app',dark?'dark':'',accessMode==='read-only'?'read-only-mode':''].filter(Boolean).join(' ')}><a className="skip-link" href="#user-directory">Skip to User Directory</a><OperatorDashboardHeader dark={dark} onToggleTheme={()=>setDark(!dark)} accessMode={accessMode} sessionState={sessionState} syncRunning={syncRunning} canWrite={canWrite} portableHost={Boolean(trackerWindow().__portableHost)} systems={systems} system={system} selectedSystemId={effectiveSelected} folderName={folderNames[effectiveSelected]} version={applicationVersion} syncText={syncText} pendingCleanupCount={pendingCleanupCount} storageStatus={health.status} sessionChanges={displayedSessionSummary} onMap={()=>void mapFolder()} onSync={()=>void openSyncScope()} onStopSync={stopSync} onCleanup={()=>setModal('sync-review')} onCommit={()=>void commitSession()} onLogOff={()=>void logOff()} onSelectSystem={systemId=>void selectInformationSystem(systemId)} onManageSystems={()=>setModal('systems')} onManageOrganizations={()=>setModal('organizations')} onContacts={()=>setModal('contacts')} onArchivedSystems={()=>setModal('archived')} onUnarchive={()=>setModal('unarchive')} onOperatorDirectory={()=>void openOperatorDirectory()} onReconciliation={()=>void openReconciliation()} onLastResults={()=>{setModal('last-results');void loadLastResults(effectiveSelected,false).catch(()=>undefined)}} onAuditLog={()=>void openAuditLog()} onOpenWorkspace={()=>void openLocalWorkspace()} onPerformance={()=>void openPerformanceReport()} onReleaseHealth={()=>void openReleaseHealth()} onRestore={()=>void openRestore()} onComplianceSnapshot={()=>{setReportPreset(undefined);setModal('report')}} onSwitchAccess={()=>void switchAccessMode()} switchAccessDisabled={syncRunning||sessionState!=='active'||!rootFor(effectiveSelected)}/>
  <StorageHealthCard health={health} snapshot={snapshotView} canVerify={canWrite} verifyDisabled={!rootFor(effectiveSelected)||health.status==='saving'||health.status==='checking'} onVerify={()=>void verifyStorage()}/>
  {!snapshotView&&<RecoveryCenterLayer recovery={recovery} canWrite={canWrite} disabled={syncRunning||!recoveryRequest||!trackerWindow().__portableHost} onRetrySync={()=>void openSyncScope()}/>}
- {processing&&<ProcessingPanel status={processing} onDismiss={()=>setProcessing(null)}/>}
- <OperationHistory current={processing} history={operationHistory} onClear={clearOperationHistory}/>
+ <LiveProcessingStatus source={processingLive} history={operationHistory} onDismiss={()=>setProcessing(null)} onClearHistory={clearOperationHistory}/>
  <section className="stats"><article><span>Active Users</span><strong>{stats.activeUsers}</strong><small>{system?`In ${system.name}`:'No System Selected'}</small></article><button className="stat-card ok" onClick={()=>showCompliance(complianceLabels.compliant)}><span>Compliant Users</span><strong>{stats.compliantUsers}</strong><small>All Required Artifacts Current</small></button><button className="stat-card bad" onClick={()=>showCompliance(complianceLabels.notCompliant)}><span>Non-Compliant Users</span><strong>{stats.nonCompliantUsers}</strong><small>One or More Missing or Overdue</small></button><button className="stat-card due-soon" onClick={()=>openMessages('Due Within 30 Days')}><span>Users Due Within 30 Days</span><strong>{stats.due.users}</strong><small>{issueItemsLabel(stats.due,'due')}</small></button><button className="stat-card overdue-card" onClick={()=>openMessages('Overdue')}><span>Users Overdue</span><strong>{stats.overdue.users}</strong><small>{issueItemsLabel(stats.overdue,'overdue')}</small></button><button className="stat-card bad" onClick={()=>openMessages('Missing')}><span>Users Missing Items</span><strong>{stats.missing.users}</strong><small>{issueItemsLabel(stats.missing,'missing')}</small></button></section>
  {accessMode!=='unselected'&&!snapshotView&&<section className="mode-switch"><button className="secondary" disabled={syncRunning||sessionState!=='active'||!rootFor(effectiveSelected)} onClick={()=>void switchAccessMode()}>{accessMode==='full'?'Switch to Read-Only Access':'Switch to Full Access'}</button></section>}
  <section className="directory" id="user-directory" tabIndex={-1} aria-label="User Directory">
