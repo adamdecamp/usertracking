@@ -198,6 +198,19 @@ internal static class PortableStorageTests
         Assert(read["sync"] == null && read["reconciliation"] == null, "Clearing a saved result must be idempotent.");
     }
 
+    private static void RunIndividualEmailCc()
+    {
+        Func<Action, bool> rejected = action => { try { action(); return false; } catch (InvalidDataException) { return true; } };
+        Assert(OutlookDraftFallback.NormalizeCc("", "user@example.test") == "" && OutlookDraftFallback.NormalizeCc("  ", "") == "", "An empty CC list is allowed and stays empty.");
+        Assert(OutlookDraftFallback.NormalizeCc("isso@example.test; ISSO@example.test;user@example.test; issm@example.test", "user@example.test") == "isso@example.test; issm@example.test", "CC must drop duplicates and the To address while keeping order.");
+        Assert(rejected(() => OutlookDraftFallback.NormalizeCc("isso@example.test", "")), "CC is allowed only on a draft with a To recipient, never on a BCC batch.");
+        Assert(rejected(() => OutlookDraftFallback.NormalizeCc("not-an-address", "user@example.test")) && rejected(() => OutlookDraftFallback.NormalizeCc("isso@example.test\r\nBcc: x@example.test", "user@example.test")), "Invalid or header-injecting CC addresses must be rejected.");
+        Assert(rejected(() => OutlookDraftFallback.NormalizeCc(String.Join(";", Enumerable.Range(1, 21).Select(index => "contact" + index + "@example.test")), "user@example.test")), "At most 20 CC addresses are allowed.");
+        string eml = Encoding.UTF8.GetString(OutlookDraftFallback.BuildEml("user@example.test", new string[0], "Subject", "<p>Body</p>", new string[0], "isso@example.test; issm@example.test"));
+        Assert(eml.Contains("\r\nTo: user@example.test\r\n") && eml.Contains("\r\nCc: isso@example.test, issm@example.test\r\n") && !eml.Contains("Bcc:"), "The fallback draft must carry the CC header. Result: " + eml.Substring(0, Math.Min(300, eml.Length)));
+        Assert(!Encoding.UTF8.GetString(OutlookDraftFallback.BuildEml("user@example.test", new string[0], "Subject", "<p>Body</p>", new string[0])).Contains("Cc:"), "A draft without CC must not carry a CC header.");
+    }
+
     private static void RunStorageEnumerationFuzz(string parent)
     {
         string fuzzRoot = Path.Combine(parent, "Storage Fuzz (Mapped), Unicode-\u00e9");
@@ -1372,6 +1385,7 @@ internal static class PortableStorageTests
         string signedOutlookHtml = TrackerContext.OutlookHtmlWithSignature(outlookHtml, "<html><body><p>Configured Operator Signature</p></body></html>");
         Assert(signedOutlookHtml.Contains("Configured Operator Signature") && signedOutlookHtml.IndexOf("Configured Operator Signature", StringComparison.Ordinal) < signedOutlookHtml.IndexOf("</body>", StringComparison.OrdinalIgnoreCase), "Outlook drafts should retain the operator's configured signature inside the message body.");
         string emlAttachment = Path.Combine(root, "fallback-template.pdf");File.WriteAllBytes(emlAttachment, PdfBytes());string eml = Encoding.UTF8.GetString(OutlookDraftFallback.BuildEml("recipient@example.test", new string[0], "Required Evidence", outlookHtml, new[] { emlAttachment }));Assert(eml.Contains("To: recipient@example.test") && eml.Contains("Subject: Required Evidence") && eml.Contains("Content-Disposition: attachment") && eml.Contains("fallback-template.pdf"), "The no-install launcher should create a bounded EML draft with the requested attachment when classic Outlook is unavailable.");string multiEml = Encoding.UTF8.GetString(OutlookDraftFallback.BuildEml("isso@example.test; issm@example.test", new string[0], "Compliance Snapshot", outlookHtml, new string[0]));Assert(multiEml.Contains("To: isso@example.test, issm@example.test"), "An organization draft with several contacts should list every To address in the EML fallback.");bool rejectedEmlHeader = false, rejectedMissingAttachment = false;try { OutlookDraftFallback.BuildEml("recipient@example.test", new string[0], "Injected\r\nBcc: attacker@example.test", outlookHtml, new string[0]); } catch (InvalidDataException) { rejectedEmlHeader = true; }try { OutlookDraftFallback.BuildEml("recipient@example.test", new string[0], "Required Evidence", outlookHtml, new[] { Path.Combine(root, "missing.pdf") }); } catch (FileNotFoundException) { rejectedMissingAttachment = true; }Assert(rejectedEmlHeader && rejectedMissingAttachment, "The EML fallback must reject header injection and missing attachments rather than opening a malformed draft.");
+        RunIndividualEmailCc();
         object storageRootGate = typeof(PortableStorage).GetMethod("RootLock", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(storage, new object[] { "mapping-key" });
         var rootGateHeld = new ManualResetEvent(false);var releaseRootGate = new ManualResetEvent(false);
         var rootGateThread = new Thread(new ThreadStart(delegate { lock (storageRootGate) { rootGateHeld.Set();releaseRootGate.WaitOne(); } }));rootGateThread.Start();rootGateHeld.WaitOne();

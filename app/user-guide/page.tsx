@@ -82,6 +82,7 @@ export default function Guide(){
     <li>Enter the contact&apos;s name, then choose <b>Email</b> or <b>Phone</b> and enter the address or number. Use <b>Add Email or Phone</b> for up to four entries per contact.</li>
     <li>A User Record opens with <b>What to Do Next</b>: each missing, overdue, or soon-due item and what to do about it, or that nothing is needed and when the next item is due.</li>
     <li>A User Record shows the contacts for that user&apos;s Storage Organization, so you can email or call them while working the record.</li>
+    <li>When you prepare a follow-up email from a User Record, check <b>CC</b> next to each contact you want copied. Each checked contact&apos;s first email address goes on the CC line; contacts without an email address are not listed, and the user is never copied on their own email. Up to 20 contacts can be copied, and the audit record names them by position and name.</li>
     <li>Contacts can be edited or removed at any time. Positions are not required, so an organization without a contact is not flagged.</li>
     <li>Contacts are saved in the system database, included in Session Commit and backups, and every addition, change, or removal is recorded in the audit log by name and position.</li>
     <li>Contacts need database version 8. After anyone saves a system with this version, operators on older R.A.P.T.O.R. releases must update before they can open that system.</li>
