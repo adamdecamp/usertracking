@@ -8,9 +8,11 @@ const syncUi=`${page}\n${syncScopeComponent}`;
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 
 test('does not start Sync while restoring, mapping, or selecting a system',()=>{
- const restore=page.slice(page.indexOf("if(!hydrated||!trackerWindow().__portableHost||mappingRestoreStarted.current)"),page.indexOf('// Persist only the actively leased system'));
- const mapping=page.slice(page.indexOf('async function mapFolder'),page.indexOf('async function scan'));
- const selection=page.slice(page.indexOf('async function selectInformationSystem'),page.indexOf('function openUser'));
+ const between=(start:string,end:string)=>{const from=page.indexOf(start);assert.ok(from>=0,`marker not found: ${start}`);const to=page.indexOf(end,from);assert.ok(to>from+200,`the code after ${start} was not found, so the check would be vacuous`);return page.slice(from,to)};
+ const restore=between('||mappingRestoreStarted.current)return;','// Persist only the actively leased system');
+ assert.match(restore,/mappingRestoreStarted\.current=true/,'the slice covers the startup mapping restore');
+ const mapping=between('async function mapFolder','async function scan');
+ const selection=between('async function selectInformationSystem','function openUser');
  assert.doesNotMatch(restore,/syncMapped\s*\(/);
  assert.doesNotMatch(mapping,/syncMapped\s*\(/);
  assert.doesNotMatch(selection,/syncMapped\s*\(/);

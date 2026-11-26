@@ -187,7 +187,10 @@ test('Sync applies the shared Document Renamer analysis to changed noncanonical 
 });
 
 test('the manual Document Renamer button is removed while both Sync modes retain automatic normalization',()=>{
- const toolbar=page.slice(page.indexOf('<section className="toolbar">'),page.indexOf('</section>',page.indexOf('<section className="toolbar">')));
+ const header=readFileSync(new URL('../app/components/OperatorDashboardHeader.tsx',import.meta.url),'utf8'),toolbarStart=header.indexOf('<section className="toolbar">');
+ assert.ok(toolbarStart>=0,'the toolbar is rendered by OperatorDashboardHeader');
+ const toolbar=header.slice(toolbarStart,header.indexOf('</section>',toolbarStart));
+ assert.ok(toolbar.length>500&&/Information System/.test(toolbar)&&/User Administration/.test(toolbar)&&/System Tools/.test(toolbar),'the toolbar section was found, so the checks below are not vacuous');
  assert.doesNotMatch(toolbar,/Document Renamer/);
  assert.doesNotMatch(toolbar,/setModal\('renamer'\)/);
  assert.match(page,/Sync Document Renamer/);
