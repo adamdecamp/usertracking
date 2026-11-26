@@ -1,5 +1,7 @@
 import {getDocument,PDFWorker,type PDFDocumentProxy} from 'pdfjs-dist/legacy/build/pdf.mjs';
-import PdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker&inline';
+// The worker ships as its own same-origin script. An inline (blob:) worker is blocked by the launcher's
+// Content-Security-Policy, which left every text extraction waiting until its timeout.
+import PdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker';
 import {destroyPdfResources} from './pdf-worker-utils.ts';
 import {topDownPdfText} from './pdf-text-order.ts';
 

@@ -33,7 +33,7 @@ test('routine actions are separated from administration, reporting, and system t
 
 test('local changes and the last five operations remain visible',()=>{
  assert.match(chrome,/<SessionChangeIndicator summary=\{props\.sessionChanges\}/);
- assert.match(page,/<OperationHistory current=\{processing\}/);
+ assert.match(page,/<LiveProcessingStatus source=\{processingLive\} history=\{operationHistory\}/);
  assert.match(history,/\.slice\(0,5\)/);
  assert.match(page,/'workspace-status'/);
 });
