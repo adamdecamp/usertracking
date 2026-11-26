@@ -5,6 +5,8 @@ import type {DeletedUserEvidence,PendingEvidenceMove,PendingEvidenceMoveWork} fr
 export type PendingEvidenceOperations={
  /** Moves one file to its organization Archive and returns where it went. */
  archive(owner:Pick<UserRecord,'id'|'last'|'first'|'organization'>,artifact:Artifact):Promise<string>;
+ /** Optional: moves several of one user's files to Archive together; one outcome per file, in order. */
+ archiveMany?(owner:UserRecord,artifacts:Artifact[]):Promise<({ok:true;value:string}|{ok:false;error:unknown})[]>;
  /** Renames a user's files to match the record and returns the record with updated references and any retained issues. */
  relabel(user:UserRecord):Promise<{user:UserRecord;issues:number;detail:string}>;
  /** Brings the newest disabled SAAR back to the active SAAR folder. */
@@ -53,10 +55,13 @@ export async function runPendingEvidenceMoves(system:SystemRecord,allUsers:reado
    if(move.work==='archive-user'){
     if(!user||!user.disabled){audit.push(`SESSION COMMIT FILE MOVES: archive for ${move.userLabel} skipped; the user is ${user?'active again':'no longer in this system'}`);continue}
     const moved:string[]=[],missing:string[]=[],failed:string[]=[];
-    const artifacts:Artifact[]=[];
+    const artifacts:Artifact[]=[],toArchive=user.artifacts.filter(artifact=>!(artifact.path&&ops.isArchived(artifact.path)));
+    // With archiveMany, the user's files move together; each file's outcome is then handled exactly as one archive call was.
+    let outcomes:({ok:true;value:string}|{ok:false;error:unknown})[]|undefined,position=0;
+    if(ops.archiveMany&&toArchive.length)try{outcomes=await ops.archiveMany(user,toArchive);if(outcomes.length!==toArchive.length)throw new Error('The archive batch result count does not match the request.')}catch(error){if(ops.isFatal(error))throw error;outcomes=toArchive.map(()=>({ok:false,error}))}
     for(const artifact of user.artifacts){
      if(artifact.path&&ops.isArchived(artifact.path)){artifacts.push(artifact);continue}
-     try{const destination=await ops.archive(user,artifact);moved.push(destination);artifacts.push({...artifact,filename:basename(destination),path:destination})}
+     try{let destination:string;if(outcomes){const outcome=outcomes[position++];if(!outcome.ok)throw outcome.error;destination=outcome.value}else destination=await ops.archive(user,artifact);moved.push(destination);artifacts.push({...artifact,filename:basename(destination),path:destination})}
      catch(error){if(ops.isFatal(error))throw error;artifacts.push(artifact);(ops.isMissing(error)?missing:failed).push(`${artifact.filename}: ${ops.describe(error)}`)}
     }
     let next:UserRecord={...user,artifacts};

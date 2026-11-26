@@ -4,9 +4,10 @@ import test from 'node:test';
 import {evidenceMoveBatchSize,evidenceMoveOutcomes,runEvidenceMoveBatches,settleEach,type EvidenceMoveOutcome} from '../app/application/evidence-move-batch.ts';
 import {formatStepDuration,slowestStep,trackProcessingStep,type StepTimeline} from '../app/processing-steps.ts';
 import {SessionLeaseLostError} from '../app/portable-request-utils.ts';
+import {readPageSource} from './page-source.ts';
 
 const read=(path:string)=>readFileSync(new URL(path,import.meta.url),'utf8');
-const page=read('../app/page.tsx'),session=read('../app/storage-session.ts'),system=read('../app/system-storage.ts'),evidence=read('../app/evidence-storage.ts');
+const page=read('../app/page.tsx'),pageAll=readPageSource(),session=read('../app/storage-session.ts'),system=read('../app/system-storage.ts'),evidence=read('../app/evidence-storage.ts');
 
 test('file moves are sent in batches and every file is handled in its original order',async()=>{
  const sent:number[][]=[],seen:string[]=[],items=Array.from({length:23},(_,index)=>index);
@@ -43,7 +44,7 @@ test('browser folders still move one file at a time with the same per-file resul
 });
 
 test('Sync organizes and renames through the batch endpoints',()=>{
- assert.equal((page.match(/await runEvidenceMoveBatches\(/g)??[]).length,3,'organization, filename normalization, and Document Renamer rules are batched');
+ assert.equal((pageAll.match(/await runEvidenceMoveBatches\(/g)??[]).length,8,'Sync organization, normalization, and Renamer rules; Clean Up Rework, ZIP, and Archive; Unarchive; and Session Commit archives are batched');
  assert.match(page,/organizeEvidenceBatch\(h,batch\.map\(entry=>\(\{candidate:entry\.item,folder:entry\.folder\}\)\),signal\)/);
  assert.match(page,/normalizeEvidenceDateBatch\(h,batch\.map\(entry=>\(\{candidate:entry\.item,target:entry\.target\}\)\),signal\)/);
  assert.match(page,/normalizeEvidenceDateBatch\(h,batch\.map\(item=>\(\{candidate:item,target:plan\.targets\.get\(item\.id\)!\}\)\),signal\)/);
@@ -53,10 +54,21 @@ test('Sync organizes and renames through the batch endpoints',()=>{
  assert.match(evidence,/portableRequest\(root,'normalize-batch',\{method:'POST'/);
  assert.match(evidence,/if\(!isPortableRoot\(root\)\)return settleEach\(moves,move=>organizeEvidence\(root,move\.candidate,move\.folder\)\)/);
  const request=read('../app/infrastructure/portable-storage-request.ts'),launcher=read('../portable-launcher/Program.cs'),batches=read('../portable-launcher/PortableBatchMoves.cs');
- assert.match(request,/stage==='organize-batch'\|\|stage==='normalize-batch'\?networkWriteTimeoutMs/);
- assert.match(launcher,/action == "organize-batch" \|\| action == "normalize-batch"\) && parts\[0\] == "POST"/);
+ assert.match(request,/stage==='organize-batch'\|\|stage==='normalize-batch'\|\|stage==='evidence-batch'\?networkWriteTimeoutMs/);
+ assert.match(launcher,/action == "organize-batch" \|\| action == "normalize-batch" \|\| action == "evidence-batch"\) && parts\[0\] == "POST"/);
  assert.match(batches,/BatchLeaseRecheckInterval = TimeSpan\.FromSeconds\(30\)/);
  assert.match(batches,/string moved = move\(item\);/,'a failing file never leaves a half-written success entry');
+});
+
+test('Clean Up, Unarchive, and Session Commit archive files in batches through one allowlisted endpoint',()=>{
+ for(const helper of ['reworkEvidenceBatch(pendingSync.handle,batch,signal)','compressEvidenceBatch(pendingSync.handle,batch,signal)','archiveEvidenceBatch(pendingSync.handle,batch,signal)','unarchiveEvidenceBatch(root,batch.map(item=>item.path))','archiveMany:(owner,artifacts)=>archiveArtifactsBatch(root,owner,artifacts)'])assert.ok(pageAll.includes(helper),helper);
+ assert.doesNotMatch(pageAll,/portableRequest\(root,`unarchive\?path=/);
+ assert.doesNotMatch(page,/withStorageMutationTimeout\(`Marking \$\{candidate\.filename\} REWORK`/);
+ assert.match(evidence,/portableRequest\(root,'evidence-batch',\{method:'POST'/);
+ assert.match(evidence,/if\(!isPortableRoot\(root\)\)return settleEach\(candidates,candidate=>archiveEvidence\(root,candidate,signal,allowReworkSource\)\)/);
+ const batches=read('../portable-launcher/PortableBatchMoves.cs'),policy=read('../portable-launcher/LauncherPolicy.cs');
+ assert.match(batches,/if \(action == "archive"\)[\s\S]*?if \(action == "rework"\) return MoveEvidenceToRework[\s\S]*?if \(action == "compress"\) return CompressEvidence[\s\S]*?if \(action == "unarchive"\) return UnarchiveEvidence[\s\S]*?throw new InvalidDataException\("The evidence batch action is not supported\."\)/);
+ assert.match(policy,/action == "evidence-batch"\) return 256L \* KiB/);
 });
 
 test('an operation records how long each stage took and reports it when it finishes',()=>{
@@ -97,4 +109,18 @@ test('the page storage code is split into layered modules without circular impor
  assert.match(evidence,/export async function organizeEvidence/);
  assert.match(page,/const starterSystems:/,'release-clean starter data stays in the page');
  assert.doesNotMatch(page,/async function organizeEvidence\(|async function readManifest\(|async function requireActiveLease\(/);
+});
+test('large pop-up windows load on first use, inside their own Suspense boundary, and are preloaded when idle',()=>{
+ const popups=['SyncReview','DocumentRenamerModal','SystemsModal','EvidenceUnarchiveModal','AddUser','UserModal','MessageAutomation','ComplianceReportModal'];
+ for(const name of popups){
+  assert.match(page,new RegExp(`${name}=lazy\\(\\(\\)=>import\\('\\./components/${name}'\\)\\.then\\(module=>\\(\\{default:module\\.${name}\\}\\)\\)\\)`),`${name} is lazy`);
+  assert.match(page,new RegExp(`void import\\('\\./components/${name}'\\);`),`${name} is preloaded`);
+  assert.doesNotMatch(page,new RegExp(`function ${name}\\(`),`${name} is no longer defined in page.tsx`);
+  assert.doesNotMatch(page,new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from '\\./components/${name}'`),`${name} is not imported eagerly`);
+ }
+ for(const name of [...popups,'RestoreModal','AuditLogModal','OperatorDirectoryModal','PerformanceModal','ReconciliationModal','ReleaseHealthModal','RecoveryCenterLayer']){
+  const at=page.indexOf(`<${name} `)>=0?page.indexOf(`<${name} `):page.indexOf(`<${name}/>`);assert.ok(at>0,`${name} is rendered`);
+  assert.ok(page.slice(at-26,at)==='<Suspense fallback={null}>',`${name} has its own Suspense boundary, so loading it never blanks the page`);
+ }
+ assert.match(page,/useEffect\(\(\)=>\{const idle=\(globalThis as \{requestIdleCallback\?:[\s\S]{0,200}?idle\(preloadPopupWindows,\{timeout:5000\}\)/);
 });

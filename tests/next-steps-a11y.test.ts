@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {userNextSteps} from '../app/application/user-next-steps.ts';
 import type {Artifact,UserRecord} from '../app/domain/tracker-models.ts';
+import {readPageSource} from './page-source.ts';
 
 // Synthetic records only; no operational data.
 const user=(id:string,last:string,artifacts:Artifact[],extra:Partial<UserRecord>={}):UserRecord=>({id,systemId:'s1',organization:'GOV',affiliatedOrganizations:[],last,first:'Test',middle:'',email:`${id}@example.test`,disabled:false,roles:['General'],privilegedUsernames:[],privilegedTypes:[],artifacts,...extra});
@@ -40,7 +41,7 @@ test('a missing Official Email, an exception, and a disabled user each get their
 });
 
 test('the User Record leads with next steps, the read-only banner offers the switch, and keyboard users can skip to the directory',()=>{
- const page=read('app/page.tsx'),header=read('app/components/OperatorDashboardHeader.tsx'),modal=read('app/components/AccessibleModal.tsx');
+ const page=readPageSource(),header=read('app/components/OperatorDashboardHeader.tsx'),modal=read('app/components/AccessibleModal.tsx');
  assert.match(page,/<UserNextStepsPanel user=\{draft\}\/><UserOrganizationContacts/);
  assert.match(header,/props\.onSwitchAccess&&<button type="button" className="secondary" disabled=\{props\.switchAccessDisabled\} onClick=\{props\.onSwitchAccess\}>Switch to Full Access<\/button>/);
  assert.match(page,/onSwitchAccess=\{\(\)=>void switchAccessMode\(\)\} switchAccessDisabled=\{syncRunning\|\|sessionState!=='active'\|\|!rootFor\(effectiveSelected\)\}/,'the banner button uses the same switch and the same limits as the existing one');

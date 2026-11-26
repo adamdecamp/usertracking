@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {organizationContactEmails,organizationEmailPlan,organizationEmailRecipientLimit,organizationReportBody,organizationReportSubject,outlookDraftBusy,whileOutlookDraftBusy} from '../app/application/organization-report-email.ts';
 import type {OrganizationContact} from '../app/domain/organization-contacts.ts';
+import {readPageSource} from './page-source.ts';
 
 // Synthetic contacts only; no operational data.
 const contact=(id:string,organization:string,position:string,name:string,...emails:string[]):OrganizationContact=>({id,organization,position,name,methods:emails.length?emails.map(value=>({type:'Email' as const,value})):[{type:'Phone',value:'(555) 555-0100'}]});
@@ -57,7 +58,7 @@ test('a busy Outlook draft is retried until the earlier draft opens; other error
 });
 
 test('Compliance Snapshot emails each organization from its own stored, audited report',()=>{
- const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8'),program=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8'),attachment=readFileSync(new URL('../portable-launcher/OutlookReportAttachment.cs',import.meta.url),'utf8');
+ const page=readPageSource(),program=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8'),attachment=readFileSync(new URL('../portable-launcher/OutlookReportAttachment.cs',import.meta.url),'utf8');
  assert.match(page,/const scopes=emailing\?emailable\.map\(item=>\(\{organizations:\[item\.organization\],recipients:item\.recipients\}\)\)/);
  // The draft is queued only after the report copy is stored and both audit entries are written.
  const store=page.indexOf('const stored=await storeComplianceReport(root,filename,bytes)'),audit=page.indexOf('PREPARE ORGANIZATION COMPLIANCE EMAIL'),draft=page.indexOf('organizationServices.draft(systemId,{to:scope.recipients.join');

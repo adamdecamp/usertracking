@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {readPageSource} from './page-source.ts';
 
 const read=(path:string)=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
-const page=read('app/page.tsx'),header=read('app/components/DirectoryHeader.tsx'),share=read('app/components/ShareWithOrganizationsModal.tsx'),contacts=read('app/components/UserOrganizationContacts.tsx'),status=read('app/components/OrganizationStatusModal.tsx');
+const page=readPageSource(),header=read('app/components/DirectoryHeader.tsx'),share=read('app/components/ShareWithOrganizationsModal.tsx'),contacts=read('app/components/UserOrganizationContacts.tsx'),status=read('app/components/OrganizationStatusModal.tsx');
 
 test('the User Record shows the contacts for the user’s organization',()=>{
  assert.match(page,/<UserOrganizationContacts contacts=\{system\.organizationContacts\?\?\[\]\} organization=\{draft\.organization\}\/><ExtractionProvenancePanel/);

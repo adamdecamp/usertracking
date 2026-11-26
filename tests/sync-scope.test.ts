@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
+import {readPageSource} from './page-source.ts';
 
-const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const page=readPageSource();
 const syncScopeComponent=readFileSync(new URL('../app/components/TrackerViewParts.tsx',import.meta.url),'utf8');
 const syncUi=`${page}\n${syncScopeComponent}`;
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
