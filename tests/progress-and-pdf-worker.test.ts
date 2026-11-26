@@ -6,6 +6,7 @@ import {createThrottledValue} from '../app/throttled-value.ts';
 import {pageProgressIntervalMs,liveProgressIntervalMs,urgentProcessingChange} from '../app/components/useProcessingStatus.ts';
 import {handlePdfCheckRequest,type PdfCheckRequest} from '../app/pdf-check-handler.ts';
 import type {ProcessingStatus} from '../app/components/ProcessingPanel.tsx';
+import {readPageSource} from './page-source.ts';
 
 const read=(path:string)=>readFileSync(new URL(path,import.meta.url),'utf8');
 const syntheticPdf=async()=>{const document=await PDFDocument.create();document.addPage([200,200]);return document.save()};
@@ -39,7 +40,7 @@ test('a new stage, completion, failure, or dismissal is urgent; only per-item co
 });
 
 test('the page shows progress through the live panel, so per-file updates redraw only that panel',()=>{
- const page=read('../app/page.tsx'),hook=read('../app/components/useProcessingStatus.ts'),live=read('../app/components/LiveProcessingStatus.tsx');
+ const page=readPageSource(),hook=read('../app/components/useProcessingStatus.ts'),live=read('../app/components/LiveProcessingStatus.tsx');
  assert.match(page,/<LiveProcessingStatus source=\{processingLive\} history=\{operationHistory\} onDismiss=\{\(\)=>setProcessing\(null\)\} onClearHistory=\{clearOperationHistory\}\/>/);
  assert.doesNotMatch(page,/<ProcessingPanel status=\{processing\}/);
  assert.match(live,/useSyncExternalStore\(source\.subscribe,source\.get,source\.get\)/);
@@ -112,7 +113,7 @@ test('when a worker cannot start, checks fall back to the page thread with the s
 });
 
 test('the worker ships as its own same-origin script, which the launcher security policy allows',()=>{
- const client=read('../app/pdf-check-client.ts'),saar=read('../app/application/saar-reader.ts'),page=read('../app/page.tsx'),recheck=read('../app/application/evidence-recheck.ts');
+ const client=read('../app/pdf-check-client.ts'),saar=read('../app/application/saar-reader.ts'),page=readPageSource(),recheck=read('../app/application/evidence-recheck.ts');
  assert.match(client,/new Worker\(new URL\('\.\/workers\/pdf-check\.worker\.ts',import\.meta\.url\),\{type:'module'\}\)/);
  assert.doesNotMatch(client,/\?worker&inline/);
  const pdfText=read('../app/pdf-text.ts');

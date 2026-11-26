@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {readPageSource} from './page-source.ts';
 
-const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const page=readPageSource();
 const operatorHeader=readFileSync(new URL('../app/components/OperatorDashboardHeader.tsx',import.meta.url),'utf8');
 const dashboard=`${page}\n${operatorHeader}`;
 const styles=readFileSync(new URL('../app/globals.css',import.meta.url),'utf8');

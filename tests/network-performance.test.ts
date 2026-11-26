@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {readPageSource} from './page-source.ts';
 
-const page=fs.readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const page=readPageSource();
 const storage=fs.readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
 const publicationRecovery=fs.readFileSync(new URL('../portable-launcher/PublicationRecovery.cs',import.meta.url),'utf8');
 const workspacePublicationProgress=fs.readFileSync(new URL('../portable-launcher/PortableWorkspacePublicationProgress.cs',import.meta.url),'utf8');

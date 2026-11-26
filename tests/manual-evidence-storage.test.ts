@@ -1,15 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {readPageSource} from './page-source.ts';
 
-const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const page=readPageSource();
 const directoryHeader=readFileSync(new URL('../app/components/DirectoryHeader.tsx',import.meta.url),'utf8');
 const launcher=readFileSync(new URL('../portable-launcher/Program.cs',import.meta.url),'utf8');
 const policy=readFileSync(new URL('../portable-launcher/LauncherPolicy.cs',import.meta.url),'utf8');
 const storage=readFileSync(new URL('../portable-launcher/PortableStorage.cs',import.meta.url),'utf8');
 const storageRequest=readFileSync(new URL('../app/infrastructure/portable-storage-request.ts',import.meta.url),'utf8');
 const identityReview=readFileSync(new URL('../app/components/SyncIdentityReview.tsx',import.meta.url),'utf8');
-const store=page.slice(page.indexOf('type StoredEvidenceResult'),page.indexOf('function withStorageMutationTimeout'));
+const store=page.slice(page.indexOf('type StoredEvidenceResult'),page.indexOf('function ensureBrowserOrganizationDocumentFolders'));
+assert.ok(store.length>1000,'the manual evidence storage functions were found');
 
 test('manual evidence storage uses bounded stages instead of one composite two-minute timer',()=>{
  const artifact=store.slice(store.indexOf('async function storeEvidenceArtifact'));

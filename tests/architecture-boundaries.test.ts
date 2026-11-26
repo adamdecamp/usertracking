@@ -54,8 +54,9 @@ test('architectural size budgets prevent silent monolith growth',()=>{
  const pageBytes=statSync(join(appRoot,'page.tsx')).size;
  const storageLines=readFileSync(join(root,'portable-launcher','PortableStorage.cs'),'utf8').split(/\r?\n/).length;
  const launcherLines=readFileSync(join(root,'portable-launcher','Program.cs'),'utf8').split(/\r?\n/).length;
- assert.ok(pageBytes<=490_000,`app/page.tsx is ${pageBytes} bytes; extract behavior before exceeding 490,000.`);
+ assert.ok(pageBytes<=420_000,`app/page.tsx is ${pageBytes} bytes; extract behavior before exceeding 420,000.`);
+ for(const[file,limit]of [['storage-session.ts',30_000],['system-storage.ts',40_000],['evidence-storage.ts',90_000]] as const){const bytes=statSync(join(appRoot,file)).size;assert.ok(bytes<=limit,`app/${file} is ${bytes} bytes; split it by responsibility before exceeding ${limit}.`)}
  assert.ok(storageLines<=5_110,`PortableStorage.cs is ${storageLines} lines; extract a storage service before exceeding 5,110.`);
  assert.ok(launcherLines<=1_065,`Program.cs is ${launcherLines} lines; extract endpoint policy before exceeding 1,065.`);
- for(const file of ['OperatorProfile.cs','PortableOperatorDirectory.cs','PortableEvidenceRelabelRecovery.cs','PortableLastLogon.cs','PortableSyncJob.cs','PortableNetworkQualification.cs','PortableManifestValidation.cs','PortableWorkspaceReconciliation.cs','PortableLegacyWorkspaceRecovery.cs','PortableOperationReceipts.cs','PortableClientCompatibility.cs']){const lines=readFileSync(join(root,'portable-launcher',file),'utf8').split(/\r?\n/).length;assert.ok(lines<=300,`${file} is ${lines} lines; keep the launcher capability focused.`)}
+ for(const file of ['OperatorProfile.cs','PortableOperatorDirectory.cs','PortableEvidenceRelabelRecovery.cs','PortableLastLogon.cs','PortableBatchMoves.cs','PortableSyncJob.cs','PortableNetworkQualification.cs','PortableManifestValidation.cs','PortableWorkspaceReconciliation.cs','PortableLegacyWorkspaceRecovery.cs','PortableOperationReceipts.cs','PortableClientCompatibility.cs']){const lines=readFileSync(join(root,'portable-launcher',file),'utf8').split(/\r?\n/).length;assert.ok(lines<=300,`${file} is ${lines} lines; keep the launcher capability focused.`)}
 });
