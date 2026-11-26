@@ -26,7 +26,14 @@ export async function readSaarFileCore(source:File,recoverOfficialEmailFromText=
   const base={email,emailSource,identity:fields.identity,organization:fields.organization,designation:fields.designation,requestDate:fields.requestDate,createdDate:fields.createdDate,disabledDate:fields.disabledDate,createdBySigned:fields.createdBySigned,disabledBySigned:fields.disabledBySigned,signedFieldNames:fields.signedFieldNames,format:fields.format,pdfName:inspected.pdfName,emailRecoveryAttempted:!!email||recoverOfficialEmailFromText};
   if(!email&&!recoverOfficialEmailFromText)return base;
   return email?base:{...base,error:'The SAAR OFFICIAL/ORGANIZATION E-MAIL ADDRESS field is empty or invalid, and no valid first email address was found from the top of the selectable PDF text.',manualEntryAllowed:true};
- }catch(error){throwIfSyncCancelled(signal);if(error instanceof OperationTimeoutError)throw error;return{email:'',error:`The SAAR is not a readable fillable PDF. ${errorDetail(error,'')}`.trim(),emailRecoveryAttempted:recoverOfficialEmailFromText}}
+ }catch(error){throwIfSyncCancelled(signal);if(error instanceof OperationTimeoutError)throw error;return{email:'',error:saarReadFailureMessage(error),emailRecoveryAttempted:recoverOfficialEmailFromText}}
+}
+
+const internalErrorNames=new Set(['TypeError','RangeError','ReferenceError','SyntaxError','InternalError']);
+/** Operator wording for a SAAR that could not be parsed; internal parser faults such as "TypeError: Cannot read properties" are not shown. */
+export function saarReadFailureMessage(error:unknown){
+ const internal=error instanceof Error&&internalErrorNames.has(error.name),detail=internal?'':errorDetail(error,'');
+ return `The SAAR is not a readable fillable PDF. ${detail||'Its form fields could not be read. Attach the completed fillable SAAR, or check that the file opens normally in a PDF reader.'}`.trim();
 }
 
 export async function readSaarFile(source:File,recoverOfficialEmailFromText=true,signal?:AbortSignal):Promise<SaarReadResult>{
