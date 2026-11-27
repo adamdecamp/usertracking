@@ -46,12 +46,12 @@ test('nothing can cover the session lock, and the full-window PDF preview stays 
  assert.ok(Math.max(...layers)<=layer('.notification-center'),'no layer is set above the notification center');
 });
 
-test('the focus trap keeps Tab inside the newest screen and yields to an AccessibleModal that holds the focus',()=>{
+test('the focus trap keeps Tab and focus on the newest screen and its notifications, and gives focus back on closing',()=>{
  const trap=readFileSync(new URL('useFocusTrap.ts',directory),'utf8'),modal=read('AccessibleModal.tsx');
  assert.match(modal,/export const focusableSelector=/,'both use the same definition of a focusable control');
  assert.match(trap,/import \{focusableSelector\} from '\.\/AccessibleModal';/);
  assert.match(trap,/document\.addEventListener\('keydown',onKeyDown,true\)/,'it runs before the page handlers');
- assert.match(trap,/const trap=\[\.\.\.traps\]\.reverse\(\)\.find\(item=>!!item\.current&&item\.current\.isConnected\)/,'only the newest screen on screen acts');
+ assert.match(trap,/const topTrap=\(\)=>\[\.\.\.traps\]\.reverse\(\)\.find\(item=>!!item\.current&&item\.current\.isConnected\);/,'only the newest screen on screen acts');
  // Escape belongs to the screen on top: it never reaches a window hidden behind a lock or gate, and it closes
  // only the Sync PDF preview, not the Sync review underneath it.
  assert.match(trap,/if\(event\.key!=='Tab'&&event\.key!=='Escape'\)return;/);
@@ -59,8 +59,16 @@ test('the focus trap keeps Tab inside the newest screen and yields to an Accessi
  assert.match(read('SyncReview.tsx'),/useFocusTrap\(previewScreen,Boolean\(collisionPreview\.loading\|\|collisionPreview\.error\|\|collisionPreview\.url\),\(\)=>closeCollisionPreview\(\)\);/);
  for(const name of ['SessionPanels.tsx','LastLogonNotice.tsx','LegacyWorkspaceRecoveryPanel.tsx','ReadOnlyRecoveryPanel.tsx'])
   assert.doesNotMatch(read(name),/useFocusTrap\(\w+,[^)]/,`${name} must be answered, so Escape does nothing there`);
- assert.match(trap,/if\(!inside\)stay\(event\.shiftKey\?last:first\);/,'focus that is outside is pulled in');
- assert.match(trap,/else if\(event\.shiftKey&&active===first\)stay\(last\);\s*else if\(!event\.shiftKey&&active===last\)stay\(first\);/);
- assert.match(trap,/if\(otherDialog&&!otherDialog\.contains\(container\)&&!traps\.some\(item=>item\.current===otherDialog\)\)return;/);
- assert.match(trap,/if\(!traps\.length\)document\.removeEventListener\('keydown',onKeyDown,true\)/);
+ assert.match(trap,/if\(!inScreen&&!inNotes\)\{stay\(event\.shiftKey\?items\[items\.length-1\]:items\[0\]\);return\}/,'Tab from outside is pulled in');
+ assert.match(trap,/if\(event\.shiftKey&&\(!group\.length\|\|active===group\[0\]\|\|active===container\)\)stay\(next\[next\.length-1\]\);\s*else if\(!event\.shiftKey&&\(!group\.length\|\|active===group\[group\.length-1\]\)\)stay\(next\[0\]\);/);
+ // The trap never steps aside for another window: one that opens behind a lock must not take the keyboard.
+ assert.doesNotMatch(trap,/otherDialog|closest\(/,'no rule lets focus stay in a window behind the screen');
+ assert.match(trap,/document\.addEventListener\('focusin',onFocusIn\)/,'focus that lands outside is pulled back at once');
+ assert.match(trap,/if\(!container\|\|!\(target instanceof Node\)\|\|container\.contains\(target\)\|\|notificationArea\(container\)\?\.contains\(target\)\)return;\s*\(visibleItems\(container\)\[0\]\?\?container\)\.focus\(\);/);
+ // Notifications float above every screen, so the keyboard must reach them, including "View Details".
+ assert.match(trap,/document\.querySelector<HTMLElement>\('\.notification-center'\)/);
+ assert.match(trap,/const controlSelector=`\$\{focusableSelector\}, summary`;/);
+ assert.match(read('NotificationCenter.tsx'),/<aside className="notification-center"/,'the notification area still has the name the trap looks for');
+ assert.match(trap,/if\(opener\?\.isConnected&&\(!document\.activeElement\|\|document\.activeElement===document\.body\)\)opener\.focus\(\)/,'closing gives focus back unless something else took it');
+ assert.match(trap,/if\(!traps\.length\)\{document\.removeEventListener\('keydown',onKeyDown,true\);document\.removeEventListener\('focusin',onFocusIn\)\}/);
 });
