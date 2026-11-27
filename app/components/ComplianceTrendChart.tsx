@@ -22,6 +22,8 @@ export function ComplianceTrendChart({users,filtered,statusFile=false}:{users:Us
  const{points,startDay,endDay}=trend,plotted=points.map((point,index)=>({point,index})).filter(item=>item.point.percent!==undefined);
  const x=(day:number)=>left+(endDay===startDay?plotWidth:(day-startDay)/(endDay-startDay)*plotWidth),y=(percent:number)=>top+(1-percent/100)*plotHeight;
  const latest=plotted.at(-1),active=selected!==null&&points[selected]?.percent!==undefined?points[selected]:latest?.point;
+ // The chart is a slider over its weeks: screen readers pass arrow keys to a slider and read the chosen week, which they do not for an image.
+ const activePosition=active?plotted.findIndex(item=>item.point===active)+1:0;
  const path=plotted.map((item,position)=>`${position?'L':'M'}${x(item.point.day).toFixed(1)} ${y(item.point.percent!).toFixed(1)}`).join(' ');
  const monthTicks:{day:number;label:string}[]=[];
  for(let day=startDay;day<=endDay;day++){const date=dateOfDay(day);if(date.endsWith('-01')){const month=Number(date.slice(5,7));monthTicks.push({day,label:month===1?`Jan ${date.slice(0,4)}`:monthNames[month-1]})}}
@@ -43,7 +45,7 @@ export function ComplianceTrendChart({users,filtered,statusFile=false}:{users:Us
    <div><p className="eyebrow">Compliance Trend</p><strong>{latest?`${latest.point.percent}% Compliant Today`:'No Users to Chart'}</strong><small>{users.length} active user{users.length===1?'':'s'} {filtered?'shown by the User Directory filters':'in this system'}</small></div>
    <div className="compliance-trend-range" role="group" aria-label="Months Shown">{trendRanges.map(value=><button key={value} type="button" aria-pressed={months===value} className={months===value?'selected':''} onClick={()=>{setMonths(value);setSelected(null)}}>{value} Months</button>)}</div>
   </div>
-  <svg viewBox={`0 0 ${width} ${height}`} role="img" tabIndex={0} aria-label={`Percent of users compliant over the last ${months} months. ${active?describe(active):'No data.'} Use the left and right arrow keys to move between weeks.`} onMouseMove={nearest} onMouseLeave={()=>setSelected(null)} onKeyDown={step}>
+  <svg viewBox={`0 0 ${width} ${height}`} role="slider" tabIndex={0} aria-orientation="horizontal" aria-label={`Percent of users compliant over the last ${months} months, by week. Use the left and right arrow keys to move between weeks.`} aria-valuemin={plotted.length?1:0} aria-valuemax={plotted.length} aria-valuenow={activePosition} aria-valuetext={active?describe(active):'No data.'} onMouseMove={nearest} onMouseLeave={()=>setSelected(null)} onKeyDown={step}>
    {[0,25,50,75,100].map(value=><g key={value}><line className="trend-grid" x1={left} x2={width-right} y1={y(value)} y2={y(value)}/><text className="trend-axis" x={left-8} y={y(value)+4} textAnchor="end">{value}%</text></g>)}
    {monthTicks.filter((_,index)=>index%tickStep===0).map(tick=><text key={tick.day} className="trend-axis" x={x(tick.day)} y={height-8} textAnchor="middle">{tick.label}</text>)}
    {plotted.length>1&&<path className="trend-line" d={path}/>}
