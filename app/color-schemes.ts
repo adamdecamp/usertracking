@@ -38,8 +38,19 @@ function toHex({h,s,l}:Hsl){
 /** A custom color becomes a scheme with its hue and its saturation relative to the brand color. */
 export function customColorScheme(color:string):ColorScheme|undefined{
  const hex=/^#?([0-9a-f]{6})$/i.exec(color.trim())?.[1]?.toLowerCase();if(!hex)return undefined;
- const {h,s}=toHsl(hex);
- return{id:'custom',label:'Custom',description:`Built from #${hex}.`,hue:Math.round(h),saturation:Math.max(0,Math.min(1.6,s/brandSaturation))};
+ const {h,s}=toHsl(hex),picked=Math.round(h),hue=allowedHue(picked);
+ // A gray has no hue to move, so it is never reported as adjusted.
+ return{id:'custom',label:'Custom',description:hue!==picked&&s>0?`Built from #${hex}, moved off red and gold.`:`Built from #${hex}.`,hue,saturation:Math.max(0,Math.min(1.6,s/brandSaturation))};
+}
+
+/** Red and gold mean "problem" and "warning", so brand colors stay between these hues (yellow-green through magenta). */
+export const allowedHueRange={from:70,to:300} as const;
+/** The hue itself when allowed; otherwise the nearer edge of the allowed range, measured around the color wheel. */
+export function allowedHue(hue:number){
+ const value=((hue%360)+360)%360,{from,to}=allowedHueRange;
+ if(value>=from&&value<=to)return value;
+ const toFrom=value<from?from-value:from+360-value,toTo=value>to?value-to:value+360-to;
+ return toFrom<=toTo?from:to;
 }
 
 /** The color one brand color takes in a scheme: same lightness, the scheme's hue offset, and scaled saturation. */

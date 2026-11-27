@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
-import {organizationCsv,organizationCsvEmail,organizationStatusEmail,organizationStatusFilename,organizationStatusPayload} from '../app/application/organization-share-email.ts';
+import {organizationCsv,organizationCsvEmail,organizationStatusEmail,organizationStatusFilename,organizationStatusPayload,systemDate} from '../app/application/organization-share-email.ts';
+import {registerSystemTimeZones} from '../app/compliance-time-zone.ts';
 import type {SystemRecord,UserRecord} from '../app/domain/tracker-models.ts';
 
 // Synthetic records only; no operational data.
@@ -21,6 +22,23 @@ test('each organization gets a spreadsheet of only its own active users',()=>{
  assert.equal(email.subject,'For Review — Test System — Compliance Spreadsheet — GOV');
  assert.match(email.body,/compliance spreadsheet for GOV on Test System as of 2026-11-26\. It lists 2 active users/);
  assert.match(email.body,/Disabled users and other organizations are not included\./);
+});
+
+test('shared file names and the email date use the information system\'s calendar day, not the UTC day',()=>{
+ // 03:00 UTC on the 27th is still the evening of the 26th in Denver and already midday on the 27th in Tokyo.
+ const evening=new Date('2026-11-27T03:00:00.000Z');
+ try{
+  registerSystemTimeZones([{id:'s1',timeZone:'America/Denver'}]);
+  assert.equal(systemDate(system,evening),'2026-11-26');
+  assert.equal(organizationCsv(system,users,['GOV'],evening).filename,'Test System_GOV_Compliance_20261126.csv');
+  assert.match(organizationCsvEmail(system,'GOV',evening,2,0).body,/as of 2026-11-26\./);
+  assert.equal(organizationStatusFilename(system,'GOV',evening),'Test System_GOV_RAPTOR_Status_20261126.raptor-status.json');
+  registerSystemTimeZones([{id:'s1',timeZone:'Asia/Tokyo'}]);
+  assert.equal(organizationCsv(system,users,['GOV'],evening).filename,'Test System_GOV_Compliance_20261127.csv');
+ }finally{registerSystemTimeZones([])}
+ const page=read('../app/page.tsx'),report=read('../app/components/ComplianceReportModal.tsx');
+ assert.match(page,/Compliance_\$\{calendarDateIn\(asOf,complianceTimeZoneFor\(system\.id\)\)\.replaceAll\('-',''\)\}\.csv/,'the dashboard CSV download uses the same day');
+ assert.match(report,/const today=calendarDateIn\(new Date\(\),fallbackTimeZone\(\)\),/,'the report never defaults to tomorrow\'s UTC date');
 });
 
 test('the spreadsheet starts with exactly the header the launcher requires before it will attach a CSV',()=>{

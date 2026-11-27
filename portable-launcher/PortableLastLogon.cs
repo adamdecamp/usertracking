@@ -10,7 +10,7 @@ internal sealed partial class PortableStorage
     // Startup reuses this Windows user's protected checkpoint when every audit filename, length, and
     // modification time still matches it and a complete chain verification ran within the last week.
     // Otherwise, and for another Windows user or computer, startup verifies the whole chain. Explicit
-    // verification, Release Health, restoration, and audit viewing always verify the whole chain.
+    // verification, restoration, and audit viewing always verify the whole chain.
     private AuditState VerifyAuditChainForStartup(string directory)
     {
         AuditState cached = ReadAuditCheckpoint(directory);DateTimeOffset fullyVerified, now = DateTimeOffset.UtcNow;

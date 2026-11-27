@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
-import {applyColorScheme,brandColors,colorSchemes,customColorScheme,defaultColorSchemeId,parseColorSchemeChoice,resolveColorScheme,schemeColor,schemeVariables} from '../app/color-schemes.ts';
+import {allowedHue,allowedHueRange,applyColorScheme,brandColors,colorSchemes,customColorScheme,defaultColorSchemeId,parseColorSchemeChoice,resolveColorScheme,schemeColor,schemeVariables} from '../app/color-schemes.ts';
 
 const read=(path:string)=>readFileSync(new URL(path,import.meta.url),'utf8');
 const css=read('../app/globals.css');
@@ -31,6 +31,11 @@ test('a custom color, a saved choice, and applying a scheme are all safe',()=>{
  assert.equal(customColorScheme('not a color'),undefined);
  const custom=customColorScheme('#1e40af')!;assert.equal(custom.id,'custom');assert.ok(Math.abs(custom.hue-226)<=2);
  assert.equal(resolveColorScheme({id:'custom',custom:'#1e40af'}).id,'custom');
+ assert.deepEqual([0,20,45,69,70,157,300,301,330,345,360,-10].map(allowedHue),[300,70,70,70,70,157,300,300,300,300,300,300],'a hue outside the allowed range moves to the nearer edge');
+ for(const color of ['#cc0000','#d4a62b','#ff6600','#ff0080']){const scheme=customColorScheme(color)!,shown=hue(schemeColor(scheme,'277457'));assert.ok(shown>=allowedHueRange.from-2&&shown<=allowedHueRange.to+2,`${color} never becomes a red or gold scheme`);assert.match(scheme.description,/moved off red and gold/)}
+ assert.doesNotMatch(customColorScheme('#808080')!.description,/moved/,'a gray has no hue to move');
+ assert.doesNotMatch(custom.description,/moved/);
+ for(const scheme of colorSchemes)assert.equal(allowedHue(scheme.hue),scheme.hue,`${scheme.label} is inside the allowed range`);
  assert.equal(resolveColorScheme({id:'custom',custom:'bad'}).id,defaultColorSchemeId,'a damaged custom value falls back to the original colors');
  assert.equal(resolveColorScheme({id:'unknown'}).id,defaultColorSchemeId);
  assert.deepEqual(parseColorSchemeChoice('{oops'),{id:defaultColorSchemeId});

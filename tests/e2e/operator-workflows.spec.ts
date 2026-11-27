@@ -151,7 +151,7 @@ test('the compliance trend chart offers 3, 6, 9, and 12 months and reflects an o
  for(const months of [3,9,12]){
   await trend.getByRole('button',{name:`${months} Months`}).click();
   await expect(trend.getByRole('button',{name:`${months} Months`})).toHaveAttribute('aria-pressed','true');
-  await expect(trend.getByRole('img')).toHaveAttribute('aria-label',new RegExp(`over the last ${months} months`));
+  await expect(trend.getByRole('slider')).toHaveAttribute('aria-label',new RegExp(`over the last ${months} months`));
  }
  await trend.getByText('Show the Numbers').click();
  await expect(trend.getByRole('columnheader',{name:'Week Of'})).toBeVisible();
