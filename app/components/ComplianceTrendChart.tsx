@@ -1,11 +1,13 @@
 'use client';
 
-import {useEffect,useMemo,useState,type KeyboardEvent,type MouseEvent} from 'react';
+import {useEffect,useMemo,useRef,useState,type KeyboardEvent,type MouseEvent} from 'react';
 import type {UserRecord} from '../domain/tracker-models';
 import {complianceTrend,trendRanges,type TrendPoint,type TrendRange} from '../application/compliance-trend';
 
 // A short, wide plot: about half the height it first shipped with, so the User Directory stays in view.
-const width=720,height=120,left=44,right=18,top=12,bottom=26,plotWidth=width-left-right,plotHeight=height-top-bottom;
+// The drawing is as wide as its panel, between these limits, so in a narrow window the labels keep their size
+// instead of shrinking with the picture. At the full width and above, the whole drawing scales up as one.
+const fullWidth=720,narrowestWidth=320,height=120,left=44,right=18,top=12,bottom=26,plotHeight=height-top-bottom;
 /** A display choice only: whether the chart is collapsed to its headline. */
 export const trendCollapsedStorageKey='isut-trend-collapsed';
 const monthNames=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -23,6 +25,9 @@ export function ComplianceTrendChart({users,filtered,statusFile=false}:{users:Us
  const[months,setMonths]=useState<TrendRange>(6),[selected,setSelected]=useState<number|null>(null),[collapsed,setCollapsed]=useState(false);
  // Read after the first paint so the saved choice never disagrees with the prerendered page.
  useEffect(()=>{queueMicrotask(()=>{try{setCollapsed(localStorage.getItem(trendCollapsedStorageKey)==='1')}catch{}})},[]);
+ const body=useRef<HTMLDivElement>(null),[width,setWidth]=useState(fullWidth),plotWidth=width-left-right;
+ // A collapsed chart measures zero wide; keep the last real width so it reopens at the right size.
+ useEffect(()=>{const element=body.current;if(!element||typeof ResizeObserver==='undefined')return;const observer=new ResizeObserver(entries=>{const measured=entries[0]?.contentRect.width;if(measured)setWidth(Math.round(Math.max(narrowestWidth,Math.min(fullWidth,measured))))});observer.observe(element);return()=>observer.disconnect()},[]);
  const toggle=()=>{const next=!collapsed;setCollapsed(next);setSelected(null);try{localStorage.setItem(trendCollapsedStorageKey,next?'1':'0')}catch{}};
  const trend=useMemo(()=>complianceTrend(users,months),[users,months]);
  const{points,startDay,endDay}=trend,plotted=points.map((point,index)=>({point,index})).filter(item=>item.point.percent!==undefined);
@@ -33,7 +38,8 @@ export function ComplianceTrendChart({users,filtered,statusFile=false}:{users:Us
  const path=plotted.map((item,position)=>`${position?'L':'M'}${x(item.point.day).toFixed(1)} ${y(item.point.percent!).toFixed(1)}`).join(' ');
  const monthTicks:{day:number;label:string}[]=[];
  for(let day=startDay;day<=endDay;day++){const date=dateOfDay(day);if(date.endsWith('-01')){const month=Number(date.slice(5,7));monthTicks.push({day,label:month===1?`Jan ${date.slice(0,4)}`:monthNames[month-1]})}}
- const tickStep=Math.ceil(monthTicks.length/6);
+ // Fewer month labels in a narrow drawing, so they never run into each other.
+ const tickStep=Math.ceil(monthTicks.length/(width<480?4:6));
  function nearest(event:MouseEvent<SVGSVGElement>){
   if(!plotted.length)return;
   const box=event.currentTarget.getBoundingClientRect(),position=(event.clientX-box.left)/box.width*width;
@@ -54,7 +60,7 @@ export function ComplianceTrendChart({users,filtered,statusFile=false}:{users:Us
     <button type="button" className="compliance-trend-toggle" aria-expanded={!collapsed} aria-controls="compliance-trend-body" onClick={toggle}>{collapsed?'Show Chart':'Hide Chart'}</button>
    </div>
   </div>
-  <div id="compliance-trend-body" hidden={collapsed}>
+  <div id="compliance-trend-body" ref={body} hidden={collapsed}>
   <svg viewBox={`0 0 ${width} ${height}`} role="slider" tabIndex={0} aria-orientation="horizontal" aria-label={`Percent of users compliant over the last ${months} months, by week. Use the left and right arrow keys to move between weeks.`} aria-valuemin={plotted.length?1:0} aria-valuemax={plotted.length} aria-valuenow={activePosition} aria-valuetext={active?describe(active):'No data.'} onMouseMove={nearest} onMouseLeave={()=>setSelected(null)} onKeyDown={step}>
    {[0,50,100].map(value=><g key={value}><line className="trend-grid" x1={left} x2={width-right} y1={y(value)} y2={y(value)}/><text className="trend-axis" x={left-8} y={y(value)+4} textAnchor="end">{value}%</text></g>)}
    {monthTicks.filter((_,index)=>index%tickStep===0).map(tick=><text key={tick.day} className="trend-axis" x={x(tick.day)} y={height-8} textAnchor="middle">{tick.label}</text>)}

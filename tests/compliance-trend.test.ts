@@ -90,9 +90,13 @@ test('the dashboard chart follows the directory filters and history is recorded 
  assert.match(chart,/onKeyDown=\{step\}/,'weeks can be stepped through with the keyboard');
  // The chart collapses to its headline, says so to assistive technology, and remembers only that display choice.
  assert.match(chart,/<button type="button" className="compliance-trend-toggle" aria-expanded=\{!collapsed\} aria-controls="compliance-trend-body" onClick=\{toggle\}>\{collapsed\?'Show Chart':'Hide Chart'\}<\/button>/);
- assert.match(chart,/<div id="compliance-trend-body" hidden=\{collapsed\}>/);
+ assert.match(chart,/<div id="compliance-trend-body" ref=\{body\} hidden=\{collapsed\}>/);
+ // In a narrow window the drawing narrows with its panel, so the labels keep their size and the plot its height.
+ assert.match(chart,/const fullWidth=720,narrowestWidth=320,height=120,/);
+ assert.match(chart,/if\(measured\)setWidth\(Math\.round\(Math\.max\(narrowestWidth,Math\.min\(fullWidth,measured\)\)\)\)/);
+ assert.match(chart,/const tickStep=Math\.ceil\(monthTicks\.length\/\(width<480\?4:6\)\);/);
  assert.match(chart,/localStorage\.setItem\(trendCollapsedStorageKey,next\?'1':'0'\)/);
- assert.match(chart,/const width=720,height=120,/,'the plot is the short, wide shape');
+ assert.match(chart,/<svg viewBox=\{`0 0 \$\{width\} \$\{height\}`\}/,'the plot is the short, wide shape');
 });
 
 test('the database format carries the history: decoded strictly, validated by the launcher, never a merge conflict',()=>{
