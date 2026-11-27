@@ -97,3 +97,4 @@ tests/organization-share-email.test.ts
 tests/compliance-snapshot-selection.test.ts
 tests/color-schemes.test.ts
 tests/compliance-trend.test.ts
+tests/eslint-config.test.ts
