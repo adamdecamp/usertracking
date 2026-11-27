@@ -86,7 +86,6 @@ internal static class LauncherPolicy
         return String.Equals(action, "local-manifest", StringComparison.Ordinal)
             || String.Equals(action, "manifest", StringComparison.Ordinal)
             || String.Equals(action, "file", StringComparison.Ordinal)
-            || String.Equals(action, "audit-verify", StringComparison.Ordinal)
             || String.Equals(action, "audit-view", StringComparison.Ordinal)
             || String.Equals(action, "last-logon", StringComparison.Ordinal)
             || String.Equals(action, "sync-job", StringComparison.Ordinal)
@@ -100,7 +99,6 @@ internal static class LauncherPolicy
             || String.Equals(action, "evidence-status", StringComparison.Ordinal)
             || String.Equals(action, "evidence-pdf-status", StringComparison.Ordinal)
             || String.Equals(action, "evidence-exists", StringComparison.Ordinal)
-            || String.Equals(action, "archive-locations", StringComparison.Ordinal)
             || String.Equals(action, "backups", StringComparison.Ordinal);
     }
 

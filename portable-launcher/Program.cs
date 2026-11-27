@@ -292,7 +292,6 @@ internal sealed partial class TrackerContext : ApplicationContext
                     else if (action == "manifest" && parts[0] == "POST") response = storage.SaveManifest(systemId, Encoding.UTF8.GetString(requestBody));
                     else if (action == "csv" && parts[0] == "POST") response = "{\"saved\":\"" + Json(storage.SaveCsv(systemId, requestBody)) + "\"}";
                     else if (action == "state-commit" && parts[0] == "POST") response = storage.SaveSystemState(systemId, requestBody);
-                    else if (action == "workspace" && parts[0] == "GET") response = storage.LocalWorkspaceInfo(systemId);
                     else if (action == "workspace-status" && parts[0] == "POST") response = storage.WorkspaceStatus(systemId, requestBody);
                     else if (action == "workspace-progress" && parts[0] == "GET") response = storage.ReadWorkspacePublicationProgress(systemId);
                     else if (action == "workspace-recovery" && parts[0] == "GET") response = storage.LegacyWorkspaceRecoveryStatus(systemId, QueryValue(target, "logical"));
@@ -317,7 +316,6 @@ internal sealed partial class TrackerContext : ApplicationContext
                     else if (action == "sync-pipeline" && parts[0] == "POST") response = storage.RunSyncPipeline(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"), String.Equals(OptionalQueryValue(target, "legacy"), "1", StringComparison.Ordinal));
                     else if (action == "scan" && parts[0] == "GET") response = storage.ScanWithJournal(systemId, QueryValue(target, "rules"), String.Equals(QueryValue(target, "full"), "1", StringComparison.Ordinal), OptionalQueryValue(target, "organization"), String.Equals(OptionalQueryValue(target, "legacy"), "1", StringComparison.Ordinal));
                     else if (action == "locations" && parts[0] == "GET") response = storage.ListEvidenceLocations(systemId, OptionalQueryValue(target, "organization"), String.Equals(OptionalQueryValue(target, "full"), "1", StringComparison.Ordinal));
-                    else if (action == "archive-locations" && parts[0] == "GET") response = storage.ListArchivedEvidenceLocations(systemId, QueryValue(target, "organization"));
                     else if (action == "sync-commit" && parts[0] == "POST") response = storage.CommitSyncJournal(systemId, QueryValue(target, "run"));
                     else if (action == "renamer-queue" && parts[0] == "GET") response = storage.ReadRenamerQueue(systemId);
                     else if (action == "renamer-queue" && parts[0] == "POST") response = storage.SaveRenamerQueue(systemId, requestBody);
@@ -344,7 +342,6 @@ internal sealed partial class TrackerContext : ApplicationContext
                     else if (action == "error-report" && parts[0] == "POST") response = storage.StoreErrorReport(systemId, QueryValue(target, "filename"), Encoding.UTF8.GetString(requestBody));
                     else if (action == "audit" && parts[0] == "POST") { storage.AppendAudit(systemId, Encoding.UTF8.GetString(requestBody)); response = "{\"ok\":true}"; }
                     else if (action == "audit-batch" && parts[0] == "POST") { storage.AppendAuditBatchJson(systemId, Encoding.UTF8.GetString(requestBody)); response = "{\"ok\":true}"; }
-                    else if (action == "audit-verify" && parts[0] == "GET") response = storage.VerifyAuditLogs(systemId);
                     else if (action == "audit-view" && parts[0] == "GET") response = storage.ReadAuditLogs(systemId);
                     else if (action == "operators" && parts[0] == "GET") response = storage.ReadOperators(systemId);
                     else if (action == "last-logon" && parts[0] == "GET") response = storage.ReadLastLogon(systemId);
