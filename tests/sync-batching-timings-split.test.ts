@@ -118,7 +118,7 @@ test('large pop-up windows load on first use, inside their own Suspense boundary
   assert.doesNotMatch(page,new RegExp(`function ${name}\\(`),`${name} is no longer defined in page.tsx`);
   assert.doesNotMatch(page,new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from '\\./components/${name}'`),`${name} is not imported eagerly`);
  }
- for(const name of [...popups,'RestoreModal','AuditLogModal','OperatorDirectoryModal','PerformanceModal','ReconciliationModal','ReleaseHealthModal','RecoveryCenterLayer']){
+ for(const name of [...popups,'RestoreModal','AuditLogModal','OperatorDirectoryModal','ReconciliationModal','RecoveryCenterLayer']){
   const at=page.indexOf(`<${name} `)>=0?page.indexOf(`<${name} `):page.indexOf(`<${name}/>`);assert.ok(at>0,`${name} is rendered`);
   assert.ok(page.slice(at-26,at)==='<Suspense fallback={null}>',`${name} has its own Suspense boundary, so loading it never blanks the page`);
  }

@@ -63,10 +63,35 @@ internal sealed partial class PortableStorage
         foreach (string id in ids)
         {
             Dictionary<string, object> baseItem, localItem, sharedItem;baseline.TryGetValue(id, out baseItem);local.TryGetValue(id, out localItem);shared.TryGetValue(id, out sharedItem);
-            Dictionary<string, object> selected;if (RecordsEqual(localItem, baseItem)) selected = sharedItem;else if (RecordsEqual(sharedItem, baseItem)) selected = localItem;else if (RecordsEqual(localItem, sharedItem)) selected = localItem;else { conflicts.Add(label + " " + id);continue; }
-            if (selected != null) merged.Add(ObjectDictionary(json.DeserializeObject(json.Serialize(selected))));
+            // Compliance history is recorded automatically on both computers, so it never counts as a conflicting edit:
+            // records are compared without it, and the two histories are combined afterward.
+            Dictionary<string, object> baseCore = WithoutComplianceLog(baseItem), localCore = WithoutComplianceLog(localItem), sharedCore = WithoutComplianceLog(sharedItem);
+            Dictionary<string, object> selected;if (RecordsEqual(localCore, baseCore)) selected = sharedItem;else if (RecordsEqual(sharedCore, baseCore)) selected = localItem;else if (RecordsEqual(localCore, sharedCore)) selected = localItem;else { conflicts.Add(label + " " + id);continue; }
+            if (selected == null) continue;
+            Dictionary<string, object> copy = ObjectDictionary(json.DeserializeObject(json.Serialize(selected)));
+            object[] combinedLog = localItem != null && sharedItem != null ? CombinedComplianceLog(localItem, sharedItem) : null;if (combinedLog != null) copy["complianceLog"] = combinedLog;
+            merged.Add(copy);
         }
         return merged.ToArray();
+    }
+
+    private static Dictionary<string, object> WithoutComplianceLog(Dictionary<string, object> record)
+    {
+        if (record == null || !record.ContainsKey("complianceLog")) return record;
+        var copy = new Dictionary<string, object>(record);copy.Remove("complianceLog");return copy;
+    }
+
+    // Every recorded day from both histories, oldest first. Where both recorded the same day, the shared master wins.
+    private static object[] CombinedComplianceLog(Dictionary<string, object> localItem, Dictionary<string, object> sharedItem)
+    {
+        if (!localItem.ContainsKey("complianceLog") && !sharedItem.ContainsKey("complianceLog")) return null;
+        var byDay = new SortedDictionary<string, object>(StringComparer.Ordinal);
+        foreach (Dictionary<string, object> source in new[] { localItem, sharedItem })
+        {
+            object[] log = source.ContainsKey("complianceLog") ? source["complianceLog"] as object[] : null;if (log == null) continue;
+            foreach (object raw in log) { Dictionary<string, object> entry = raw as Dictionary<string, object>;if (entry != null && entry.ContainsKey("on") && entry["on"] is string) byDay[(string)entry["on"]] = new Dictionary<string, object> { { "on", entry["on"] }, { "compliant", entry.ContainsKey("compliant") && entry["compliant"] is bool && (bool)entry["compliant"] } }; }
+        }
+        return byDay.Values.Skip(Math.Max(0, byDay.Count - ComplianceLogLimit)).ToArray();
     }
 
     private static Dictionary<string, Dictionary<string, object>> RecordsById(object[] items, string label)

@@ -2,6 +2,7 @@ import {migrateManifestPayload} from '../data-migrations';
 import {isValidTimeZone} from '../compliance-time-zone';
 import {decodeOrganizationContacts} from '../domain/organization-contacts';
 import {decodePendingEvidenceMoves} from '../domain/pending-evidence-moves';
+import {decodeComplianceLog} from '../domain/compliance-log';
 import {artifactKinds,canonicalArtifactKind} from '../filename-utils';
 import {validManifestArtifactPath} from '../manifest-validation';
 import {normalizePrivilegedTypes} from '../privileged-type-utils';
@@ -47,7 +48,8 @@ export function decodeTrackerManifest(value:unknown):TrackerDatabase|undefined{
   const changes=Array.isArray(u.changes)&&u.changes.length<=10000?u.changes.filter((change):change is ChangeRecord=>!!change&&typeof change==='object'&&boundedString((change as ChangeRecord).timestamp,50)&&boundedString((change as ChangeRecord).actor,500)&&boundedString((change as ChangeRecord).action,500)&&boundedString((change as ChangeRecord).description,500)&&stringArray((change as ChangeRecord).rolesBefore)&&(change as ChangeRecord).rolesBefore.length<=20&&stringArray((change as ChangeRecord).rolesAfter)&&(change as ChangeRecord).rolesAfter.length<=20&&stringArray((change as ChangeRecord).files)&&(change as ChangeRecord).files.length<=100):[];
   const exceptions=Array.isArray(u.exceptions)&&u.exceptions.length<=1000?u.exceptions.filter((exception):exception is ComplianceException=>!!exception&&typeof exception==='object'&&boundedString((exception as ComplianceException).id,100)&&boundedString((exception as ComplianceException).artifact,100)&&artifactKinds.includes(canonicalArtifactKind((exception as ComplianceException).artifact))&&boundedString((exception as ComplianceException).reason,500)&&boundedString((exception as ComplianceException).approvedBy,200)&&boundedString((exception as ComplianceException).createdAt,50)&&boundedString((exception as ComplianceException).createdBy,500)&&/^\d{4}-\d{2}-\d{2}$/.test((exception as ComplianceException).expiresOn)&&((exception as ComplianceException).revokedAt===undefined||boundedString((exception as ComplianceException).revokedAt,50))&&((exception as ComplianceException).revokedBy===undefined||boundedString((exception as ComplianceException).revokedBy,500))).map(exception=>({...exception,artifact:canonicalArtifactKind(exception.artifact)})):[];
   const extractionProvenance=decodeProvenance(u.extractionProvenance);if(!extractionProvenance)return;
-  users.push({id:u.id,systemId:u.systemId,organization:u.organization,affiliatedOrganizations:normalizeAffiliatedOrganizations(u.affiliatedOrganizations),last:u.last,first:u.first,middle:u.middle,email:u.email,disabled:u.disabled,roles,privilegedUsernames,privilegedTypes,artifacts,extractionProvenance,changes,exceptions});
+  const complianceLog=u.complianceLog===undefined?undefined:decodeComplianceLog(u.complianceLog);if(u.complianceLog!==undefined&&!complianceLog)return;
+  users.push({id:u.id,systemId:u.systemId,organization:u.organization,affiliatedOrganizations:normalizeAffiliatedOrganizations(u.affiliatedOrganizations),last:u.last,first:u.first,middle:u.middle,email:u.email,disabled:u.disabled,roles,privilegedUsernames,privilegedTypes,artifacts,extractionProvenance,changes,exceptions,...(complianceLog?.length?{complianceLog}:{})});
  }
  const recognitionAliases:RecognitionAlias[]=[];
  for(const item of raw.recognitionAliases){

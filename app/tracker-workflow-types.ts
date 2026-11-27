@@ -43,4 +43,3 @@ export type RenamerReadResult={item:RenamerItem;auditDetail:string};
 export type SavedRenamerItem=Omit<RenamerItem,'ref'>;
 export type RenamerQueuePayload={version:1;ruleSetVersion:string;systemId:string;savedAtUtc:string;items:SavedRenamerItem[]};
 export type RenamerStats={renamed:number;needsInput:number;collisions:number;skippedZips:number;skippedArchives:number};
-export type ReleaseHealthRecord={generatedAtUtc:string;applicationVersion:string;ruleSetVersion:string;operator:string;systemName:string;mappedFolder:string;databaseSavedUtc:string;databaseSha256:string;backupCreatedUtc:string;backupFilename:string;auditEntries:number;auditHeadHash:string;status:'Verified';recordSha256:string};

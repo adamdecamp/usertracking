@@ -176,7 +176,7 @@ test('startup reuses a recently fully verified audit checkpoint; explicit checks
  assert.match(launcher,/VerifyLatest\(systemId, QueryValue\(target, "logical"\), String\.Equals\(QueryValue\(target, "audit"\), "startup", StringComparison\.Ordinal\)\)/);
  assert.match(page,/verify\?logical=\$\{encodeURIComponent\(systemId\)\}\$\{startup\?'&audit=startup':''\}/);
  assert.equal((page.match(/verifyMappedStorageHealth\([^)]*,true,true\)/g)??[]).length,5,'the five startup, reconnect, and Full Access paths use the startup check');
- for(const explicit of ['async function verifyStorage','async function openReleaseHealth',"updateProcessing('Verifying Restored Database And Audit Chain'"]){const start=page.indexOf(explicit);assert.ok(start>=0,explicit);assert.match(page.slice(start,start+1500),/verifyMappedStorageHealth\(root,systemId,true\)/,`${explicit} keeps the full-chain check`)}
+ for(const explicit of ['async function verifyStorage',"updateProcessing('Verifying Restored Database And Audit Chain'"]){const start=page.indexOf(explicit);assert.ok(start>=0,explicit);assert.match(page.slice(start,start+1500),/verifyMappedStorageHealth\(root,systemId,true\)/,`${explicit} keeps the full-chain check`)}
 });
 
 test('Windows change notifications are advisory hints with overflow fallback to authoritative scans',()=>{
@@ -217,27 +217,29 @@ test('portable backups are compressed locally and remain compatible with legacy 
  assert.match(storage,/The decompressed backup exceeds the safety limit/);
 });
 
-test('performance diagnostics record phase timing, counts, staging, and concurrency locally',()=>{
- assert.match(storage,/AppendPerformanceDiagnostic/);
- assert.match(storage,/performance-" \+ DateTime\.UtcNow\.ToString\("yyyy-MM-dd"/);
- assert.match(storage,/"enumerationDurationMs"/);
- assert.match(storage,/"validationDurationMs"/);
- assert.match(storage,/"stagedBytes"/);
- assert.match(storage,/"validationConcurrency"/);
- assert.match(storage,/"slowValidationFiles"/);
- assert.match(storage,/"maxValidationDurationMs"/);
- assert.match(storage,/public string ReadPerformanceDiagnostics/);
- assert.match(storage,/Percentile\(durations, 0\.95\)/);
- assert.match(storage,/"databaseShards"/);
- assert.match(storage,/"publicationIndexShards"/);
- assert.match(storage,/"bytesPerSecond"/);
- assert.match(storage,/"preparationMs"/);
- assert.match(storage,/"transferMs"/);
- assert.match(storage,/"localReadCacheAvailable"/);
- assert.match(storage,/"backupCompression"/);
- assert.match(launcher,/action == "performance"[\s\S]*?ReadPerformanceDiagnostics/);
- assert.match(page,/openPerformanceReport/);
- assert.match(page,/downloadPerformanceReport/);
+test('Sync still reports its own phase timing, counts, staging, and concurrency in its response',()=>{
+ for(const metric of ['enumerationDurationMs','validationDurationMs','stagedBytes','validationConcurrency','slowValidationFiles','maxValidationDurationMs'])assert.match(storage,new RegExp(`"${metric}"`));
+ assert.match(storage,/return json\.Serialize\(new Dictionary<string, object> \{ \{ "retention", retention \}, \{ "scan", scan \}, \{ "diagnostics", diagnostics \} \}\);/);
+});
+
+test('Performance Diagnostics and Release Health are removed with everything that existed only for them',()=>{
+ const header=fs.readFileSync(new URL('../app/components/OperatorDashboardHeader.tsx',import.meta.url),'utf8'),panels=fs.readFileSync(new URL('../app/components/OperationalPanels.tsx',import.meta.url),'utf8'),guide=fs.readFileSync(new URL('../app/user-guide/page.tsx',import.meta.url),'utf8');
+ assert.doesNotMatch(header,/>Performance<|>Release Health<|onPerformance|onReleaseHealth/);
+ assert.doesNotMatch(page,/openPerformanceReport|downloadPerformanceReport|downloadDiagnosticBundle|openReleaseHealth|downloadReleaseHealth|PerformanceModal|ReleaseHealthModal|'performance'|'health'/);
+ assert.doesNotMatch(panels,/PerformanceModal|ReleaseHealthModal|PerformanceReport|ReleaseHealthRecord/);
+ assert.doesNotMatch(guide,/Release Health/);
+ for(const removed of ['app/diagnostic-bundle.ts','app/infrastructure/network-qualification.ts','portable-launcher/PortableNetworkQualification.cs'])assert.equal(fs.existsSync(new URL(`../${removed}`,import.meta.url)),false,removed);
+ assert.doesNotMatch(storage,/AppendPerformanceDiagnostic|ReadPerformanceDiagnostics|ReadSanitizedDiagnostics|DiagnosticContextCategory|PerformanceDuration|transferTimer|preparationTimer/);
+ assert.doesNotMatch(launcher,/action == "(performance|diagnostics|network-qualification)"/);
+ assert.doesNotMatch(policy,/"performance"|"diagnostics"/);
+ // The timing logs Performance Diagnostics kept in each Windows profile are deleted when a folder is mapped, in either access mode.
+ const cleanup=storage.slice(storage.indexOf('private void RemoveRetiredPerformanceLogs()'),storage.indexOf('private static byte[] ManifestCacheEntropy'));
+ assert.match(cleanup,/Path\.Combine\(LocalCacheParent\(\), "performance-cache"\)/);
+ assert.match(cleanup,/foreach \(string rootCache in Directory\.EnumerateDirectories\(cache\)\)/,'logs keyed by the shared folder and by the local workspace are both removed');
+ assert.match(cleanup,/FileAttributes\.ReparsePoint\) == 0[\s\S]*?FileAttributes\.ReparsePoint\) == 0\) Directory\.Delete\(directory, true\)/,'a linked folder is never followed');
+ assert.doesNotMatch(cleanup,/CreateDirectory/,'cleanup never creates a folder');
+ assert.match(storage,/Map\(systemId, full\);RemoveRetiredPerformanceLogs\(\);return true;/);
+ assert.match(storage,/if \(localWorkspaceRemapped\) ResetLocalWorkspaceWatcher\(systemId\);\r?\n        RemoveRetiredPerformanceLogs\(\);/);
 });
 
 test('workspace publication streams evidence and appends bounded progress without routine tree walks',()=>{
@@ -279,11 +281,3 @@ test('publication receipts are sharded per organization and file hashes stream w
  assert.match(storage,/hashCache\.Container/);
 });
 
-test('sanitized diagnostics expose only categorized error counts through a nonqueued read-only route',()=>{
- assert.match(storage,/public string ReadSanitizedDiagnostics/);
- assert.match(storage,/DiagnosticContextCategory/);
- assert.doesNotMatch(storage.slice(storage.indexOf('public string ReadSanitizedDiagnostics'),storage.indexOf('private static long PerformanceDuration')),/Details:/);
- assert.match(launcher,/action == "diagnostics"[\s\S]*?ReadSanitizedDiagnostics/);
- assert.match(policy,/!String\.Equals\(action, "diagnostics"/);
- assert.match(page,/Download Sanitized Diagnostic Bundle|downloadDiagnosticBundle/);
-});

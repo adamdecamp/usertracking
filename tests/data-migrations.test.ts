@@ -1,7 +1,7 @@
 import assert from'node:assert/strict';
 import{readFileSync}from'node:fs';
 import{test}from'node:test';
-import{compareApplicationVersions,currentManifestVersion,migrateAuditEntryPayload,migrateBackupPayload,migrateManifestPayload,migrateSyncIndexPayload,rollbackManifestV6ToV5,rollbackManifestV7ToV6,rollbackManifestV8ToV7,rollbackManifestV9ToV8}from'../app/data-migrations.ts';
+import{compareApplicationVersions,currentManifestVersion,migrateAuditEntryPayload,migrateBackupPayload,migrateManifestPayload,migrateSyncIndexPayload,rollbackManifestV6ToV5,rollbackManifestV7ToV6,rollbackManifestV8ToV7,rollbackManifestV9ToV8,rollbackManifestV10ToV9}from'../app/data-migrations.ts';
 import{applicationVersion}from'../app/version.ts';
 
 const fixture=(name:string)=>JSON.parse(readFileSync(new URL(`./fixtures/migrations/${name}`,import.meta.url),'utf8')) as unknown;
@@ -119,19 +119,30 @@ test('rolls v8 back to v7 by removing only organization contacts',()=>{
 
 const queued={id:'m1',work:'archive-user',userId:'u1',userLabel:'Test, Synthetic',requestedAt:'2026-11-25T12:00:00.000Z',requestedBy:'Operator'};
 
-test('migrates v8 to v9 without inventing pending file moves and keeps a queue that is set',()=>{
- assert.equal(currentManifestVersion,9);
+test('migrates v8 forward without inventing pending file moves and keeps a queue that is set',()=>{
+ assert.equal(currentManifestVersion,10);
  const v8=migrateManifestPayload({version:8,minimumApplicationVersion:applicationVersion,lastWriterVersion:applicationVersion,systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,organizationContacts:[contact]}],users:[],recognitionAliases:[]})!;
- assert.equal(v8.version,9);
+ assert.equal(v8.version,10);
  assert.equal('pendingEvidenceMoves'in(v8.systems as Record<string,unknown>[])[0],false);
  const withQueue=migrateManifestPayload(current({systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,pendingEvidenceMoves:[queued]}],users:[],recognitionAliases:[]}))!;
  assert.deepEqual((withQueue.systems as Record<string,unknown>[])[0].pendingEvidenceMoves,[queued]);
 });
 
 test('rolls v9 back to v8 only when no file move is still waiting',()=>{
- const empty=current({systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,organizationContacts:[contact],pendingEvidenceMoves:[]}],users:[{id:'u1'}],recognitionAliases:[]}),rolled=rollbackManifestV9ToV8(empty)!;
+ const empty=current({systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,organizationContacts:[contact],pendingEvidenceMoves:[]}],users:[{id:'u1'}],recognitionAliases:[]}),rolled=rollbackManifestV9ToV8({...empty,version:9})!;
  assert.equal(rolled.version,8);
  assert.deepEqual(rolled.systems,[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,organizationContacts:[contact]}]);
- assert.equal(rollbackManifestV9ToV8(current({systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,pendingEvidenceMoves:[queued]}],users:[],recognitionAliases:[]})),undefined,'v8 would forget the waiting move, so rollback must wait for Session Commit');
+ assert.equal(rollbackManifestV9ToV8({...current({systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false,pendingEvidenceMoves:[queued]}],users:[],recognitionAliases:[]}),version:9}),undefined,'v8 would forget the waiting move, so rollback must wait for Session Commit');
  assert.equal(rollbackManifestV9ToV8({...empty,version:8}),undefined);
+});
+
+test('migrates v9 to v10 without inventing compliance history, and rolls v10 back by dropping only that history',()=>{
+ const v9=migrateManifestPayload({version:9,minimumApplicationVersion:applicationVersion,lastWriterVersion:applicationVersion,systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false}],users:[{id:'u1',systemId:'s1'}],recognitionAliases:[]})!;
+ assert.equal(v9.version,10);
+ assert.equal('complianceLog'in(v9.users as Record<string,unknown>[])[0],false);
+ const log=[{on:'2026-11-01',compliant:false},{on:'2026-11-20',compliant:true}],withLog=current({systems:[{id:'s1',name:'System',type:'Test',organization:'GOV',archived:false}],users:[{id:'u1',systemId:'s1',complianceLog:log}],recognitionAliases:[]});
+ assert.deepEqual((migrateManifestPayload(withLog)!.users as Record<string,unknown>[])[0].complianceLog,log);
+ const rolled=rollbackManifestV10ToV9(withLog)!;
+ assert.equal(rolled.version,9);assert.deepEqual(rolled.users,[{id:'u1',systemId:'s1'}]);
+ assert.equal(rollbackManifestV10ToV9({...withLog,version:9}),undefined);
 });

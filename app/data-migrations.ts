@@ -4,11 +4,12 @@ import {applicationVersion} from './version.ts';
 
 /**
  * v7 adds an optional per-system `timeZone`; v8 adds optional per-system
- * `organizationContacts`; v9 adds optional per-system `pendingEvidenceMoves`.
- * Older clients rebuild system records field by field and would silently drop
+ * `organizationContacts`; v9 adds optional per-system `pendingEvidenceMoves`;
+ * v10 adds optional per-user `complianceLog` (compliance history).
+ * Older clients rebuild records field by field and would silently drop
  * these, so they must refuse newer databases rather than open them.
  */
-export const currentManifestVersion=9;
+export const currentManifestVersion=10;
 export const currentBackupVersion=1;
 export const currentAuditVersion=1;
 export const currentSyncIndexVersion=1;
@@ -102,6 +103,17 @@ export function rollbackManifestV9ToV8(value:unknown):JsonRecord|undefined{
  const input=clone(value);
  if(Array.isArray(input.systems))input.systems=input.systems.map(system=>{if(!record(system))return system;const rest={...system};delete rest.pendingEvidenceMoves;return rest});
  input.version=8;return input;
+}
+
+/**
+ * Explicit rollback for the additive v10 compliance history. Drops only
+ * `users[].complianceLog`; the trend chart then has no recorded past.
+ */
+export function rollbackManifestV10ToV9(value:unknown):JsonRecord|undefined{
+ if(!record(value)||value.version!==10)return;
+ const input=clone(value);
+ if(Array.isArray(input.users))input.users=input.users.map(user=>{if(!record(user))return user;const rest={...user};delete rest.complianceLog;return rest});
+ input.version=9;return input;
 }
 
 export function migrateBackupPayload(value:unknown):JsonRecord|undefined{
