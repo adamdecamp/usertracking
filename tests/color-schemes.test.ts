@@ -50,6 +50,7 @@ test('Color Scheme is in System Tools for everyone and the choice is applied and
  assert.match(page,/setColorScheme\(parseColorSchemeChoice\(localStorage\.getItem\(colorSchemeStorageKey\)\)\)/);
  assert.match(page,/if\(!hydrated\)return;applyColorScheme\(resolveColorScheme\(colorScheme\),document\.documentElement\);try\{localStorage\.setItem\(colorSchemeStorageKey,JSON\.stringify\(colorScheme\)\)\}catch\{\}/,'the default state never overwrites a saved scheme before it is loaded');
  assert.match(page,/useLayoutEffect\(\(\)=>\{try\{applyColorScheme\(resolveColorScheme\(parseColorSchemeChoice\(localStorage\.getItem\(colorSchemeStorageKey\)\)\),document\.documentElement\)\}catch\{\}\},\[\]\);/,'a saved scheme is applied before the first paint');
+ assert.match(page,/useLayoutEffect\(\(\)=>\{try\{if\(localStorage\.getItem\('isut-theme'\)==='dark'\)document\.querySelector\('main\.app'\)\?\.classList\.add\('dark'\)\}catch\{\}\},\[\]\);/,'saved Dark Mode is applied before the first paint');
  assert.match(modal,/role="radiogroup" aria-label="Color Scheme" data-ignore-unsaved>/,'a choice is saved at once, so closing the window never asks about unsaved changes');
  assert.match(read('../app/components/AccessibleModal.tsx'),/!target\.closest\('\[data-ignore-unsaved\]'\)/);
  assert.match(modal,/Restore Original Colors/);
