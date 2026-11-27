@@ -4,7 +4,7 @@ using System.IO;
 
 internal sealed partial class PortableStorage
 {
-    internal const string CurrentApplicationVersion = "1.4.0";
+    internal const string CurrentApplicationVersion = "1.5.0";
 
     internal static bool ValidApplicationVersion(string value)
     {

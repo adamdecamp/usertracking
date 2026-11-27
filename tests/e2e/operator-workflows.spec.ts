@@ -112,3 +112,49 @@ test('rejects a tampered organization snapshot and keeps the access gate closed'
  await expect(notification).toContainText(/failed.*integrity check|integrity check.*failed/i);
  await expect(page.getByRole('dialog',{name:'Choose Your Access'})).toBeVisible();
 });
+test('a color scheme applies at once, closes without a prompt, and is remembered',async({page})=>{
+ const dialogs:string[]=[];
+ page.on('dialog',dialog=>{dialogs.push(dialog.message());void dialog.dismiss()});
+ const brandColor=()=>page.evaluate(()=>document.documentElement.style.getPropertyValue('--rc-277457'));
+ await page.goto('/');
+ await page.getByRole('dialog',{name:'Choose Your Access'}).getByRole('button',{name:'Read-Only Access'}).click();
+ expect(await brandColor()).toBe('');
+ await page.getByText('System Tools',{exact:true}).click();
+ await page.getByRole('button',{name:'Color Scheme'}).click();
+ const schemes=page.getByRole('dialog',{name:'Color Scheme'});
+ await schemes.getByRole('radio',{name:/Navy Blue/}).check();
+ expect(await brandColor()).not.toBe('');
+ await page.keyboard.press('Escape');
+ await expect(schemes).toBeHidden();
+ expect(dialogs).toEqual([]);
+ const chosen=await brandColor();
+ await page.reload();
+ await page.getByRole('dialog',{name:'Choose Your Access'}).getByRole('button',{name:'Read-Only Access'}).click();
+ expect(await brandColor()).toBe(chosen);
+ await page.getByText('System Tools',{exact:true}).click();
+ await page.getByRole('button',{name:'Color Scheme'}).click();
+ await page.getByRole('dialog',{name:'Color Scheme'}).getByRole('button',{name:'Restore Original Colors'}).click();
+ expect(await brandColor()).toBe('');
+});
+
+test('the compliance trend chart offers 3, 6, 9, and 12 months and reflects an organization status file',async({page})=>{
+ const statusPackage=await createOrganizationStatusPackage(snapshotPayload);
+ await page.goto('/');
+ await page.locator('input[type="file"][accept*="raptor-status"]').setInputFiles({name:'GOV.raptor-status.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(statusPackage))});
+ await expect(page.getByRole('dialog',{name:'Choose Your Access'})).toBeHidden();
+ const trend=page.getByRole('region',{name:'Compliance Trend'});
+ await expect(trend).toBeVisible();
+ await expect(trend.getByText(/% Compliant Today$/)).toBeVisible();
+ await expect(trend.getByText(/of 1 user\)/)).toBeVisible();
+ await expect(trend.getByText(/An Organization Status File holds today.s status only/)).toBeVisible();
+ await expect(trend.getByRole('button',{name:'6 Months'})).toHaveAttribute('aria-pressed','true');
+ for(const months of [3,9,12]){
+  await trend.getByRole('button',{name:`${months} Months`}).click();
+  await expect(trend.getByRole('button',{name:`${months} Months`})).toHaveAttribute('aria-pressed','true');
+  await expect(trend.getByRole('img')).toHaveAttribute('aria-label',new RegExp(`over the last ${months} months`));
+ }
+ await trend.getByText('Show the Numbers').click();
+ await expect(trend.getByRole('columnheader',{name:'Week Of'})).toBeVisible();
+ await page.getByRole('textbox',{name:'Search User Directory'}).fill('no-match');
+ await expect(trend.getByText('No Users to Chart')).toBeVisible();
+});
