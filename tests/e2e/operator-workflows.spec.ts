@@ -46,8 +46,11 @@ test('opens every dashboard menu without blanking the application',async({page})
  await expect(page.getByRole('button',{name:'View Audit Log'})).toBeVisible();
  await expect(page.getByRole('button',{name:'Archived Systems'})).toBeHidden();
 
+ // Read-Only still has System Tools for Color Scheme; the removed windows are gone.
  await page.getByText('System Tools',{exact:true}).click();
- await expect(page.getByRole('button',{name:'Performance'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Color Scheme'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Performance'})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Release Health'})).toHaveCount(0);
  await expect(page.getByRole('heading',{name:'R.A.P.T.O.R.'})).toBeVisible();
  expect(pageErrors).toEqual([]);
 });

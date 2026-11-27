@@ -348,9 +348,6 @@ internal sealed partial class TrackerContext : ApplicationContext
                     else if (action == "audit-view" && parts[0] == "GET") response = storage.ReadAuditLogs(systemId);
                     else if (action == "operators" && parts[0] == "GET") response = storage.ReadOperators(systemId);
                     else if (action == "last-logon" && parts[0] == "GET") response = storage.ReadLastLogon(systemId);
-                    else if (action == "performance" && parts[0] == "GET") response = storage.ReadPerformanceDiagnostics(systemId);
-                    else if (action == "network-qualification" && parts[0] == "POST") response = storage.RunNetworkQualification(systemId);
-                    else if (action == "diagnostics" && parts[0] == "GET") response = storage.ReadSanitizedDiagnostics(systemId);
                     else if (action == "lease-acquire" && parts[0] == "POST") { bool acquired = storage.AcquireLease(systemId, QueryValue(target, "session"));response = "{\"acquired\":" + (acquired ? "true" : "false") + ",\"holder\":" + (acquired ? "null" : storage.LeaseHolder(systemId)) + "}"; }
                     else if (action == "lease-renew" && parts[0] == "POST") response = "{\"renewed\":" + (storage.RenewLease(systemId, QueryValue(target, "session")) ? "true" : "false") + "}";
                     else if (action == "lease-release" && parts[0] == "POST") { storage.ReleaseLease(systemId, QueryValue(target, "session")); response = "{\"released\":true}"; }

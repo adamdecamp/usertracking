@@ -139,7 +139,7 @@ test('Inspection Package is removed while core audit and reporting controls rema
  assert.doesNotMatch(dashboard,/Inspection Package|generateInspectionPackage|inspection-package/);
  assert.match(dashboard,/>Compliance Snapshot \(PDF\)</);
  assert.match(dashboard,/>View Audit Log</);
- assert.match(dashboard,/>Release Health</);
+ assert.doesNotMatch(dashboard,/>Release Health</,'Release Health was removed; Verify Storage still checks the database, backup, and audit chain');
 });
 
 test('location refresh and discovery workflows use metadata without reopening every PDF',()=>{

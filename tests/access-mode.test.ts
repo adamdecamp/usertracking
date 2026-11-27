@@ -55,7 +55,7 @@ test('the dashboard can switch between Read-Only and Full Access without restart
  assert.match(page,/upgradeLauncherSession\(\)/);
  assert.match(page,/downgradeLauncherSession\(\)/);
  assert.match(launcher,/path == "\/api\/session-upgrade"/);
- assert.match(styles,/\.mode-switch \.secondary\{background:#fff;color:#17654f/);
+ assert.match(styles,/\.mode-switch \.secondary\{background:#fff;color:var\(--rc-17654f,#17654f\)/);
 });
 
 test('Full Access requires startup integrity verification and safely falls back to Read-Only',()=>{

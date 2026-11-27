@@ -4,7 +4,7 @@ import {decodeJsonResponse,RuntimeDecodeError} from '../app/infrastructure/runti
 import {
  decodeCachedMappingResponse,decodeEvidenceFilenameResponse,decodeEvidenceStatusResponse,decodeLauncherControlResponse,
  decodeLegacyWorkspaceRecoveryResult,decodeLegacyWorkspaceRecoveryStatus,decodeLegacyWorkspaceReviewPackage,
- decodeLeaseAcquireResponse,decodeLeaseRenewResponse,decodeNetworkQualificationResponse,decodeOperationReceipt,decodeOperatorDirectoryResponse,decodeOrganizationList,
+ decodeLeaseAcquireResponse,decodeLeaseRenewResponse,decodeOperationReceipt,decodeOperatorDirectoryResponse,decodeOrganizationList,
  decodeOrganizationResponse,decodePathMutationResponse,decodePublishResponse,decodeSelectedFolderResponse,
  decodeStorageOperationReceipt,decodeStorageVerificationResponse,decodeStoredEvidenceResponse,decodeWorkspacePublicationProgress,decodeWorkspaceStatusResponse,
 } from '../app/infrastructure/portable-contracts.ts';
@@ -27,7 +27,6 @@ test('portable response contracts accept bounded valid payloads',()=>{
  assert.deepEqual(decodeWorkspacePublicationProgress({active:true,phase:'evidence-copy',processed:7,total:12,filename:'Example.pdf.zip',updatedAtUtc:'2026-10-22T12:00:00.000Z'}),{active:true,phase:'evidence-copy',processed:7,total:12,filename:'Example.pdf.zip',updatedAtUtc:'2026-10-22T12:00:00.000Z'});
  assert.deepEqual(decodeStorageOperationReceipt({completed:false,running:true,failed:false,action:'workspace-publish',startedAtUtc:'2026-10-22T12:00:00.000Z',message:'Publishing evidence.'}),{completed:false,running:true,failed:false,action:'workspace-publish',startedAtUtc:'2026-10-22T12:00:00.000Z',message:'Publishing evidence.'});
  assert.deepEqual(decodeLauncherControlResponse({activeStorageRequests:2,longOperationActive:true,activeOperation:'sync'}),{activeStorageRequests:2,longOperationActive:true,activeOperation:'sync'});
- assert.equal(decodeNetworkQualificationResponse({generatedAtUtc:'2026-10-21T12:00:00.000Z',rating:'Ready',networkRoot:true,writeMs:10,readVerifyMs:20,renameMs:5,exclusiveLockMs:5,enumerateMs:15,totalMs:55,payloadBytes:65536,sha256Verified:true,recommendation:'Ready.'}).totalMs,55);
  assert.equal(decodePathMutationResponse('archived','Archive')({archived:'Archive/A.zip'}).path,'Archive/A.zip'); assert.equal(decodePathMutationResponse('path','Evidence reassignment')({path:'Organizations/GOV/A.pdf.zip',missing:true}).missing,true);
  assert.equal(decodeStorageVerificationResponse({saved:'2026-10-16T00:00:00Z',backup:'2026-10-16T00:00:00Z',filename:'manifest.json',auditEntries:1,auditHeadHash:hash,manifestSha256:hash,backupRecoveryWarning:'Skipped one incomplete snapshot.',skippedBackupCount:1,backupRebuilt:false}).skippedBackupCount,1);
  const publication=decodePublishResponse({saved:'2026-10-16T00:00:00Z',publishedFiles:2,noChanges:false,evidenceFastPath:true,stateHash:hash});
@@ -54,8 +53,6 @@ test('portable response contracts reject type confusion, control characters, bad
  assert.throws(()=>decodeWorkspaceStatusResponse({noChanges:true,stateHash:hash,databaseChangePending:false,pendingEvidenceCount:1,interruptedRecovery:false,evidenceWorkPending:false,saved:'now',backup:'now'}),/contradictory/);
  assert.throws(()=>decodeLauncherControlResponse({activeStorageRequests:-1,longOperationActive:true}),RuntimeDecodeError);
  assert.throws(()=>decodeLauncherControlResponse({activeStorageRequests:1,longOperationActive:'yes'}),RuntimeDecodeError);
- assert.throws(()=>decodeNetworkQualificationResponse({generatedAtUtc:'invalid',rating:'Ready',networkRoot:true,writeMs:1,readVerifyMs:1,renameMs:1,exclusiveLockMs:1,enumerateMs:1,totalMs:5,payloadBytes:65536,sha256Verified:true,recommendation:'Ready.'}),/timestamp/);
- assert.throws(()=>decodeNetworkQualificationResponse({generatedAtUtc:'2026-10-21T12:00:00.000Z',rating:'Ready',networkRoot:true,writeMs:1,readVerifyMs:1,renameMs:1,exclusiveLockMs:1,enumerateMs:1,totalMs:5,payloadBytes:65536,sha256Verified:false,recommendation:'Ready.'}),/SHA-256/);
  assert.throws(()=>decodeEvidenceFilenameResponse({filename:'bad\nname.pdf'}),RuntimeDecodeError);
  assert.throws(()=>decodeStoredEvidenceResponse({filename:'A.zip',path:'A.zip',sha256:'not-a-hash'}),/SHA-256/);
  assert.throws(()=>decodeEvidenceStatusResponse({filename:'A.zip',path:'A.zip',sha256:hash}),/stored flag/);

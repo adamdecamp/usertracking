@@ -6,6 +6,7 @@
  */
 import type {OrganizationContact} from './organization-contacts.ts';
 import type {PendingEvidenceMove} from './pending-evidence-moves.ts';
+import type {ComplianceLogEntry} from './compliance-log.ts';
 
 export type ComplianceException={
  id:string;
@@ -97,6 +98,8 @@ export type UserRecord={
  extractionProvenance?:UserExtractionProvenance;
  changes?:ChangeRecord[];
  exceptions?:ComplianceException[];
+ /** Manifest v10: the dates this user became compliant or stopped being compliant. */
+ complianceLog?:ComplianceLogEntry[];
 };
 
 export type TrackerDatabase={systems:SystemRecord[];users:UserRecord[];recognitionAliases:RecognitionAlias[]};

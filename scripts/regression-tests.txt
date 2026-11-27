@@ -46,7 +46,6 @@ tests/access-mode.test.ts
 tests/operator-identity.test.ts
 tests/organization-status-package.test.ts
 tests/organization-status-ui.test.ts
-tests/diagnostic-bundle.test.ts
 tests/ui-modularization.test.ts
 tests/release-workflow.test.ts
 tests/braces-security-backport.test.ts
@@ -95,3 +94,6 @@ tests/sync-batching-timings-split.test.ts
 tests/access-gate-interactive.test.ts
 tests/trailing-punctuation.test.ts
 tests/organization-share-email.test.ts
+tests/compliance-snapshot-selection.test.ts
+tests/color-schemes.test.ts
+tests/compliance-trend.test.ts

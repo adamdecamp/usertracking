@@ -136,5 +136,5 @@ test('record changes queue their file moves, and Session Commit and logoff run t
  assert.doesNotMatch(page.slice(page.indexOf(' async function saveUser('),page.indexOf(' async function editUserInformation')),/archiveEvidence\(/,'saving a user never moves files');
  assert.match(launcher,/internal static void ValidateSystemPendingEvidenceMoves/);
  assert.match(storage,/ValidateSystemOrganizationContacts\(system\);ValidateSystemPendingEvidenceMoves\(system\);/);
- assert.match(storage,/if \(version != 9 \|\| !value\.ContainsKey\("systems"\)/);
+ assert.match(storage,/if \(version != 10 \|\| !value\.ContainsKey\("systems"\)/);
 });

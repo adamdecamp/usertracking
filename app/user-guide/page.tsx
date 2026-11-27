@@ -423,8 +423,6 @@ export default function Guide(){
     <li>Unarchive a system to restore normal editing.</li>
     <li>SAAR history is retained permanently in the organization SAAR Archive.</li>
     <li>Other archived evidence follows the configured five-year retention workflow.</li>
-    <li>Use <b>Release Health</b> to verify the database checksum, newest backup, and complete audit chain.</li>
-    <li>Release Health can download an integrity record for independent retention.</li>
    </ul>
   </section>
   <footer>R.A.P.T.O.R. is an administrative evidence-management tool. Operators remain responsible for source-document accuracy, approvals, access decisions, and records policy.</footer>

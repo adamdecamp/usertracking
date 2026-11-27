@@ -81,6 +81,25 @@ internal sealed partial class PortableStorage
         }
     }
 
+    internal const int ComplianceLogLimit = 500;
+
+    // Manifest v10 adds optional per-user complianceLog: the calendar days a user became compliant or stopped being
+    // compliant. Days are real YYYY-MM-DD dates in strictly increasing order.
+    internal static void ValidateUserComplianceLog(Dictionary<string, object> user)
+    {
+        if (!user.ContainsKey("complianceLog")) return;
+        object[] log = user["complianceLog"] as object[];
+        if (log == null || log.Length > ComplianceLogLimit) throw new InvalidDataException("A user has an invalid complianceLog list.");
+        string previous = null;
+        foreach (object raw in log)
+        {
+            Dictionary<string, object> entry = raw as Dictionary<string, object>;
+            string on = entry != null && entry.ContainsKey("on") ? entry["on"] as string : null;DateTime parsed;
+            if (entry == null || entry.Count != 2 || on == null || !entry.ContainsKey("compliant") || !(entry["compliant"] is bool) || !DateTime.TryParseExact(on, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed) || (previous != null && String.CompareOrdinal(on, previous) <= 0)) throw new InvalidDataException("A user has an invalid complianceLog entry.");
+            previous = on;
+        }
+    }
+
     private static void ValidateExtractionProvenance(Dictionary<string, object> provenance)
     {
         var keys = new HashSet<string>(new[] { "identity", "organization", "officialEmail", "designation", "accountType" }, StringComparer.Ordinal);var sources = new HashSet<string>(new[] { "Filename", "Organization Folder", "SAAR AcroForm", "DD2875 XFA", "Selectable PDF Text", "Operator" }, StringComparer.Ordinal);if (provenance.Count > keys.Count) throw new InvalidDataException("A user extraction-provenance record exceeds its field limit.");

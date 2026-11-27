@@ -40,7 +40,7 @@ test('layout fixes keep form text readable and menus and sections usable',()=>{
  assert.match(css,/label :is\(small,\.hint\)\{font-weight:500/,'helper text under a field is readable');
  assert.match(css,/\.change-box>:not\(label\)\{grid-column:1\/-1\}/,'information sections span the full width instead of splitting heading and content');
  assert.match(css,/\.action-menu\[open\]\{z-index:30\}/,'an open menu is never covered by the next menu button');
- assert.match(css,/\.dark \.close\{color:#eaf1ed\}/,'the close button is visible in dark mode');
+ assert.match(css,/\.dark \.close\{color:var\(--rc-eaf1ed,#eaf1ed\)\}/,'the close button is visible in dark mode');
  assert.match(css,/@media \(min-width:900px\)\{\.toolbar\{flex-wrap:wrap\}\.toolbar>\.system-select\{flex:1 1 360px;min-width:0\}\}/,'the system name is not cut off beside the menus');
  assert.match(css,/\.evidence-picker p small\{display:block/,'the validated filename note is not run into the selected file name');
 });
