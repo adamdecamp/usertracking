@@ -10,6 +10,7 @@ overrides:
   braces: "workspace:3.0.4"
   pako: "workspace:1.0.11"
   "@next/eslint-plugin-next": "workspace:16.3.6"
+  eslint: "10.15.0"
   zod: "4.6.6"
   undici: "8.12.2"
   fast-uri: "3.1.9"
