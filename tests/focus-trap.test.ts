@@ -49,7 +49,12 @@ test('nothing can cover the session lock, and the full-window PDF preview stays 
 test('the focus trap keeps Tab and focus on the newest screen and its notifications, and gives focus back on closing',()=>{
  const trap=readFileSync(new URL('useFocusTrap.ts',directory),'utf8'),modal=read('AccessibleModal.tsx');
  assert.match(modal,/export const focusableSelector=/,'both use the same definition of a focusable control');
- assert.match(trap,/import \{focusableSelector\} from '\.\/AccessibleModal';/);
+ assert.match(trap,/import \{visibleControls\} from '\.\/AccessibleModal';/);
+ // An ordinary window gives Tab the same route: its own controls, then any notifications, then back.
+ assert.match(modal,/export const visibleControls=\(root:HTMLElement\)=>Array\.from\(root\.querySelectorAll<HTMLElement>\(controlSelector\)\)\.filter\(item=>item\.offsetParent!==null\);/);
+ assert.match(modal,/const area=document\.querySelector<HTMLElement>\('\.notification-center'\),active=document\.activeElement,inNotes=!!area&&area\.contains\(active\);if\(!dialog\.contains\(active\)&&!inNotes\)return;/);
+ assert.match(modal,/const own=visibleControls\(dialog\),notes=area\?visibleControls\(area\):\[\],group=inNotes\?notes:own,next=\(inNotes\?own:notes\)\.length\?\(inNotes\?own:notes\):group;/);
+ assert.match(modal,/if\(event\.shiftKey&&\(!group\.length\|\|active===group\[0\]\|\|active===dialog\)\)\{event\.preventDefault\(\);next\.at\(-1\)\?\.focus\(\)\}else if\(!event\.shiftKey&&\(!group\.length\|\|active===group\.at\(-1\)\)\)\{event\.preventDefault\(\);next\[0\]\?\.focus\(\)\}/);
  assert.match(trap,/document\.addEventListener\('keydown',onKeyDown,true\)/,'it runs before the page handlers');
  assert.match(trap,/const topTrap=\(\)=>\[\.\.\.traps\]\.reverse\(\)\.find\(item=>!!item\.current&&item\.current\.isConnected\);/,'only the newest screen on screen acts');
  // Escape belongs to the screen on top: it never reaches a window hidden behind a lock or gate, and it closes
@@ -67,7 +72,7 @@ test('the focus trap keeps Tab and focus on the newest screen and its notificati
  assert.match(trap,/if\(!container\|\|!\(target instanceof Node\)\|\|container\.contains\(target\)\|\|notificationArea\(container\)\?\.contains\(target\)\)return;\s*\(visibleItems\(container\)\[0\]\?\?container\)\.focus\(\);/);
  // Notifications float above every screen, so the keyboard must reach them, including "View Details".
  assert.match(trap,/document\.querySelector<HTMLElement>\('\.notification-center'\)/);
- assert.match(trap,/const controlSelector=`\$\{focusableSelector\}, summary`;/);
+ assert.match(modal,/export const controlSelector=`\$\{focusableSelector\}, summary`;/);
  assert.match(read('NotificationCenter.tsx'),/<aside className="notification-center"/,'the notification area still has the name the trap looks for');
  // Tab now passes through notifications on every loop, so one that had the focus must be able to close itself again.
  const notes=read('NotificationCenter.tsx');
