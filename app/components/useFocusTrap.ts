@@ -1,7 +1,7 @@
 'use client';
 
 import {useEffect,type RefObject} from 'react';
-import {focusableSelector} from './AccessibleModal';
+import {visibleControls} from './AccessibleModal';
 
 /**
  * Keeps keyboard focus inside a blocking screen that is not built on AccessibleModal: the identity and access
@@ -16,9 +16,7 @@ const traps:RefObject<HTMLElement|null>[]=[];
 /** What Escape does on a screen; a screen without an entry ignores Escape (a lock or gate must be answered). */
 const escapeActions=new WeakMap<RefObject<HTMLElement|null>,()=>void>();
 
-/** A notification's "View Details" line is a control too. */
-const controlSelector=`${focusableSelector}, summary`;
-const visibleItems=(container:HTMLElement)=>Array.from(container.querySelectorAll<HTMLElement>(controlSelector)).filter(item=>item.offsetParent!==null);
+const visibleItems=visibleControls;
 const topTrap=()=>[...traps].reverse().find(item=>!!item.current&&item.current.isConnected);
 const notificationArea=(container:HTMLElement)=>{const area=document.querySelector<HTMLElement>('.notification-center');return area&&!container.contains(area)?area:null};
 
