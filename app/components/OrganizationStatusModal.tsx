@@ -2,28 +2,23 @@
 
 import {useState} from 'react';
 import type {SystemRecord,UserRecord} from '../domain/tracker-models';
-import {createEncryptedOrganizationStatusPackage,createOrganizationStatusPackage,organizationStatusPackageFormat,organizationStatusPackageVersion,type OrganizationStatusPayload} from '../organization-status-package';
-import {canonicalArtifactKind} from '../filename-utils';
-import {outlookDraftSubject} from '../notification-utils';
-import {applicationVersion,complianceRuleSetVersion} from '../version';
-import {oneLineText as oneLine} from '../error-utils';
+import {createEncryptedOrganizationStatusPackage,createOrganizationStatusPackage} from '../organization-status-package';
 import {organizationContactEmails} from '../application/organization-report-email';
+import {organizationStatusEmail,organizationStatusFilename,organizationStatusPayload} from '../application/organization-share-email';
 import type {OrganizationServices} from './organization-services';
 
 const validEmail=(value:string)=>value.length<=254&&/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(value);
-const safeFilePart=(value:string,maxLength=80)=>oneLine(value).replace(/[<>:"/\\|?*]/g,'_').replace(/[. ]+$/g,'').slice(0,maxLength)||'Unknown';
 /** The organization's first recorded ISSO email, so the operator does not have to retype it. */
 const issoFor=(system:SystemRecord,organization:string)=>organizationContactEmails(system.organizationContacts??[],organization,['ISSO'])[0]??'';
 
 export function OrganizationStatusModal({system,users,services,initialOrganization=''}:{system:SystemRecord;users:UserRecord[];services:OrganizationServices;initialOrganization?:string}){
  const organizations=Array.from(new Set(users.map(user=>user.organization).filter(Boolean))).sort((left,right)=>left.localeCompare(right)),first=organizations.includes(initialOrganization)?initialOrganization:organizations[0]??'',[organization,setOrganization]=useState(first),[issoEmail,setIssoEmail]=useState(()=>issoFor(system,first)),[protect,setProtect]=useState(false),[passphrase,setPassphrase]=useState(''),[confirmation,setConfirmation]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),organizationUsers=users.filter(user=>user.organization===organization),activeCount=organizationUsers.filter(user=>!user.disabled).length,disabledCount=organizationUsers.length-activeCount;
  async function packageText(){
-  if(!organization||!organizationUsers.length)throw new Error('Select an organization that has User Directory records.');
-  const payload:OrganizationStatusPayload={format:organizationStatusPackageFormat,version:organizationStatusPackageVersion,generatedAtUtc:new Date().toISOString(),applicationVersion,ruleSetVersion:complianceRuleSetVersion,system:{id:system.id,name:system.name,type:system.type},organization,users:organizationUsers.map(user=>({id:user.id,last:user.last,first:user.first,middle:user.middle,email:user.email,disabled:user.disabled,roles:[...user.roles],privilegedTypes:[...user.privilegedTypes],artifacts:user.artifacts.map(artifact=>({kind:canonicalArtifactKind(artifact.kind),filename:artifact.filename})),exceptions:(user.exceptions??[]).filter(item=>!item.revokedAt).map(item=>({artifact:item.artifact,reason:item.reason,expiresOn:item.expiresOn}))}))};
+  const payload=organizationStatusPayload(system,users,organization);
   if(protect&&passphrase!==confirmation)throw new Error('The snapshot passphrases do not match.');
   return JSON.stringify(protect?await createEncryptedOrganizationStatusPackage(payload,passphrase):await createOrganizationStatusPackage(payload),null,2);
  }
- function filename(){return`${safeFilePart(system.name,60)}_${safeFilePart(organization,60)}_RAPTOR_Status_${new Date().toISOString().slice(0,10).replaceAll('-','')}.raptor-status.json`}
+ function filename(){return organizationStatusFilename(system,organization)}
  function download(text:string){const link=document.createElement('a'),url=URL.createObjectURL(new Blob([text],{type:'application/json;charset=utf-8'}));link.href=url;link.download=filename();document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),0)}
  async function exportSnapshot(){setBusy(true);setMessage('');try{const text=await packageText();download(text);services.warnAudit(await services.audit(`EXPORT ORGANIZATION STATUS SNAPSHOT: organization ${organization}; ${organizationUsers.length} users including ${disabledCount} disabled; evidence files and shared paths excluded`,system.id));setMessage(`${filename()} was downloaded with ${organizationUsers.length} users, including ${disabledCount} disabled.`)}catch(error){setMessage(await services.report('Organization status snapshot export failed.',error,system.id,'The organization snapshot could not be generated.'))}finally{setBusy(false)}}
  async function emailSnapshot(){
@@ -31,7 +26,7 @@ export function OrganizationStatusModal({system,users,services,initialOrganizati
   if(!services.mapped(system.id)){setMessage('Map this information system folder before preparing the ISSO email so the export can be audited.');return}
   setBusy(true);setMessage('');
   try{
-   const text=await packageText(),generatedAt=new Date().toISOString(),subject=outlookDraftSubject('For Review',system.name,'User Status Snapshot',organization),protection=protect?' The attachment is passphrase-encrypted; provide the passphrase through a separate approved channel.':'',body=`Sir/Ma'am,\n\nAttached is the R.A.P.T.O.R. user-status snapshot for ${organization} on ${system.name}. It contains ${organizationUsers.length} user records (${activeCount} active and ${disabledCount} disabled) and was generated ${generatedAt}.\n\nOpen the attached .raptor-status.json file with the R.A.P.T.O.R. portable application, then choose Open Organization Status File (Open Organization Snapshot in older versions). The snapshot is read-only and checked for file damage when opened.${protection} It does not contain evidence documents, shared-folder paths, audit logs, or records from other organizations.\n\nPlease contact the system administration team if a record appears incorrect.`,action=`PREPARE ISSO STATUS SNAPSHOT: organization ${organization}; recipient ${issoEmail.trim()}; ${organizationUsers.length} users including ${disabledCount} disabled; protection ${protect?'AES-256-GCM':'integrity only'}; attachment ${filename()}`;
+   const text=await packageText(),generatedAt=new Date().toISOString(),{subject,body}=organizationStatusEmail(system,organization,{total:organizationUsers.length,active:activeCount,disabled:disabledCount},generatedAt,protect),action=`PREPARE ISSO STATUS SNAPSHOT: organization ${organization}; recipient ${issoEmail.trim()}; ${organizationUsers.length} users including ${disabledCount} disabled; protection ${protect?'AES-256-GCM':'integrity only'}; attachment ${filename()}`;
    if(!(await services.audit(action,system.id)))throw new Error('The tamper-evident audit record could not be extended. The email draft was not opened.');
    const operationId=await services.draft(system.id,{to:issoEmail.trim(),subject,body,attachmentFilename:filename(),attachmentText:text,auditSystemIds:[system.id]});
    if(operationId!==null)setMessage(`Outlook draft queued with the ${protect?'encrypted':'integrity-protected'} snapshot attached${operationId?` · Operation ${operationId}`:''}. Review it before sending.`);

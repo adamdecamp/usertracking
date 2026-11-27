@@ -35,7 +35,8 @@ test('Share with Organizations replaces the status-file button and opens each fo
  assert.match(page,/useState\(preset\?\.emailing\?\?false\)/);
  assert.match(status,/first=organizations\.includes\(initialOrganization\)\?initialOrganization:organizations\[0\]/);
  assert.match(share,/const active=users\.filter\(user=>!user\.disabled\)/,'the shared CSV covers active users, like the dashboard');
- assert.match(share,/filteredDirectoryCsvRows\(inScope,system,asOf\)/);
+ assert.match(share,/organizationCsv\(system,active,chosen,asOf\)/);
+ assert.match(readFileSync(new URL('../app/application/organization-share-email.ts',import.meta.url),'utf8'),/filteredDirectoryCsvRows\(activeUsers\.filter\(user=>!user\.disabled&&organizations\.includes\(user\.organization\)\),system,asOf\)/,'the CSV holds the chosen organizations’ active users');
  assert.match(share,/services\.audit\(`EXPORT ORGANIZATION COMPLIANCE CSV:/,'the CSV export is audited');
- assert.match(share,/disabled=\{chosen\.length!==1\} onClick=\{\(\)=>onStatusFile\(chosen\[0\]\)\}/,'a status file is for exactly one organization');
+ assert.match(share,/disabled=\{busy\|\|chosen\.length!==1\} title=\{[^}]*\} onClick=\{\(\)=>onStatusFile\(chosen\[0\]\)\}/,'a single status file is for exactly one organization');
 });

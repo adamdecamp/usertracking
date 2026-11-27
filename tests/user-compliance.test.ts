@@ -45,7 +45,8 @@ test('the snapshot names say what each one produces',()=>{
  assert.match(readFileSync(new URL('../app/components/ShareWithOrganizationsModal.tsx',import.meta.url),'utf8'),/<strong>Organization Status File<\/strong>/);
  assert.match(page,/modal==='organization-status'\?'Organization Status File'/);
  assert.match(modal,/<h2>Organization Status File<\/h2>/);
- assert.match(modal,/Open Organization Status File \(Open Organization Snapshot in older versions\)/,'the email still helps recipients on older versions');
+ assert.match(modal,/organizationStatusEmail\(system,organization,/);
+ assert.match(readFileSync(new URL('../app/application/organization-share-email.ts',import.meta.url),'utf8'),/Open Organization Status File \(Open Organization Snapshot in older versions\)/,'the email still helps recipients on older versions');
 });
 
 test('Check Outlook results are one row per outcome, always in the same order',()=>{

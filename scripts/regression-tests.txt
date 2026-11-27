@@ -94,3 +94,4 @@ tests/progress-and-pdf-worker.test.ts
 tests/sync-batching-timings-split.test.ts
 tests/access-gate-interactive.test.ts
 tests/trailing-punctuation.test.ts
+tests/organization-share-email.test.ts
