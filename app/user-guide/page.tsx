@@ -52,6 +52,20 @@ export default function Guide(){
     <li>Current Process restarts at each new stage. Total Processing Time keeps counting from the start of the action until it completes or stops with an error.</li>
     <li>Notifications are nonblocking; expand one to read or copy the full detail.</li>
    </ul>
+   <h3>Compliance Trend</h3>
+   <ul>
+    <li>The <b>Compliance Trend</b> chart under the summary tiles shows the percentage of active users who were compliant each week.</li>
+    <li>Choose <b>3</b>, <b>6</b>, <b>9</b>, or <b>12 Months</b>. The chart covers exactly the users the User Directory filters show; disabled users are never counted.</li>
+    <li>Point at the chart, or select it and press the left and right arrow keys, to read any week. <b>Show the Numbers</b> lists the same values as a table.</li>
+    <li>The history is recorded, not estimated. Recording happens during Full Access sessions, starting with the first one on this version. Dates before that have no line.</li>
+    <li>An Organization Status File carries today&apos;s status only, so its chart has no history.</li>
+   </ul>
+   <h3>Color Scheme</h3>
+   <ul>
+    <li>Choose <b>Color Scheme</b> under <b>System Tools</b> to change the colors of headers, buttons, and highlights. It is available in Read-Only and Full Access.</li>
+    <li>Pick one of the listed schemes or a custom color. The choice applies at once and is remembered on this computer for your Windows account.</li>
+    <li>Red and gold keep their meaning (problems and warnings) in every scheme. <b>Restore Original Colors</b> returns to the default. Dark Mode is set separately.</li>
+   </ul>
   </section>
 
   <section id="systems">
@@ -339,11 +353,13 @@ export default function Guide(){
     <li><b>Create PDF</b> or <b>Email Each Organization</b> opens Compliance Snapshot (PDF) with this system and those organizations already chosen.</li>
     <li><b>Download CSV</b> saves one row per active user in those organizations, with Compliance first.</li>
     <li><b>Create Status File</b> opens the Organization Status File for the one selected organization.</li>
+    <li>Under Spreadsheet (CSV) or Organization Status File, <b>Email Each Organization</b> opens one Outlook draft per selected organization, addressed to its ISSM and ISSO, with that organization&apos;s own file attached. Nothing is sent automatically.</li>
+    <li>Organizations with no ISSM or ISSO email are skipped and listed. To encrypt a Status File with a passphrase, create it for one organization instead.</li>
    </ul>
    <h3>Compliance Snapshot (PDF)</h3>
    <ul>
     <li>Choose <b>Compliance Snapshot (PDF)</b> under <b>Reports &amp; Oversight</b>. This is the PDF report; the <b>Organization Status File</b> below is a different, read-only file for an ISSO to open in R.A.P.T.O.R.</li>
-    <li>Select mapped systems, organizations, and the reporting date.</li>
+    <li>Select mapped systems, organizations, and the reporting date. <b>Select All</b> and <b>Clear</b> check or uncheck every organization.</li>
     <li>Disabled users are excluded.</li>
     <li>The PDF includes report identity, UTC time, operator, versions, scope, totals, aging, exceptions, and required breakdowns.</li>
     <li>A checksum-protected copy is stored under <code>System/Reports</code>.</li>

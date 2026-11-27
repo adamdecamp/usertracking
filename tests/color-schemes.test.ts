@@ -48,7 +48,8 @@ test('Color Scheme is in System Tools for everyone and the choice is applied and
  assert.match(page,/ColorSchemeModal=lazy\(\(\)=>import\('\.\/components\/ColorSchemeModal'\)/);
  assert.match(page,/\{modal==='colors'&&<Suspense fallback=\{null\}><ColorSchemeModal choice=\{colorScheme\} onChoose=\{setColorScheme\}\/><\/Suspense>\}/);
  assert.match(page,/setColorScheme\(parseColorSchemeChoice\(localStorage\.getItem\(colorSchemeStorageKey\)\)\)/);
- assert.match(page,/applyColorScheme\(resolveColorScheme\(colorScheme\),document\.documentElement\);if\(hydrated\)try\{localStorage\.setItem\(colorSchemeStorageKey,JSON\.stringify\(colorScheme\)\)\}catch\{\}/);
+ assert.match(page,/if\(!hydrated\)return;applyColorScheme\(resolveColorScheme\(colorScheme\),document\.documentElement\);try\{localStorage\.setItem\(colorSchemeStorageKey,JSON\.stringify\(colorScheme\)\)\}catch\{\}/,'the default state never overwrites a saved scheme before it is loaded');
+ assert.match(page,/useLayoutEffect\(\(\)=>\{try\{applyColorScheme\(resolveColorScheme\(parseColorSchemeChoice\(localStorage\.getItem\(colorSchemeStorageKey\)\)\),document\.documentElement\)\}catch\{\}\},\[\]\);/,'a saved scheme is applied before the first paint');
  assert.match(modal,/role="radiogroup" aria-label="Color Scheme" data-ignore-unsaved>/,'a choice is saved at once, so closing the window never asks about unsaved changes');
  assert.match(read('../app/components/AccessibleModal.tsx'),/!target\.closest\('\[data-ignore-unsaved\]'\)/);
  assert.match(modal,/Restore Original Colors/);

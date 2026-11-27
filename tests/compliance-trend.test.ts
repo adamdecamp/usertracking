@@ -81,7 +81,8 @@ test('a document that had already expired counts as not compliant even where the
 test('the dashboard chart follows the directory filters and history is recorded only when the app may save',()=>{
  const page=read('../app/page.tsx'),chart=read('../app/components/ComplianceTrendChart.tsx');
  assert.match(page,/const trendUsers=useMemo\(\(\)=>visible\.filter\(u=>!u\.disabled\),\[visible\]\);/);
- assert.match(page,/<ComplianceTrendChart users=\{trendUsers\} filtered=\{trendUsers\.length!==stats\.activeUsers\}\/>/);
+ assert.match(page,/<ComplianceTrendChart users=\{trendUsers\} filtered=\{trendUsers\.length!==stats\.activeUsers\} statusFile=\{Boolean\(snapshotView\)\}\/>/);
+ assert.match(chart,/const historyNote=statusFile\?'An Organization Status File holds today(?:\\u2019|’)s status only, so this chart has no history\.':/,'a status file never claims history is being recorded');
  assert.match(page,/if\(!automaticSaveAllowed\(hydrated,sessionState,syncRunning,accessMode\)\|\|!system\|\|system\.archived\)return;queueMicrotask\(\(\)=>setUsers\(current=>\{const next=recordComplianceHistory\(current,new Set\(\[effectiveSelected\]\)\);return next===current\?current:\[\.\.\.next\]\}\)\)/);
  assert.match(chart,/role="group" aria-label="Months Shown">\{trendRanges\.map\(/);
  assert.match(chart,/aria-pressed=\{months===value\}/);
