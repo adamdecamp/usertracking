@@ -69,6 +69,10 @@ test('the focus trap keeps Tab and focus on the newest screen and its notificati
  assert.match(trap,/document\.querySelector<HTMLElement>\('\.notification-center'\)/);
  assert.match(trap,/const controlSelector=`\$\{focusableSelector\}, summary`;/);
  assert.match(read('NotificationCenter.tsx'),/<aside className="notification-center"/,'the notification area still has the name the trap looks for');
+ // Tab now passes through notifications on every loop, so one that had the focus must be able to close itself again.
+ const notes=read('NotificationCenter.tsx');
+ assert.match(notes,/onFocus=\{\(\)=>hold\(item\.id,true\)\} onBlur=\{event=>\{const article=event\.currentTarget;if\(!article\.contains\(event\.relatedTarget\)&&!article\.querySelector\('details\[open\]'\)&&!article\.matches\(':hover'\)\)hold\(item\.id,false\)\}\}/,'the close timer resumes when focus leaves a notification');
+ assert.match(notes,/onMouseLeave=\{event=>\{if\(!event\.currentTarget\.querySelector\('details\[open\]'\)&&!event\.currentTarget\.contains\(document\.activeElement\)\)hold\(item\.id,false\)\}\}/,'moving the mouse away does not close a notification that has the focus');
  assert.match(trap,/if\(opener\?\.isConnected&&\(!document\.activeElement\|\|document\.activeElement===document\.body\)\)opener\.focus\(\)/,'closing gives focus back unless something else took it');
  assert.match(trap,/if\(!traps\.length\)\{document\.removeEventListener\('keydown',onKeyDown,true\);document\.removeEventListener\('focusin',onFocusIn\)\}/);
 });
