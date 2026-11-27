@@ -34,15 +34,23 @@ jobs:
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Security and quality checks
-        run: |
-          # GHSA-fc5q-39xc-vjpf currently has no patched picomatch release. It
-          # is reachable only through build tooling; RAPTOR does not accept
-          # user-supplied glob patterns. Keep every other advisory gated.
-          pnpm audit --audit-level low --ignore GHSA-fc5q-39xc-vjpf
-          pnpm lint
-          pnpm test
-          pnpm build
+      # Each check is its own step. A PowerShell step fails only on its last
+      # command's exit code, so a failing audit followed by a passing build in
+      # one step would not stop the release.
+      - name: Check all locked dependencies
+        # GHSA-fc5q-39xc-vjpf currently has no patched picomatch release. It
+        # is reachable only through build tooling; RAPTOR does not accept
+        # user-supplied glob patterns. Keep every other advisory gated.
+        run: pnpm audit --audit-level low --ignore GHSA-fc5q-39xc-vjpf
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test backup integrity and restoration utilities
+        run: pnpm test
+
+      - name: Build browser application
+        run: pnpm build
 
       - name: Test Windows launcher and network-share fault recovery
         shell: pwsh
