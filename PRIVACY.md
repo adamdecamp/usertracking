@@ -10,7 +10,7 @@ R.A.P.T.O.R. — Role-Based Access Personnel Tracking & Oversight Registry — i
 - Each user record keeps a compliance history: the dates on which that user became compliant or stopped being compliant. It is stored in the database with the rest of the record and is used only to draw the Compliance Trend chart. An Organization Status File does not include it.
 - The launcher writes a small session-lock metadata file containing the active Windows account, computer name, process identifier, session identifier, and update time. It contains no user-tracking records or evidence.
 - Outlook access is read-only and happens only when the operator asks for it. The launcher reads messages and attachments from the signed-in user's Outlook to find evidence documents, and it can open a draft for the operator to review. It never sends mail.
-- Display choices (Dark Mode, the color scheme, and User Directory view preferences) are saved in the browser storage of the local interface for the signed-in Windows user. They contain no user-tracking records.
+- Display choices (Dark Mode, the color scheme, whether the Compliance Trend chart is collapsed, and User Directory view preferences) are saved in the browser storage of the local interface for the signed-in Windows user. They contain no user-tracking records.
 - The application contains no telemetry, advertising, analytics, or external data-upload service.
 
 The organization operating the tracker is responsible for access permissions, records retention, privacy notices, and protection of the selected shared directory. Do not place real operational data in public GitHub issues or vulnerability reports.
