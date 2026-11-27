@@ -88,6 +88,11 @@ test('portable requests carry an authenticated launcher session and the launcher
  assert.match(portableEntry,/history\.replaceState\(null,'',`\$\{location\.pathname\}\$\{location\.search\}`\)/);
  assert.match(portableEntry,/X-RAPTOR-Session-Token/);
  assert.match(portableEntry,/portableWindow\.__portableHost=true;[\s\S]*?loadLauncherSessionToken\(\)/);
+ // A passing failure to read the verified operator is retried; if it never succeeds the application does not open.
+ assert.match(portableEntry,/for\(let attempt=1;attempt<=sessionUserAttempts;attempt\+\+\)/);
+ assert.match(portableEntry,/if\(response\.status<500\)return'refused';/,'an expired or refused session is not retried');
+ assert.match(portableEntry,/if\(identity==='unreachable'&&!guide\)\{root\.render\(<LauncherUnreachable\/>\);return\}/);
+ assert.match(portableEntry,/if\(typeof identity==='object'\)\{[^}]*installPortableLifecycle\(\)\}/,'the heartbeat starts only with a verified operator');
 });
 
 test('every protected mutation is authorized by the backend lease owner',()=>{
