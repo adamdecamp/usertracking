@@ -1,15 +1,17 @@
 'use client';
 
-import {useState} from 'react';
+import {useRef,useState} from 'react';
+import {useFocusTrap} from './useFocusTrap.ts';
 import {exportLegacyWorkspaceRecovery,resetLegacyWorkspaceRecovery} from '../infrastructure/legacy-workspace-recovery.ts';
 import type {LegacyWorkspaceRecoveryResult,LegacyWorkspaceRecoveryStatus,LegacyWorkspaceReviewPackage} from '../infrastructure/portable-contracts.ts';
 
 export function LegacyWorkspaceRecoveryPanel({storageId,logicalSystemId,status,onRecovered,onContinueReadOnly}:{storageId:string;logicalSystemId:string;status:LegacyWorkspaceRecoveryStatus;onRecovered:(result:LegacyWorkspaceRecoveryResult)=>void|Promise<void>;onContinueReadOnly:()=>void|Promise<void>}){
  const[busy,setBusy]=useState<'export'|'reset'|'readonly'|''>(''),[confirmation,setConfirmation]=useState(''),[reviewPackage,setReviewPackage]=useState<LegacyWorkspaceReviewPackage|null>(null),[error,setError]=useState('');
+ const screen=useRef<HTMLDivElement>(null);useFocusTrap(screen);
  const runExport=async()=>{setBusy('export');setError('');try{setReviewPackage(await exportLegacyWorkspaceRecovery(storageId,logicalSystemId))}catch(value){setError(value instanceof Error?value.message:'The protected review package could not be created.')}finally{setBusy('')}};
  const runReset=async()=>{setBusy('reset');setError('');try{await onRecovered(await resetLegacyWorkspaceRecovery(storageId,logicalSystemId))}catch(value){setError(value instanceof Error?value.message:'The protected workspace could not be recovered.')}finally{setBusy('')}};
  const runReadOnly=async()=>{setBusy('readonly');setError('');try{await onContinueReadOnly()}catch(value){setError(value instanceof Error?value.message:'R.A.P.T.O.R. could not continue in Read-Only mode.')}finally{setBusy('')}};
- return <div className="backdrop" role="presentation"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="legacy-recovery-title">
+ return <div className="backdrop" role="presentation"><div ref={screen} tabIndex={-1} className="modal" role="dialog" aria-modal="true" aria-labelledby="legacy-recovery-title">
   <p className="eyebrow">Protected Local Recovery</p><h2 id="legacy-recovery-title">Recover Legacy Workspace</h2>
   <p>This computer has unsent local changes from an older R.A.P.T.O.R. release, and another operator has since updated the verified shared master. R.A.P.T.O.R. blocked a stale overwrite.</p>
   <div className="notice"><strong>{status.systemName}</strong><br/>{status.userCount} local user record{status.userCount===1?'':'s'} · Last local save {status.savedAtUtc?new Date(status.savedAtUtc).toLocaleString():'Unknown'}<br/><small>Shared database and evidence files will not be changed by either recovery option.</small></div>
