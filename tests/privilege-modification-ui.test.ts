@@ -17,7 +17,9 @@ test('the User Record window closes once an update is stored, and stays open whe
  assert.match(page,/onSave=\{saveUser\} onSaved=\{\(\)=>setModal\(null\)\}/);
  // Both calls sit after the awaited save inside the try, so a failed save leaves the window and the entries in place.
  assert.match(userModal,/await onSave\(updated,`MODIFY USER: [^\n]*\n\s*setDraft\(updated\);\s*\/\/[^\n]*\n\s*notify\(`\$\{updated\.last\}, \$\{updated\.first\} was updated and saved\.[^\n]*'success','User Record Saved'\);onSaved\(\);\s*\}catch\(error\)/);
- assert.match(userModal,/const updated=await onEditInfo\(user,[^\n]*setEditingInfo\(false\);onSaved\(\)\}catch\(error\)/);
+ assert.match(userModal,/const updated=await onEditInfo\(user,[^\n]*setEditingInfo\(false\);if\(!otherEntriesPending\)onSaved\(\)\}catch\(error\)/);
+ // Saving the name or email leaves the window open while files, an exception, or an access change are still pending in it.
+ assert.match(userModal,/const otherEntriesPending=Object\.keys\(uploads\)\.length>0\|\|!!saar\|\|statusChange\|\|modify\|\|deleteRequested\|\|!!oneLine\(exceptionReason\)\|\|!!oneLine\(exceptionApprover\);/);
  // Exceptions and Outlook drafts are steps within a review, so they keep the window open.
  assert.equal(userModal.match(/onSaved\(\)/g)?.length,2);
 });
