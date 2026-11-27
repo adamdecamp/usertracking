@@ -17,6 +17,7 @@ import {reportOperationalError} from '../storage-session';
 import {readEvidencePayload} from '../evidence-storage';
 import {syncRejectionTimedOut,validEmail} from '../page-helpers';
 import {CleanupPagination} from './CleanupPagination';
+import {useFocusTrap} from './useFocusTrap';
 
 export type CleanupView='menu'|'collision'|'rework'|'archive'|'zip';
 export type SyncIssueView='menu'|'identity'|'content'|'saar'|'unmatched'|'bypassed'|'rejected';
@@ -25,6 +26,7 @@ export function SyncReview({pending,busy,onApply}:{pending:PendingSync;busy:bool
  const[discovered,setDiscovered]=useState<ReviewedSyncNewUser[]>(pending.newUsers.map(item=>({...item,included:true,matchToUserId:item.matchToUserId,confirmedNewUser:item.confirmedNewUser??!item.possibleMatches?.length})));
  const[archiveSelected,setArchiveSelected]=useState<string[]>(pending.archiveCandidates.filter(candidate=>!!candidate.retentionDisposition).map(candidate=>candidate.id)),[zipSelected,setZipSelected]=useState<string[]>([]),[reworkSelected,setReworkSelected]=useState<string[]>(pending.reworkCandidates.filter(candidate=>shouldPreselectRework(candidate.reason)).map(candidate=>candidate.id));
  const[collisionChoices,setCollisionChoices]=useState<Record<string,EvidenceCollisionChoice>>(()=>Object.fromEntries(pending.collisionCandidates.map(candidate=>[candidate.id,defaultEvidenceCollisionChoice(candidate.classification)]))),[collisionPreview,setCollisionPreview]=useState<{loading?:boolean;url?:string;filename?:string;path?:string;error?:string}>({});
+ const previewScreen=useRef<HTMLDivElement>(null);useFocusTrap(previewScreen,Boolean(collisionPreview.loading||collisionPreview.error||collisionPreview.url),()=>closeCollisionPreview());
  const[cleanupView,setCleanupView]=useState<CleanupView>('menu'),[cleanupPage,setCleanupPage]=useState(0),[issueView,setIssueView]=useState<SyncIssueView>('menu'),[issuePage,setIssuePage]=useState(0);
  const collisionPreviewSequence=useRef(0);
  const system=pending.systems.find(s=>s.id===pending.systemId),legacyMode=isLegacyImport(pending.mode),reviewState=syncIdentityReviewState(discovered,pending.users,validEmail),selectedDiscovered=reviewState.selected,existingEmails=reviewState.existingEmails,discoveredEmailCounts=reviewState.selectedEmailCounts,validDiscovered=reviewState.valid;
@@ -73,7 +75,7 @@ export function SyncReview({pending,busy,onApply}:{pending:PendingSync;busy:bool
     </div>}
    </article>})}</div>
    <CleanupPagination {...collisionPage} onPage={setCleanupPage}/>
-   {(collisionPreview.loading||collisionPreview.error||collisionPreview.url)&&<div className="collision-preview-overlay" onMouseDown={event=>{if(event.target===event.currentTarget)closeCollisionPreview()}}><div className="collision-preview-dialog" role="dialog" aria-modal="true" aria-label={`PDF Preview: ${collisionPreview.filename??'Evidence'}`}>
+   {(collisionPreview.loading||collisionPreview.error||collisionPreview.url)&&<div className="collision-preview-overlay" onMouseDown={event=>{if(event.target===event.currentTarget)closeCollisionPreview()}}><div ref={previewScreen} tabIndex={-1} className="collision-preview-dialog" role="dialog" aria-modal="true" aria-label={`PDF Preview: ${collisionPreview.filename??'Evidence'}`}>
     <div className="collision-preview-heading"><div><strong>{collisionPreview.filename}</strong><small>{collisionPreview.path}</small></div><button type="button" onClick={closeCollisionPreview}>Close Preview</button></div>
     {collisionPreview.loading&&<div className="empty">Opening and validating the selected PDF…</div>}
     {collisionPreview.error&&<p className="restore-warning">{collisionPreview.error}</p>}

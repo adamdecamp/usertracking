@@ -27,7 +27,7 @@ test('Document Renamer keeps a full-window in-app fallback when popups are block
  assert.match(page,/<AccessibleModal label=\{`\$\{preview\.filename\} Preview`\}/);
  assert.match(page,/backdropClassName="renamer-preview-overlay" contentClassName="renamer-preview-dialog"/);
  assert.match(page,/src=\{`\$\{preview\.url\}#zoom=page-width`\}/);
- assert.match(styles,/\.renamer-preview-overlay\{position:fixed!important;inset:0!important;z-index:2147483647/);
+ assert.match(styles,/\.renamer-preview-overlay\{position:fixed!important;inset:0!important;z-index:60;/);
  assert.match(styles,/\.renamer-preview-dialog\{position:fixed;inset:0;display:flex;flex-direction:column;width:100vw;max-width:none;height:100vh;height:100dvh/);
 });
 

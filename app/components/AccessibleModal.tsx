@@ -3,7 +3,7 @@
 import {useEffect,useId,useRef,type ReactNode} from 'react';
 
 const modalStack:string[]=[];
-const focusableSelector='button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+export const focusableSelector='button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 export const unsavedChangesPrompt='Close this window? Anything you entered here that has not been saved will be lost.';
 
 export function AccessibleModal({label,onClose,children,closeDisabled=false,backdropClassName='',contentClassName='',showClose=true}:{label:string;onClose:()=>void;children:ReactNode;closeDisabled?:boolean;backdropClassName?:string;contentClassName?:string;showClose?:boolean}){

@@ -107,3 +107,4 @@ tests/sync-user-match-ui.test.ts
 tests/user-information-edit.test.ts
 tests/regression-test-list.test.ts
 tests/launcher-route-usage.test.ts
+tests/focus-trap.test.ts
