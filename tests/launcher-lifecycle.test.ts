@@ -200,7 +200,7 @@ test('Outlook completion auditing always includes the mapped endpoint system',()
 
 test('manual PDF receipt verification is read-only and does not wait behind storage writes',()=>{
  assert.match(policy,/!String\.Equals\(action, "evidence-pdf-status", StringComparison\.Ordinal\)/);
- assert.match(policy,/String\.Equals\(action, "evidence-pdf-status", StringComparison\.Ordinal\)[\s\S]*?String\.Equals\(action, "archive-locations"/);
+ assert.match(policy,/String\.Equals\(action, "evidence-pdf-status", StringComparison\.Ordinal\)[\s\S]*?String\.Equals\(action, "evidence-exists"/);
 });
 
 test('successful disable and delete operations keep missing evidence in the audit trail without creating false failure reports',()=>{
