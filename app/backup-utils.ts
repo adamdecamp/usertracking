@@ -23,7 +23,6 @@ export async function sha256Bytes(value:Uint8Array){
 export function backupFilename(created:string){return `user-tracker-${created.replace(/[:.]/g,'-')}.json`}
 export function compressedBackupFilename(created:string){return `${backupFilename(created)}.gz`}
 export function checksumFilename(filename:string){return `${filename}.sha256`}
-export function staleSnapshotNames(names:string[],limit=backupSnapshotLimit){return [...names].sort().reverse().slice(limit)}
 
 export async function buildBackupSnapshot(database:BackupDatabase,created=new Date().toISOString()){
  const contentHash=await sha256Hex(JSON.stringify({systems:database.systems,users:database.users,...(database.version>=6?{recognitionAliases:database.recognitionAliases??[]}: {})}));
@@ -40,12 +39,6 @@ export async function buildCompressedBackupSnapshot(database:BackupDatabase,crea
 export function checksumFromText(text:string,filename:string){
  const match=text.trim().match(/^([a-f0-9]{64})\s+(.+)$/i);
  return match&&match[2]===filename?match[1].toLowerCase():undefined;
-}
-
-export async function verifyBackupSnapshot(text:string,expectedIntegrityHash:string){
- if(!/^[a-f0-9]{64}$/i.test(expectedIntegrityHash))throw new Error('The backup checksum file is invalid.');
- if((await sha256Hex(text))!==expectedIntegrityHash.toLowerCase())throw new Error('The backup SHA-256 integrity check failed.');
- return validateBackupEnvelope(text);
 }
 
 async function validateBackupEnvelope(text:string){

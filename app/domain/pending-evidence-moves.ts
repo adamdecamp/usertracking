@@ -121,11 +121,3 @@ export function cancelPendingEvidenceMoves(queue:readonly PendingEvidenceMove[]|
  return(queue??[]).filter(item=>!(item.userId===userId&&item.work===work));
 }
 
-const workLabel:Record<PendingEvidenceMoveWork,string>={'archive-user':'archive a disabled user’s files','restore-saar':'restore a re-enabled user’s SAAR','relabel-user':'rename files after a user edit','archive-file':'archive a file released to another user','archive-deleted-user':'archive a deleted user’s files'};
-
-/** "2 file changes are waiting for Session Commit: archive a disabled user’s files (Doe, Jane); …" */
-export function pendingEvidenceMoveSummary(queue:readonly PendingEvidenceMove[]|undefined){
- const items=queue??[];if(!items.length)return'';
- const shown=items.slice(0,5).map(item=>`${workLabel[item.work]} (${item.userLabel})`).join('; ');
- return`${items.length} file change${items.length===1?' is':'s are'} waiting for Session Commit: ${shown}${items.length>5?`; and ${items.length-5} more`:''}.`;
-}

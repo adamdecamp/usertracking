@@ -36,10 +36,6 @@ export function organizationCleanupDirectory(path:string,rootFallback:string,cat
  return{...location,folder,path:[location.relativeDirectory,folder].filter(Boolean).join('/')};
 }
 
-export function folderOrganizationDiffers(path:string,filenameOrganization:string|undefined,rootFallback=''){
- return organizationFromFolderPath(path,rootFallback).toUpperCase()!==(filenameOrganization??'').trim().toUpperCase();
-}
-
 export function insideArchiveTree(path:string){
  const directories=path.replaceAll('\\','/').split('/').slice(0,-1);
  return directories.some(segment=>{const value=normalized(segment);return value==='ARCHIVE'||value==='ARCHIVE REVIEW'||value.endsWith(' ARCHIVE')});

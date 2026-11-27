@@ -63,7 +63,7 @@ export default function Guide(){
    <h3>Color Scheme</h3>
    <ul>
     <li>Choose <b>Color Scheme</b> under <b>System Tools</b> to change the colors of headers, buttons, and highlights. It is available in Read-Only and Full Access.</li>
-    <li>Pick one of the listed schemes or a custom color. The choice applies at once and is remembered on this computer for your Windows account.</li>
+    <li>Pick one of the listed schemes or a custom color. Red and gold mean problems and warnings, so a red or gold custom color is moved to the nearest other color. The choice applies at once and is remembered on this computer for your Windows account.</li>
     <li>Red and gold keep their meaning (problems and warnings) in every scheme. <b>Restore Original Colors</b> returns to the default. Dark Mode is set separately.</li>
    </ul>
   </section>

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {decodePendingEvidenceMoves,newPendingEvidenceMove,pendingEvidenceMoveSummary,queuePendingEvidenceMove,updatePendingEvidenceQueue,withPendingMoves,type PendingEvidenceMove} from '../app/domain/pending-evidence-moves.ts';
+import {decodePendingEvidenceMoves,newPendingEvidenceMove,queuePendingEvidenceMove,updatePendingEvidenceQueue,withPendingMoves,type PendingEvidenceMove} from '../app/domain/pending-evidence-moves.ts';
 import {runPendingEvidenceMoves,type PendingEvidenceOperations} from '../app/application/pending-evidence-commit.ts';
 import type {Artifact,SystemRecord,UserRecord} from '../app/domain/tracker-models.ts';
 
@@ -49,7 +49,6 @@ test('the queue cancels opposite requests, ignores repeats, and a deletion repla
  assert.deepEqual(queuePendingEvidenceMove(queue,deleted).map(item=>item.work),['archive-file','archive-deleted-user'],'deleting keeps files released to other records');
  assert.deepEqual(updatePendingEvidenceQueue(queue,[],[{userId:'u1',work:'archive-user'}]).map(item=>item.work),['archive-file','relabel-user']);
  assert.equal('pendingEvidenceMoves'in withPendingMoves(system([]),[]),false,'an empty queue leaves the field off');
- assert.match(pendingEvidenceMoveSummary(queue),/^3 file changes are waiting for Session Commit: archive a disabled user’s files \(Doe, Jane\)/);
 });
 
 test('the decoder accepts a well-formed queue and rejects anything that does not match its work',()=>{
