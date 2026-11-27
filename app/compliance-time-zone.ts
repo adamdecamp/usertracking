@@ -27,9 +27,21 @@ export const preferredTimeZones=[
  'UTC',
 ] as const;
 
+// Building an Intl.DateTimeFormat is slow (about 0.05 ms), and every compliance status needs one. The dashboard
+// computes thousands of statuses per change, so each zone's formatter and validity are built once and reused.
+const dateFormatters=new Map<string,Intl.DateTimeFormat|null>();
+const maxCachedZones=200;
+function dateFormatterFor(timeZone:string):Intl.DateTimeFormat|null{
+ const cached=dateFormatters.get(timeZone);if(cached!==undefined)return cached;
+ let formatter:Intl.DateTimeFormat|null=null;
+ try{formatter=new Intl.DateTimeFormat('en-US',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'})}catch{formatter=null}
+ if(dateFormatters.size>=maxCachedZones)dateFormatters.clear();
+ dateFormatters.set(timeZone,formatter);return formatter;
+}
+
 export function isValidTimeZone(value:unknown):value is string{
  if(typeof value!=='string'||!value||value.length>maxTimeZoneLength||/[\r\n\u0000]/.test(value))return false;
- try{new Intl.DateTimeFormat('en-US',{timeZone:value});return true}catch{return false}
+ return dateFormatterFor(value)!==null;
 }
 
 /** The time zone of this computer, used until a system has its own zone. */
@@ -38,10 +50,15 @@ export function fallbackTimeZone():string{
 }
 
 /** The calendar date (YYYY-MM-DD) that `at` falls on in `timeZone`. */
+let lastCalendarDate:{time:number;zone:string;date:string}|undefined;
 export function calendarDateIn(at:Date,timeZone:string):string{
- const parts=new Intl.DateTimeFormat('en-US',{timeZone:isValidTimeZone(timeZone)?timeZone:'UTC',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(at);
+ const zone=isValidTimeZone(timeZone)?timeZone:'UTC',time=at.getTime();
+ // One pass over the users asks about the same moment and zone every time.
+ if(lastCalendarDate&&lastCalendarDate.time===time&&lastCalendarDate.zone===zone)return lastCalendarDate.date;
+ const parts=dateFormatterFor(zone)!.formatToParts(at);
  const part=(type:Intl.DateTimeFormatPartTypes)=>parts.find(item=>item.type===type)?.value??'';
- return `${part('year')}-${part('month')}-${part('day')}`;
+ const date=`${part('year')}-${part('month')}-${part('day')}`;
+ lastCalendarDate={time,zone,date};return date;
 }
 
 /** Whole days since 1970-01-01 for a YYYY-MM-DD calendar date, or undefined when invalid. */

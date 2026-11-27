@@ -14,7 +14,9 @@ const describe=(point:TrendPoint)=>point.percent===undefined?`${longDate(point.d
  * Dashboard line chart of the share of users who were compliant over the last 3, 6, 9, or 12 months.
  * It is drawn for the active users the User Directory currently shows, so it follows every filter.
  */
-export function ComplianceTrendChart({users,filtered}:{users:UserRecord[];filtered:boolean}){
+export function ComplianceTrendChart({users,filtered,statusFile=false}:{users:UserRecord[];filtered:boolean;
+ /** True when the page is showing an Organization Status File, which carries today's status only. */
+ statusFile?:boolean}){
  const[months,setMonths]=useState<TrendRange>(6),[selected,setSelected]=useState<number|null>(null);
  const trend=useMemo(()=>complianceTrend(users,months),[users,months]);
  const{points,startDay,endDay}=trend,plotted=points.map((point,index)=>({point,index})).filter(item=>item.point.percent!==undefined);
@@ -35,7 +37,7 @@ export function ComplianceTrendChart({users,filtered}:{users:UserRecord[];filter
   const current=plotted.findIndex(item=>item.index===(selected??latest!.index)),next=Math.max(0,Math.min(plotted.length-1,current+(event.key==='ArrowLeft'?-1:1)));
   setSelected(plotted[next].index);
  }
- const historyNote=!trend.historyStartedOn?'History is recorded from the first Full Access session with this version. Until then the chart shows today only.':trend.historyStartedOn>dateOfDay(startDay)?`Recorded history starts ${longDate(trend.historyStartedOn)}. Earlier dates have no line.`:'';
+ const historyNote=statusFile?'An Organization Status File holds today’s status only, so this chart has no history.':!trend.historyStartedOn?'History is recorded from the first Full Access session with this version. Until then the chart shows today only.':trend.historyStartedOn>dateOfDay(startDay)?`Recorded history starts ${longDate(trend.historyStartedOn)}. Earlier dates have no line.`:'';
  return <section className="compliance-trend" aria-label="Compliance Trend">
   <div className="compliance-trend-head">
    <div><p className="eyebrow">Compliance Trend</p><strong>{latest?`${latest.point.percent}% Compliant Today`:'No Users to Chart'}</strong><small>{users.length} active user{users.length===1?'':'s'} {filtered?'shown by the User Directory filters':'in this system'}</small></div>
