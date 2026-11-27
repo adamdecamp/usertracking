@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readdirSync,readFileSync} from 'node:fs';
 import test from 'node:test';
 
 import {readPageSource} from './page-source.ts';
@@ -49,7 +49,17 @@ test('dialogs trap focus, close with Escape, and restore focus',()=>{
  assert.match(modal,/event\.key!=='Tab'/);
  assert.match(modal,/returnFocus\.current\?\.focus/);
  assert.match(page,/<AccessibleModal label="Choose Sync Scope"/);
- assert.doesNotMatch(page,/className="backdrop" onMouseDown/);
+ // Every pop-up window goes through AccessibleModal. Checked in every component file, not only the page, so a
+ // hand-built window in a split-out file cannot slip past.
+ const componentFiles=readdirSync('app/components').filter(name=>name.endsWith('.tsx'));
+ assert.ok(componentFiles.length>20,'the component files were read');
+ for(const name of ['../page.tsx',...componentFiles]){
+  const source=readFileSync(`app/components/${name}`,'utf8');
+  assert.doesNotMatch(source,/className="backdrop" onMouseDown/,`${name} builds its own closable backdrop`);
+  // The legacy-workspace recovery prompt is deliberately blocking: it has no close control and must be answered.
+  if(name!=='LegacyWorkspaceRecoveryPanel.tsx')assert.doesNotMatch(source,/className="modal[" ]/,`${name} builds its own window instead of using AccessibleModal`);
+ }
+ assert.match(readFileSync('app/components/OperationalPanels.tsx','utf8'),/recovery\.open&&<AccessibleModal label="Recovery Center" onClose=\{recovery\.close\}>/);
 });
 
 test('operator notices are nonblocking and blocking browser alerts are absent',()=>{
