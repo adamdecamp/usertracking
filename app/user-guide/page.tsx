@@ -57,6 +57,7 @@ export default function Guide(){
     <li>The <b>Compliance Trend</b> chart under the summary tiles shows the percentage of active users who were compliant each week.</li>
     <li>Choose <b>3</b>, <b>6</b>, <b>9</b>, or <b>12 Months</b>. The chart covers exactly the users the User Directory filters show; disabled users are never counted.</li>
     <li>Point at the chart, or select it and press the left and right arrow keys, to read any week. <b>Show the Numbers</b> lists the same values as a table.</li>
+    <li>Select <b>Hide Chart</b> to collapse the chart to its headline, and <b>Show Chart</b> to bring it back. The choice is remembered on this computer.</li>
     <li>The history is recorded, not estimated. Recording happens during Full Access sessions, starting with the first one on this version. Dates before that have no line.</li>
     <li>An Organization Status File carries today&apos;s status only, so its chart has no history.</li>
    </ul>
@@ -148,6 +149,7 @@ export default function Guide(){
    <h3>Edit, Disable, Re-Enable, or Delete</h3>
    <ul>
     <li>Open a User Record and choose <b>Edit User Information</b> to correct name, organization, middle initial, or Official Email.</li>
+    <li>When <b>Save User Information</b> or <b>Submit</b> stores the update, the User Record closes and a notification confirms the save. If the update cannot be stored, the record stays open with your entries.</li>
     <li><b>Changes save right away; files move at Session Commit.</b> Editing, disabling, re-enabling, deleting a user, and moving evidence from one user to another save the record locally at once. The file renames and moves they need are queued and run at the next <b>Session Commit</b> (or at logoff), before the database is published, so you do not wait on the shared folder while you work.</li>
     <li>Queued moves follow the record as it stands at commit. If you disable a user and re-enable them before committing, nothing is archived.</li>
     <li>Name or organization corrections rename available evidence at commit without overwriting collisions, including associated Archive evidence and files in an existing Rework folder, which stay in the same storage category.</li>
