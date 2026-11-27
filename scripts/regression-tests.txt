@@ -1,7 +1,6 @@
 tests/backup-utils.test.ts
 tests/evidence-validation.test.ts
 tests/evidence-match-utils.test.ts
-tests/evidence-audit-utils.test.ts
 tests/audit-utils.test.ts
 tests/audit-anchor.test.ts
 tests/compliance-report.test.ts
@@ -98,3 +97,12 @@ tests/compliance-snapshot-selection.test.ts
 tests/color-schemes.test.ts
 tests/compliance-trend.test.ts
 tests/eslint-config.test.ts
+tests/affiliated-organization-utils.test.ts
+tests/operator-workflow-ui.test.ts
+tests/privileged-type-utils.test.ts
+tests/processing-status.test.ts
+tests/reconciliation-report.test.ts
+tests/sync-mode-utils.test.ts
+tests/sync-user-match-ui.test.ts
+tests/user-information-edit.test.ts
+tests/regression-test-list.test.ts

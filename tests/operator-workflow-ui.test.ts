@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
+import {readPageSource} from './page-source.ts';
+
 const page=readFileSync('app/page.tsx','utf8');
+// The page plus the pop-up windows split out of it, where the confirmations now live.
+const pageAndWindows=readPageSource();
 const operatorHeader=readFileSync('app/components/OperatorDashboardHeader.tsx','utf8');
 const chrome=`${page}\n${operatorHeader}`;
 const styles=readFileSync('app/globals.css','utf8');
@@ -36,6 +40,7 @@ test('local changes and the last five operations remain visible',()=>{
  assert.match(page,/<LiveProcessingStatus source=\{processingLive\} history=\{operationHistory\}/);
  assert.match(history,/\.slice\(0,5\)/);
  assert.match(page,/'workspace-status'/);
+ assert.match(page,/sessionState!=='active'\|\|!accessModeCanWrite\(accessMode\)\)\{queueMicrotask\(\(\)=>setSessionChangeSummary\(\{state:'unavailable'\}\)\);return\}/,'Read-Only Access never asks the launcher for local commit status, which it would refuse');
 });
 
 test('dialogs trap focus, close with Escape, and restore focus',()=>{
@@ -67,9 +72,9 @@ test('directory choices persist without retaining the search text',()=>{
 });
 
 test('high-impact operations use reviewed confirmation summaries',()=>{
- assert.match(page,/requestConfirmation\(\{title:`Delete \$\{system\.name\}\?`/);
- assert.match(page,/requestConfirmation\(\{title:`Delete \$\{user\.last\}, \$\{user\.first\}\?`/);
- assert.match(page,/title:statusChange\?\(user\.disabled\?'Re-enable User':'Disable User'\):'Modify User Privileges'/);
+ assert.match(pageAndWindows,/requestConfirmation\(\{title:`Delete \$\{system\.name\}\?`/);
+ assert.match(pageAndWindows,/requestConfirmation\(\{title:`Delete \$\{user\.last\}, \$\{user\.first\}\?`/);
+ assert.match(pageAndWindows,/title:statusChange\?\(user\.disabled\?'Re-enable User':'Disable User'\):'Modify User Privileges'/);
  assert.match(confirmations,/confirmation-impact/);
 });
 
