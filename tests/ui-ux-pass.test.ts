@@ -48,3 +48,10 @@ test('layout fixes keep form text readable and menus and sections usable',()=>{
 test('Last Results reaches the launcher without a kind on read and save',()=>{
  assert.match(read('../portable-launcher/Program.cs'),/storage\.LastResults\(systemId, parts\[0\], requestBody, OptionalQueryValue\(target, "kind"\)\)/);
 });
+test('the Switch to Full Access button on the Read-Only banner is readable in light and dark mode',()=>{
+ const css=read('../app/globals.css'),header=read('../app/components/OperatorDashboardHeader.tsx');
+ assert.match(header,/className="secondary" disabled=\{props\.switchAccessDisabled\} onClick=\{props\.onSwitchAccess\}>Switch to Full Access<\/button>/);
+ // The shared "secondary" style is white text for the dark header; on the pale yellow banner it needs dark text.
+ assert.match(css,/\.read-only-banner \.secondary\{background:#fff;color:#5f4700;border-color:#d6a526\}/);
+ assert.match(css,/\.dark \.read-only-banner \.secondary\{background:transparent;color:#ffe29a;border-color:#8d742d\}/);
+});
