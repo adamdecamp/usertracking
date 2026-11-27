@@ -31,7 +31,11 @@ test('every modal dialog outside AccessibleModal uses the shared focus trap on t
 
 test('nothing can cover the session lock, and the full-window PDF preview stays above the windows it opens from',()=>{
  const css=readFileSync(new URL('../globals.css',directory),'utf8');
- const layer=(selector:string)=>{const match=new RegExp(`${selector.replace(/[.[\]]/g,'\\$&')}\\{[^}]*?z-index:(\\d+)`).exec(css);assert.ok(match,`${selector} has a layer`);return Number(match[1])};
+ // Found by plain text search rather than a pattern built from the selector, so no selector needs escaping.
+ const layer=(selector:string)=>{
+  const start=css.indexOf(`${selector}{`),end=start<0?-1:css.indexOf('}',start),match=end<0?null:/z-index:(\d+)/.exec(css.slice(start,end));
+  assert.ok(match,`${selector} has a layer`);return Number(match[1]);
+ };
  const lock=layer('.session-lock'),preview=layer('.renamer-preview-overlay');
  // Notifications float above everything so a message is never hidden; every other layer is below the lock.
  for(const below of ['.backdrop','.processing-panel.running','.action-menu[open]','.collision-preview-overlay','.skip-link','.access-mode-gate','.last-logon-notice','.renamer-preview-overlay'])
