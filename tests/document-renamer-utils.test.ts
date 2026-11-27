@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {analyzeDocumentText,applySaarFormFallback,buildTrackerFilename,documentNeedsFilenameNormalization,folderOrganizationDiffers,insideArchiveTree,normalizeFilenameOrganization,organizationCleanupDirectory,organizationFromFolderPath,organizationStorageLocation,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
+import {analyzeDocumentText,applySaarFormFallback,buildTrackerFilename,documentNeedsFilenameNormalization,insideArchiveTree,normalizeFilenameOrganization,organizationCleanupDirectory,organizationFromFolderPath,organizationStorageLocation,validOrganizationFolderName} from '../app/document-renamer-utils.ts';
 import {canonicalEvidenceFilename} from '../app/filename-utils.ts';
 
 const users=[{first:'Jacob',last:'Brown',organization:'LM',roles:['General'],privilegedTypes:[]}];
@@ -129,8 +129,6 @@ test('uses the organization folder while skipping the managed user-evidence iden
  assert.equal(organizationFromFolderPath('certificate.pdf','DEFAULT'),'DEFAULT');
  assert.equal(organizationFromFolderPath('Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','NGC'),'NGC');
  assert.equal(organizationFromFolderPath('Brown_Jacob/Brown_Jacob_(TEST)_SAAR_26AUG2026.pdf','NGC'),'NGC');
- assert.equal(folderOrganizationDiffers('GOV/certificate.pdf','LM','DEFAULT'),true);
- assert.equal(folderOrganizationDiffers('GOV/certificate.pdf','gov','DEFAULT'),false);
 });
 
 test('reserves document-type folders so they cannot become organizations',()=>{

@@ -87,11 +87,6 @@ function signatureSummary(fields:PDFField[]):PdfDigitalSignatureSummary{
  return{signedFieldNames:signed.map(item=>item.name),createdBySigned:created.length>0,disabledBySigned:disabled.length>0,createdDate:latestDate(created.map(item=>item.date)),disabledDate:latestDate(disabled.map(item=>item.date))}
 }
 
-export async function readPdfDigitalSignatures(pdfBytes:Uint8Array):Promise<PdfDigitalSignatureSummary>{
- const pdf=await PDFDocument.load(pdfBytes,{ignoreEncryption:false,updateMetadata:false});
- try{return signatureSummary(pdf.getForm().getFields())}catch{return{signedFieldNames:[],createdBySigned:false,disabledBySigned:false}}
-}
-
 function decodeXml(value:string){
  return value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').replace(/&#x([0-9a-f]+);/gi,(_,hex)=>String.fromCodePoint(Number.parseInt(hex,16))).replace(/&#(\d+);/g,(_,decimal)=>String.fromCodePoint(Number.parseInt(decimal,10))).replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&')
 }
