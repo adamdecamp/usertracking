@@ -36,7 +36,7 @@ export default function Guide(){
     <li><b>Read-Only:</b> Search, filter, review, report, and export without changing records or evidence.</li>
     <li><b>Full Access:</b> Requires verified storage and the single-editor lease.</li>
     <li>Read-Only Access is identified by a persistent banner and gold frame. Choose <b>Switch to Full Access</b> in the banner to make changes.</li>
-    <li>Keyboard users can press Tab once after the page loads and choose <b>Skip to User Directory</b>. Windows open on their first control, Esc closes them, and focus returns to where you were.</li>
+    <li>Keyboard users can press Tab once after the page loads and choose <b>Skip to User Directory</b>. Windows open on their first control, Esc closes them, and focus returns to where you were. Screens that must be answered, such as Choose Your Access, Previous Application Logon, and the session lock, ignore Esc and keep Tab inside until you choose an option.</li>
     <li>Multiple Read-Only operators may connect; only one Full Access operator may edit at a time.</li>
     <li>If Full Access is already locked, R.A.P.T.O.R. identifies the current editor by full name, Windows ID, workstation, and session start time.</li>
     <li>Open <b>User Administration → Operator Directory</b> to view names and Windows IDs recorded in the selected system&apos;s verified audit history.</li>
